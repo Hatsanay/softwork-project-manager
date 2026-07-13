@@ -1,0 +1,50 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status *)",
+      "Bash(npx tsc *)",
+      "Bash(mkdir -p \"/d/project/softwork-project-manager/messages\")",
+      "Bash(curl -s http://localhost:3000/dashboard)",
+      "Bash(curl -s http://localhost:3000/users)",
+      "Bash(curl -s http://localhost:3000/settings/roles)",
+      "Bash(curl -s http://localhost:3000/settings/roles/create)",
+      "Bash(taskkill //PID 5420 //F)",
+      "Bash(mv app *)",
+      "Bash(rm -rf .next tsconfig.tsbuildinfo)",
+      "Bash(mv node_modules frontend/)",
+      "Bash(cd \"/d/project/softwork-project-manager\" && mkdir -p backend/src/config backend/src/routes backend/src/controllers backend/src/middlewares backend/src/utils backend/uploads && ls -la backend)",
+      "Bash(curl -s -o /dev/null -w \"no-token /getAllUsers -> %{http_code}\\\\n\" http://localhost:3003/api/getAllUsers)",
+      "Bash(curl -s -w \"\\\\nlogin-no-db -> %{http_code}\\\\n\" -X POST http://localhost:3003/api/auth/login -H \"Content-Type: application/json\" -d '{\"user_email\":\"a@a.com\",\"user_password\":\"x\"}')",
+      "Bash(taskkill //F //IM node.exe)",
+      "Read(//d/project/**)",
+      "Bash(node --check src/controllers/user.controller.js)",
+      "Bash(node --check src/controllers/role.controller.js)",
+      "Bash(node --check src/utils/generateId.js)",
+      "Bash(node --check src/controllers/auth.controller.js)",
+      "Bash(node --check src/routes/index.js)",
+      "Bash(npm uninstall *)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill //F //PID 8324)",
+      "Bash(curl -s -o /dev/null -w \"backend health -> %{http_code}\\\\n\" http://localhost:3003/api/health --max-time 2)",
+      "Bash(curl -s -o /dev/null -w \"old path /api/getAllUsers -> %{http_code}\\\\n\" \"http://localhost:3003/api/getAllUsers\")",
+      "Bash(curl -s -o /dev/null -w \"new path /api/V1/users -> %{http_code}\\\\n\" \"http://localhost:3003/api/V1/users\")",
+      "Bash(curl -s -o /dev/null -w \"GET / -> %{http_code}\\\\n\" http://localhost:3000/)",
+      "Bash(curl -s -o /dev/null -w \"GET /login -> %{http_code}\\\\n\" http://localhost:3000/login)",
+      "Bash(curl -s -w \"\\\\nstatus -> %{http_code}\\\\n\" -X POST http://localhost:3003/api/auth/login -H \"Content-Type: application/json\" -d '{\"user_email\":\"test@test.com\",\"user_password\":\"x\"}')",
+      "Bash(curl -s -w \"\\\\nstatus -> %{http_code}\\\\n\" -X POST http://localhost:3003/api/V1/auth/login -H \"Content-Type: application/json\" -d '{\"user_email\":\"nope@nope.com\",\"user_password\":\"x\"}')",
+      "Bash(curl -s -o /dev/null -w \"frontend / -> %{http_code}\\\\n\" http://localhost:3000/ --max-time 2)",
+      "Bash(node -e \"const bcrypt=require\\('bcryptjs'\\); bcrypt.hash\\('Admin@12345', 10\\).then\\(h => console.log\\(h\\)\\);\")",
+      "Bash(node -e ' *)",
+      "Bash(curl -s -w \"\\\\nstatus -> %{http_code}\\\\n\" -X POST http://localhost:3003/api/V1/auth/login -H \"Content-Type: application/json\" -d '{\"user_email\":\"admin@softwork.local\",\"user_password\":\"Admin@12345\"}')",
+      "Bash(taskkill //F //PID 17872)",
+      "Bash(node --check src/utils/generatePassword.js)",
+      "Bash(node --check src/middlewares/upload.middleware.js)",
+      "Bash(mkdir -p /c/Users/Thinkpad/AppData/Local/Temp/claude/d--project-softwork-project-manager/51558bb9-426e-4ad6-8f3f-2110b3ee475e/scratchpad)",
+      "Read(//c/Users/Thinkpad/AppData/Local/Temp/claude/d--project-softwork-project-manager/51558bb9-426e-4ad6-8f3f-2110b3ee475e/scratchpad/**)",
+      "Bash(taskkill //F //PID 8820)"
+    ],
+    "additionalDirectories": [
+      "D:\\project\\softwork-project-manager"
+    ]
+  }
+}
