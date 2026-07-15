@@ -1,0 +1,366 @@
+<title>อีเมลแจ้งเตือนมอบหมายงาน — Softwork Project Manager</title>
+<style>
+  :root {
+    --accent: #2554c7;
+    --accent-soft: #eaf0fd;
+    --accent-ink: #1a3a94;
+    --ink: #10192e;
+    --ink-soft: #4b5568;
+    --muted: #8b93a7;
+    --surface: #ffffff;
+    --canvas: #eef1f7;
+    --border: #e3e7f0;
+    --status-bg: #eaf0fd;
+    --status-ink: #2554c7;
+    --shadow: 0 1px 2px rgba(16, 25, 46, 0.04), 0 12px 32px -16px rgba(16, 25, 46, 0.18);
+  }
+
+  :root[data-theme="dark"] {
+    --accent: #6f96f5;
+    --accent-soft: #1a2542;
+    --accent-ink: #a9c0fa;
+    --ink: #eef1f7;
+    --ink-soft: #b7bfd1;
+    --muted: #7c869c;
+    --surface: #141a2c;
+    --canvas: #0b0e18;
+    --border: #262e46;
+    --status-bg: #1a2542;
+    --status-ink: #a9c0fa;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 20px 40px -20px rgba(0, 0, 0, 0.6);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --accent: #6f96f5;
+      --accent-soft: #1a2542;
+      --accent-ink: #a9c0fa;
+      --ink: #eef1f7;
+      --ink-soft: #b7bfd1;
+      --muted: #7c869c;
+      --surface: #141a2c;
+      --canvas: #0b0e18;
+      --border: #262e46;
+      --status-bg: #1a2542;
+      --status-ink: #a9c0fa;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 20px 40px -20px rgba(0, 0, 0, 0.6);
+    }
+  }
+
+  @font-face {
+    font-family: "Kanit";
+    src: local("Kanit"), local("Kanit-Regular");
+    font-weight: 400 700;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--canvas);
+    font-family: "Kanit", -apple-system, "Segoe UI", "Noto Sans Thai", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    min-height: 100vh;
+    padding: 40px 16px 64px;
+  }
+
+  .meta-strip {
+    max-width: 600px;
+    margin: 0 auto 18px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .meta-strip .eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .meta-strip .subject {
+    font-size: 13px;
+    color: var(--ink-soft);
+    text-align: right;
+  }
+
+  .meta-strip .subject b { color: var(--ink); font-weight: 600; }
+
+  /* ── Email card ─────────────────────────────────────────── */
+
+  .email {
+    max-width: 600px;
+    margin: 0 auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+
+  .wordmark {
+    padding: 26px 32px 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .wordmark .mark {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    background: var(--accent);
+    flex-shrink: 0;
+    position: relative;
+  }
+
+  .wordmark .mark::after {
+    content: "";
+    position: absolute;
+    inset: 7px;
+    border-radius: 2px;
+    background: var(--surface);
+    opacity: 0.9;
+  }
+
+  .wordmark .name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink);
+    letter-spacing: 0.01em;
+  }
+
+  .wordmark .name span {
+    color: var(--muted);
+    font-weight: 400;
+  }
+
+  .body {
+    padding: 32px;
+  }
+
+  .kicker {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 10px;
+  }
+
+  .headline-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 22px;
+  }
+
+  h1 {
+    font-size: 22px;
+    line-height: 1.35;
+    font-weight: 700;
+    margin: 0;
+    color: var(--ink);
+    text-wrap: balance;
+  }
+
+  .pill {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 100px;
+    background: var(--status-bg);
+    color: var(--status-ink);
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    margin-top: 2px;
+  }
+
+  .pill::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  .lede {
+    font-size: 15px;
+    line-height: 1.7;
+    color: var(--ink-soft);
+    margin: 0 0 26px;
+  }
+
+  .lede b { color: var(--ink); font-weight: 600; }
+
+  .meta-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px 20px;
+    padding: 20px 22px;
+    background: var(--canvas);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 24px;
+  }
+
+  .meta-item .label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 4px;
+  }
+
+  .meta-item .value {
+    font-size: 14.5px;
+    font-weight: 500;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .description {
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    padding: 14px 18px;
+    border-radius: 0 8px 8px 0;
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--ink-soft);
+    margin-bottom: 28px;
+  }
+
+  .description .label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    margin: 0 0 6px;
+  }
+
+  .cta-row { text-align: center; margin-bottom: 6px; }
+
+  .cta {
+    display: inline-block;
+    background: var(--accent);
+    color: #ffffff;
+    font-size: 15px;
+    font-weight: 600;
+    text-decoration: none;
+    padding: 13px 34px;
+    border-radius: 8px;
+  }
+
+  .fallback {
+    text-align: center;
+    font-size: 12px;
+    color: var(--muted);
+    margin: 14px 0 0;
+    word-break: break-all;
+  }
+
+  .fallback a { color: var(--accent); text-decoration: none; }
+
+  .footer {
+    border-top: 1px solid var(--border);
+    padding: 20px 32px 26px;
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--muted);
+  }
+
+  .footer strong { color: var(--ink-soft); font-weight: 600; }
+
+  @media (max-width: 480px) {
+    .body { padding: 24px 20px; }
+    .wordmark { padding: 22px 20px 18px; }
+    .footer { padding: 18px 20px 22px; }
+    .meta-grid { grid-template-columns: 1fr; padding: 16px 18px; }
+    h1 { font-size: 19px; }
+    .headline-row { flex-direction: column; }
+  }
+</style>
+
+<div class="page">
+  <div class="meta-strip">
+    <span class="eyebrow">ตัวอย่างอีเมล</span>
+    <span class="subject">หัวเรื่อง: <b>คุณได้รับมอบหมายงาน: ออกแบบหน้า Login ใหม่</b></span>
+  </div>
+
+  <table class="email" role="presentation" width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td class="wordmark">
+        <div class="mark"></div>
+        <div class="name">Softwork Project Manager <span>· แจ้งเตือนงาน</span></div>
+      </td>
+    </tr>
+    <tr>
+      <td class="body">
+        <p class="kicker">มอบหมายงานใหม่</p>
+
+        <div class="headline-row">
+          <h1>ออกแบบหน้า Login ใหม่</h1>
+          <span class="pill">กำลังทำ</span>
+        </div>
+
+        <p class="lede">
+          <b>ภูเนศ รำเภย</b> มอบหมายงานนี้ให้คุณ ในโปรเจกต์ <b>เว็บไซต์ร้านค้าออนไลน์</b>
+        </p>
+
+        <div class="meta-grid">
+          <div class="meta-item">
+            <p class="label">โปรเจกต์</p>
+            <p class="value">เว็บไซต์ร้านค้าออนไลน์</p>
+          </div>
+          <div class="meta-item">
+            <p class="label">มอบหมายโดย</p>
+            <p class="value">ภูเนศ รำเภย</p>
+          </div>
+          <div class="meta-item">
+            <p class="label">วันเริ่ม</p>
+            <p class="value">15 ก.ค. 2569</p>
+          </div>
+          <div class="meta-item">
+            <p class="label">ครบกำหนด</p>
+            <p class="value">20 ก.ค. 2569</p>
+          </div>
+        </div>
+
+        <div class="description">
+          <p class="label">รายละเอียดงาน</p>
+          ปรับ layout หน้า Login ให้รองรับ dark mode และเพิ่มปุ่ม "เข้าสู่ระบบด้วย Google" ตาม mockup ที่ทีมออกแบบส่งมาในกลุ่ม
+        </div>
+
+        <div class="cta-row">
+          <a class="cta" href="#">ดูรายละเอียดงาน</a>
+        </div>
+        <p class="fallback">
+          หากปุ่มด้านบนใช้งานไม่ได้ ให้เปิดลิงก์นี้แทน:<br />
+          <a href="#">https://softwork.example.com/projects/view?id=PRJ000000000012</a>
+        </p>
+      </td>
+    </tr>
+    <tr>
+      <td class="footer">
+        อีเมลนี้ส่งอัตโนมัติจากระบบ <strong>Softwork Project Manager</strong> เมื่อคุณถูกมอบหมายงานใหม่
+        หากคิดว่าได้รับอีเมลนี้ผิดพลาด กรุณาแจ้งผู้ดูแลระบบของทีมคุณ
+      </td>
+    </tr>
+  </table>
+</div>

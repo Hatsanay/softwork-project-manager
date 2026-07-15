@@ -93,7 +93,7 @@ export default function ViewRolePage() {
                                 </div>
                                 <div className="divide-y divide-gray-50">
                                     {group.bits.map((bit, bi) => (
-                                        <div key={bit.href} className="flex items-center gap-3 px-4 py-2 pl-10">
+                                        <div key={bit.key} className="flex items-center gap-3 px-4 py-2 pl-10">
                                             <input
                                                 type="checkbox"
                                                 checked={checked[start + bi] ?? false}

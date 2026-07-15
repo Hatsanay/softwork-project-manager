@@ -90,10 +90,10 @@ CREATE TABLE tb_login_logs (
 commit;
 
 -- ─── ข้อมูลเริ่มต้น ───────────────────────────────────────────────────────────
--- role admin: เปิดสิทธิ์ทุกบิต (14 บิต ตาม TOTAL_BITS ปัจจุบัน) — ปรับความยาวถ้า bit.tsx เพิ่มเมนู
+-- role admin: เปิดสิทธิ์ทุกบิต (19 บิต ตาม TOTAL_BITS ปัจจุบัน) — ปรับความยาวถ้า bit.tsx เพิ่มเมนู
 -- role_id ใส่ตรงๆ เพราะ seed ครั้งเดียวตอนตั้งระบบ ไม่ได้ผ่าน generateId()
 INSERT INTO tb_roles (role_id, role_name, role_permission, role_type)
-VALUES ('ROL000000000001', 'Admin', '11111111111111', 'S');
+VALUES ('ROL000000000001', 'Admin', '1111111111111111111', 'S');
 
 -- ตั้งค่า counter เริ่มต้นให้ tb_maxID ตามหลัง id ที่ seed ไปแล้ว
 -- ครั้งต่อไปที่ generateId('tb_roles', 'ROL') ทำงาน จะได้ 'ROL000000000002' ต่อ

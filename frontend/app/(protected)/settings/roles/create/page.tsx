@@ -177,7 +177,7 @@ export default function CreateRolePage() {
                                     <div className="divide-y divide-gray-50">
                                         {group.bits.map((bit, bi) => (
                                             <label
-                                                key={bit.href}
+                                                key={bit.key}
                                                 className="flex items-center gap-3 cursor-pointer px-4 py-2 pl-10 hover:bg-blue-50"
                                             >
                                                 <input

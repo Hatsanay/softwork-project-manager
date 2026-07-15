@@ -8,6 +8,25 @@ const { generateTempPassword } = require("../utils/generatePassword");
 
 const UPLOADS_DIR = path.join(__dirname, "..", "..", "uploads");
 
+// ใช้เป็น dropdown เลือกผู้ใช้งาน (เช่น เพิ่มสมาชิกเข้าโปรเจกต์) เลยล็อกแค่ requireAuth
+// ไม่ใช่ usersManagement เพราะ PM ทั่วไปที่ไม่มีสิทธิ์จัดการผู้ใช้งานระบบก็ต้องเพิ่มสมาชิกได้
+async function forSelect(req, res, next) {
+    try {
+        const search = `%${req.query.search ?? ""}%`;
+        const [rows] = await pool.query(
+            `SELECT user_id, CONCAT(user_fname, ' ', user_lname) AS user_fullname
+             FROM tb_users
+             WHERE user_status = 'active' AND (user_fname LIKE ? OR user_lname LIKE ? OR user_email LIKE ?)
+             ORDER BY user_fname
+             LIMIT 20`,
+            [search, search, search]
+        );
+        res.json(rows);
+    } catch (err) {
+        next(err);
+    }
+}
+
 async function me(req, res, next) {
     try {
         const user_id = req.query.user_id;
@@ -270,6 +289,6 @@ async function uploadMyImage(req, res, next) {
 }
 
 module.exports = {
-    me, getAll, getOne, create, update, remove, uploadImage, uploadMyImage,
+    me, forSelect, getAll, getOne, create, update, remove, uploadImage, uploadMyImage,
     changeOwnPassword, resetPassword, updateMyProfile,
 };

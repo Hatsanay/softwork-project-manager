@@ -1,15 +1,22 @@
 "use client";
 
 import { useActionState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import Form from "@/components/ui/form/Form";
 import Input from "@/components/ui/Input/input";
 import Button from "@/components/ui/Button/Button";
 import { handleLogin } from "../actions";
 
+// กัน open redirect — ยอมรับเฉพาะ path ภายในเว็บ (ขึ้นต้นด้วย "/" แต่ไม่ใช่ "//" ที่เบราว์เซอร์ตีความเป็นโดเมนอื่น)
+function safeRedirect(target: string | null): string {
+    if (target && target.startsWith("/") && !target.startsWith("//")) return target;
+    return "/dashboard";
+}
+
 export default function LoginForm() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [state, formAction, pending] = useActionState(handleLogin, null);
 
     useEffect(() => {
@@ -18,9 +25,9 @@ export default function LoginForm() {
             toast.error(state.error);
         } else if ("token" in state) {
             localStorage.setItem("token", state.token);
-            router.push("/dashboard");
+            router.push(safeRedirect(searchParams.get("redirect")));
         }
-    }, [state, router]);
+    }, [state, router, searchParams]);
 
     return (
         <Form cols={1} className="max-w-md mx-auto" action={formAction}>

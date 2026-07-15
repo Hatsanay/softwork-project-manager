@@ -19,6 +19,15 @@ export const MENU_DEFS: MenuItem[] = [
             { key: "deleteUsers",     label: "ลบผู้ใช้งาน",           href: "/users/delete", hidden: true },
         ],
     },
+    {
+        key: "viewAllProjects", label: "โปรเจกต์", href: "/projects",
+        children: [
+            { key: "viewAllProjects", label: "ดูโปรเจกต์ทั้งหมด", href: "/projects", hidden: true },
+            { key: "viewOwnProjects", label: "ดูโปรเจกต์ที่ตัวเองเป็นสมาชิก", href: "/projects", hidden: true },
+            { key: "createProject",   label: "เพิ่มโปรเจกต์",                 href: "/projects/create", hidden: true },
+            { key: "cancelProject",   label: "ยกเลิกโปรเจกต์",               href: "/projects/cancel", hidden: true },
+        ],
+    },
     // { key: "customers", label: "จัดการลูกค้า", href: "/customers" },
     // { key: "payments",  label: "การชำระเงิน",  href: "/payments" },
     // { key: "reports",   label: "รายงาน",       href: "/reports" },
@@ -33,8 +42,22 @@ export const MENU_DEFS: MenuItem[] = [
             { key: "createDepartment",     label: "สร้างแผนก",   href: "/settings/departments/create", hidden: true },
             { key: "editDepartment",       label: "แก้ไขแผนก",   href: "/settings/departments/edit",   hidden: true },
             { key: "deleteDepartment",     label: "ลบแผนก",     href: "/settings/departments/delete", hidden: true },
+            { key: "projectPositionManagement", label: "ตำแหน่งในโปรเจกต์", href: "/settings/project-positions" },
+            { key: "createProjectPosition",     label: "สร้างตำแหน่ง",     href: "/settings/project-positions/create", hidden: true },
+            { key: "editProjectPosition",       label: "แก้ไขตำแหน่ง",     href: "/settings/project-positions/edit",   hidden: true },
+            { key: "deleteProjectPosition",     label: "ลบตำแหน่ง",       href: "/settings/project-positions/delete", hidden: true },
             // loginLogs อยู่ล่างสุดเสมอ — ห้ามแทรกกลาง ตำแหน่ง bit ผูกกับ role_permission ที่เก็บไว้ใน DB แล้ว
             { key: "loginLogs",      label: "Log ข้อมูล",   href: "/settings/logs" },
+        ],
+    },
+    // เพิ่มบิตใหม่ต่อท้ายสุดของลำดับทั้งหมดเสมอ (append-only) ห้ามแทรกก่อนหน้านี้ ไม่งั้น role_permission เดิมในฐานข้อมูลจะเพี้ยน
+    {
+        key: "clientManagement", label: "จัดการลูกค้า", href: "/clients",
+        children: [
+            { key: "clientManagement", label: "จัดการลูกค้า", href: "/clients", hidden: true },
+            { key: "createClient",     label: "สร้างลูกค้า",   href: "/clients/create", hidden: true },
+            { key: "editClient",       label: "แก้ไขลูกค้า",   href: "/clients/edit",   hidden: true },
+            { key: "deleteClient",     label: "ลบลูกค้า",     href: "/clients/delete", hidden: true },
         ],
     },
 ];
@@ -63,6 +86,15 @@ export const PERMISSION_GROUPS: PermGroup[] = [
         ],
     },
     {
+        groupLabel: "โปรเจกต์",
+        bits: [
+            { key: "viewAllProjects", label: "ดูโปรเจกต์ทั้งหมด", href: "/projects" },
+            { key: "viewOwnProjects", label: "ดูโปรเจกต์ที่ตัวเองเป็นสมาชิก", href: "/projects", hidden: true },
+            { key: "createProject",   label: "เพิ่มโปรเจกต์",                 href: "/projects/create", hidden: true },
+            { key: "cancelProject",   label: "ยกเลิกโปรเจกต์",               href: "/projects/cancel", hidden: true },
+        ],
+    },
+    {
         groupLabel: "ตั้งค่าระบบ",
         bits: [
             { key: "roleManagement", label: "จัดการสิทธิ์", href: "/settings/roles" },
@@ -73,7 +105,20 @@ export const PERMISSION_GROUPS: PermGroup[] = [
             { key: "createDepartment",     label: "สร้างแผนก",   href: "/settings/departments/create", hidden: true },
             { key: "editDepartment",       label: "แก้ไขแผนก",   href: "/settings/departments/edit",   hidden: true },
             { key: "deleteDepartment",     label: "ลบแผนก",     href: "/settings/departments/delete", hidden: true },
+            { key: "projectPositionManagement", label: "ตำแหน่งในโปรเจกต์", href: "/settings/project-positions" },
+            { key: "createProjectPosition",     label: "สร้างตำแหน่ง",     href: "/settings/project-positions/create", hidden: true },
+            { key: "editProjectPosition",       label: "แก้ไขตำแหน่ง",     href: "/settings/project-positions/edit",   hidden: true },
+            { key: "deleteProjectPosition",     label: "ลบตำแหน่ง",       href: "/settings/project-positions/delete", hidden: true },
             { key: "loginLogs",      label: "Log ข้อมูล",   href: "/settings/logs" },
+        ],
+    },
+    {
+        groupLabel: "จัดการลูกค้า",
+        bits: [
+            { key: "clientManagement", label: "จัดการลูกค้า", href: "/clients" },
+            { key: "createClient",     label: "สร้างลูกค้า",   href: "/clients/create", hidden: true },
+            { key: "editClient",       label: "แก้ไขลูกค้า",   href: "/clients/edit",   hidden: true },
+            { key: "deleteClient",     label: "ลบลูกค้า",     href: "/clients/delete", hidden: true },
         ],
     },
 ];

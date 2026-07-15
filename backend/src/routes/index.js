@@ -4,8 +4,14 @@ const userController = require("../controllers/user.controller");
 const roleController = require("../controllers/role.controller");
 const logController = require("../controllers/log.controller");
 const departmentController = require("../controllers/department.controller");
+const projectPositionController = require("../controllers/project-position.controller");
+const clientController = require("../controllers/client.controller");
+const projectController = require("../controllers/project.controller");
+const taskController = require("../controllers/task.controller");
+const shareController = require("../controllers/share.controller");
 const { requireAuth } = require("../middlewares/auth.middleware");
 const { requirePermission } = require("../middlewares/permission.middleware");
+const { requireProjectMember, requireProjectPermission } = require("../middlewares/projectPermission.middleware");
 const { uploadImage } = require("../middlewares/upload.middleware");
 
 const router = express.Router();
@@ -28,6 +34,8 @@ router.put(
     uploadImage.single("image"),
     userController.uploadMyImage
 );
+// dropdown เลือกผู้ใช้งาน (เช่น เพิ่มสมาชิกโปรเจกต์) เลยล็อกแค่ requireAuth ต้องมาก่อน /:id
+router.get("/V1/users/for-select", requireAuth, userController.forSelect);
 router.get("/V1/users", requireAuth, requirePermission("usersManagement"), userController.getAll);
 router.get("/V1/users/:id", requireAuth, requirePermission("usersManagement"), userController.getOne);
 router.post("/V1/users", requireAuth, requirePermission("createUsers"), userController.create);
@@ -59,8 +67,105 @@ router.post("/V1/departments", requireAuth, requirePermission("createDepartment"
 router.put("/V1/departments/:id", requireAuth, requirePermission("editDepartment"), departmentController.update);
 router.delete("/V1/departments/:id", requireAuth, requirePermission("deleteDepartment"), departmentController.remove);
 
+// ─── project positions ──────────────────────────────────────────────────────
+// getAll/getOne ใช้ทั้งหน้า "จัดการตำแหน่ง" และ dropdown ตอนเพิ่ม/แก้ตำแหน่งสมาชิกในโปรเจกต์
+// เลยล็อกแค่ requireAuth (เหมือน getRole/getDepartment) ส่วน create/edit/delete ยังคุมด้วยสิทธิ์ระบบตามเดิม
+// สิทธิ์พวกนี้ = ใครจัดการ "นิยาม" ตำแหน่งได้ คนละเรื่องกับ position_permission ภายในตัวตำแหน่งเอง
+router.get("/V1/project-positions", requireAuth, projectPositionController.getAll);
+router.get("/V1/project-positions/:id", requireAuth, projectPositionController.getOne);
+router.post("/V1/project-positions", requireAuth, requirePermission("createProjectPosition"), projectPositionController.create);
+router.put("/V1/project-positions/:id", requireAuth, requirePermission("editProjectPosition"), projectPositionController.update);
+router.delete("/V1/project-positions/:id", requireAuth, requirePermission("deleteProjectPosition"), projectPositionController.remove);
+
 // ─── logs ───────────────────────────────────────────────────────────────────
 router.get("/V1/logs", requireAuth, requirePermission("loginLogs"), logController.getAll);
 router.delete("/V1/logs", requireAuth, requirePermission("loginLogs"), logController.removeAll);
+
+// ─── clients ────────────────────────────────────────────────────────────────
+// getAll/getOne ใช้ทั้งหน้า "จัดการลูกค้า" และ dropdown ตอนสร้าง/แก้โปรเจกต์ เลยล็อกแค่ requireAuth
+// เหมือน roles/departments/project-positions ส่วน create/edit/delete มีสิทธิ์แยกของตัวเอง
+router.get("/V1/clients", requireAuth, clientController.getAll);
+router.get("/V1/clients/:id", requireAuth, clientController.getOne);
+router.post("/V1/clients", requireAuth, requirePermission("createClient"), clientController.create);
+router.put("/V1/clients/:id", requireAuth, requirePermission("editClient"), clientController.update);
+router.delete("/V1/clients/:id", requireAuth, requirePermission("deleteClient"), clientController.remove);
+
+// ─── projects ───────────────────────────────────────────────────────────────
+// list ต้องมี viewAllProjects (เห็นทุกโปรเจกต์) หรือ viewOwnProjects (เห็นแค่ที่ตัวเองเป็นสมาชิก) อย่างใดอย่างหนึ่ง — เช็คว่าอันไหนใน controller
+// create ต้องมีสิทธิ์ createProject โดยเฉพาะ — ดู/แก้ไข "โปรเจกต์ที่มีอยู่แล้ว" ต้องเป็นสมาชิกโปรเจกต์นั้นก่อนเสมอ
+// แล้วจะทำอะไรได้ต่อ (แก้ข้อมูล/ลบ/จัดการสมาชิก/จัดการลิงก์) ขึ้นกับตำแหน่งที่ถือในโปรเจกต์นั้น (requireProjectPermission)
+router.get("/V1/projects", requireAuth, requirePermission(["viewAllProjects", "viewOwnProjects"]), projectController.getAll);
+router.post("/V1/projects", requireAuth, requirePermission("createProject"), projectController.create);
+router.get("/V1/projects/:id", requireAuth, requireProjectMember, projectController.getOne);
+router.get("/V1/projects/:id/my-permissions", requireAuth, requireProjectMember, projectController.getMyPermissions);
+router.put(
+    "/V1/projects/:id", requireAuth, requireProjectMember,
+    requireProjectPermission("editProjectInfo"), projectController.update
+);
+router.delete(
+    "/V1/projects/:id", requireAuth, requireProjectMember,
+    requireProjectPermission("deleteProject"), projectController.remove
+);
+router.put(
+    "/V1/projects/:id/share/regenerate", requireAuth, requireProjectMember,
+    requireProjectPermission("manageShareLink"), projectController.regenerateShareLink
+);
+router.put(
+    "/V1/projects/:id/share/toggle", requireAuth, requireProjectMember,
+    requireProjectPermission("manageShareLink"), projectController.toggleShareEnabled
+);
+router.post(
+    "/V1/projects/:id/share/send-email", requireAuth, requireProjectMember,
+    requireProjectPermission("manageShareLink"), projectController.sendShareLinkEmail
+);
+router.put(
+    "/V1/projects/:id/task-weight/toggle", requireAuth, requireProjectMember,
+    requireProjectPermission("editProjectInfo"), projectController.toggleTaskWeight
+);
+// ยกเลิก/กู้คืนโปรเจกต์เป็นสิทธิ์ระดับระบบ (cancelProject) ไม่ต้องเป็นสมาชิกโปรเจกต์นั้นก็ทำได้ — คนละเรื่องกับ deleteProject ที่ต้องเป็นสมาชิก
+router.put("/V1/projects/:id/cancel", requireAuth, requirePermission("cancelProject"), projectController.cancel);
+router.put("/V1/projects/:id/reactivate", requireAuth, requirePermission("cancelProject"), projectController.reactivate);
+
+// ─── project members ────────────────────────────────────────────────────────
+router.get("/V1/projects/:id/members", requireAuth, requireProjectMember, projectController.getMembers);
+router.post(
+    "/V1/projects/:id/members", requireAuth, requireProjectMember,
+    requireProjectPermission("manageMembers"), projectController.addMember
+);
+router.put(
+    "/V1/projects/:id/members/:memberId", requireAuth, requireProjectMember,
+    requireProjectPermission("manageMembers"), projectController.updateMemberPositions
+);
+router.delete(
+    "/V1/projects/:id/members/:memberId", requireAuth, requireProjectMember,
+    requireProjectPermission("manageMembers"), projectController.removeMember
+);
+
+// ─── tasks (ซ้อนใต้ project) ─────────────────────────────────────────────────
+router.get("/V1/projects/:projectId/tasks", requireAuth, requireProjectMember, taskController.getAll);
+// เพิ่ม task ได้ถ้ามีสิทธิ์ addTask หรือ (เพิ่ม subtask ให้ task ที่ตัวเองรับผิดชอบ + มีสิทธิ์ addOwnSubtask) — เช็คในตัว controller เอง
+router.post(
+    "/V1/projects/:projectId/tasks", requireAuth, requireProjectMember,
+    taskController.create
+);
+router.get("/V1/projects/:projectId/activity", requireAuth, requireProjectMember, taskController.getActivity);
+router.get("/V1/projects/:projectId/tasks/:id", requireAuth, requireProjectMember, taskController.getOne);
+// แก้ไข task ได้ถ้ามีสิทธิ์ editTask หรือเป็นผู้รับผิดชอบของ task นั้นเอง — เช็คในตัว controller เอง
+router.put(
+    "/V1/projects/:projectId/tasks/:id", requireAuth, requireProjectMember,
+    taskController.update
+);
+// เปลี่ยนสถานะงานตัวเองทำได้เสมอ (เช็คในตัว controller เอง) เลยล็อกแค่ requireProjectMember ที่ route
+router.put(
+    "/V1/projects/:projectId/tasks/:id/status", requireAuth, requireProjectMember,
+    taskController.updateStatus
+);
+router.delete(
+    "/V1/projects/:projectId/tasks/:id", requireAuth, requireProjectMember,
+    requireProjectPermission("deleteTask"), taskController.remove
+);
+
+// ─── public share (ลูกค้าดู ไม่ต้อง login) ───────────────────────────────────
+router.get("/V1/share/:token", shareController.getSharedProject);
 
 module.exports = router;
