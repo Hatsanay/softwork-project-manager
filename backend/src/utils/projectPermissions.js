@@ -20,6 +20,24 @@ const PROJECT_PERMISSION_KEYS = [
     "editProjectInfo",
     "manageMembers",
     "manageShareLink",
+    // เกี่ยวกับปัญหาใน Task (เรียงใหญ่ไปเล็ก) — แยกบิตจาก subtask ทั้งหมด ไม่ใช้ร่วมกันเหมือน task/subtask ปกติ
+    "deleteIssueTask",
+    "editIssueTask",
+    "changeIssueStatusTask",
+    "addIssueTask",
+    "deleteOwnIssueTask",
+    "editOwnIssueTask",
+    "changeOwnIssueStatusTask",
+    "addOwnIssueTask",
+    // เกี่ยวกับปัญหาใน Subtask (เรียงใหญ่ไปเล็ก)
+    "deleteIssueSubtask",
+    "editIssueSubtask",
+    "changeIssueStatusSubtask",
+    "addIssueSubtask",
+    "deleteOwnIssueSubtask",
+    "editOwnIssueSubtask",
+    "changeOwnIssueStatusSubtask",
+    "addOwnIssueSubtask",
 ];
 
 const PROJECT_BIT_INDEX = Object.fromEntries(PROJECT_PERMISSION_KEYS.map((key, i) => [key, i]));

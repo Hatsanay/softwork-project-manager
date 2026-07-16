@@ -8,6 +8,9 @@ const projectPositionController = require("../controllers/project-position.contr
 const clientController = require("../controllers/client.controller");
 const projectController = require("../controllers/project.controller");
 const taskController = require("../controllers/task.controller");
+const issueController = require("../controllers/issue.controller");
+const chatController = require("../controllers/chat.controller");
+const dashboardController = require("../controllers/dashboard.controller");
 const shareController = require("../controllers/share.controller");
 const { requireAuth } = require("../middlewares/auth.middleware");
 const { requirePermission } = require("../middlewares/permission.middleware");
@@ -17,6 +20,11 @@ const { uploadImage } = require("../middlewares/upload.middleware");
 const router = express.Router();
 
 router.get("/health", (req, res) => res.json({ status: "ok" }));
+
+// ─── dashboard ──────────────────────────────────────────────────────────────
+// ใช้สิทธิ์ "dashboard" ที่มีอยู่แล้วคุมว่าเข้าหน้านี้ได้ไหม ส่วนแต่ละ widget ข้างในสโคปด้วยสิทธิ์เดิม
+// (viewAllProjects/viewOwnProjects) หรือเป็นข้อมูลส่วนตัวของผู้ใช้เอง ไม่มีบิตแยกสำหรับ dashboard โดยเฉพาะ
+router.get("/V1/dashboard/summary", requireAuth, requirePermission("dashboard"), dashboardController.getSummary);
 
 // ─── auth ───────────────────────────────────────────────────────────────────
 router.post("/V1/auth/login", authController.login);
@@ -163,6 +171,41 @@ router.put(
 router.delete(
     "/V1/projects/:projectId/tasks/:id", requireAuth, requireProjectMember,
     requireProjectPermission("deleteTask"), taskController.remove
+);
+
+// ─── issues (ปัญหาของ task/subtask ซ้อนใต้ project) ──────────────────────────
+// สิทธิ์ทำอะไรได้บ้าง (add/edit/delete/changeStatus x all/own x task/subtask) เช็คในตัว controller เอง
+// เพราะต้องรู้ว่า task นั้นเป็น subtask หรือไม่ก่อนถึงจะเลือกบิตที่ถูกต้องมาเช็คได้
+router.get(
+    "/V1/projects/:projectId/tasks/:taskId/issues", requireAuth, requireProjectMember,
+    issueController.getForTask
+);
+router.post(
+    "/V1/projects/:projectId/tasks/:taskId/issues", requireAuth, requireProjectMember,
+    uploadImage.array("images", 5), issueController.create
+);
+router.put(
+    "/V1/projects/:projectId/issues/:issueId", requireAuth, requireProjectMember,
+    uploadImage.array("images", 5), issueController.update
+);
+router.put(
+    "/V1/projects/:projectId/issues/:issueId/status", requireAuth, requireProjectMember,
+    issueController.updateStatus
+);
+router.delete(
+    "/V1/projects/:projectId/issues/:issueId", requireAuth, requireProjectMember,
+    issueController.remove
+);
+
+// ─── chat (แชทของ task/subtask) ──────────────────────────────────────────────
+// สมาชิกโปรเจกต์ทุกคนแชทได้ — ล็อกแค่ requireProjectMember ไม่มีสิทธิ์เฉพาะเหมือน issue
+router.get(
+    "/V1/projects/:projectId/tasks/:taskId/chat", requireAuth, requireProjectMember,
+    chatController.getForTask
+);
+router.post(
+    "/V1/projects/:projectId/tasks/:taskId/chat", requireAuth, requireProjectMember,
+    uploadImage.array("images", 5), chatController.create
 );
 
 // ─── public share (ลูกค้าดู ไม่ต้อง login) ───────────────────────────────────

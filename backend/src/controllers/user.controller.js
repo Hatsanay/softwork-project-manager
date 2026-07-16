@@ -3,7 +3,7 @@ const sharp = require("sharp");
 const fs = require("fs/promises");
 const path = require("path");
 const pool = require("../config/db");
-const { generateId } = require("../utils/generateId");
+const { generateDailyId } = require("../utils/generateDailyId");
 const { generateTempPassword } = require("../utils/generatePassword");
 
 const UPLOADS_DIR = path.join(__dirname, "..", "..", "uploads");
@@ -140,7 +140,7 @@ async function create(req, res, next) {
         // ไม่รับรหัสผ่านจากฟอร์มแล้ว — gen รหัสผ่านชั่วคราวให้แทน แล้วบังคับเปลี่ยนตอน login ครั้งแรก
         const temp_password = generateTempPassword();
         const passwordHash = await bcrypt.hash(temp_password, 10);
-        const user_id = await generateId("tb_users", "USR");
+        const user_id = await generateDailyId("tb_users", "user_id", "USE");
 
         await pool.query(
             `INSERT INTO tb_users

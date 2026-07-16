@@ -4,7 +4,7 @@ const { signToken } = require("../utils/jwt");
 const { generateDailyId } = require("../utils/generateDailyId");
 
 async function writeLoginLog({ user_id, email, fullname, action, req }) {
-    const log_id = await generateDailyId("tb_login_logs", "log_id");
+    const log_id = await generateDailyId("tb_login_logs", "log_id", "LOG");
     await pool.query(
         `INSERT INTO tb_login_logs
             (log_id, log_user_id, log_email, log_fullname, log_action, log_ip_address, log_user_agent)

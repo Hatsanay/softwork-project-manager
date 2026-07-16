@@ -1,5 +1,5 @@
 const pool = require("../config/db");
-const { generateId } = require("../utils/generateId");
+const { generateDailyId } = require("../utils/generateDailyId");
 
 async function getAll(req, res, next) {
     try {
@@ -57,7 +57,7 @@ async function create(req, res, next) {
             return res.status(400).json({ message: "กรอกข้อมูลไม่ครบ" });
         }
 
-        const role_id = await generateId("tb_roles", "ROL");
+        const role_id = await generateDailyId("tb_roles", "role_id", "ROL");
 
         await pool.query(
             `INSERT INTO tb_roles (role_id, role_name, role_permission, role_granted_by_id, role_type, role_department)

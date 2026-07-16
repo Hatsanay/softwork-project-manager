@@ -1,5 +1,5 @@
 const pool = require("../config/db");
-const { generateId } = require("../utils/generateId");
+const { generateDailyId } = require("../utils/generateDailyId");
 
 async function getAll(req, res, next) {
     try {
@@ -50,7 +50,7 @@ async function create(req, res, next) {
         const { dep_name } = req.body;
         if (!dep_name) return res.status(400).json({ message: "กรุณากรอกชื่อแผนก" });
 
-        const dep_id = await generateId("tb_department", "DEP");
+        const dep_id = await generateDailyId("tb_department", "dep_id", "DEP");
         await pool.query("INSERT INTO tb_department (dep_id, dep_name) VALUES (?, ?)", [
             dep_id,
             dep_name,

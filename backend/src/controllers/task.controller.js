@@ -1,12 +1,11 @@
 const pool = require("../config/db");
-const { generateId } = require("../utils/generateId");
 const { generateDailyId } = require("../utils/generateDailyId");
 const { recomputeProjectProgress } = require("../utils/projectProgress");
 const { hasProjectBit } = require("../utils/projectPermissions");
 const { sendTaskAssignedEmail } = require("../utils/mailer");
 
 async function writeTaskLog({ task_id, user_id, action, old_value, new_value, message }) {
-    const log_id = await generateDailyId("tb_task_activity_log", "log_id");
+    const log_id = await generateDailyId("tb_task_activity_log", "log_id", "LOG");
 
     let fullname = null;
     if (user_id) {
@@ -137,6 +136,49 @@ async function notifyNewAssignees({
     }
 }
 
+// นับปัญหาที่ "เปิดอยู่" ของ task/subtask นั้นๆ เองเท่านั้น — ไม่รวม/ไม่นับจากปัญหาของ subtask ลูก
+async function attachIssueCounts(projectId, tasks) {
+    if (tasks.length === 0) return tasks;
+    const [rows] = await pool.query(
+        `SELECT i.task_id, COUNT(*) AS open_issue_count
+         FROM tb_task_issues i
+         JOIN tb_tasks t ON t.task_id = i.task_id
+         WHERE t.project_id = ? AND i.issue_status = 'open'
+         GROUP BY i.task_id`,
+        [projectId]
+    );
+    const countMap = Object.fromEntries(rows.map((r) => [r.task_id, r.open_issue_count]));
+    const withOwnCounts = tasks.map((t) => ({ ...t, open_issue_count: countMap[t.task_id] ?? 0 }));
+
+    // ผลรวมปัญหาที่เปิดอยู่ของ subtask ทั้งหมด แยกเป็นอีกฟิลด์ต่างหาก (ไม่ปนกับ open_issue_count ของ task เอง)
+    // ใช้แสดงเป็นตัวเลขสีน้ำเงินคู่กับตัวเลขสีแดง (ของ task เอง) ในตารางหลัก
+    return withOwnCounts.map((t) => ({
+        ...t,
+        subtask_open_issue_count: withOwnCounts
+            .filter((c) => c.task_parent_id === t.task_id)
+            .reduce((sum, c) => sum + c.open_issue_count, 0),
+    }));
+}
+
+// นับข้อความแชทที่ยังไม่ได้อ่านของผู้ใช้คนนี้ ต่อ task ของตัวเอง (ไม่รวม/ไม่นับจาก subtask ลูก เหมือน issue count)
+// ไม่นับข้อความที่ตัวเองส่งเอง — และ task ที่ไม่เคยเปิดดูแชทเลยถือว่าทุกข้อความยังไม่ได้อ่านหมด
+async function attachUnreadChatCounts(projectId, userId, tasks) {
+    if (tasks.length === 0) return tasks;
+    const [rows] = await pool.query(
+        `SELECT c.task_id, COUNT(*) AS unread_chat_count
+         FROM tb_task_chat_messages c
+         JOIN tb_tasks t ON t.task_id = c.task_id
+         LEFT JOIN tb_task_chat_reads r ON r.task_id = c.task_id AND r.user_id = ?
+         WHERE t.project_id = ?
+           AND (c.user_id IS NULL OR c.user_id != ?)
+           AND (r.last_read_at IS NULL OR c.message_created_at > r.last_read_at)
+         GROUP BY c.task_id`,
+        [userId, projectId, userId]
+    );
+    const countMap = Object.fromEntries(rows.map((r) => [r.task_id, r.unread_chat_count]));
+    return tasks.map((t) => ({ ...t, unread_chat_count: countMap[t.task_id] ?? 0 }));
+}
+
 async function getAll(req, res, next) {
     try {
         const [rows] = await pool.query(
@@ -148,7 +190,9 @@ async function getAll(req, res, next) {
              ORDER BY t.task_sort_order ASC, t.task_id ASC`,
             [req.params.projectId]
         );
-        const data = await attachAssignees(req.params.projectId, rows);
+        let data = await attachAssignees(req.params.projectId, rows);
+        data = await attachIssueCounts(req.params.projectId, data);
+        data = await attachUnreadChatCounts(req.params.projectId, req.user.user_id, data);
         res.json({ data });
     } catch (err) {
         next(err);
@@ -197,7 +241,7 @@ async function create(req, res, next) {
     const allowed = await canAddTask(req.params.projectId, task_parent_id || null, req.user.user_id);
     if (!allowed) return res.status(403).json({ message: "ไม่มีสิทธิ์เพิ่ม task นี้" });
 
-    const task_id = await generateId("tb_tasks", "TSK");
+    const task_id = await generateDailyId("tb_tasks", "task_id", "TAS");
     const conn = await pool.getConnection();
     try {
         await conn.beginTransaction();

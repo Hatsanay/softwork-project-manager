@@ -83,6 +83,80 @@ export const PROJECT_PERMISSION_GROUPS: ProjectPermissionGroup[] = [
             },
         ],
     },
+    {
+        groupLabel: "เกี่ยวกับปัญหาใน Task",
+        bits: [
+            {
+                key: "deleteIssueTask", label: "ลบปัญหาใน task ทุกอัน",
+                description: "ลบปัญหาที่แจ้งไว้ใน task ระดับบนสุดของใครก็ได้ในโปรเจกต์นี้",
+            },
+            {
+                key: "editIssueTask", label: "แก้ไขปัญหาใน task ทุกอัน",
+                description: "แก้ไขชื่อ/รายละเอียดปัญหาที่แจ้งไว้ใน task ระดับบนสุดของใครก็ได้ (ไม่รวมเปลี่ยนสถานะ)",
+            },
+            {
+                key: "changeIssueStatusTask", label: "เปลี่ยนสถานะปัญหาใน task ทุกอัน",
+                description: "เปลี่ยนสถานะปัญหา (เปิดอยู่ ⇄ แก้ไขแล้ว) ใน task ระดับบนสุดของใครก็ได้",
+            },
+            {
+                key: "addIssueTask", label: "เพิ่มปัญหาใน task ทุกอัน",
+                description: "แจ้งปัญหาใหม่ใน task ระดับบนสุดของใครก็ได้ในโปรเจกต์นี้",
+            },
+            {
+                key: "deleteOwnIssueTask", label: "ลบปัญหาใน task ของตัวเอง",
+                description: "ลบปัญหาที่แจ้งไว้ใน task ที่ตัวเองเป็นผู้รับผิดชอบได้ โดยไม่ต้องมีสิทธิ์ \"ลบปัญหาใน task ทุกอัน\"",
+            },
+            {
+                key: "editOwnIssueTask", label: "แก้ไขปัญหาใน task ของตัวเอง",
+                description: "แก้ไขปัญหาที่แจ้งไว้ใน task ที่ตัวเองเป็นผู้รับผิดชอบได้ โดยไม่ต้องมีสิทธิ์ \"แก้ไขปัญหาใน task ทุกอัน\"",
+            },
+            {
+                key: "changeOwnIssueStatusTask", label: "เปลี่ยนสถานะปัญหาใน task ของตัวเอง",
+                description: "เปลี่ยนสถานะปัญหาใน task ที่ตัวเองเป็นผู้รับผิดชอบได้ โดยไม่ต้องมีสิทธิ์ \"เปลี่ยนสถานะปัญหาใน task ทุกอัน\"",
+            },
+            {
+                key: "addOwnIssueTask", label: "เพิ่มปัญหาใน task ของตัวเอง",
+                description: "แจ้งปัญหาใหม่ใน task ที่ตัวเองเป็นผู้รับผิดชอบได้ โดยไม่ต้องมีสิทธิ์ \"เพิ่มปัญหาใน task ทุกอัน\"",
+            },
+        ],
+    },
+    {
+        groupLabel: "เกี่ยวกับปัญหาใน Subtask",
+        bits: [
+            {
+                key: "deleteIssueSubtask", label: "ลบปัญหาใน subtask ทุกอัน",
+                description: "ลบปัญหาที่แจ้งไว้ใน subtask ของใครก็ได้ในโปรเจกต์นี้",
+            },
+            {
+                key: "editIssueSubtask", label: "แก้ไขปัญหาใน subtask ทุกอัน",
+                description: "แก้ไขชื่อ/รายละเอียดปัญหาที่แจ้งไว้ใน subtask ของใครก็ได้ (ไม่รวมเปลี่ยนสถานะ)",
+            },
+            {
+                key: "changeIssueStatusSubtask", label: "เปลี่ยนสถานะปัญหาใน subtask ทุกอัน",
+                description: "เปลี่ยนสถานะปัญหา (เปิดอยู่ ⇄ แก้ไขแล้ว) ใน subtask ของใครก็ได้",
+            },
+            {
+                key: "addIssueSubtask", label: "เพิ่มปัญหาใน subtask ทุกอัน",
+                description: "แจ้งปัญหาใหม่ใน subtask ของใครก็ได้ในโปรเจกต์นี้",
+            },
+            {
+                key: "deleteOwnIssueSubtask", label: "ลบปัญหาใน subtask ของตัวเอง",
+                description: "ลบปัญหาที่แจ้งไว้ใน subtask ที่ตัวเองเป็นผู้รับผิดชอบได้ โดยไม่ต้องมีสิทธิ์ \"ลบปัญหาใน subtask ทุกอัน\" — ความรับผิดชอบต่อ task แม่ไม่นับ",
+            },
+            {
+                key: "editOwnIssueSubtask", label: "แก้ไขปัญหาใน subtask ของตัวเอง",
+                description: "แก้ไขปัญหาที่แจ้งไว้ใน subtask ที่ตัวเองเป็นผู้รับผิดชอบได้ โดยไม่ต้องมีสิทธิ์ \"แก้ไขปัญหาใน subtask ทุกอัน\" — ความรับผิดชอบต่อ task แม่ไม่นับ",
+            },
+            {
+                key: "changeOwnIssueStatusSubtask", label: "เปลี่ยนสถานะปัญหาใน subtask ของตัวเอง",
+                description: "เปลี่ยนสถานะปัญหาใน subtask ที่ตัวเองเป็นผู้รับผิดชอบได้ โดยไม่ต้องมีสิทธิ์ \"เปลี่ยนสถานะปัญหาใน subtask ทุกอัน\" — ความรับผิดชอบต่อ task แม่ไม่นับ",
+            },
+            {
+                key: "addOwnIssueSubtask", label: "เพิ่มปัญหาใน subtask ของตัวเอง",
+                description: "แจ้งปัญหาใหม่ใน subtask ที่ตัวเองเป็นผู้รับผิดชอบได้ โดยไม่ต้องมีสิทธิ์ \"เพิ่มปัญหาใน subtask ทุกอัน\" — ความรับผิดชอบต่อ task แม่ไม่นับ",
+            },
+        ],
+    },
 ];
 
 // Start index (ใน flat bitmask) ของแต่ละกลุ่ม

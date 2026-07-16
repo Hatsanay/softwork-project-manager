@@ -1,5 +1,5 @@
 const pool = require("../config/db");
-const { generateId } = require("../utils/generateId");
+const { generateDailyId } = require("../utils/generateDailyId");
 
 async function getAll(req, res, next) {
     try {
@@ -42,7 +42,7 @@ async function create(req, res, next) {
         const { client_name, client_company, client_email, client_phone } = req.body;
         if (!client_name) return res.status(400).json({ message: "กรุณากรอกชื่อลูกค้า" });
 
-        const client_id = await generateId("tb_clients", "CLI");
+        const client_id = await generateDailyId("tb_clients", "client_id", "CLI");
         await pool.query(
             "INSERT INTO tb_clients (client_id, client_name, client_company, client_email, client_phone) VALUES (?, ?, ?, ?, ?)",
             [client_id, client_name, client_company || null, client_email || null, client_phone || null]

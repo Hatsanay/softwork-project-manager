@@ -8,18 +8,27 @@ function getDateYYYYMMDD() {
     return `${yyyy}${mm}${dd}`;
 }
 
-// yyyymmddxxxxxxx (15 ตัว, running 7 หลัก) — เลขรันรีเซ็ตใหม่ทุกวัน เหมาะกับตารางที่มีข้อมูลเยอะรายวันอย่าง log
-// หา running ล่าสุดจากตัวตารางเองแทนการใช้ tb_maxID เพราะ id ผูกกับวันที่ ไม่ใช่ counter ต่อเนื่องยาวๆ แบบ user/role
-async function generateDailyId(table, column) {
+// PREFIX + yyyymmdd + xxxxxxx (18 ตัว, เลขรัน 7 หลักท้ายรีเซ็ตใหม่ทุกวันต่อตาราง)
+// หา running ล่าสุดจากตัวตารางเองเป็นหลัก (ไม่ได้ใช้ tb_maxID มาคำนวณเลขถัดไป เพราะ id ผูกกับวันที่ ไม่ใช่ counter ต่อเนื่องยาวๆ)
+// แต่ยังอัปเดต tb_maxID ไว้เป็น bookkeeping คู่ขนานทุกครั้งที่ออก id ใหม่ (เก็บ "id ล่าสุดที่เคยออก" ต่อตาราง ไว้ดูอ้างอิงได้)
+async function generateDailyId(table, column, prefix) {
     const date = getDateYYYYMMDD();
     const [rows] = await pool.query(
         `SELECT ${column} FROM ${table} WHERE ${column} LIKE ? ORDER BY ${column} DESC LIMIT 1`,
-        [`${date}%`]
+        [`${prefix}${date}%`]
     );
     const running = rows.length > 0
         ? parseInt(rows[0][column].slice(-7), 10) + 1
         : 1;
-    return date + String(running).padStart(7, "0");
+    const id = prefix + date + String(running).padStart(7, "0");
+
+    await pool.query(
+        `INSERT INTO tb_maxID (max_table, max_id) VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE max_id = VALUES(max_id)`,
+        [table, id]
+    );
+
+    return id;
 }
 
 module.exports = { generateDailyId };

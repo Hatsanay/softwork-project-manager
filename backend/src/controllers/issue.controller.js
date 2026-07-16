@@ -1,0 +1,225 @@
+const sharp = require("sharp");
+const fs = require("fs/promises");
+const path = require("path");
+const pool = require("../config/db");
+const { generateDailyId } = require("../utils/generateDailyId");
+const { hasProjectBit } = require("../utils/projectPermissions");
+
+const UPLOADS_DIR = path.join(__dirname, "..", "..", "uploads");
+
+async function isAssignee(taskId, userId) {
+    const [rows] = await pool.query(
+        "SELECT 1 FROM tb_task_assignees WHERE task_id = ? AND user_id = ?",
+        [taskId, userId]
+    );
+    return rows.length > 0;
+}
+
+async function hasProjectPositionBit(projectId, userId, key) {
+    const [permRows] = await pool.query(
+        `SELECT pp.position_permission
+         FROM tb_project_members pm
+         JOIN tb_project_member_positions pmp ON pmp.project_member_id = pm.project_member_id
+         JOIN tb_project_positions pp ON pp.position_id = pmp.position_id
+         WHERE pm.project_id = ? AND pm.user_id = ?`,
+        [projectId, userId]
+    );
+    return permRows.some((r) => hasProjectBit(r.position_permission, key));
+}
+
+// บิตของปัญหาแยก task/subtask กันเต็มรูปแบบ ไม่ใช้ร่วมกันแบบที่ task/subtask ปกติทำ (ตามที่ผู้ใช้ระบุไว้ชัดเจน)
+// "ของตัวเอง" หมายถึงเป็นผู้รับผิดชอบ (assignee) ของ task/subtask นั้นเอง — ไม่ใช่คนที่แจ้งปัญหา
+// action: "add" | "edit" | "delete" | "changeStatus" — ชื่อบิต changeStatus สลับคำเป็น changeIssueStatus* ไม่ใช่ changeStatusIssue*
+const ISSUE_BIT_PREFIX = {
+    add: "addIssue", edit: "editIssue", delete: "deleteIssue", changeStatus: "changeIssueStatus",
+};
+const ISSUE_OWN_BIT_PREFIX = {
+    add: "addOwnIssue", edit: "editOwnIssue", delete: "deleteOwnIssue", changeStatus: "changeOwnIssueStatus",
+};
+
+async function canDoIssueAction(action, projectId, task, userId) {
+    const isSubtask = !!task.task_parent_id;
+    const scope = isSubtask ? "Subtask" : "Task";
+    const allKey = `${ISSUE_BIT_PREFIX[action]}${scope}`;
+    const ownKey = `${ISSUE_OWN_BIT_PREFIX[action]}${scope}`;
+
+    if (await hasProjectPositionBit(projectId, userId, allKey)) return true;
+    if ((await isAssignee(task.task_id, userId)) && (await hasProjectPositionBit(projectId, userId, ownKey))) return true;
+    return false;
+}
+
+// ย่อ+บีบเป็น WebP ให้ไฟล์เล็กลงมาก แต่คงสัดส่วนภาพไว้ (ต่างจากรูปโปรไฟล์ที่ครอปเป็นสี่เหลี่ยมจัตุรัส)
+// เพราะรูปแนบปัญหามักเป็นภาพหน้าจอ/หลักฐาน สัดส่วนเดิมสำคัญกว่า
+async function saveIssueImages(issueId, files) {
+    for (const file of files ?? []) {
+        const filename = `issue-${Date.now()}-${Math.round(Math.random() * 1e9)}.webp`;
+        await sharp(file.buffer)
+            .resize(1600, 1600, { fit: "inside", withoutEnlargement: true })
+            .webp({ quality: 78 })
+            .toFile(path.join(UPLOADS_DIR, filename));
+
+        const image_id = await generateDailyId("tb_task_issue_images", "image_id", "IMA");
+        await pool.query(
+            "INSERT INTO tb_task_issue_images (image_id, issue_id, image_url) VALUES (?, ?, ?)",
+            [image_id, issueId, `/uploads/${filename}`]
+        );
+    }
+}
+
+async function deleteImages(imageRows) {
+    if (!imageRows.length) return;
+    await pool.query("DELETE FROM tb_task_issue_images WHERE image_id IN (?)", [imageRows.map((r) => r.image_id)]);
+    for (const row of imageRows) {
+        await fs.unlink(path.join(UPLOADS_DIR, path.basename(row.image_url))).catch(() => {});
+    }
+}
+
+async function attachImages(issues) {
+    if (issues.length === 0) return issues;
+    const [rows] = await pool.query(
+        `SELECT image_id, issue_id, image_url
+         FROM tb_task_issue_images
+         WHERE issue_id IN (?)
+         ORDER BY image_created_at ASC`,
+        [issues.map((i) => i.issue_id)]
+    );
+    return issues.map((i) => ({ ...i, images: rows.filter((r) => r.issue_id === i.issue_id) }));
+}
+
+async function getForTask(req, res, next) {
+    try {
+        const [rows] = await pool.query(
+            `SELECT i.issue_id, i.task_id, i.issue_title, i.issue_description, i.issue_status,
+                    i.created_by, CONCAT(u.user_fname, ' ', u.user_lname) AS created_by_name,
+                    i.issue_created_at, i.issue_updated_at
+             FROM tb_task_issues i
+             LEFT JOIN tb_users u ON u.user_id = i.created_by
+             WHERE i.task_id = ?
+             ORDER BY i.issue_created_at ASC`,
+            [req.params.taskId]
+        );
+        const data = await attachImages(rows);
+        res.json({ data });
+    } catch (err) {
+        next(err);
+    }
+}
+
+async function create(req, res, next) {
+    try {
+        const { issue_title, issue_description } = req.body;
+        if (!issue_title) return res.status(400).json({ message: "กรุณากรอกชื่อปัญหา" });
+
+        const [taskRows] = await pool.query(
+            "SELECT task_id, project_id, task_parent_id FROM tb_tasks WHERE task_id = ?",
+            [req.params.taskId]
+        );
+        const task = taskRows[0];
+        if (!task) return res.status(404).json({ message: "ไม่พบ task นี้" });
+
+        const allowed = await canDoIssueAction("add", task.project_id, task, req.user.user_id);
+        if (!allowed) return res.status(403).json({ message: "ไม่มีสิทธิ์เพิ่มปัญหาใน task นี้" });
+
+        const issue_id = await generateDailyId("tb_task_issues", "issue_id", "ISS");
+        await pool.query(
+            `INSERT INTO tb_task_issues (issue_id, task_id, issue_title, issue_description, created_by)
+             VALUES (?, ?, ?, ?, ?)`,
+            [issue_id, req.params.taskId, issue_title, issue_description || null, req.user.user_id]
+        );
+        await saveIssueImages(issue_id, req.files);
+
+        res.status(201).json({ issue_id });
+    } catch (err) {
+        next(err);
+    }
+}
+
+async function getIssueWithTask(issueId) {
+    const [rows] = await pool.query(
+        `SELECT i.issue_id, i.task_id, i.issue_status, t.project_id, t.task_parent_id
+         FROM tb_task_issues i
+         JOIN tb_tasks t ON t.task_id = i.task_id
+         WHERE i.issue_id = ?`,
+        [issueId]
+    );
+    return rows[0];
+}
+
+async function update(req, res, next) {
+    try {
+        const { issue_title, issue_description } = req.body;
+        if (!issue_title) return res.status(400).json({ message: "กรุณากรอกชื่อปัญหา" });
+
+        const row = await getIssueWithTask(req.params.issueId);
+        if (!row) return res.status(404).json({ message: "ไม่พบปัญหานี้" });
+
+        const allowed = await canDoIssueAction("edit", row.project_id, row, req.user.user_id);
+        if (!allowed) return res.status(403).json({ message: "ไม่มีสิทธิ์แก้ไขปัญหานี้" });
+
+        await pool.query(
+            "UPDATE tb_task_issues SET issue_title = ?, issue_description = ? WHERE issue_id = ?",
+            [issue_title, issue_description || null, req.params.issueId]
+        );
+
+        // keep_image_ids = JSON array ของรูปเดิมที่ยังเก็บไว้ — รูปเดิมที่ไม่อยู่ในนี้จะถูกลบทิ้ง (ทั้ง DB และไฟล์จริง)
+        let keepIds = [];
+        try {
+            keepIds = JSON.parse(req.body.keep_image_ids || "[]");
+        } catch {
+            keepIds = [];
+        }
+        const [existingImages] = await pool.query(
+            "SELECT image_id, image_url FROM tb_task_issue_images WHERE issue_id = ?",
+            [req.params.issueId]
+        );
+        const toDelete = existingImages.filter((img) => !keepIds.includes(img.image_id));
+        await deleteImages(toDelete);
+        await saveIssueImages(req.params.issueId, req.files);
+
+        res.json({ message: "แก้ไขปัญหาสำเร็จ" });
+    } catch (err) {
+        next(err);
+    }
+}
+
+async function updateStatus(req, res, next) {
+    try {
+        const { issue_status } = req.body;
+        if (!["open", "resolved"].includes(issue_status)) {
+            return res.status(400).json({ message: "สถานะไม่ถูกต้อง" });
+        }
+
+        const row = await getIssueWithTask(req.params.issueId);
+        if (!row) return res.status(404).json({ message: "ไม่พบปัญหานี้" });
+
+        const allowed = await canDoIssueAction("changeStatus", row.project_id, row, req.user.user_id);
+        if (!allowed) return res.status(403).json({ message: "ไม่มีสิทธิ์เปลี่ยนสถานะปัญหานี้" });
+
+        await pool.query("UPDATE tb_task_issues SET issue_status = ? WHERE issue_id = ?", [issue_status, req.params.issueId]);
+        res.json({ message: "อัปเดตสถานะสำเร็จ" });
+    } catch (err) {
+        next(err);
+    }
+}
+
+async function remove(req, res, next) {
+    try {
+        const row = await getIssueWithTask(req.params.issueId);
+        if (!row) return res.status(404).json({ message: "ไม่พบปัญหานี้" });
+
+        const allowed = await canDoIssueAction("delete", row.project_id, row, req.user.user_id);
+        if (!allowed) return res.status(403).json({ message: "ไม่มีสิทธิ์ลบปัญหานี้" });
+
+        const [images] = await pool.query("SELECT image_id, image_url FROM tb_task_issue_images WHERE issue_id = ?", [req.params.issueId]);
+        await pool.query("DELETE FROM tb_task_issues WHERE issue_id = ?", [req.params.issueId]);
+        for (const img of images) {
+            await fs.unlink(path.join(UPLOADS_DIR, path.basename(img.image_url))).catch(() => {});
+        }
+
+        res.status(204).end();
+    } catch (err) {
+        next(err);
+    }
+}
+
+module.exports = { getForTask, create, update, updateStatus, remove };

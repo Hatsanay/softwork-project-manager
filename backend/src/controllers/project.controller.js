@@ -1,5 +1,5 @@
 const pool = require("../config/db");
-const { generateId } = require("../utils/generateId");
+const { generateDailyId } = require("../utils/generateDailyId");
 const { generateShareToken } = require("../utils/shareToken");
 const { hasBit } = require("../utils/permissions");
 const { sendProjectMemberAddedEmail, sendClientShareLinkEmail } = require("../utils/mailer");
@@ -65,7 +65,7 @@ async function create(req, res, next) {
         const { project_name, client_id, project_description, project_status, project_start_date, project_due_date } = req.body;
         if (!project_name) return res.status(400).json({ message: "กรุณากรอกชื่อโปรเจกต์" });
 
-        const project_id = await generateId("tb_projects", "PRJ");
+        const project_id = await generateDailyId("tb_projects", "project_id", "PRO");
         const project_share_token = generateShareToken();
 
         await pool.query(
@@ -81,7 +81,7 @@ async function create(req, res, next) {
         );
 
         // ผู้สร้างเข้าโปรเจกต์อัตโนมัติ พร้อมตำแหน่ง PM (ถ้ามี) ให้คุมโปรเจกต์ตัวเองได้เต็มที่ทันที
-        const project_member_id = await generateId("tb_project_members", "PMB");
+        const project_member_id = await generateDailyId("tb_project_members", "project_member_id", "MEM");
         await pool.query(
             "INSERT INTO tb_project_members (project_member_id, project_id, user_id) VALUES (?, ?, ?)",
             [project_member_id, project_id, req.user.user_id]
@@ -348,7 +348,7 @@ async function addMember(req, res, next) {
     const { user_id, position_ids } = req.body;
     if (!user_id) return res.status(400).json({ message: "กรุณาเลือกผู้ใช้งาน" });
 
-    const project_member_id = await generateId("tb_project_members", "PMB");
+    const project_member_id = await generateDailyId("tb_project_members", "project_member_id", "MEM");
     const conn = await pool.getConnection();
     try {
         await conn.beginTransaction();

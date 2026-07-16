@@ -1,5 +1,5 @@
 const pool = require("../config/db");
-const { generateId } = require("../utils/generateId");
+const { generateDailyId } = require("../utils/generateDailyId");
 
 async function getAll(req, res, next) {
     try {
@@ -55,7 +55,7 @@ async function create(req, res, next) {
             return res.status(400).json({ message: "กรอกข้อมูลไม่ครบ" });
         }
 
-        const position_id = await generateId("tb_project_positions", "POS");
+        const position_id = await generateDailyId("tb_project_positions", "position_id", "POS");
         await pool.query(
             "INSERT INTO tb_project_positions (position_id, position_name, position_permission) VALUES (?, ?, ?)",
             [position_id, position_name, position_permission]

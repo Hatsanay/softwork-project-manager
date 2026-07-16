@@ -4,16 +4,20 @@ SET NAMES utf8mb4 collate utf8mb4_unicode_ci;
 -- กำหนดกลาง ใช้ร่วมกันได้ทุกโปรเจกต์ (เหมือน tb_roles แต่คนละสิทธิ์กันคนละเรื่อง)
 -- tb_roles.role_permission = สิทธิ์ใช้งานระบบหลังบ้านทั้งระบบ (เมนู/หน้าไหนเข้าได้)
 -- tb_project_positions.position_permission = สิทธิ์ทำอะไรได้บ้าง "ภายในโปรเจกต์ที่ตัวเองอยู่" เท่านั้น
--- ลำดับบิต (13 บิต) ต้องตรงกับ PROJECT_PERMISSION_GROUPS ใน frontend/app/components/project-position-bits.ts เป๊ะๆ:
---   [เกี่ยวกับ Task]    0 deleteTask, 1 editTask, 2 changeTaskStatus, 3 addTask, 4 editOwnTask, 5 changeOwnTaskStatus
---   [เกี่ยวกับ Subtask] 6 changeSubtaskStatus, 7 addOwnSubtask, 8 changeOwnSubtaskStatus
---   [เกี่ยวกับโปรเจกต์]  9 deleteProject, 10 editProjectInfo, 11 manageMembers, 12 manageShareLink
+-- ลำดับบิต (29 บิต) ต้องตรงกับ PROJECT_PERMISSION_GROUPS ใน frontend/app/components/project-position-bits.ts เป๊ะๆ:
+--   [เกี่ยวกับ Task]          0 deleteTask, 1 editTask, 2 changeTaskStatus, 3 addTask, 4 editOwnTask, 5 changeOwnTaskStatus
+--   [เกี่ยวกับ Subtask]       6 changeSubtaskStatus, 7 addOwnSubtask, 8 changeOwnSubtaskStatus
+--   [เกี่ยวกับโปรเจกต์]        9 deleteProject, 10 editProjectInfo, 11 manageMembers, 12 manageShareLink
+--   [เกี่ยวกับปัญหาใน Task]    13 deleteIssueTask, 14 editIssueTask, 15 changeIssueStatusTask, 16 addIssueTask,
+--                             17 deleteOwnIssueTask, 18 editOwnIssueTask, 19 changeOwnIssueStatusTask, 20 addOwnIssueTask
+--   [เกี่ยวกับปัญหาใน Subtask] 21 deleteIssueSubtask, 22 editIssueSubtask, 23 changeIssueStatusSubtask, 24 addIssueSubtask,
+--                             25 deleteOwnIssueSubtask, 26 editOwnIssueSubtask, 27 changeOwnIssueStatusSubtask, 28 addOwnIssueSubtask
 -- ทุกการกระทำต้องมีบิตชัดเจนเสมอ ไม่มีสิทธิ์อัตโนมัติจากการเป็นผู้รับผิดชอบอีกต่อไป (รวมถึงเปลี่ยนสถานะด้วย)
 -- เช่น เปลี่ยนสถานะ task ของตัวเอง ต้องมีบิต changeOwnTaskStatus (หรือ changeTaskStatus) อย่างใดอย่างหนึ่ง
 -- แก้ไขข้อมูล task ของตัวเอง ต้องมีบิต editOwnTask (หรือ editTask) อย่างใดอย่างหนึ่ง
 -- เพิ่ม subtask ให้ task ที่ตัวเองรับผิดชอบ ต้องมีบิต addOwnSubtask (หรือ addTask) อย่างใดอย่างหนึ่ง
 CREATE TABLE tb_project_positions (
-  position_id         VARCHAR(15) NOT NULL,
+  position_id         VARCHAR(18) NOT NULL,
   position_name       VARCHAR(50) NOT NULL,
   position_permission VARCHAR(64) NOT NULL DEFAULT '',
   position_status     ENUM('active','inactive') NOT NULL DEFAULT 'active',
@@ -26,7 +30,7 @@ CREATE TABLE tb_project_positions (
 -- ─── 2) ลูกค้า (client) ─────────────────────────────────────────────────────────
 -- ข้อมูลอ้างอิงอย่างเดียว ไม่มี login — ลูกค้าดูสถานะผ่าน share link ของแต่ละโปรเจกต์แทน
 CREATE TABLE tb_clients (
-  client_id         VARCHAR(15)  NOT NULL,
+  client_id         VARCHAR(18)  NOT NULL,
   client_name       VARCHAR(100) NOT NULL,
   client_company    VARCHAR(150) NULL,
   client_email      VARCHAR(255) NULL,
@@ -40,8 +44,8 @@ CREATE TABLE tb_clients (
 -- project_share_token เป็น URL ลับสำหรับหน้า /share/[token] ที่ลูกค้าดูได้โดยไม่ต้อง login
 -- project_progress_percent cache ไว้ตรงนี้ คำนวณจาก weighted task ที่เสร็จ/ทั้งหมด ไม่ต้องคำนวณสดทุกครั้ง
 CREATE TABLE tb_projects (
-  project_id               VARCHAR(15) NOT NULL,
-  client_id                VARCHAR(15) NULL,
+  project_id               VARCHAR(18) NOT NULL,
+  client_id                VARCHAR(18) NULL,
   project_name             VARCHAR(150) NOT NULL,
   project_description      TEXT NULL,
   project_status           ENUM('planning','in_progress','on_hold','completed','cancelled') NOT NULL DEFAULT 'planning',
@@ -51,7 +55,7 @@ CREATE TABLE tb_projects (
   project_share_token      VARCHAR(64) NOT NULL,
   project_share_enabled    BOOLEAN NOT NULL DEFAULT TRUE,
   project_use_task_weight  BOOLEAN NOT NULL DEFAULT FALSE,
-  project_created_by       VARCHAR(15) NULL,
+  project_created_by       VARCHAR(18) NULL,
   project_created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
   project_updated_at       DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (project_id),
@@ -63,9 +67,9 @@ CREATE TABLE tb_projects (
 
 -- ─── 4) สมาชิกในโปรเจกต์ (ใครเห็น/อยู่ในโปรเจกต์นี้บ้าง) ─────────────────────────
 CREATE TABLE tb_project_members (
-  project_member_id VARCHAR(15) NOT NULL,
-  project_id        VARCHAR(15) NOT NULL,
-  user_id           VARCHAR(15) NOT NULL,
+  project_member_id VARCHAR(18) NOT NULL,
+  project_id        VARCHAR(18) NOT NULL,
+  user_id           VARCHAR(18) NOT NULL,
   joined_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (project_member_id),
   UNIQUE KEY uq_project_member (project_id, user_id),
@@ -76,8 +80,8 @@ CREATE TABLE tb_project_members (
 
 -- ─── 5) ตำแหน่งที่แต่ละสมาชิกถืออยู่ในโปรเจกต์นั้น (หลายตำแหน่งต่อคนได้) ──────────
 CREATE TABLE tb_project_member_positions (
-  project_member_id VARCHAR(15) NOT NULL,
-  position_id       VARCHAR(15) NOT NULL,
+  project_member_id VARCHAR(18) NOT NULL,
+  position_id       VARCHAR(18) NOT NULL,
   PRIMARY KEY (project_member_id, position_id),
   CONSTRAINT fk_pmp_member   FOREIGN KEY (project_member_id) REFERENCES tb_project_members(project_member_id) ON DELETE CASCADE,
   CONSTRAINT fk_pmp_position FOREIGN KEY (position_id)       REFERENCES tb_project_positions(position_id)
@@ -88,9 +92,9 @@ CREATE TABLE tb_project_member_positions (
 -- task_weight ใช้ถ่วงน้ำหนักตอนคำนวณ % ความคืบหน้าของโปรเจกต์
 -- ผู้รับผิดชอบเป็นแบบหลายคนต่อ task ได้ ย้ายไปเก็บที่ tb_task_assignees แทนคอลัมน์เดี่ยว
 CREATE TABLE tb_tasks (
-  task_id          VARCHAR(15) NOT NULL,
-  project_id       VARCHAR(15) NOT NULL,
-  task_parent_id   VARCHAR(15) NULL,
+  task_id          VARCHAR(18) NOT NULL,
+  project_id       VARCHAR(18) NOT NULL,
+  task_parent_id   VARCHAR(18) NULL,
   task_title       VARCHAR(200) NOT NULL,
   task_description TEXT NULL,
   task_status      ENUM('todo','in_progress','review','done') NOT NULL DEFAULT 'todo',
@@ -110,21 +114,88 @@ CREATE TABLE tb_tasks (
 
 -- ผู้รับผิดชอบของแต่ละ task (หลายคนต่อ task ได้) — ใครอยู่ในนี้ แก้ไข task นี้ได้เสมอแม้ไม่มีสิทธิ์ editTask
 CREATE TABLE tb_task_assignees (
-  task_id VARCHAR(15) NOT NULL,
-  user_id VARCHAR(15) NOT NULL,
+  task_id VARCHAR(18) NOT NULL,
+  user_id VARCHAR(18) NOT NULL,
   PRIMARY KEY (task_id, user_id),
   KEY idx_ta_user (user_id),
   CONSTRAINT fk_ta_task FOREIGN KEY (task_id) REFERENCES tb_tasks(task_id) ON DELETE CASCADE,
   CONSTRAINT fk_ta_user FOREIGN KEY (user_id) REFERENCES tb_users(user_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ─── 6.1) ปัญหา (issue) ของ task/subtask ─────────────────────────────────────────
+-- issue ผูกกับ task_id ตรงๆ (ใช้ได้ทั้ง task หลักและ subtask เพราะเป็นตารางเดียวกัน)
+-- นับ badge "มีปัญหา" ที่หน้าโปรเจกต์เอาแค่ issue ของ task นั้นเอง ไม่รวม/ไม่นับจาก subtask ของมัน
+CREATE TABLE tb_task_issues (
+  issue_id          VARCHAR(18) NOT NULL,
+  task_id           VARCHAR(18) NOT NULL,
+  issue_title       VARCHAR(200) NOT NULL,
+  issue_description TEXT NULL,
+  issue_status      ENUM('open','resolved') NOT NULL DEFAULT 'open',
+  created_by        VARCHAR(18) NULL,
+  issue_created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+  issue_updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (issue_id),
+  KEY idx_issue_task (task_id),
+  CONSTRAINT fk_issue_task FOREIGN KEY (task_id) REFERENCES tb_tasks(task_id) ON DELETE CASCADE,
+  CONSTRAINT fk_issue_creator FOREIGN KEY (created_by) REFERENCES tb_users(user_id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─── 6.2) รูปแนบของปัญหา (issue) ──────────────────────────────────────────────────
+-- หนึ่งปัญหาแนบได้หลายรูป — ลบปัญหาแล้ว cascade ลบแถวรูปด้วย แต่ตัวไฟล์จริงใน uploads/ ต้องลบเองในโค้ด (ไม่ผูกกับ DB)
+CREATE TABLE tb_task_issue_images (
+  image_id         VARCHAR(18) NOT NULL,
+  issue_id         VARCHAR(18) NOT NULL,
+  image_url        VARCHAR(255) NOT NULL,
+  image_created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (image_id),
+  KEY idx_issue_image_issue (issue_id),
+  CONSTRAINT fk_issue_image_issue FOREIGN KEY (issue_id) REFERENCES tb_task_issues(issue_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─── 6.3) แชทใน task/subtask ──────────────────────────────────────────────────────
+-- สมาชิกโปรเจกต์ทุกคนแชทได้ ไม่ต้องมีสิทธิ์เฉพาะ (คนละเรื่องกับ issue ที่คุมด้วยบิต)
+CREATE TABLE tb_task_chat_messages (
+  message_id         VARCHAR(18) NOT NULL,
+  task_id            VARCHAR(18) NOT NULL,
+  user_id            VARCHAR(18) NULL,
+  message_text       TEXT NULL,
+  message_created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (message_id),
+  KEY idx_chat_task (task_id),
+  CONSTRAINT fk_chat_task FOREIGN KEY (task_id) REFERENCES tb_tasks(task_id) ON DELETE CASCADE,
+  CONSTRAINT fk_chat_user FOREIGN KEY (user_id) REFERENCES tb_users(user_id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- รูปแนบของข้อความแชท (หนึ่งข้อความแนบได้หลายรูป เหมือน issue images)
+CREATE TABLE tb_task_chat_images (
+  image_id         VARCHAR(18) NOT NULL,
+  message_id       VARCHAR(18) NOT NULL,
+  image_url        VARCHAR(255) NOT NULL,
+  image_created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (image_id),
+  KEY idx_chat_image_message (message_id),
+  CONSTRAINT fk_chat_image_message FOREIGN KEY (message_id) REFERENCES tb_task_chat_messages(message_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- อ่านแชทของ task นั้นล่าสุดเมื่อไหร่ ต่อคนต่อ task (ใช้คำนวณ badge จำนวนข้อความที่ยังไม่ได้อ่าน)
+-- อัปเดตทุกครั้งที่เรียกดูข้อความ (GET chat) ของ task นั้น ถือว่าดูแล้ว = อ่านแล้ว ไม่มี endpoint แยกสำหรับ mark-read
+-- ต้องเป็น DATETIME(3) (มิลลิวินาที) ไม่ใช่ DATETIME เฉยๆ เพราะเทียบ message_created_at > last_read_at
+-- ถ้าปัดแค่ระดับวินาที ข้อความที่มาถึงวินาทีเดียวกับตอนอ่าน จะเทียบเท่ากันพอดีแล้วไม่นับว่ายังไม่อ่าน
+CREATE TABLE tb_task_chat_reads (
+  task_id      VARCHAR(18) NOT NULL,
+  user_id      VARCHAR(18) NOT NULL,
+  last_read_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (task_id, user_id),
+  CONSTRAINT fk_chat_read_task FOREIGN KEY (task_id) REFERENCES tb_tasks(task_id) ON DELETE CASCADE,
+  CONSTRAINT fk_chat_read_user FOREIGN KEY (user_id) REFERENCES tb_users(user_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ─── 7) ประวัติ/timeline ของ task (สิ่งที่ลูกค้าเห็นผ่าน share link) ─────────────
 -- log_fullname snapshot ไว้เหมือน tb_login_logs เผื่อ user ถูกลบทีหลังชื่อจะได้ไม่หาย
--- log_id รูปแบบ yyyymmddxxxxxxx เหมือน tb_login_logs เพราะมีปริมาณเยอะรายวันเหมือนกัน
 CREATE TABLE tb_task_activity_log (
-  log_id         VARCHAR(15) NOT NULL,
-  task_id        VARCHAR(15) NOT NULL,
-  user_id        VARCHAR(15) NULL,
+  log_id         VARCHAR(18) NOT NULL,
+  task_id        VARCHAR(18) NOT NULL,
+  user_id        VARCHAR(18) NULL,
   log_fullname   VARCHAR(101) NULL,
   log_action     ENUM('created','status_changed','edited','assigned','comment') NOT NULL,
   log_old_value  VARCHAR(255) NULL,
@@ -141,11 +212,9 @@ CREATE TABLE tb_task_activity_log (
 commit;
 
 -- ─── ข้อมูลเริ่มต้น ───────────────────────────────────────────────────────────
--- ตำแหน่ง PM เริ่มต้น: เปิดสิทธิ์ทุกบิต (13 บิต) ให้คุมโปรเจกต์ได้เต็มที่
--- position_id ใส่ตรงๆ เพราะ seed ครั้งเดียวตอนตั้งระบบ ไม่ได้ผ่าน generateId()
+-- ตำแหน่ง PM เริ่มต้น: เปิดสิทธิ์ทุกบิต (29 บิต) ให้คุมโปรเจกต์ได้เต็มที่
+-- id ใส่ตรงๆ เพราะ seed ครั้งเดียวตอนตั้งระบบ ไม่ได้ผ่าน generateDailyId()
 INSERT INTO tb_project_positions (position_id, position_name, position_permission)
-VALUES ('POS000000000001', 'PM', '1111111111111');
-
-INSERT INTO tb_maxID (max_table, max_id) VALUES ('tb_project_positions', 'POS000000000001');
+VALUES ('POS202601010000001', 'PM', '11111111111111111111111111111');
 
 commit;
