@@ -25,6 +25,14 @@ router.get("/health", (req, res) => res.json({ status: "ok" }));
 // ใช้สิทธิ์ "dashboard" ที่มีอยู่แล้วคุมว่าเข้าหน้านี้ได้ไหม ส่วนแต่ละ widget ข้างในสโคปด้วยสิทธิ์เดิม
 // (viewAllProjects/viewOwnProjects) หรือเป็นข้อมูลส่วนตัวของผู้ใช้เอง ไม่มีบิตแยกสำหรับ dashboard โดยเฉพาะ
 router.get("/V1/dashboard/summary", requireAuth, requirePermission("dashboard"), dashboardController.getSummary);
+router.get("/V1/dashboard/search", requireAuth, requirePermission("dashboard"), dashboardController.search);
+router.get("/V1/dashboard/team-workload", requireAuth, requirePermission("dashboard"), dashboardController.getTeamWorkload);
+router.get("/V1/dashboard/kpis", requireAuth, requirePermission("dashboard"), dashboardController.getKpis);
+router.get(
+    "/V1/dashboard/kpis/by-member", requireAuth, requirePermission("dashboard"), requirePermission("viewMemberKpi"),
+    dashboardController.getKpisByMember
+);
+router.get("/V1/dashboard/team/:userId/tasks", requireAuth, requirePermission("dashboard"), dashboardController.getMemberTasks);
 
 // ─── auth ───────────────────────────────────────────────────────────────────
 router.post("/V1/auth/login", authController.login);
@@ -206,6 +214,16 @@ router.get(
 router.post(
     "/V1/projects/:projectId/tasks/:taskId/chat", requireAuth, requireProjectMember,
     uploadImage.array("images", 5), chatController.create
+);
+
+// ─── chat (แชทรวมของโปรเจกต์ ไม่ผูกกับ task ไหน) ────────────────────────────────
+router.get(
+    "/V1/projects/:projectId/chat", requireAuth, requireProjectMember,
+    chatController.getForProject
+);
+router.post(
+    "/V1/projects/:projectId/chat", requireAuth, requireProjectMember,
+    uploadImage.array("images", 5), chatController.createForProject
 );
 
 // ─── public share (ลูกค้าดู ไม่ต้อง login) ───────────────────────────────────

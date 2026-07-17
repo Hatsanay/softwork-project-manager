@@ -35,6 +35,7 @@ type ProjectDetail = {
     project_use_task_weight: number;
     client_name: string | null;
     client_email: string | null;
+    unread_chat_count: number;
 };
 
 type TaskAssignee = { user_id: string; user_fullname: string };
@@ -55,6 +56,7 @@ type Task = {
 
 type IssueStatus = "open" | "resolved";
 type IssueImage = { image_id: string; issue_id: string; image_url: string };
+type IssueTag = { user_id: string; user_fullname: string };
 type Issue = {
     issue_id: string;
     task_id: string;
@@ -65,6 +67,7 @@ type Issue = {
     created_by_name: string | null;
     issue_created_at: string;
     images: IssueImage[];
+    tags: IssueTag[];
 };
 
 const MAX_ISSUE_IMAGES = 5;
@@ -84,8 +87,19 @@ type ChatMessage = {
 const MAX_CHAT_IMAGES = 5;
 const CHAT_POLL_INTERVAL_MS = 4000;
 
-type IssueFormState = { issue_title: string; issue_description: string };
-const EMPTY_ISSUE_FORM: IssueFormState = { issue_title: "", issue_description: "" };
+type ProjectChatMessage = {
+    message_id: string;
+    project_id: string;
+    user_id: string | null;
+    user_fullname: string | null;
+    user_avatar_url: string | null;
+    message_text: string | null;
+    message_created_at: string;
+    images: ChatImage[];
+};
+
+type IssueFormState = { issue_title: string; issue_description: string; tagged_users: IssueTag[] };
+const EMPTY_ISSUE_FORM: IssueFormState = { issue_title: "", issue_description: "", tagged_users: [] };
 
 type MemberPosition = { project_member_id: string; position_id: string; position_name: string };
 type Member = {
@@ -184,7 +198,7 @@ function IssueCountBadge({ count, color }: { count: number; color: "red" | "blue
 function ChatUnreadBadge({ count }: { count: number }) {
     if (!count) return null;
     return (
-        <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[11px] font-semibold text-white bg-red-500 rounded-full leading-none">
+        <span className="inline-flex items-center justify-center min-w-4.5 h-4.5 px-1 text-[11px] font-semibold text-white bg-red-500 rounded-full leading-none">
             {count > 99 ? "99+" : count}
         </span>
     );
@@ -240,6 +254,10 @@ export default function ViewProjectPage() {
     const [issueFormError, setIssueFormError] = useState<string | null>(null);
     const [issueKeepImageIds, setIssueKeepImageIds] = useState<string[]>([]);
     const [issueNewImages, setIssueNewImages] = useState<File[]>([]);
+    const [issueTagQuery, setIssueTagQuery] = useState("");
+    const [issueTagResults, setIssueTagResults] = useState<IssueTag[]>([]);
+    const [issueTagDropdownOpen, setIssueTagDropdownOpen] = useState(false);
+    const issueTagBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [isSavingIssue, setIsSavingIssue] = useState(false);
     const [deleteIssueTarget, setDeleteIssueTarget] = useState<Issue | null>(null);
     const [isDeletingIssue, setIsDeletingIssue] = useState(false);
@@ -250,6 +268,13 @@ export default function ViewProjectPage() {
     const [chatNewImages, setChatNewImages] = useState<File[]>([]);
     const [isSendingChat, setIsSendingChat] = useState(false);
     const chatListRef = useRef<HTMLDivElement | null>(null);
+
+    const [projectChatOpen, setProjectChatOpen] = useState(false);
+    const [projectChatMessages, setProjectChatMessages] = useState<ProjectChatMessage[]>([]);
+    const [projectChatText, setProjectChatText] = useState("");
+    const [projectChatNewImages, setProjectChatNewImages] = useState<File[]>([]);
+    const [isSendingProjectChat, setIsSendingProjectChat] = useState(false);
+    const projectChatListRef = useRef<HTMLDivElement | null>(null);
 
     const [memberModalOpen, setMemberModalOpen] = useState(false);
     const [editingMember, setEditingMember] = useState<Member | null>(null);
@@ -301,6 +326,9 @@ export default function ViewProjectPage() {
                     // มาจาก widget "แชทที่ยังไม่ได้อ่าน" — เปิดแผงแชทให้เลยไม่ต้องกดปุ่มแชทเอง
                     if (searchParams.get("openChat")) setChatOpen(true);
                 }
+            } else if (searchParams.get("openProjectChat")) {
+                // มาจาก widget "แชทที่ยังไม่ได้อ่าน" ฝั่งแชทรวมของโปรเจกต์ (ไม่ผูก task) — เปิด modal แชทโปรเจกต์ให้เลย
+                setProjectChatOpen(true);
             }
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -329,6 +357,36 @@ export default function ViewProjectPage() {
         if (!chatListRef.current) return;
         chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
     }, [chatMessages]);
+
+    // แชทรวมของโปรเจกต์เปิดอยู่ ก็ poll ข้อความใหม่เป็นระยะเหมือนแชทของ task
+    useEffect(() => {
+        if (!projectChatOpen || !id) return;
+        loadProjectChatMessages();
+        const timer = setInterval(() => loadProjectChatMessages(), CHAT_POLL_INTERVAL_MS);
+        return () => clearInterval(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [projectChatOpen, id]);
+
+    useEffect(() => {
+        if (!projectChatListRef.current) return;
+        projectChatListRef.current.scrollTop = projectChatListRef.current.scrollHeight;
+    }, [projectChatMessages]);
+
+    // ค้นหาคนไว้แท็ก (@) ในฟอร์มปัญหา — debounce เหมือน dashboard search, ตัด "@" นำหน้าออกก่อนค้นหา
+    useEffect(() => {
+        if (!issueFormOpen) return;
+        const q = issueTagQuery.trim().replace(/^@/, "");
+        const timer = setTimeout(async () => {
+            if (!q) { setIssueTagResults([]); return; }
+            const res = await fetch(`${api}/users/for-select?${new URLSearchParams({ search: q })}`, { headers: authHeader() });
+            if (!res.ok) return;
+            const rows = (await res.json()) as IssueTag[];
+            const excludeIds = issueForm.tagged_users.map((u) => u.user_id);
+            setIssueTagResults(rows.filter((u) => !excludeIds.includes(u.user_id)));
+        }, 300);
+        return () => clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [issueTagQuery, issueFormOpen]);
 
     const canAddTask = hasProjectBit(permission, "addTask");
     const canEditTask = hasProjectBit(permission, "editTask");
@@ -517,15 +575,19 @@ export default function ViewProjectPage() {
         setIssueFormError(null);
         setIssueKeepImageIds([]);
         setIssueNewImages([]);
+        setIssueTagQuery("");
+        setIssueTagResults([]);
         setIssueFormOpen(true);
     }
 
     function openEditIssue(issue: Issue) {
         setEditingIssue(issue);
-        setIssueForm({ issue_title: issue.issue_title, issue_description: issue.issue_description ?? "" });
+        setIssueForm({ issue_title: issue.issue_title, issue_description: issue.issue_description ?? "", tagged_users: issue.tags });
         setIssueFormError(null);
         setIssueKeepImageIds(issue.images.map((img) => img.image_id));
         setIssueNewImages([]);
+        setIssueTagQuery("");
+        setIssueTagResults([]);
         setIssueFormOpen(true);
     }
 
@@ -560,6 +622,7 @@ export default function ViewProjectPage() {
             const fd = new FormData();
             fd.append("issue_title", issueForm.issue_title.trim());
             fd.append("issue_description", issueForm.issue_description.trim());
+            fd.append("tagged_user_ids", JSON.stringify(issueForm.tagged_users.map((u) => u.user_id)));
             if (editingIssue) fd.append("keep_image_ids", JSON.stringify(issueKeepImageIds));
             for (const file of issueNewImages) fd.append("images", file);
 
@@ -665,6 +728,70 @@ export default function ViewProjectPage() {
     }
 
     function handleChatComposerKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            e.currentTarget.form?.requestSubmit();
+        }
+    }
+
+    function closeProjectChat() {
+        setProjectChatOpen(false);
+        setProjectChatMessages([]);
+        setProjectChatText("");
+        setProjectChatNewImages([]);
+    }
+
+    async function loadProjectChatMessages() {
+        if (!id) return;
+        const res = await fetch(`${api}/projects/${id}/chat`, { headers: authHeader() });
+        if (!res.ok) return;
+        const data = await res.json();
+        setProjectChatMessages(data.data ?? []);
+        // ดึงข้อความสำเร็จ = backend mark-read ให้แล้ว เคลียร์ badge ฝั่ง state ทันทีแบบ optimistic เหมือน loadChatMessages
+        setProject((prev) => (prev ? { ...prev, unread_chat_count: 0 } : prev));
+    }
+
+    function handlePickProjectChatImages(files: FileList | null) {
+        if (!files) return;
+        const picked = Array.from(files);
+        const remaining = MAX_CHAT_IMAGES - projectChatNewImages.length;
+        if (remaining <= 0) {
+            toast.error(`แนบรูปได้สูงสุด ${MAX_CHAT_IMAGES} รูปต่อข้อความ`);
+            return;
+        }
+        setProjectChatNewImages((prev) => [...prev, ...picked.slice(0, remaining)]);
+    }
+
+    async function handleSendProjectChat(e: React.FormEvent<HTMLFormElement>) {
+        e.preventDefault();
+        if (!id) return;
+        if (!projectChatText.trim() && projectChatNewImages.length === 0) return;
+
+        setIsSendingProjectChat(true);
+        try {
+            const fd = new FormData();
+            fd.append("message_text", projectChatText.trim());
+            for (const file of projectChatNewImages) fd.append("images", file);
+
+            const res = await fetch(`${api}/projects/${id}/chat`, {
+                method: "POST",
+                headers: authHeader(),
+                body: fd,
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                toast.error(data.message ?? "ส่งข้อความไม่สำเร็จ");
+                return;
+            }
+            setProjectChatText("");
+            setProjectChatNewImages([]);
+            await loadProjectChatMessages();
+        } finally {
+            setIsSendingProjectChat(false);
+        }
+    }
+
+    function handleProjectChatComposerKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
         if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             e.currentTarget.form?.requestSubmit();
@@ -1026,6 +1153,18 @@ export default function ViewProjectPage() {
                         )}
                     </div>
                     <div className="flex gap-2 shrink-0">
+                        <button
+                            type="button"
+                            onClick={() => setProjectChatOpen(true)}
+                            className="flex items-center gap-1.5 px-4 py-2 text-sm text-blue-600 border border-blue-200 rounded hover:bg-blue-50"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-4 h-4">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm7.5 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm-3.75 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 12c0 4.556-4.365 8.25-9.75 8.25a10.4 10.4 0 0 1-2.573-.317c-.478.457-1.68 1.457-3.328 1.827-.244.055-.443-.187-.351-.42.198-.501.556-1.396.669-2.293C4.276 17.641 3 15.03 3 12c0-4.556 4.365-8.25 9.75-8.25S21.75 7.444 21.75 12Z" />
+                            </svg>
+                            แชทโปรเจกต์
+                            <ChatUnreadBadge count={project.unread_chat_count} />
+                        </button>
                         {canEditProjectInfo && (
                             <EditButton onClick={() => router.push(`/projects/edit?id=${id}`)}>แก้ไข</EditButton>
                         )}
@@ -1454,6 +1593,67 @@ export default function ViewProjectPage() {
                                                 className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-2 border-gray-300 focus:border-blue-400 focus:ring-blue-500/20"
                                             />
 
+                                            <div className="space-y-1">
+                                                <label className="text-xs font-medium text-gray-600">แท็กคน (@)</label>
+                                                {issueForm.tagged_users.length > 0 && (
+                                                    <div className="flex flex-wrap gap-1.5">
+                                                        {issueForm.tagged_users.map((u) => (
+                                                            <span
+                                                                key={u.user_id}
+                                                                className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full"
+                                                            >
+                                                                @{u.user_fullname}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setIssueForm((p) => ({
+                                                                        ...p,
+                                                                        tagged_users: p.tagged_users.filter((t) => t.user_id !== u.user_id),
+                                                                    }))}
+                                                                    className="text-blue-400 hover:text-red-600"
+                                                                >
+                                                                    ×
+                                                                </button>
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                <div className="relative">
+                                                    <input
+                                                        type="text"
+                                                        value={issueTagQuery}
+                                                        onChange={(e) => { setIssueTagQuery(e.target.value); setIssueTagDropdownOpen(true); }}
+                                                        onFocus={() => { if (issueTagBlurTimer.current) clearTimeout(issueTagBlurTimer.current); setIssueTagDropdownOpen(true); }}
+                                                        onBlur={() => { issueTagBlurTimer.current = setTimeout(() => setIssueTagDropdownOpen(false), 150); }}
+                                                        placeholder="พิมพ์ @ ตามด้วยชื่อเพื่อแท็กคน..."
+                                                        className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-2 border-gray-300 focus:border-blue-400 focus:ring-blue-500/20"
+                                                    />
+                                                    {issueTagDropdownOpen && issueTagQuery.trim() && (
+                                                        <div className="absolute z-10 mt-1 w-full bg-white rounded-lg shadow-lg border border-gray-100 max-h-40 overflow-y-auto">
+                                                            {issueTagResults.length === 0 ? (
+                                                                <p className="px-3 py-2 text-xs text-gray-400">ไม่พบผู้ใช้งาน</p>
+                                                            ) : (
+                                                                issueTagResults.map((u) => (
+                                                                    <button
+                                                                        key={u.user_id}
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            if (issueTagBlurTimer.current) clearTimeout(issueTagBlurTimer.current);
+                                                                            setIssueForm((p) => ({ ...p, tagged_users: [...p.tagged_users, u] }));
+                                                                            setIssueTagQuery("");
+                                                                            setIssueTagResults([]);
+                                                                            setIssueTagDropdownOpen(false);
+                                                                        }}
+                                                                        className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50"
+                                                                    >
+                                                                        @{u.user_fullname}
+                                                                    </button>
+                                                                ))
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
                                             <div className="space-y-1.5">
                                                 <div className="flex items-center justify-between">
                                                     <label className="text-xs font-medium text-gray-600">รูปแนบ</label>
@@ -1559,6 +1759,18 @@ export default function ViewProjectPage() {
                                                                                 className="w-12 h-12 object-cover rounded border border-gray-200 hover:opacity-80"
                                                                             />
                                                                         </button>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                            {issue.tags.length > 0 && (
+                                                                <div className="flex flex-wrap gap-1 mt-1.5">
+                                                                    {issue.tags.map((t) => (
+                                                                        <span
+                                                                            key={t.user_id}
+                                                                            className="text-[11px] font-medium text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded-full"
+                                                                        >
+                                                                            @{t.user_fullname}
+                                                                        </span>
                                                                     ))}
                                                                 </div>
                                                             )}
@@ -1696,7 +1908,7 @@ export default function ViewProjectPage() {
                                                             </p>
                                                         )}
                                                         {msg.message_text && (
-                                                            <p className="text-sm whitespace-pre-wrap break-words">{msg.message_text}</p>
+                                                            <p className="text-sm whitespace-pre-wrap wrap-break-word">{msg.message_text}</p>
                                                         )}
                                                         {msg.images.length > 0 && (
                                                             <div className="flex flex-wrap gap-1.5 mt-1.5">
@@ -1939,6 +2151,149 @@ export default function ViewProjectPage() {
                                 <Button type="submit" disabled={isSendingShareEmail}>
                                     {isSendingShareEmail ? "กำลังส่ง..." : "ส่งอีเมล"}
                                 </Button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {projectChatOpen && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+                    onClick={closeProjectChat}
+                >
+                    <div
+                        className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 h-[80vh] max-h-[600px] flex flex-col overflow-hidden"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between shrink-0">
+                            <h3 className="text-sm font-semibold text-gray-700 truncate">แชทโปรเจกต์ · {project.project_name}</h3>
+                            <button
+                                type="button"
+                                onClick={closeProjectChat}
+                                className="text-gray-400 hover:text-gray-600 shrink-0"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-4 h-4">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div ref={projectChatListRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+                            {projectChatMessages.length === 0 ? (
+                                <p className="text-sm text-gray-400 text-center pt-6">ยังไม่มีข้อความ</p>
+                            ) : (
+                                projectChatMessages.map((msg) => {
+                                    const isOwn = msg.user_id === currentUserId;
+                                    const avatarSrc = msg.user_avatar_url ? `${SERVER_BASE}${msg.user_avatar_url}` : "/defult.png";
+                                    const avatar = (
+                                        <Image
+                                            src={avatarSrc}
+                                            alt=""
+                                            width={28}
+                                            height={28}
+                                            unoptimized={!!msg.user_avatar_url}
+                                            className="w-7 h-7 rounded-full object-cover border border-gray-200 shrink-0"
+                                        />
+                                    );
+                                    const bubble = (
+                                        <div className={`max-w-[75%] rounded-2xl px-3 py-2 ${isOwn ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-800"}`}>
+                                            {!isOwn && (
+                                                <p className="text-[11px] font-medium text-gray-500 mb-0.5">
+                                                    {msg.user_fullname ?? "ผู้ใช้งานที่ถูกลบ"}
+                                                </p>
+                                            )}
+                                            {msg.message_text && (
+                                                <p className="text-sm whitespace-pre-wrap wrap-break-word">{msg.message_text}</p>
+                                            )}
+                                            {msg.images.length > 0 && (
+                                                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                                    {msg.images.map((img) => (
+                                                        <button
+                                                            key={img.image_id}
+                                                            type="button"
+                                                            onClick={() => window.open(`${SERVER_BASE}${img.image_url}`, "_blank")}
+                                                        >
+                                                            <Image
+                                                                src={`${SERVER_BASE}${img.image_url}`}
+                                                                alt=""
+                                                                width={96}
+                                                                height={96}
+                                                                unoptimized
+                                                                className="w-20 h-20 object-cover rounded-lg"
+                                                            />
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            <p className={`text-[10px] mt-1 ${isOwn ? "text-blue-100" : "text-gray-400"}`}>
+                                                {formatDate(msg.message_created_at)}
+                                            </p>
+                                        </div>
+                                    );
+                                    return (
+                                        <div key={msg.message_id} className={`flex items-end gap-2 ${isOwn ? "justify-end" : "justify-start"}`}>
+                                            {isOwn ? (<>{bubble}{avatar}</>) : (<>{avatar}{bubble}</>)}
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+
+                        <form onSubmit={handleSendProjectChat} className="border-t border-gray-100 p-3 space-y-2 shrink-0">
+                            {projectChatNewImages.length > 0 && (
+                                <div className="flex flex-wrap gap-2">
+                                    {projectChatNewImages.map((file, idx) => (
+                                        <div key={idx} className="relative w-12 h-12 shrink-0">
+                                            <Image
+                                                src={URL.createObjectURL(file)}
+                                                alt=""
+                                                width={48}
+                                                height={48}
+                                                unoptimized
+                                                className="w-12 h-12 object-cover rounded border border-gray-200"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setProjectChatNewImages((prev) => prev.filter((_, i) => i !== idx))}
+                                                className="absolute -top-1.5 -right-1.5 w-4 h-4 flex items-center justify-center rounded-full bg-gray-700 text-white text-[10px] leading-none hover:bg-red-600"
+                                            >
+                                                ×
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            <div className="flex items-end gap-2">
+                                <textarea
+                                    value={projectChatText}
+                                    onChange={(e) => setProjectChatText(e.target.value)}
+                                    onKeyDown={handleProjectChatComposerKeyDown}
+                                    rows={1}
+                                    placeholder="พิมพ์ข้อความ..."
+                                    className="flex-1 resize-none px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 border-gray-300 focus:border-blue-400 focus:ring-blue-500/20"
+                                />
+                                <label className="shrink-0 w-9 h-9 flex items-center justify-center rounded-lg border border-gray-300 text-gray-500 hover:bg-gray-50 cursor-pointer">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-4 h-4">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                                    </svg>
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        multiple
+                                        className="hidden"
+                                        onChange={(e) => { handlePickProjectChatImages(e.target.files); e.target.value = ""; }}
+                                    />
+                                </label>
+                                <button
+                                    type="submit"
+                                    disabled={isSendingProjectChat || (!projectChatText.trim() && projectChatNewImages.length === 0)}
+                                    className="shrink-0 w-9 h-9 flex items-center justify-center rounded-lg bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-40"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                                        <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
+                                    </svg>
+                                </button>
                             </div>
                         </form>
                     </div>

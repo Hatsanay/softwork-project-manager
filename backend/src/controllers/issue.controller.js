@@ -86,6 +86,45 @@ async function attachImages(issues) {
     return issues.map((i) => ({ ...i, images: rows.filter((r) => r.issue_id === i.issue_id) }));
 }
 
+// แท็กคนในปัญหา (@ tag) — คนที่ถูกแท็กจะเห็นปัญหานี้ใน "ปัญหาที่เปิดอยู่" บนแดชบอร์ดของตัวเองเสมอ แม้ไม่ได้รับผิดชอบ
+// task/subtask นั้นโดยตรง (ดู dashboard.controller.js) และขึ้นพื้นหลังสีแดงเฉพาะในมุมมองของคนที่ถูกแท็กเท่านั้น
+async function attachTags(issues) {
+    if (issues.length === 0) return issues;
+    const [rows] = await pool.query(
+        `SELECT t.issue_id, u.user_id, CONCAT(u.user_fname, ' ', u.user_lname) AS user_fullname
+         FROM tb_task_issue_tags t
+         JOIN tb_users u ON u.user_id = t.user_id
+         WHERE t.issue_id IN (?)
+         ORDER BY t.tagged_at ASC`,
+        [issues.map((i) => i.issue_id)]
+    );
+    return issues.map((i) => ({ ...i, tags: rows.filter((r) => r.issue_id === i.issue_id).map((r) => ({ user_id: r.user_id, user_fullname: r.user_fullname })) }));
+}
+
+// แทนที่แท็กทั้งหมดของปัญหาด้วยชุดใหม่ (ลบของเดิมทิ้งก่อนเสมอ ง่ายกว่า diff เพราะจำนวนแท็กต่อปัญหาไม่เยอะ)
+// กรอง user_id ที่ไม่มีจริงในระบบทิ้งไปเงียบๆ (กันแท็กมั่ว/พังจาก FK constraint แทนที่จะโยน error ทั้ง request)
+async function saveIssueTags(issueId, taggedUserIds) {
+    await pool.query("DELETE FROM tb_task_issue_tags WHERE issue_id = ?", [issueId]);
+    const uniqueIds = [...new Set(taggedUserIds)];
+    if (uniqueIds.length === 0) return;
+
+    const [validUsers] = await pool.query("SELECT user_id FROM tb_users WHERE user_id IN (?)", [uniqueIds]);
+    const validIds = validUsers.map((u) => u.user_id);
+    if (validIds.length === 0) return;
+
+    const values = validIds.map((userId) => [issueId, userId]);
+    await pool.query("INSERT INTO tb_task_issue_tags (issue_id, user_id) VALUES ?", [values]);
+}
+
+function parseTaggedUserIds(raw) {
+    try {
+        const parsed = JSON.parse(raw || "[]");
+        return Array.isArray(parsed) ? parsed.filter((id) => typeof id === "string" && id) : [];
+    } catch {
+        return [];
+    }
+}
+
 async function getForTask(req, res, next) {
     try {
         const [rows] = await pool.query(
@@ -98,7 +137,7 @@ async function getForTask(req, res, next) {
              ORDER BY i.issue_created_at ASC`,
             [req.params.taskId]
         );
-        const data = await attachImages(rows);
+        const data = await attachTags(await attachImages(rows));
         res.json({ data });
     } catch (err) {
         next(err);
@@ -127,6 +166,7 @@ async function create(req, res, next) {
             [issue_id, req.params.taskId, issue_title, issue_description || null, req.user.user_id]
         );
         await saveIssueImages(issue_id, req.files);
+        await saveIssueTags(issue_id, parseTaggedUserIds(req.body.tagged_user_ids));
 
         res.status(201).json({ issue_id });
     } catch (err) {
@@ -175,6 +215,7 @@ async function update(req, res, next) {
         const toDelete = existingImages.filter((img) => !keepIds.includes(img.image_id));
         await deleteImages(toDelete);
         await saveIssueImages(req.params.issueId, req.files);
+        await saveIssueTags(req.params.issueId, parseTaggedUserIds(req.body.tagged_user_ids));
 
         res.json({ message: "แก้ไขปัญหาสำเร็จ" });
     } catch (err) {
@@ -195,7 +236,20 @@ async function updateStatus(req, res, next) {
         const allowed = await canDoIssueAction("changeStatus", row.project_id, row, req.user.user_id);
         if (!allowed) return res.status(403).json({ message: "ไม่มีสิทธิ์เปลี่ยนสถานะปัญหานี้" });
 
-        await pool.query("UPDATE tb_task_issues SET issue_status = ? WHERE issue_id = ?", [issue_status, req.params.issueId]);
+        // issue_resolved_at ตั้งครั้งเดียวตอน "เพิ่งเปลี่ยน" เป็น resolved เท่านั้น (เหมือน task_completed_at/project_completed_at)
+        // ไม่ใช้ issue_updated_at เพราะ ON UPDATE CURRENT_TIMESTAMP จะขยับทุกครั้งที่แก้ไข issue (เช่นแก้ชื่อ/รายละเอียดทีหลัง)
+        // ทำให้เวลาแก้ปัญหาที่ใช้คำนวณ KPI เพี้ยน — เปิดปัญหาขึ้นมาใหม่ก็เคลียร์ทิ้งกันค่าค้าง
+        let resolvedAtClause = "";
+        if (issue_status === "resolved" && row.issue_status !== "resolved") {
+            resolvedAtClause = ", issue_resolved_at = NOW()";
+        } else if (issue_status !== "resolved" && row.issue_status === "resolved") {
+            resolvedAtClause = ", issue_resolved_at = NULL";
+        }
+
+        await pool.query(
+            `UPDATE tb_task_issues SET issue_status = ? ${resolvedAtClause} WHERE issue_id = ?`,
+            [issue_status, req.params.issueId]
+        );
         res.json({ message: "อัปเดตสถานะสำเร็จ" });
     } catch (err) {
         next(err);

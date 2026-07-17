@@ -51,6 +51,7 @@ CREATE TABLE tb_projects (
   project_status           ENUM('planning','in_progress','on_hold','completed','cancelled') NOT NULL DEFAULT 'planning',
   project_start_date       DATE NULL,
   project_due_date         DATE NULL,
+  project_completed_at     DATETIME NULL COMMENT 'ตั้งครั้งเดียวตอนเปลี่ยนสถานะเป็น completed (เคลียร์เป็น NULL ถ้าเปลี่ยนสถานะออกจาก completed) ใช้คำนวณ KPI อัตราส่งตรงเวลา ไม่ใช้ project_updated_at เพราะแก้ไขข้อมูลอื่นทีหลังจะทำให้เวลาคลาดเคลื่อน',
   project_progress_percent DECIMAL(5,2) NOT NULL DEFAULT 0,
   project_share_token      VARCHAR(64) NOT NULL,
   project_share_enabled    BOOLEAN NOT NULL DEFAULT TRUE,
@@ -131,6 +132,7 @@ CREATE TABLE tb_task_issues (
   issue_title       VARCHAR(200) NOT NULL,
   issue_description TEXT NULL,
   issue_status      ENUM('open','resolved') NOT NULL DEFAULT 'open',
+  issue_resolved_at DATETIME NULL COMMENT 'ตั้งครั้งเดียวตอนเปลี่ยนสถานะเป็น resolved (เคลียร์เป็น NULL ถ้าเปิดใหม่) ใช้คำนวณ KPI เวลาเฉลี่ยแก้ปัญหา ไม่ใช้ issue_updated_at เพราะแก้ไข issue หลัง resolved แล้ว (เช่นแก้ชื่อ) จะทำให้เวลาคลาดเคลื่อน',
   created_by        VARCHAR(18) NULL,
   issue_created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
   issue_updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -150,6 +152,19 @@ CREATE TABLE tb_task_issue_images (
   PRIMARY KEY (image_id),
   KEY idx_issue_image_issue (issue_id),
   CONSTRAINT fk_issue_image_issue FOREIGN KEY (issue_id) REFERENCES tb_task_issues(issue_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─── 6.2.1) แท็กคนในปัญหา (@ tag) ─────────────────────────────────────────────────
+-- แท็กใครไว้ในปัญหาไหน คนนั้นจะเห็นปัญหานี้ใน "ปัญหาที่เปิดอยู่" บนแดชบอร์ดของตัวเองด้วยเสมอ
+-- (ขยายการมองเห็นออกจากแค่ผู้รับผิดชอบ task/subtask โดยตรง) และขึ้นพื้นหลังสีแดงเฉพาะในมุมมองของคนที่ถูกแท็กเท่านั้น
+CREATE TABLE tb_task_issue_tags (
+  issue_id  VARCHAR(18) NOT NULL,
+  user_id   VARCHAR(18) NOT NULL,
+  tagged_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (issue_id, user_id),
+  KEY idx_issue_tag_user (user_id),
+  CONSTRAINT fk_issue_tag_issue FOREIGN KEY (issue_id) REFERENCES tb_task_issues(issue_id) ON DELETE CASCADE,
+  CONSTRAINT fk_issue_tag_user FOREIGN KEY (user_id) REFERENCES tb_users(user_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ─── 6.3) แชทใน task/subtask ──────────────────────────────────────────────────────
@@ -188,6 +203,40 @@ CREATE TABLE tb_task_chat_reads (
   PRIMARY KEY (task_id, user_id),
   CONSTRAINT fk_chat_read_task FOREIGN KEY (task_id) REFERENCES tb_tasks(task_id) ON DELETE CASCADE,
   CONSTRAINT fk_chat_read_user FOREIGN KEY (user_id) REFERENCES tb_users(user_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─── 6.2) แชทของโปรเจกต์ (ไม่ผูกกับ task ไหนเป็นการเฉพาะ — คุยเรื่องรวมๆ ของทั้งโปรเจกต์) ────
+-- โครงสร้างเหมือน tb_task_chat_* ทุกอย่าง แค่ผูกกับ project_id แทน task_id
+CREATE TABLE tb_project_chat_messages (
+  message_id         VARCHAR(18) NOT NULL,
+  project_id         VARCHAR(18) NOT NULL,
+  user_id            VARCHAR(18) NULL,
+  message_text       TEXT NULL,
+  message_created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (message_id),
+  KEY idx_project_chat_project (project_id),
+  CONSTRAINT fk_project_chat_project FOREIGN KEY (project_id) REFERENCES tb_projects(project_id) ON DELETE CASCADE,
+  CONSTRAINT fk_project_chat_user FOREIGN KEY (user_id) REFERENCES tb_users(user_id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE tb_project_chat_images (
+  image_id         VARCHAR(18) NOT NULL,
+  message_id       VARCHAR(18) NOT NULL,
+  image_url        VARCHAR(255) NOT NULL,
+  image_created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (image_id),
+  KEY idx_project_chat_image_message (message_id),
+  CONSTRAINT fk_project_chat_image_message FOREIGN KEY (message_id) REFERENCES tb_project_chat_messages(message_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ต้องเป็น DATETIME(3) ด้วยเหตุผลเดียวกับ tb_task_chat_reads (กันข้อความ+อ่านชนกันในวินาทีเดียว)
+CREATE TABLE tb_project_chat_reads (
+  project_id   VARCHAR(18) NOT NULL,
+  user_id      VARCHAR(18) NOT NULL,
+  last_read_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (project_id, user_id),
+  CONSTRAINT fk_project_chat_read_project FOREIGN KEY (project_id) REFERENCES tb_projects(project_id) ON DELETE CASCADE,
+  CONSTRAINT fk_project_chat_read_user FOREIGN KEY (user_id) REFERENCES tb_users(user_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ─── 7) ประวัติ/timeline ของ task (สิ่งที่ลูกค้าเห็นผ่าน share link) ─────────────

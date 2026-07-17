@@ -121,6 +121,14 @@ export const PERMISSION_GROUPS: PermGroup[] = [
             { key: "deleteClient",     label: "ลบลูกค้า",     href: "/clients/delete", hidden: true },
         ],
     },
+    // เพิ่มกลุ่มใหม่ต่อท้ายสุดของ array เสมอ (append-only) ห้ามแทรกก่อนหน้านี้ ไม่งั้น role_permission เดิมในฐานข้อมูลจะเพี้ยน
+    // บิตนี้ไม่มี leaf คู่กันใน MENU_DEFS เพราะไม่ใช่เมนู/หน้าใหม่ แค่ควบคุมว่าเห็น widget "KPI รายคน" ใน /dashboard ไหม
+    {
+        groupLabel: "KPI รายคน",
+        bits: [
+            { key: "viewMemberKpi", label: "ดู KPI รายคน บนแดชบอร์ด", href: "/dashboard" },
+        ],
+    },
 ];
 
 // Start index (in flat bitmask) for each group

@@ -8,7 +8,7 @@ SET NAMES utf8mb4 collate utf8mb4_unicode_ci;
 
 -- ─── 1) สิทธิ์การใช้งาน (role) ──────────────────────────────────────────────────
 -- role_permission เป็น bitmask string ('0'/'1') ยาวตาม TOTAL_BITS ใน app/components/bit.tsx
--- ลำดับบิตต้องตรงกับลำดับ leaf ใน PERMISSION_GROUPS ของไฟล์นั้นเป๊ะๆ (ปัจจุบัน 19 บิต)
+-- ลำดับบิตต้องตรงกับลำดับ leaf ใน PERMISSION_GROUPS ของไฟล์นั้นเป๊ะๆ (ปัจจุบัน 27 บิต)
 CREATE TABLE tb_roles (
   role_id            VARCHAR(18) NOT NULL,
   role_name          VARCHAR(50)        NOT NULL,
@@ -93,10 +93,10 @@ CREATE TABLE tb_login_logs (
 commit;
 
 -- ─── ข้อมูลเริ่มต้น ───────────────────────────────────────────────────────────
--- role admin: เปิดสิทธิ์ทุกบิต (19 บิต ตาม TOTAL_BITS ปัจจุบัน) — ปรับความยาวถ้า bit.tsx เพิ่มเมนู
+-- role admin: เปิดสิทธิ์ทุกบิต (27 บิต ตาม TOTAL_BITS ปัจจุบันใน frontend/app/components/bit.tsx) — ปรับความยาวถ้า bit.tsx เพิ่มบิต
 -- id ใส่ตรงๆ เพราะ seed ครั้งเดียวตอนตั้งระบบ ไม่ได้ผ่าน generateDailyId()
 INSERT INTO tb_roles (role_id, role_name, role_permission, role_type)
-VALUES ('ROL202601010000001', 'Admin', '1111111111111111111', 'S');
+VALUES ('ROL202601010000001', 'Admin', '111111111111111111111111111', 'S');
 
 -- user แรกของระบบ ผูกกับ role Admin — ต้องมีอย่างน้อยคนเดียวถึงจะ login ผ่าน Postman ได้
 -- (createUser endpoint ต้องมี token ก่อน แต่จะ login ได้ต้องมี user อยู่แล้ว เลย seed ตรงนี้ครั้งเดียว)

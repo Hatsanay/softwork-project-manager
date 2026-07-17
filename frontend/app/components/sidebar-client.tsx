@@ -9,11 +9,10 @@ import type { MenuItem } from "./bit";
 import { useSidebar } from "./sidebar-context";
 import {
     LayoutDashboard,
-    Users,
-    CalendarCheck,
-    CreditCard,
-    BarChart3,
+    UserCog,
+    FolderKanban,
     Settings,
+    Building2,
     ChevronLeft,
     ChevronRight,
     ChevronDown,
@@ -23,11 +22,10 @@ import {
 
 const ICONS: Record<string, LucideIcon> = {
     "/dashboard": LayoutDashboard,
-    "/customers": Users,
-    "/bookings":  CalendarCheck,
-    "/payments":  CreditCard,
-    "/reports":   BarChart3,
+    "/users":     UserCog,
+    "/projects":  FolderKanban,
     "/settings":  Settings,
+    "/clients":   Building2,
 };
 
 function matchesChild(pathname: string, child: MenuItem, siblings: MenuItem[]): boolean {

@@ -54,7 +54,19 @@ async function getOne(req, res, next) {
             [req.params.id]
         );
         if (!rows[0]) return res.status(404).json({ message: "ไม่พบโปรเจกต์นี้" });
-        res.json(rows[0]);
+
+        // จำนวนข้อความแชทรวมของโปรเจกต์ที่ยังไม่ได้อ่าน — แนบมาพร้อม getOne เลยเพื่อโชว์ badge บนปุ่มแชทได้ทันทีไม่ต้องยิง request แยก
+        const [[{ unread_chat_count }]] = await pool.query(
+            `SELECT COUNT(*) AS unread_chat_count
+             FROM tb_project_chat_messages c
+             LEFT JOIN tb_project_chat_reads r ON r.project_id = c.project_id AND r.user_id = ?
+             WHERE c.project_id = ?
+               AND (c.user_id IS NULL OR c.user_id != ?)
+               AND (r.last_read_at IS NULL OR c.message_created_at > r.last_read_at)`,
+            [req.user.user_id, req.params.id, req.user.user_id]
+        );
+
+        res.json({ ...rows[0], unread_chat_count });
     } catch (err) {
         next(err);
     }
@@ -108,13 +120,28 @@ async function update(req, res, next) {
         const { project_name, client_id, project_description, project_status, project_start_date, project_due_date } = req.body;
         if (!project_name) return res.status(400).json({ message: "กรุณากรอกชื่อโปรเจกต์" });
 
+        const nextStatus = project_status || "planning";
+
+        // project_completed_at ตั้งครั้งเดียวตอน "เพิ่งเปลี่ยน" เป็น completed เท่านั้น (เหมือน task_completed_at ของ task)
+        // ไม่ใช้ project_updated_at แทนเพราะแก้ไขข้อมูลอื่นทีหลัง (เช่นแก้ชื่อ) จะทำให้เวลาคลาดเคลื่อนจากเวลาที่เสร็จจริง
+        // ใช้คำนวณ KPI "อัตราส่งโปรเจกต์ตรงเวลา" บนแดชบอร์ด — เปลี่ยนสถานะออกจาก completed ก็เคลียร์ทิ้งกันค่าค้าง
+        const [[current]] = await pool.query("SELECT project_status FROM tb_projects WHERE project_id = ?", [req.params.id]);
+        if (!current) return res.status(404).json({ message: "ไม่พบโปรเจกต์นี้" });
+        let completedAtClause = "";
+        if (nextStatus === "completed" && current.project_status !== "completed") {
+            completedAtClause = ", project_completed_at = NOW()";
+        } else if (nextStatus !== "completed" && current.project_status === "completed") {
+            completedAtClause = ", project_completed_at = NULL";
+        }
+
         await pool.query(
             `UPDATE tb_projects SET
                 project_name = ?, client_id = ?, project_description = ?, project_status = ?,
                 project_start_date = ?, project_due_date = ?
+                ${completedAtClause}
              WHERE project_id = ?`,
             [
-                project_name, client_id || null, project_description || null, project_status || "planning",
+                project_name, client_id || null, project_description || null, nextStatus,
                 project_start_date || null, project_due_date || null, req.params.id,
             ]
         );

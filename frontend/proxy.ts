@@ -21,5 +21,9 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-    matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+    // ต้องกันไฟล์ static ใน public/ (รูป .png/.svg ฯลฯ) ออกจาก proxy ด้วย ไม่ใช่แค่ _next/static|_next/image
+    // เพราะ Image Optimization API (/_next/image) ต้อง fetch ไฟล์ต้นทาง (เช่น /defult.png) เองภายในเซิร์ฟเวอร์
+    // request นั้นไม่มี cookie "token" ของ browser ติดไปด้วย ถ้า proxy ยังเช็ค auth กับ path นี้อยู่จะโดน redirect
+    // ไป /login (ได้ HTML กลับมาแทนรูป) ทำให้ next/image คิดว่ารูปโหลดไม่ได้ (400 "isn't a valid image")
+    matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico)$).*)"],
 };

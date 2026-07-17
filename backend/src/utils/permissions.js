@@ -29,6 +29,8 @@ const PERMISSION_KEYS = [
     "createClient",
     "editClient",
     "deleteClient",
+    // เพิ่มบิตใหม่ต่อท้ายสุดเสมอ (append-only) ห้ามแทรกก่อนหน้านี้ ไม่งั้น role_permission เดิมในฐานข้อมูลจะเพี้ยน
+    "viewMemberKpi",
 ];
 
 const BIT_INDEX = Object.fromEntries(PERMISSION_KEYS.map((key, i) => [key, i]));
