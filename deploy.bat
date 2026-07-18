@@ -6,28 +6,55 @@ echo ============================================
 echo   Deploy softwork-project-manager
 echo ============================================
 
-REM ---- 1) Build frontend (standalone output) ----
+REM ---- 1) Build frontend INSIDE WSL (Linux), not on Windows ----
+REM     Building with `next build` directly on Windows bakes Windows-style
+REM     backslash paths into .next/required-server-files.json (appDir, files[]).
+REM     On the Linux production server, Passenger's server.js reads that file
+REM     to find its own manifests -- backslash paths don't resolve on Linux,
+REM     so the app crashes on startup with "Web application could not be
+REM     started". Building inside WSL produces a genuinely Linux-native bundle.
 echo.
-echo [1/5] Building frontend...
-cd frontend
-call npm run build
+echo [1/5] Building frontend via WSL (Linux)...
+wsl -e bash -c "rm -rf ~/build/frontend && mkdir -p ~/build/frontend"
+wsl -e bash -c "cd /mnt/d/project/softwork-project-manager/frontend && tar --exclude=node_modules --exclude=.next -cf - . | (cd ~/build/frontend && tar -xf -)"
+wsl -e bash -c "cd ~/build/frontend && npm install"
 if errorlevel 1 (
     echo.
-    echo Frontend build FAILED. Aborting deploy.
+    echo Frontend npm install FAILED ^(WSL^). Aborting deploy.
     pause
     exit /b 1
 )
-cd ..
+wsl -e bash -c "cd ~/build/frontend && npm run build"
+if errorlevel 1 (
+    echo.
+    echo Frontend build FAILED ^(WSL^). Aborting deploy.
+    pause
+    exit /b 1
+)
+wsl -e bash -c "cd ~/build/frontend && cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public"
 
-REM ---- 2) Assemble deployable frontend bundle into frontend-dist ----
+REM ---- 2) Copy the built bundle from WSL back into frontend-dist ----
 echo.
 echo [2/5] Assembling frontend-dist...
 if exist frontend-dist rmdir /s /q frontend-dist
 mkdir frontend-dist
-xcopy /e /i /y /q "frontend\.next\standalone\*" "frontend-dist\" >nul
-mkdir frontend-dist\.next
-xcopy /e /i /y /q "frontend\.next\static" "frontend-dist\.next\static\" >nul
-xcopy /e /i /y /q "frontend\public" "frontend-dist\public\" >nul
+wsl -e bash -c "cd ~/build/frontend/.next/standalone && tar -cf - . | tar -xf - -C /mnt/d/project/softwork-project-manager/frontend-dist"
+if errorlevel 1 (
+    echo.
+    echo Copying built bundle out of WSL FAILED. Aborting deploy.
+    pause
+    exit /b 1
+)
+
+REM ---- Safety check: refuse to deploy if Windows-style paths leaked into the bundle ----
+findstr /c:"appDir\": \"D:" frontend-dist\.next\required-server-files.json >nul 2>&1
+if not errorlevel 1 (
+    echo.
+    echo Frontend bundle contains a Windows path in required-server-files.json.
+    echo This build was not produced in WSL correctly. Aborting deploy.
+    pause
+    exit /b 1
+)
 
 REM ---- 3) Commit everything to the main repo (origin) ----
 echo.
@@ -56,7 +83,8 @@ if errorlevel 1 (
     exit /b 1
 )
 
-git subtree push --prefix=frontend-dist frontend-deploy master
+for /f %%i in ('git subtree split --prefix=frontend-dist HEAD') do set SPLIT_HASH=%%i
+git push frontend-deploy %SPLIT_HASH%:master --force
 if errorlevel 1 (
     echo.
     echo frontend-deploy push FAILED.
