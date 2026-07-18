@@ -12,11 +12,6 @@ out/
 build/
 dist/
 
-# frontend-dist is the built, deployable frontend bundle — must be tracked in full
-!frontend-dist/
-!frontend-dist/node_modules/
-!frontend-dist/.next/
-
 # uploads (ไฟล์ที่ user อัปโหลดจริง ไม่ใช่โค้ด)
 backend/uploads/*
 !backend/uploads/.gitkeep
