@@ -49,6 +49,7 @@ type ActivityEntry = {
 type OpenIssue = {
     issue_id: string;
     issue_title: string;
+    issue_status: "open" | "resolved";
     issue_created_at: string;
     task_id: string;
     task_title: string;
@@ -57,6 +58,7 @@ type OpenIssue = {
     is_subtask: boolean;
     is_direct_assignee: boolean;
     is_tagged: boolean;
+    is_unread_reply: boolean;
 };
 
 type UnreadChat = {
@@ -116,6 +118,7 @@ type Summary = {
 };
 
 type KpiTaskType = "task" | "subtask" | "all";
+type KpiProjectTypeFilter = "all" | "waterfall" | "agile";
 
 type Kpis = {
     period: string;
@@ -135,6 +138,7 @@ type MemberKpiRow = {
     tasksCompleted: number;
     avgTaskCycleHours: number | null;
     taskOnTimeRate: number | null;
+    tasksAssigned: number;
     issuesResolved: number;
     avgIssueResolveHours: number | null;
 };
@@ -263,10 +267,12 @@ export default function DashboardPage() {
     const [kpiYear, setKpiYear] = useState(() => String(new Date().getFullYear()));
     const kpiPeriod = kpiPeriodMode === "year" ? kpiYear : kpiMonth;
     const [myKpiTaskTypeFilter, setMyKpiTaskTypeFilter] = useState<KpiTaskType>("all");
+    const [myKpiProjectTypeFilter, setMyKpiProjectTypeFilter] = useState<KpiProjectTypeFilter>("all");
     const [kpis, setKpis] = useState<Kpis | null>(null);
     const [kpiLoading, setKpiLoading] = useState(false);
     const [kpiProjectFilter, setKpiProjectFilter] = useState("all");
     const [kpiTaskTypeFilter, setKpiTaskTypeFilter] = useState<KpiTaskType>("all");
+    const [kpiProjectTypeFilter, setKpiProjectTypeFilter] = useState<KpiProjectTypeFilter>("all");
     const [kpiMembers, setKpiMembers] = useState<MemberKpiRow[]>([]);
     const [kpiProjectOptions, setKpiProjectOptions] = useState<KpiProjectOption[]>([]);
     const [kpiMembersLoading, setKpiMembersLoading] = useState(false);
@@ -303,14 +309,14 @@ export default function DashboardPage() {
         (async () => {
             setKpiLoading(true);
             try {
-                const params = new URLSearchParams({ month: kpiPeriod, taskType: myKpiTaskTypeFilter });
+                const params = new URLSearchParams({ month: kpiPeriod, taskType: myKpiTaskTypeFilter, projectType: myKpiProjectTypeFilter });
                 const res = await fetch(`${api}/dashboard/kpis?${params}`, { headers: authHeader() });
                 if (res.ok) setKpis(await res.json());
             } finally {
                 setKpiLoading(false);
             }
         })();
-    }, [kpiPeriod, myKpiTaskTypeFilter]);
+    }, [kpiPeriod, myKpiTaskTypeFilter, myKpiProjectTypeFilter]);
 
     // KPI รายคน — ใช้เดือนเดียวกับข้างบน แต่กรองรายโปรเจกต์ได้เพิ่ม ต้องมีสิทธิ์ viewMemberKpi ถึงจะเห็น (ข้อมูลรายคนของคนอื่น)
     useEffect(() => {
@@ -318,7 +324,7 @@ export default function DashboardPage() {
         (async () => {
             setKpiMembersLoading(true);
             try {
-                const params = new URLSearchParams({ month: kpiPeriod, projectId: kpiProjectFilter, taskType: kpiTaskTypeFilter });
+                const params = new URLSearchParams({ month: kpiPeriod, projectId: kpiProjectFilter, taskType: kpiTaskTypeFilter, projectType: kpiProjectTypeFilter });
                 const res = await fetch(`${api}/dashboard/kpis/by-member?${params}`, { headers: authHeader() });
                 if (res.ok) {
                     const data = await res.json();
@@ -330,7 +336,7 @@ export default function DashboardPage() {
             }
         })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [kpiPeriod, kpiProjectFilter, kpiTaskTypeFilter]);
+    }, [kpiPeriod, kpiProjectFilter, kpiTaskTypeFilter, kpiProjectTypeFilter]);
 
     // ค้นหาแบบ debounce — พิมพ์แล้วรอ 300ms ก่อนยิง request กันสแปม request ทุกตัวอักษร
     // เคลียร์ผลลัพธ์ผ่าน timer เดียวกันเสมอ (ไม่ setState ตรงๆ ใน effect body) กัน cascading render
@@ -350,6 +356,16 @@ export default function DashboardPage() {
         setSearchQuery("");
         setSearchResults(null);
         router.push(url);
+    }
+
+    // เปิดปัญหาที่มีการตอบกลับใหม่จากแดชบอร์ด = ถือว่าอ่านแล้ว (ยิง GET replies เพื่อ mark-read ฝั่ง backend เหมือนตอนเปิดเธรดใน
+    // หน้า project) ไม่ต้องรอ response ก่อนค่อยพาไปหน้า project เพราะแค่ mark-read เฉยๆ ไม่ต้องใช้ผลลัพธ์อะไรต่อ
+    // ปัญหาจะหายไปจากรายการ "ปัญหาที่เปิดอยู่" ตอนโหลดแดชบอร์ดครั้งถัดไป (ถ้าไม่ได้โผล่มาด้วยเหตุผลอื่น เช่น รับผิดชอบตรง/ถูกแท็ก)
+    function openIssueFromDashboard(iss: OpenIssue) {
+        if (iss.is_unread_reply) {
+            fetch(`${api}/projects/${iss.project_id}/issues/${iss.issue_id}/replies`, { headers: authHeader() }).catch(() => {});
+        }
+        router.push(`/projects/view?id=${iss.project_id}&taskId=${iss.task_id}`);
     }
 
     async function openMemberTasks(member: TeamWorkloadEntry) {
@@ -508,7 +524,7 @@ export default function DashboardPage() {
                         <div className="flex text-xs rounded-lg border border-gray-200 overflow-hidden shrink-0">
                             {(["task", "subtask"] as const).map((tab) => {
                                 const tabCount = summary.openIssues.filter(
-                                    (iss) => (tab === "subtask") === iss.is_subtask && (!subtaskOwnOnly || iss.is_direct_assignee || iss.is_tagged)
+                                    (iss) => (tab === "subtask") === iss.is_subtask && (!subtaskOwnOnly || iss.is_direct_assignee || iss.is_tagged || iss.is_unread_reply)
                                 ).length;
                                 return (
                                     <button
@@ -536,7 +552,7 @@ export default function DashboardPage() {
                     </label>
                     {(() => {
                         const filtered = summary.openIssues.filter(
-                            (iss) => (issueTab === "subtask") === iss.is_subtask && (!subtaskOwnOnly || iss.is_direct_assignee || iss.is_tagged)
+                            (iss) => (issueTab === "subtask") === iss.is_subtask && (!subtaskOwnOnly || iss.is_direct_assignee || iss.is_tagged || iss.is_unread_reply)
                         );
                         if (filtered.length === 0) {
                             return <p className="text-sm text-gray-400">ไม่มีปัญหาที่เปิดอยู่ใน{issueTab === "subtask" ? "subtask" : "task"}ตอนนี้</p>;
@@ -547,9 +563,9 @@ export default function DashboardPage() {
                                     <li key={iss.issue_id}>
                                         <button
                                             type="button"
-                                            onClick={() => router.push(`/projects/view?id=${iss.project_id}&taskId=${iss.task_id}`)}
+                                            onClick={() => openIssueFromDashboard(iss)}
                                             className={`w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left ${
-                                                iss.is_tagged ? "bg-red-50 hover:bg-red-100" : "hover:bg-blue-50"
+                                                iss.is_tagged || iss.is_unread_reply ? "bg-red-50 hover:bg-red-100" : "hover:bg-blue-50"
                                             }`}
                                         >
                                             <div className="min-w-0">
@@ -558,6 +574,16 @@ export default function DashboardPage() {
                                                     {iss.is_tagged && (
                                                         <span className="shrink-0 text-[10px] font-medium text-red-600 bg-red-100 px-1.5 py-0.5 rounded">
                                                             @คุณถูกแท็ก
+                                                        </span>
+                                                    )}
+                                                    {iss.is_unread_reply && (
+                                                        <span className="shrink-0 text-[10px] font-medium text-red-600 bg-red-100 px-1.5 py-0.5 rounded">
+                                                            มีการตอบกลับใหม่
+                                                        </span>
+                                                    )}
+                                                    {iss.issue_status === "resolved" && (
+                                                        <span className="shrink-0 text-[10px] font-medium text-green-600 bg-green-100 px-1.5 py-0.5 rounded">
+                                                            แก้ไขแล้ว
                                                         </span>
                                                     )}
                                                 </p>
@@ -767,6 +793,20 @@ export default function DashboardPage() {
                             ))}
                         </div>
                         <div className="flex text-xs rounded-lg border border-gray-200 overflow-hidden shrink-0">
+                            {(["all", "waterfall", "agile"] as const).map((pt) => (
+                                <button
+                                    key={pt}
+                                    type="button"
+                                    onClick={() => setMyKpiProjectTypeFilter(pt)}
+                                    className={`px-3 py-1.5 font-medium transition-colors ${
+                                        myKpiProjectTypeFilter === pt ? "bg-indigo-500 text-white" : "bg-white text-gray-500 hover:bg-gray-50"
+                                    }`}
+                                >
+                                    {pt === "all" ? "ทุกรูปแบบ" : pt === "waterfall" ? "Waterfall" : "Agile"}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="flex text-xs rounded-lg border border-gray-200 overflow-hidden shrink-0">
                             {(["month", "year"] as const).map((mode) => (
                                 <button
                                     key={mode}
@@ -849,6 +889,20 @@ export default function DashboardPage() {
                                     </button>
                                 ))}
                             </div>
+                            <div className="flex text-xs rounded-lg border border-gray-200 overflow-hidden shrink-0">
+                                {(["all", "waterfall", "agile"] as const).map((pt) => (
+                                    <button
+                                        key={pt}
+                                        type="button"
+                                        onClick={() => { setKpiProjectTypeFilter(pt); setKpiProjectFilter("all"); }}
+                                        className={`px-3 py-1.5 font-medium transition-colors ${
+                                            kpiProjectTypeFilter === pt ? "bg-indigo-500 text-white" : "bg-white text-gray-500 hover:bg-gray-50"
+                                        }`}
+                                    >
+                                        {pt === "all" ? "ทุกรูปแบบ" : pt === "waterfall" ? "Waterfall" : "Agile"}
+                                    </button>
+                                ))}
+                            </div>
                             <SearchableSelect
                                 value={kpiProjectFilter}
                                 onChange={(v) => setKpiProjectFilter(v || "all")}
@@ -867,44 +921,61 @@ export default function DashboardPage() {
                         <p className="text-sm text-gray-400">ไม่มีข้อมูลในช่วงนี้</p>
                     ) : (
                         <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead>
-                                    <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
-                                        <th className="py-2 pr-3 font-medium">ชื่อ</th>
-                                        <th className="py-2 px-3 font-medium text-right">
-                                            {kpiTaskTypeFilter === "all" ? "งาน" : kpiTaskTypeFilter === "task" ? "Task" : "Subtask"} ที่เสร็จ
-                                        </th>
-                                        <th className="py-2 px-3 font-medium text-right">ตรงเวลา</th>
-                                        <th className="py-2 px-3 font-medium text-right">เวลาเฉลี่ยทำงาน</th>
-                                        <th className="py-2 px-3 font-medium text-right">ปัญหาที่แก้ไข</th>
-                                        <th className="py-2 pl-3 font-medium text-right">เวลาเฉลี่ยแก้ปัญหา</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-50">
-                                    {kpiMembers.map((m) => (
-                                        <tr key={m.user_id}>
-                                            <td className="py-2 pr-3">
-                                                <div className="flex items-center gap-2">
-                                                    <Image
-                                                        src={m.user_avatar_url ? `${SERVER_BASE}${m.user_avatar_url}` : "/defult.png"}
-                                                        alt=""
-                                                        width={24}
-                                                        height={24}
-                                                        unoptimized={!!m.user_avatar_url}
-                                                        className="w-6 h-6 rounded-full object-cover border border-gray-200 shrink-0"
-                                                    />
-                                                    <span className="text-gray-700 truncate">{m.user_fullname}</span>
-                                                </div>
-                                            </td>
-                                            <td className="py-2 px-3 text-right text-gray-700">{m.tasksCompleted}</td>
-                                            <td className={`py-2 px-3 text-right font-medium ${rateColor(m.taskOnTimeRate)}`}>{formatRate(m.taskOnTimeRate)}</td>
-                                            <td className="py-2 px-3 text-right text-gray-500">{formatHours(m.avgTaskCycleHours)}</td>
-                                            <td className="py-2 px-3 text-right text-gray-700">{m.issuesResolved}</td>
-                                            <td className="py-2 pl-3 text-right text-gray-500">{formatHours(m.avgIssueResolveHours)}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                            {(() => {
+                                const maxAssigned = Math.max(...kpiMembers.map((m) => m.tasksAssigned), 1);
+                                return (
+                                    <table className="w-full text-sm">
+                                        <thead>
+                                            <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
+                                                <th className="py-2 pr-3 font-medium">ชื่อ</th>
+                                                <th className="py-2 px-3 font-medium text-right">ได้รับมอบหมาย</th>
+                                                <th className="py-2 px-3 font-medium text-right">
+                                                    {kpiTaskTypeFilter === "all" ? "งาน" : kpiTaskTypeFilter === "task" ? "Task" : "Subtask"} ที่เสร็จ
+                                                </th>
+                                                <th className="py-2 px-3 font-medium text-right">ตรงเวลา</th>
+                                                <th className="py-2 px-3 font-medium text-right">เวลาเฉลี่ยทำงาน</th>
+                                                <th className="py-2 px-3 font-medium text-right">ปัญหาที่แก้ไข</th>
+                                                <th className="py-2 pl-3 font-medium text-right">เวลาเฉลี่ยแก้ปัญหา</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-50">
+                                            {kpiMembers.map((m) => (
+                                                <tr key={m.user_id}>
+                                                    <td className="py-2 pr-3">
+                                                        <div className="flex items-center gap-2">
+                                                            <Image
+                                                                src={m.user_avatar_url ? `${SERVER_BASE}${m.user_avatar_url}` : "/defult.png"}
+                                                                alt=""
+                                                                width={24}
+                                                                height={24}
+                                                                unoptimized={!!m.user_avatar_url}
+                                                                className="w-6 h-6 rounded-full object-cover border border-gray-200 shrink-0"
+                                                            />
+                                                            <span className="text-gray-700 truncate">{m.user_fullname}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-2 px-3 text-right">
+                                                        <div className="flex items-center justify-end gap-2">
+                                                            <div className="w-14 h-1.5 rounded-full bg-gray-100 overflow-hidden shrink-0">
+                                                                <div
+                                                                    className="h-full bg-indigo-400"
+                                                                    style={{ width: `${(m.tasksAssigned / maxAssigned) * 100}%` }}
+                                                                />
+                                                            </div>
+                                                            <span className="text-gray-700 w-4 text-right">{m.tasksAssigned}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-2 px-3 text-right text-gray-700">{m.tasksCompleted}</td>
+                                                    <td className={`py-2 px-3 text-right font-medium ${rateColor(m.taskOnTimeRate)}`}>{formatRate(m.taskOnTimeRate)}</td>
+                                                    <td className="py-2 px-3 text-right text-gray-500">{formatHours(m.avgTaskCycleHours)}</td>
+                                                    <td className="py-2 px-3 text-right text-gray-700">{m.issuesResolved}</td>
+                                                    <td className="py-2 pl-3 text-right text-gray-500">{formatHours(m.avgIssueResolveHours)}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                );
+                            })()}
                         </div>
                     )}
                 </div>

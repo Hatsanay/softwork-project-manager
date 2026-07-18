@@ -47,18 +47,41 @@ async function markRead(readsTable, idColumn, entityId, userId) {
     );
 }
 
+// ดึงข้อความพร้อม preview ของข้อความที่ถูกตอบกลับ (ถ้ามี) ด้วย self-JOIN บนตารางเดียวกัน
+// reply_to_image_count ไว้ทำ fallback label "[รูปภาพ]" ฝั่ง frontend เวลาข้อความต้นทางไม่มีข้อความ มีแต่รูป
+async function getMessagesWithReplyPreview(messagesTable, imagesTable, idColumn, entityId) {
+    const [rows] = await pool.query(
+        `SELECT c.message_id, c.${idColumn}, c.user_id,
+                CONCAT(u.user_fname, ' ', u.user_lname) AS user_fullname, u.user_avatar_url,
+                c.message_text, c.message_created_at, c.reply_to_message_id,
+                rc.message_text AS reply_to_text,
+                CONCAT(ru.user_fname, ' ', ru.user_lname) AS reply_to_user_fullname,
+                (SELECT COUNT(*) FROM ${imagesTable} rci WHERE rci.message_id = rc.message_id) AS reply_to_image_count
+         FROM ${messagesTable} c
+         LEFT JOIN tb_users u ON u.user_id = c.user_id
+         LEFT JOIN ${messagesTable} rc ON rc.message_id = c.reply_to_message_id
+         LEFT JOIN tb_users ru ON ru.user_id = rc.user_id
+         WHERE c.${idColumn} = ?
+         ORDER BY c.message_created_at ASC, c.message_id ASC`,
+        [entityId]
+    );
+    return rows;
+}
+
+// ตอบกลับข้อความไหนได้ต้องเป็นข้อความที่อยู่ใน task/project เดียวกันเท่านั้น (กันส่ง message_id ของ thread อื่นมาปลอมเป็นการตอบกลับ)
+// ถ้า id ที่ส่งมาไม่ใช่ของจริง/อยู่คนละ thread ก็เงียบๆ ไม่ผูกให้ (ไม่ใช่ error บล็อกการส่งข้อความทั้งก้อน)
+async function resolveReplyTarget(messagesTable, idColumn, entityId, replyToMessageId) {
+    if (!replyToMessageId) return null;
+    const [rows] = await pool.query(
+        `SELECT message_id FROM ${messagesTable} WHERE message_id = ? AND ${idColumn} = ?`,
+        [replyToMessageId, entityId]
+    );
+    return rows[0]?.message_id ?? null;
+}
+
 async function getForTask(req, res, next) {
     try {
-        const [rows] = await pool.query(
-            `SELECT c.message_id, c.task_id, c.user_id,
-                    CONCAT(u.user_fname, ' ', u.user_lname) AS user_fullname, u.user_avatar_url,
-                    c.message_text, c.message_created_at
-             FROM tb_task_chat_messages c
-             LEFT JOIN tb_users u ON u.user_id = c.user_id
-             WHERE c.task_id = ?
-             ORDER BY c.message_created_at ASC, c.message_id ASC`,
-            [req.params.taskId]
-        );
+        const rows = await getMessagesWithReplyPreview("tb_task_chat_messages", "tb_task_chat_images", "task_id", req.params.taskId);
         const data = await attachImages("tb_task_chat_images", rows);
         await markRead("tb_task_chat_reads", "task_id", req.params.taskId, req.user.user_id);
         res.json({ data });
@@ -78,10 +101,12 @@ async function create(req, res, next) {
         const [taskRows] = await pool.query("SELECT task_id FROM tb_tasks WHERE task_id = ?", [req.params.taskId]);
         if (!taskRows[0]) return res.status(404).json({ message: "ไม่พบ task นี้" });
 
+        const reply_to_message_id = await resolveReplyTarget("tb_task_chat_messages", "task_id", req.params.taskId, req.body.reply_to_message_id);
+
         const message_id = await generateDailyId("tb_task_chat_messages", "message_id", "MES");
         await pool.query(
-            "INSERT INTO tb_task_chat_messages (message_id, task_id, user_id, message_text) VALUES (?, ?, ?, ?)",
-            [message_id, req.params.taskId, req.user.user_id, message_text || null]
+            "INSERT INTO tb_task_chat_messages (message_id, task_id, user_id, message_text, reply_to_message_id) VALUES (?, ?, ?, ?, ?)",
+            [message_id, req.params.taskId, req.user.user_id, message_text || null, reply_to_message_id]
         );
         await saveChatImages("tb_task_chat_images", "MSI", message_id, req.files);
 
@@ -94,16 +119,7 @@ async function create(req, res, next) {
 // แชทรวมของโปรเจกต์ (ไม่ผูกกับ task ไหน) — คุยเรื่องภาพรวม ไม่ต้องเปิด task ก่อนถึงจะคุยได้
 async function getForProject(req, res, next) {
     try {
-        const [rows] = await pool.query(
-            `SELECT c.message_id, c.project_id, c.user_id,
-                    CONCAT(u.user_fname, ' ', u.user_lname) AS user_fullname, u.user_avatar_url,
-                    c.message_text, c.message_created_at
-             FROM tb_project_chat_messages c
-             LEFT JOIN tb_users u ON u.user_id = c.user_id
-             WHERE c.project_id = ?
-             ORDER BY c.message_created_at ASC, c.message_id ASC`,
-            [req.params.projectId]
-        );
+        const rows = await getMessagesWithReplyPreview("tb_project_chat_messages", "tb_project_chat_images", "project_id", req.params.projectId);
         const data = await attachImages("tb_project_chat_images", rows);
         await markRead("tb_project_chat_reads", "project_id", req.params.projectId, req.user.user_id);
         res.json({ data });
@@ -123,10 +139,12 @@ async function createForProject(req, res, next) {
         const [projectRows] = await pool.query("SELECT project_id FROM tb_projects WHERE project_id = ?", [req.params.projectId]);
         if (!projectRows[0]) return res.status(404).json({ message: "ไม่พบโปรเจกต์นี้" });
 
+        const reply_to_message_id = await resolveReplyTarget("tb_project_chat_messages", "project_id", req.params.projectId, req.body.reply_to_message_id);
+
         const message_id = await generateDailyId("tb_project_chat_messages", "message_id", "PCM");
         await pool.query(
-            "INSERT INTO tb_project_chat_messages (message_id, project_id, user_id, message_text) VALUES (?, ?, ?, ?)",
-            [message_id, req.params.projectId, req.user.user_id, message_text || null]
+            "INSERT INTO tb_project_chat_messages (message_id, project_id, user_id, message_text, reply_to_message_id) VALUES (?, ?, ?, ?, ?)",
+            [message_id, req.params.projectId, req.user.user_id, message_text || null, reply_to_message_id]
         );
         await saveChatImages("tb_project_chat_images", "PCI", message_id, req.files);
 

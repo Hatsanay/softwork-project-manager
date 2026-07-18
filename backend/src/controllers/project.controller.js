@@ -22,7 +22,7 @@ async function getAll(req, res, next) {
         const memberParams = seesAll ? [] : [req.user.user_id];
 
         const [rows] = await pool.query(
-            `SELECT p.project_id, p.project_name, p.project_status, p.project_start_date, p.project_due_date,
+            `SELECT p.project_id, p.project_name, p.project_status, p.project_type, p.project_start_date, p.project_due_date,
                     p.project_progress_percent, c.client_name,
                     (SELECT COUNT(*) FROM tb_project_members pm2 WHERE pm2.project_id = p.project_id) AS member_count
              FROM tb_projects p
@@ -74,20 +74,23 @@ async function getOne(req, res, next) {
 
 async function create(req, res, next) {
     try {
-        const { project_name, client_id, project_description, project_status, project_start_date, project_due_date } = req.body;
+        const { project_name, client_id, project_description, project_status, project_type, project_start_date, project_due_date } = req.body;
         if (!project_name) return res.status(400).json({ message: "กรุณากรอกชื่อโปรเจกต์" });
+        if (project_type && !["waterfall", "agile"].includes(project_type)) {
+            return res.status(400).json({ message: "รูปแบบโปรเจกต์ไม่ถูกต้อง" });
+        }
 
         const project_id = await generateDailyId("tb_projects", "project_id", "PRO");
         const project_share_token = generateShareToken();
 
         await pool.query(
             `INSERT INTO tb_projects
-                (project_id, client_id, project_name, project_description, project_status,
+                (project_id, client_id, project_name, project_description, project_status, project_type,
                  project_start_date, project_due_date, project_share_token, project_created_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 project_id, client_id || null, project_name, project_description || null,
-                project_status || "planning", project_start_date || null, project_due_date || null,
+                project_status || "planning", project_type || "waterfall", project_start_date || null, project_due_date || null,
                 project_share_token, req.user.user_id,
             ]
         );

@@ -49,6 +49,7 @@ CREATE TABLE tb_projects (
   project_name             VARCHAR(150) NOT NULL,
   project_description      TEXT NULL,
   project_status           ENUM('planning','in_progress','on_hold','completed','cancelled') NOT NULL DEFAULT 'planning',
+  project_type             ENUM('waterfall','agile') NOT NULL DEFAULT 'waterfall' COMMENT 'waterfall = มอบหมายงานโดยคนมีสิทธิ์เท่านั้น (แบบเดิม), agile = เพิ่มเติมจาก waterfall คือ task/subtask ที่ยังไม่มีคนรับผิดชอบ สมาชิกกดรับเองได้ (ดู tb_task_assignees, รับได้คนแรกคนเดียว)',
   project_start_date       DATE NULL,
   project_due_date         DATE NULL,
   project_completed_at     DATETIME NULL COMMENT 'ตั้งครั้งเดียวตอนเปลี่ยนสถานะเป็น completed (เคลียร์เป็น NULL ถ้าเปลี่ยนสถานะออกจาก completed) ใช้คำนวณ KPI อัตราส่งตรงเวลา ไม่ใช้ project_updated_at เพราะแก้ไขข้อมูลอื่นทีหลังจะทำให้เวลาคลาดเคลื่อน',
@@ -167,18 +168,62 @@ CREATE TABLE tb_task_issue_tags (
   CONSTRAINT fk_issue_tag_user FOREIGN KEY (user_id) REFERENCES tb_users(user_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ─── 6.2.2) ตอบกลับปัญหา (reply) ──────────────────────────────────────────────────
+-- ข้อความตอบกลับเรียงตามเวลา ไม่มีแก้ไข/ลบ (เหมือน tb_task_chat_messages) — ใครก็ตามที่เป็นสมาชิกโปรเจกต์ตอบกลับได้
+-- ไม่ต้องมีสิทธิ์เฉพาะเหมือนบิต addIssue/editIssue เพราะเป็นแค่การพูดคุย/อัปเดตความคืบหน้า ไม่ใช่การกระทำต่อ workflow ของปัญหา
+-- reply_created_at ต้องเป็น DATETIME(3) (ไม่ใช่ DATETIME เฉยๆ) ด้วยเหตุผลเดียวกับ tb_task_chat_messages/tb_task_chat_reads
+-- (กันตอบกลับใหม่มาถึงพร้อมกับตอน mark-read ในวินาทีเดียวกัน แล้วเทียบเท่ากันพอดีจนไม่นับว่ายังไม่อ่าน) ดู tb_task_issue_reply_reads คู่กัน
+CREATE TABLE tb_task_issue_replies (
+  reply_id         VARCHAR(18) NOT NULL,
+  issue_id         VARCHAR(18) NOT NULL,
+  user_id          VARCHAR(18) NULL,
+  reply_text       TEXT NULL COMMENT 'ว่างได้ถ้าตอบกลับด้วยรูปแนบล้วนๆ ไม่มีข้อความ (เหมือน tb_task_chat_messages)',
+  reply_created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (reply_id),
+  KEY idx_issue_reply_issue (issue_id),
+  CONSTRAINT fk_issue_reply_issue FOREIGN KEY (issue_id) REFERENCES tb_task_issues(issue_id) ON DELETE CASCADE,
+  CONSTRAINT fk_issue_reply_user FOREIGN KEY (user_id) REFERENCES tb_users(user_id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- รูปแนบของการตอบกลับปัญหา (หนึ่งการตอบกลับแนบได้หลายรูป เหมือน issue/chat images)
+CREATE TABLE tb_task_issue_reply_images (
+  image_id         VARCHAR(18) NOT NULL,
+  reply_id         VARCHAR(18) NOT NULL,
+  image_url        VARCHAR(255) NOT NULL,
+  image_created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (image_id),
+  KEY idx_issue_reply_image_reply (reply_id),
+  CONSTRAINT fk_issue_reply_image_reply FOREIGN KEY (reply_id) REFERENCES tb_task_issue_replies(reply_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- อ่านการตอบกลับของปัญหาที่ตัวเองสร้างล่าสุดเมื่อไหร่ ต่อคนต่อปัญหา — ใช้คำนวณว่ามีการตอบกลับใหม่ที่ยังไม่ได้อ่านไหม
+-- (เพื่อดันปัญหาของตัวเองที่โดนตอบกลับให้ไปโผล่ใน "ปัญหาที่เปิดอยู่" บนแดชบอร์ด แม้ไม่ใช่ผู้รับผิดชอบ/ไม่ถูกแท็กก็ตาม
+-- พอเปิดอ่านแล้วก็ไม่ต้องโผล่อีกจนกว่าจะมีการตอบกลับใหม่มาอีก) ต้องเป็น DATETIME(3) ด้วยเหตุผลเดียวกับ tb_task_chat_reads
+CREATE TABLE tb_task_issue_reply_reads (
+  issue_id     VARCHAR(18) NOT NULL,
+  user_id      VARCHAR(18) NOT NULL,
+  last_read_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (issue_id, user_id),
+  CONSTRAINT fk_issue_reply_read_issue FOREIGN KEY (issue_id) REFERENCES tb_task_issues(issue_id) ON DELETE CASCADE,
+  CONSTRAINT fk_issue_reply_read_user FOREIGN KEY (user_id) REFERENCES tb_users(user_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ─── 6.3) แชทใน task/subtask ──────────────────────────────────────────────────────
 -- สมาชิกโปรเจกต์ทุกคนแชทได้ ไม่ต้องมีสิทธิ์เฉพาะ (คนละเรื่องกับ issue ที่คุมด้วยบิต)
+-- reply_to_message_id = ตอบกลับข้อความไหน (ถ้ามี) อ้างตัวเองได้ (self-reference) ON DELETE SET NULL เพราะแม้ข้อความต้นทาง
+-- จะหายไป ข้อความที่ตอบกลับก็ยังควรอยู่ (ระบบยังไม่มี endpoint ลบข้อความแชทตอนนี้ แต่กันไว้เผื่ออนาคต)
 CREATE TABLE tb_task_chat_messages (
   message_id         VARCHAR(18) NOT NULL,
   task_id            VARCHAR(18) NOT NULL,
   user_id            VARCHAR(18) NULL,
   message_text       TEXT NULL,
+  reply_to_message_id VARCHAR(18) NULL,
   message_created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY (message_id),
   KEY idx_chat_task (task_id),
   CONSTRAINT fk_chat_task FOREIGN KEY (task_id) REFERENCES tb_tasks(task_id) ON DELETE CASCADE,
-  CONSTRAINT fk_chat_user FOREIGN KEY (user_id) REFERENCES tb_users(user_id) ON DELETE SET NULL
+  CONSTRAINT fk_chat_user FOREIGN KEY (user_id) REFERENCES tb_users(user_id) ON DELETE SET NULL,
+  CONSTRAINT fk_chat_reply_to FOREIGN KEY (reply_to_message_id) REFERENCES tb_task_chat_messages(message_id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- รูปแนบของข้อความแชท (หนึ่งข้อความแนบได้หลายรูป เหมือน issue images)
@@ -212,11 +257,13 @@ CREATE TABLE tb_project_chat_messages (
   project_id         VARCHAR(18) NOT NULL,
   user_id            VARCHAR(18) NULL,
   message_text       TEXT NULL,
+  reply_to_message_id VARCHAR(18) NULL,
   message_created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY (message_id),
   KEY idx_project_chat_project (project_id),
   CONSTRAINT fk_project_chat_project FOREIGN KEY (project_id) REFERENCES tb_projects(project_id) ON DELETE CASCADE,
-  CONSTRAINT fk_project_chat_user FOREIGN KEY (user_id) REFERENCES tb_users(user_id) ON DELETE SET NULL
+  CONSTRAINT fk_project_chat_user FOREIGN KEY (user_id) REFERENCES tb_users(user_id) ON DELETE SET NULL,
+  CONSTRAINT fk_project_chat_reply_to FOREIGN KEY (reply_to_message_id) REFERENCES tb_project_chat_messages(message_id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE tb_project_chat_images (

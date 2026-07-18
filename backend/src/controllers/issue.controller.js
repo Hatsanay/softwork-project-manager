@@ -276,4 +276,125 @@ async function remove(req, res, next) {
     }
 }
 
-module.exports = { getForTask, create, update, updateStatus, remove };
+// รูปแนบของการตอบกลับ — ย่อ+บีบเป็น WebP เหมือน saveIssueImages ทุกอย่าง แค่ผูกกับ reply_id แทน issue_id
+async function saveReplyImages(replyId, files) {
+    for (const file of files ?? []) {
+        const filename = `issue-reply-${Date.now()}-${Math.round(Math.random() * 1e9)}.webp`;
+        await sharp(file.buffer)
+            .resize(1600, 1600, { fit: "inside", withoutEnlargement: true })
+            .webp({ quality: 78 })
+            .toFile(path.join(UPLOADS_DIR, filename));
+
+        const image_id = await generateDailyId("tb_task_issue_reply_images", "image_id", "IRI");
+        await pool.query(
+            "INSERT INTO tb_task_issue_reply_images (image_id, reply_id, image_url) VALUES (?, ?, ?)",
+            [image_id, replyId, `/uploads/${filename}`]
+        );
+    }
+}
+
+async function attachReplyImages(replies) {
+    if (replies.length === 0) return replies;
+    const [rows] = await pool.query(
+        `SELECT image_id, reply_id, image_url
+         FROM tb_task_issue_reply_images
+         WHERE reply_id IN (?)
+         ORDER BY image_created_at ASC`,
+        [replies.map((r) => r.reply_id)]
+    );
+    return replies.map((r) => ({ ...r, images: rows.filter((row) => row.reply_id === r.reply_id) }));
+}
+
+// ตอบกลับปัญหา — ใครก็ตามที่เป็นสมาชิกโปรเจกต์ตอบได้เลย (เช็คแค่ requireProjectMember ที่ route เหมือนแชท)
+// ไม่ต้องมีสิทธิ์เฉพาะเหมือนบิต addIssue/editIssue เพราะเป็นแค่การพูดคุย/อัปเดตความคืบหน้า ไม่ใช่การกระทำต่อ workflow ของปัญหา
+async function getReplies(req, res, next) {
+    try {
+        const [issueRows] = await pool.query("SELECT issue_id FROM tb_task_issues WHERE issue_id = ?", [req.params.issueId]);
+        if (!issueRows[0]) return res.status(404).json({ message: "ไม่พบปัญหานี้" });
+
+        const [rows] = await pool.query(
+            `SELECT r.reply_id, r.issue_id, r.user_id,
+                    CONCAT(u.user_fname, ' ', u.user_lname) AS user_fullname, u.user_avatar_url,
+                    r.reply_text, r.reply_created_at
+             FROM tb_task_issue_replies r
+             LEFT JOIN tb_users u ON u.user_id = r.user_id
+             WHERE r.issue_id = ?
+             ORDER BY r.reply_created_at ASC, r.reply_id ASC`,
+            [req.params.issueId]
+        );
+        const data = await attachReplyImages(rows);
+
+        // ดูการตอบกลับ = ถือว่าอ่านแล้ว ไม่มี endpoint mark-read แยกต่างหาก (เหมือนแชท)
+        // ใช้ NOW(3) ไม่ใช่ NOW() เฉยๆ กันตอบกลับใหม่มาถึงพร้อมวินาทีเดียวกับตอนอ่านแล้วเทียบเท่ากันพอดีจนไม่นับว่ายังไม่อ่าน
+        await pool.query(
+            `INSERT INTO tb_task_issue_reply_reads (issue_id, user_id, last_read_at) VALUES (?, ?, NOW(3))
+             ON DUPLICATE KEY UPDATE last_read_at = VALUES(last_read_at)`,
+            [req.params.issueId, req.user.user_id]
+        );
+
+        res.json({ data });
+    } catch (err) {
+        next(err);
+    }
+}
+
+// การตอบกลับของทุกปัญหาใน task/subtask เดียว ในคำขอเดียว — ใช้ตอนเปิดดูรายละเอียด task เพราะตอนนี้เธรดตอบกลับ
+// แสดงตลอด ไม่ต้องกดขยายทีละปัญหาเหมือนเดิม (ยิง N คำขอแยกทีละปัญหาจะช้ากว่านี้มาก) เปิดดู task = ถือว่าอ่านทุกปัญหาในนั้นแล้ว
+// เหมือนกับ getReplies เดิม แค่ทำทีเดียวพร้อมกันทุกปัญหา
+async function getRepliesForTask(req, res, next) {
+    try {
+        const [issueRows] = await pool.query("SELECT issue_id FROM tb_task_issues WHERE task_id = ?", [req.params.taskId]);
+        const issueIds = issueRows.map((r) => r.issue_id);
+        if (issueIds.length === 0) return res.json({ data: {} });
+
+        const [rows] = await pool.query(
+            `SELECT r.reply_id, r.issue_id, r.user_id,
+                    CONCAT(u.user_fname, ' ', u.user_lname) AS user_fullname, u.user_avatar_url,
+                    r.reply_text, r.reply_created_at
+             FROM tb_task_issue_replies r
+             LEFT JOIN tb_users u ON u.user_id = r.user_id
+             WHERE r.issue_id IN (?)
+             ORDER BY r.reply_created_at ASC, r.reply_id ASC`,
+            [issueIds]
+        );
+        const withImages = await attachReplyImages(rows);
+
+        const data = {};
+        for (const id of issueIds) data[id] = [];
+        for (const row of withImages) data[row.issue_id].push(row);
+
+        await Promise.all(issueIds.map((issueId) => pool.query(
+            `INSERT INTO tb_task_issue_reply_reads (issue_id, user_id, last_read_at) VALUES (?, ?, NOW(3))
+             ON DUPLICATE KEY UPDATE last_read_at = VALUES(last_read_at)`,
+            [issueId, req.user.user_id]
+        )));
+
+        res.json({ data });
+    } catch (err) {
+        next(err);
+    }
+}
+
+async function createReply(req, res, next) {
+    try {
+        const reply_text = (req.body.reply_text || "").trim();
+        const hasImages = (req.files ?? []).length > 0;
+        if (!reply_text && !hasImages) return res.status(400).json({ message: "กรุณาพิมพ์ข้อความหรือแนบรูป" });
+
+        const [issueRows] = await pool.query("SELECT issue_id FROM tb_task_issues WHERE issue_id = ?", [req.params.issueId]);
+        if (!issueRows[0]) return res.status(404).json({ message: "ไม่พบปัญหานี้" });
+
+        const reply_id = await generateDailyId("tb_task_issue_replies", "reply_id", "IRP");
+        await pool.query(
+            "INSERT INTO tb_task_issue_replies (reply_id, issue_id, user_id, reply_text) VALUES (?, ?, ?, ?)",
+            [reply_id, req.params.issueId, req.user.user_id, reply_text || null]
+        );
+        await saveReplyImages(reply_id, req.files);
+
+        res.status(201).json({ reply_id });
+    } catch (err) {
+        next(err);
+    }
+}
+
+module.exports = { getForTask, create, update, updateStatus, remove, getReplies, createReply, getRepliesForTask };

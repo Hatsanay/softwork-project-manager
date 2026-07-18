@@ -402,6 +402,64 @@ async function remove(req, res, next) {
     }
 }
 
+// รับ task/subtask ที่ยังไม่มีคนรับผิดชอบด้วยตัวเอง — เฉพาะโปรเจกต์ agile เท่านั้น (waterfall ต้องให้คนมีสิทธิ์ assign ตามเดิม)
+// สมาชิกโปรเจกต์คนไหนก็กดรับได้ ไม่ต้องมีสิทธิ์ addTask/editTask ใดๆ (ตั้งใจให้ bypass บิตสิทธิ์ปกติ)
+// รับได้แค่คนแรกคนเดียว — ต้องยังไม่มี assignee เลยถึงจะรับได้ (มีคนรับไปแล้วปุ่มจะหายไปฝั่ง frontend)
+// ถ้ารับ subtask จะถูกเพิ่มเป็นผู้รับผิดชอบร่วมของ task แม่ไปด้วยเสมอ (แม้ task แม่จะมี/ไม่มี assignee อยู่แล้วก่อนหน้า)
+// เพราะสมาชิกคนละคนที่รับ subtask คนละอันใต้ task แม่เดียวกัน ถือว่าเป็นเจ้าของ task แม่ร่วมกันตามที่ตกลงไว้
+async function claim(req, res, next) {
+    try {
+        const [taskRows] = await pool.query(
+            "SELECT task_id, project_id, task_parent_id FROM tb_tasks WHERE task_id = ?",
+            [req.params.id]
+        );
+        const task = taskRows[0];
+        if (!task) return res.status(404).json({ message: "ไม่พบ task นี้" });
+
+        const [projectRows] = await pool.query(
+            "SELECT project_type, project_status FROM tb_projects WHERE project_id = ?",
+            [task.project_id]
+        );
+        const project = projectRows[0];
+        if (!project) return res.status(404).json({ message: "ไม่พบโปรเจกต์นี้" });
+        if (project.project_type !== "agile") {
+            return res.status(403).json({ message: "โปรเจกต์นี้ไม่ใช่รูปแบบ Agile ไม่สามารถกดรับงานเองได้" });
+        }
+        if (["completed", "cancelled"].includes(project.project_status)) {
+            return res.status(400).json({ message: "โปรเจกต์นี้ปิดแล้ว ไม่สามารถรับงานได้" });
+        }
+
+        const [existingAssignees] = await pool.query("SELECT user_id FROM tb_task_assignees WHERE task_id = ?", [req.params.id]);
+        if (existingAssignees.length > 0) {
+            return res.status(409).json({ message: "งานนี้มีคนรับไปแล้ว" });
+        }
+
+        const conn = await pool.getConnection();
+        try {
+            await conn.beginTransaction();
+            await conn.query("INSERT INTO tb_task_assignees (task_id, user_id) VALUES (?, ?)", [req.params.id, req.user.user_id]);
+            if (task.task_parent_id) {
+                await conn.query(
+                    "INSERT IGNORE INTO tb_task_assignees (task_id, user_id) VALUES (?, ?)",
+                    [task.task_parent_id, req.user.user_id]
+                );
+            }
+            await conn.commit();
+        } catch (err) {
+            await conn.rollback();
+            throw err;
+        } finally {
+            conn.release();
+        }
+
+        await writeTaskLog({ task_id: req.params.id, user_id: req.user.user_id, action: "assigned", message: "รับงานด้วยตัวเอง (Agile)" });
+
+        res.json({ message: "รับงานสำเร็จ" });
+    } catch (err) {
+        next(err);
+    }
+}
+
 async function getActivity(req, res, next) {
     try {
         const [rows] = await pool.query(
@@ -420,4 +478,4 @@ async function getActivity(req, res, next) {
     }
 }
 
-module.exports = { getAll, getOne, create, update, updateStatus, remove, getActivity };
+module.exports = { getAll, getOne, create, update, updateStatus, remove, getActivity, claim };

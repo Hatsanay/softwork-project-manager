@@ -14,13 +14,14 @@ type FormState = {
     client_id: string;
     project_description: string;
     project_status: string;
+    project_type: string;
     project_start_date: string;
     project_due_date: string;
 };
 
 const EMPTY_FORM: FormState = {
     project_name: "", client_id: "", project_description: "",
-    project_status: "planning", project_start_date: "", project_due_date: "",
+    project_status: "planning", project_type: "waterfall", project_start_date: "", project_due_date: "",
 };
 
 function authHeader() {
@@ -132,7 +133,17 @@ export default function CreateProjectPage() {
                     </select>
                 </div>
 
-                <div />
+                <div className="flex flex-col gap-1">
+                    <label className="text-sm font-medium text-gray-700">รูปแบบโปรเจกต์</label>
+                    <select
+                        value={form.project_type}
+                        onChange={(e) => setField("project_type", e.target.value)}
+                        className="px-4 py-2 border rounded focus:outline-none focus:ring-2 border-gray-300 focus:border-blue-400 focus:ring-blue-500/20"
+                    >
+                        <option value="waterfall">Waterfall — มอบหมายงานโดยผู้มีสิทธิ์เท่านั้น</option>
+                        <option value="agile">Agile — สมาชิกกดรับ task/subtask ที่ยังไม่มีคนรับผิดชอบได้เอง</option>
+                    </select>
+                </div>
 
                 <div className="flex flex-col gap-1">
                     <label className="text-sm font-medium text-gray-700">วันเริ่ม</label>

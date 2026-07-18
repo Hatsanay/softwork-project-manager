@@ -97,56 +97,75 @@ async function getSummary(req, res, next) {
         // ตรงนี้แค่เรื่อง "เห็น/รู้" ว่ามีปัญหาเกิดขึ้น ไม่ใช่สิทธิ์ทำอะไรกับมัน จึงยอมให้ cascade ได้)
         // "หรือถูกแท็ก (@)" ไว้ในปัญหานั้น — ขยายการมองเห็นออกไปนอกเหนือจากผู้รับผิดชอบ task/subtask โดยตรง
         // ให้คนที่ถูกแท็กเห็นปัญหานั้นในรายการของตัวเองด้วยเสมอ แม้ไม่มีความเกี่ยวข้องกับ task นั้นเลยก็ตาม
-        const issueScopeCondition = `(
+        // "หรือเป็นปัญหาที่ตัวเองสร้างไว้ (created_by) และมีการตอบกลับใหม่ที่ยังไม่ได้อ่าน" — ดันปัญหาของตัวเองที่มีคนมาตอบ
+        // กลับมาให้เห็นอีกครั้ง แม้ไม่ใช่ผู้รับผิดชอบ/ไม่ถูกแท็กก็ตาม พอเปิดอ่าน (getReplies mark-read) แล้วเงื่อนไขนี้จะหลุดไปเอง
+        // ไม่นับการตอบกลับของตัวเอง (rep.user_id != ?) เพราะตอบเองไม่ใช่สิ่งที่ต้อง "แจ้งเตือนตัวเอง" ว่ามีอะไรใหม่ให้อ่าน
+        // เงื่อนไขนี้ "ไม่บังคับ issue_status = 'open'" (ต่างจากอีก 3 เงื่อนไขข้างบน) เพราะต่อให้ปัญหาถูกทำเครื่องหมายว่าแก้ไขแล้ว
+        // แต่ถ้ายังมีคนมาตอบกลับใหม่ที่ยังไม่ได้อ่าน ก็ยังต้องเห็นแจ้งเตือนอยู่ดี ไม่สนว่าสถานะปัญหาจะเป็นอะไร
+        const unreadReplyCondition = `(i.created_by = ? AND EXISTS (
+            SELECT 1 FROM tb_task_issue_replies rep
+            LEFT JOIN tb_task_issue_reply_reads rr ON rr.issue_id = rep.issue_id AND rr.user_id = ?
+            WHERE rep.issue_id = i.issue_id
+              AND (rep.user_id IS NULL OR rep.user_id != ?)
+              AND (rr.last_read_at IS NULL OR rep.reply_created_at > rr.last_read_at)
+        ))`;
+        const assignedOrTaggedOpenCondition = `(
             EXISTS (SELECT 1 FROM tb_task_assignees ta WHERE ta.task_id = t.task_id AND ta.user_id = ?)
             OR (t.task_parent_id IS NOT NULL
                 AND EXISTS (SELECT 1 FROM tb_task_assignees ta2 WHERE ta2.task_id = t.task_parent_id AND ta2.user_id = ?))
             OR EXISTS (SELECT 1 FROM tb_task_issue_tags tag WHERE tag.issue_id = i.issue_id AND tag.user_id = ?)
+        )`;
+        const issueScopeCondition = `(
+            (i.issue_status = 'open' AND ${assignedOrTaggedOpenCondition})
+            OR ${unreadReplyCondition}
         )`;
 
         const [[{ count: openIssueCount }]] = await pool.query(
             `SELECT COUNT(DISTINCT i.issue_id) AS count
              FROM tb_task_issues i
              JOIN tb_tasks t ON t.task_id = i.task_id
-             WHERE i.issue_status = 'open' AND ${issueScopeCondition}`,
-            [userId, userId, userId]
+             WHERE ${issueScopeCondition}`,
+            Array(6).fill(userId)
         );
 
-        // นับแบบ "เฉพาะที่รับผิดชอบตรงๆ หรือถูกแท็ก" (ไม่รวม subtask ที่ได้มาจาก parent cascade) — ไว้คู่กับ toggle
-        // "แสดงเฉพาะ subtask ของตัวเอง" ฝั่ง frontend ให้ตัวเลข stat tile สลับไปมาได้ตรงกับ list ที่กรองอยู่
-        // ปัญหาที่ถูกแท็กยังนับตรงนี้เสมอ ไม่ถูกตัดออกด้วย toggle นี้ เพราะ toggle นี้ตั้งใจกรองแค่ "parent cascade"
-        // ที่เป็น noise ไม่ใช่การแท็กที่ตั้งใจเรียกร้องความสนใจโดยตรง
+        // นับแบบ "เฉพาะที่รับผิดชอบตรงๆ หรือถูกแท็ก หรือมีตอบกลับใหม่ที่ยังไม่อ่าน" (ไม่รวม subtask ที่ได้มาจาก parent cascade)
+        // ไว้คู่กับ toggle "แสดงเฉพาะ subtask ของตัวเอง" ฝั่ง frontend ให้ตัวเลข stat tile สลับไปมาได้ตรงกับ list ที่กรองอยู่
+        // ปัญหาที่ถูกแท็ก/มีตอบกลับใหม่ยังนับตรงนี้เสมอ ไม่ถูกตัดออกด้วย toggle นี้ เพราะ toggle นี้ตั้งใจกรองแค่ "parent cascade"
+        // ที่เป็น noise ไม่ใช่การเรียกร้องความสนใจโดยตรง (แท็ก/ตอบกลับ)
         const [[{ count: openIssueCountOwnOnly }]] = await pool.query(
             `SELECT COUNT(DISTINCT i.issue_id) AS count
              FROM tb_task_issues i
              JOIN tb_tasks t ON t.task_id = i.task_id
-             WHERE i.issue_status = 'open' AND (
+             WHERE (i.issue_status = 'open' AND (
                  EXISTS (SELECT 1 FROM tb_task_assignees ta WHERE ta.task_id = t.task_id AND ta.user_id = ?)
                  OR EXISTS (SELECT 1 FROM tb_task_issue_tags tag WHERE tag.issue_id = i.issue_id AND tag.user_id = ?)
-             )`,
-            [userId, userId]
+             )) OR ${unreadReplyCondition}`,
+            Array(5).fill(userId)
         );
 
-        // รายการปัญหาที่เปิดอยู่ (task ของตัวเอง + subtask ใต้ task ของตัวเอง + ที่ถูกแท็กไว้)
+        // รายการปัญหาที่เปิดอยู่ (task ของตัวเอง + subtask ใต้ task ของตัวเอง + ที่ถูกแท็กไว้ + ของตัวเองที่มีตอบกลับใหม่ไม่ว่าสถานะปัญหาจะเป็นอะไร)
         // is_subtask ไว้แยก tab, is_direct_assignee ไว้กรองตอนติ๊ก "แสดงเฉพาะ subtask ของตัวเอง" (ไม่รวมที่มาจาก parent cascade)
-        // is_tagged ไว้ให้ frontend ขึ้นพื้นหลังสีแดง (เฉพาะในมุมมองของคนที่ถูกแท็กเอง ไม่ใช่ทุกคนที่เห็นปัญหานี้)
+        // is_tagged/is_unread_reply ไว้ให้ frontend ขึ้นพื้นหลังสีแดง/badge (เฉพาะในมุมมองของคนที่เกี่ยวข้องเอง ไม่ใช่ทุกคนที่เห็นปัญหานี้)
         const [openIssues] = await pool.query(
-            `SELECT DISTINCT i.issue_id, i.issue_title, i.issue_created_at,
+            `SELECT DISTINCT i.issue_id, i.issue_title, i.issue_status, i.issue_created_at,
                     t.task_id, t.task_title, t.project_id, p.project_name,
                     (t.task_parent_id IS NOT NULL) AS is_subtask,
                     EXISTS (SELECT 1 FROM tb_task_assignees ta3 WHERE ta3.task_id = t.task_id AND ta3.user_id = ?) AS is_direct_assignee,
-                    EXISTS (SELECT 1 FROM tb_task_issue_tags tag2 WHERE tag2.issue_id = i.issue_id AND tag2.user_id = ?) AS is_tagged
+                    EXISTS (SELECT 1 FROM tb_task_issue_tags tag2 WHERE tag2.issue_id = i.issue_id AND tag2.user_id = ?) AS is_tagged,
+                    ${unreadReplyCondition} AS is_unread_reply
              FROM tb_task_issues i
              JOIN tb_tasks t ON t.task_id = i.task_id
              JOIN tb_projects p ON p.project_id = t.project_id
-             WHERE i.issue_status = 'open' AND ${issueScopeCondition}
+             WHERE ${issueScopeCondition}
              ORDER BY i.issue_created_at DESC
              LIMIT 30`,
-            [userId, userId, userId, userId, userId]
+            // is_direct_assignee(1) + is_tagged(1) + is_unread_reply select(3) + issueScopeCondition(6) = 11 placeholders, ทั้งหมดคือ userId ของ viewer
+            Array(11).fill(userId)
         );
         // MySQL คืน (expr)/EXISTS(...) เป็น 0/1 (ไม่ใช่ boolean จริง) ต้องแปลงเองไม่งั้น type ไม่ตรงกับที่ frontend คาดไว้
         for (const iss of openIssues) {
             iss.is_subtask = !!iss.is_subtask;
+            iss.is_unread_reply = !!iss.is_unread_reply;
             iss.is_direct_assignee = !!iss.is_direct_assignee;
             iss.is_tagged = !!iss.is_tagged;
         }
@@ -434,11 +453,15 @@ async function getKpis(req, res, next) {
         const parentCondition = taskType === "subtask" ? "t.task_parent_id IS NOT NULL"
             : taskType === "task" ? "t.task_parent_id IS NULL"
             : "1=1";
+        // waterfall/agile/all — กรอง KPI ตามรูปแบบโปรเจกต์ที่เลือก (ดู project_type บน tb_projects)
+        const projectType = ["waterfall", "agile"].includes(req.query.projectType) ? req.query.projectType : "all";
+        const projectTypeClause = projectType !== "all" ? "AND p.project_type = ?" : "";
+        const projectTypeParam = projectType !== "all" ? [projectType] : [];
 
         // ไม่มีสิทธิ์ดูโปรเจกต์เลย (role แบบหัวหน้าแผนกบัญชีที่ให้แค่บิต dashboard) ก็ไม่ควรเห็น KPI ที่มาจากโปรเจกต์/task เลย
         if (!hasProjectAccess) {
             return res.json({
-                period: periodStr, taskType,
+                period: periodStr, taskType, projectType,
                 projectOnTimeRate: null, projectOnTimeEligible: 0,
                 taskOnTimeRate: null, taskOnTimeEligible: 0,
                 avgTaskCycleHours: null,
@@ -458,8 +481,8 @@ async function getKpis(req, res, next) {
              JOIN tb_project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?
              WHERE p.project_due_date IS NOT NULL AND p.project_due_date >= ? AND p.project_due_date < ?
                AND (p.project_completed_at IS NOT NULL OR p.project_due_date < CURDATE())
-               AND p.project_status != 'cancelled'`,
-            [userId, start, end]
+               AND p.project_status != 'cancelled' ${projectTypeClause}`,
+            [userId, start, end, ...projectTypeParam]
         );
         const projectOnTimeEligible = Number(projectOnTime.eligible_count);
         const projectOnTimeRate = projectOnTimeEligible > 0
@@ -476,8 +499,8 @@ async function getKpis(req, res, next) {
              JOIN tb_projects p ON p.project_id = t.project_id
              WHERE t.task_due_date IS NOT NULL AND t.task_due_date >= ? AND t.task_due_date < ?
                AND (t.task_completed_at IS NOT NULL OR t.task_due_date < CURDATE())
-               AND p.project_status != 'cancelled' AND ${parentCondition}`,
-            [userId, start, end]
+               AND p.project_status != 'cancelled' AND ${parentCondition} ${projectTypeClause}`,
+            [userId, start, end, ...projectTypeParam]
         );
         const taskOnTimeEligible = Number(taskOnTime.eligible_count);
         const taskOnTimeRate = taskOnTimeEligible > 0
@@ -490,9 +513,10 @@ async function getKpis(req, res, next) {
             `SELECT AVG(GREATEST(TIMESTAMPDIFF(HOUR, start_log.started_at, t.task_completed_at), 0)) AS avg_hours
              FROM tb_tasks t
              JOIN tb_task_assignees ta ON ta.task_id = t.task_id AND ta.user_id = ?
+             JOIN tb_projects p ON p.project_id = t.project_id
              JOIN ${TASK_START_LOG_SUBQUERY} start_log ON start_log.task_id = t.task_id
-             WHERE t.task_status = 'done' AND t.task_completed_at >= ? AND t.task_completed_at < ? AND ${parentCondition}`,
-            [userId, start, end]
+             WHERE t.task_status = 'done' AND t.task_completed_at >= ? AND t.task_completed_at < ? AND ${parentCondition} ${projectTypeClause}`,
+            [userId, start, end, ...projectTypeParam]
         );
         const avgTaskCycleHours = avgCycle.avg_hours === null ? null : Number(avgCycle.avg_hours);
 
@@ -504,14 +528,15 @@ async function getKpis(req, res, next) {
              FROM tb_task_issues i
              JOIN tb_tasks t ON t.task_id = i.task_id
              JOIN tb_task_assignees ta ON ta.task_id = t.task_id AND ta.user_id = ?
+             JOIN tb_projects p ON p.project_id = t.project_id
              WHERE i.issue_status = 'resolved' AND i.issue_resolved_at IS NOT NULL
-               AND i.issue_resolved_at >= ? AND i.issue_resolved_at < ?`,
-            [userId, start, end]
+               AND i.issue_resolved_at >= ? AND i.issue_resolved_at < ? ${projectTypeClause}`,
+            [userId, start, end, ...projectTypeParam]
         );
         const avgIssueResolveHours = avgIssueResolve.avg_hours === null ? null : Number(avgIssueResolve.avg_hours);
 
         res.json({
-            period: periodStr, taskType,
+            period: periodStr, taskType, projectType,
             projectOnTimeRate, projectOnTimeEligible,
             taskOnTimeRate, taskOnTimeEligible,
             avgTaskCycleHours,
@@ -540,6 +565,10 @@ async function getKpisByMember(req, res, next) {
         const projectId = req.query.projectId && req.query.projectId !== "all" ? req.query.projectId : null;
         const projectFilterClause = projectId ? "AND p.project_id = ?" : "";
         const projectFilterParams = projectId ? [projectId] : [];
+        // waterfall/agile/all — กรอง KPI ตามรูปแบบโปรเจกต์ที่เลือก (ดู project_type บน tb_projects) เหมือนกับ getKpis
+        const projectType = ["waterfall", "agile"].includes(req.query.projectType) ? req.query.projectType : "all";
+        const projectTypeClause = projectType !== "all" ? "AND p.project_type = ?" : "";
+        const projectTypeParam = projectType !== "all" ? [projectType] : [];
         const taskType = ["subtask", "all"].includes(req.query.taskType) ? req.query.taskType : "task";
         const parentCondition = taskType === "subtask" ? "t.task_parent_id IS NOT NULL"
             : taskType === "all" ? "1=1"
@@ -557,9 +586,9 @@ async function getKpisByMember(req, res, next) {
              LEFT JOIN ${TASK_START_LOG_SUBQUERY} start_log ON start_log.task_id = t.task_id
              ${memberJoin}
              WHERE t.task_status = 'done' AND t.task_completed_at >= ? AND t.task_completed_at < ?
-               AND ${parentCondition} ${projectFilterClause}
+               AND ${parentCondition} ${projectFilterClause} ${projectTypeClause}
              GROUP BY ta.user_id`,
-            [...memberParams, start, end, ...projectFilterParams]
+            [...memberParams, start, end, ...projectFilterParams, ...projectTypeParam]
         );
 
         // อัตราตรงเวลา ต่อคน — eligible = "ตัดสินผลได้แล้วจริง" คือ (เสร็จไปแล้ว ไม่ว่าก่อนหรือหลังกำหนด) หรือ (ยังไม่เสร็จแต่เลยกำหนดแล้ว)
@@ -580,9 +609,28 @@ async function getKpisByMember(req, res, next) {
              ${memberJoin}
              WHERE t.task_due_date IS NOT NULL AND t.task_due_date >= ? AND t.task_due_date < ?
                AND (t.task_completed_at IS NOT NULL OR t.task_due_date < CURDATE()) AND p.project_status != 'cancelled'
-               AND ${parentCondition} ${projectFilterClause}
+               AND ${parentCondition} ${projectFilterClause} ${projectTypeClause}
              GROUP BY ta.user_id`,
-            [...memberParams, start, end, ...projectFilterParams]
+            [...memberParams, start, end, ...projectFilterParams, ...projectTypeParam]
+        );
+
+        // ภาระงาน (workload) ต่อคน — จำนวนงานทั้งหมดที่ถูก assign ให้คนนั้นและครบกำหนดในช่วงที่เลือก ไม่ว่าจะเสร็จหรือยังไม่เสร็จก็ตาม
+        // ใช้ช่วงวันที่เดียวกับ onTimeRows (due_date คาบเดือน/ปีที่เลือก) เพื่อให้เทียบกับ taskOnTimeRate ในแถวเดียวกันได้ตรงกัน
+        // แต่ "ไม่กรอง" เงื่อนไข eligible (completed OR overdue) เพราะจุดประสงค์ต่างกัน: อันนี้ไว้ดูว่าใครรับงานเยอะ/น้อย
+        // ไม่ใช่ดูว่าตัดสินผลตรงเวลาได้แล้วกี่งาน (KPI ตรงเวลา ไม่ได้บอกปริมาณงานที่แบกอยู่ ต้องมีตัวเลขนี้แยกไว้ด้วย)
+        const [assignedRows] = await pool.query(
+            `SELECT ta.user_id, CONCAT(u.user_fname, ' ', u.user_lname) AS user_fullname, u.user_avatar_url,
+                    COUNT(*) AS tasks_assigned
+             FROM tb_tasks t
+             JOIN tb_task_assignees ta ON ta.task_id = t.task_id
+             JOIN tb_users u ON u.user_id = ta.user_id
+             JOIN tb_projects p ON p.project_id = t.project_id
+             ${memberJoin}
+             WHERE t.task_due_date IS NOT NULL AND t.task_due_date >= ? AND t.task_due_date < ?
+               AND p.project_status != 'cancelled'
+               AND ${parentCondition} ${projectFilterClause} ${projectTypeClause}
+             GROUP BY ta.user_id`,
+            [...memberParams, start, end, ...projectFilterParams, ...projectTypeParam]
         );
 
         // ปัญหาที่แก้ไขในเดือนนี้ ต่อคน (นับจากผู้รับผิดชอบของ task ที่ผูกกับ issue นั้น — ปัญหาไม่มีผู้รับผิดชอบของตัวเอง)
@@ -599,9 +647,9 @@ async function getKpisByMember(req, res, next) {
              ${memberJoin}
              WHERE i.issue_status = 'resolved' AND i.issue_resolved_at IS NOT NULL
                AND i.issue_resolved_at >= ? AND i.issue_resolved_at < ?
-               AND ${parentCondition} ${projectFilterClause}
+               AND ${parentCondition} ${projectFilterClause} ${projectTypeClause}
              GROUP BY ta.user_id`,
-            [...memberParams, start, end, ...projectFilterParams]
+            [...memberParams, start, end, ...projectFilterParams, ...projectTypeParam]
         );
 
         // รวมสามผลลัพธ์เข้าด้วยกันต่อคน (คนที่มีแค่บางฝั่งก็ต้องโผล่ในตารางด้วย ไม่ใช่แค่ที่ตัดกันทุกฝั่ง)
@@ -609,7 +657,7 @@ async function getKpisByMember(req, res, next) {
         const emptyRow = (r) => ({
             user_id: r.user_id, user_fullname: r.user_fullname, user_avatar_url: r.user_avatar_url,
             tasksCompleted: 0, avgTaskCycleHours: null,
-            taskOnTimeRate: null, issuesResolved: 0, avgIssueResolveHours: null,
+            taskOnTimeRate: null, tasksAssigned: 0, issuesResolved: 0, avgIssueResolveHours: null,
         });
         for (const r of taskRows) {
             const existing = memberMap.get(r.user_id) ?? emptyRow(r);
@@ -623,6 +671,11 @@ async function getKpisByMember(req, res, next) {
             existing.taskOnTimeRate = dueEligible > 0 ? Math.round((Number(r.due_on_time_count) / dueEligible) * 1000) / 10 : null;
             memberMap.set(r.user_id, existing);
         }
+        for (const r of assignedRows) {
+            const existing = memberMap.get(r.user_id) ?? emptyRow(r);
+            existing.tasksAssigned = Number(r.tasks_assigned);
+            memberMap.set(r.user_id, existing);
+        }
         for (const r of issueRows) {
             const existing = memberMap.get(r.user_id) ?? emptyRow(r);
             existing.issuesResolved = Number(r.issues_resolved);
@@ -634,13 +687,16 @@ async function getKpisByMember(req, res, next) {
             (a, b) => (b.tasksCompleted + b.issuesResolved) - (a.tasksCompleted + a.issuesResolved)
         );
 
-        // รายชื่อโปรเจกต์ทั้งหมด (ไม่กรองตามฟิลเตอร์ปัจจุบัน) ไว้ทำ dropdown ตัวเลือกโปรเจกต์ ไม่ให้ตัวเลือกหดหายไปตอนกรองอยู่
+        // รายชื่อโปรเจกต์ทั้งหมด (ไม่กรองตาม projectId/taskType ปัจจุบัน แต่กรองตาม projectType ด้วย ไม่งั้นเลือก "เฉพาะ agile"
+        // ไว้แล้วจะยังเห็นโปรเจกต์ waterfall โผล่ในตัวเลือกโปรเจกต์เจาะจงอยู่ ซึ่งขัดกับตัวกรองที่เลือกไว้)
         const [projectOptions] = await pool.query(
-            `SELECT DISTINCT p.project_id, p.project_name FROM tb_projects p ${memberJoin} ORDER BY p.project_name ASC`,
-            memberParams
+            `SELECT DISTINCT p.project_id, p.project_name FROM tb_projects p ${memberJoin}
+             WHERE 1=1 ${projectTypeClause}
+             ORDER BY p.project_name ASC`,
+            [...memberParams, ...projectTypeParam]
         );
 
-        res.json({ period: periodStr, taskType, members, projectOptions });
+        res.json({ period: periodStr, taskType, projectType, members, projectOptions });
     } catch (err) {
         next(err);
     }

@@ -180,6 +180,11 @@ router.delete(
     "/V1/projects/:projectId/tasks/:id", requireAuth, requireProjectMember,
     requireProjectPermission("deleteTask"), taskController.remove
 );
+// รับ task/subtask เอง (Agile) — สมาชิกโปรเจกต์คนไหนก็กดรับได้ ไม่เช็คบิตสิทธิ์ assign ใดๆ เช็คในตัว controller แค่ project_type/สถานะ
+router.post(
+    "/V1/projects/:projectId/tasks/:id/claim", requireAuth, requireProjectMember,
+    taskController.claim
+);
 
 // ─── issues (ปัญหาของ task/subtask ซ้อนใต้ project) ──────────────────────────
 // สิทธิ์ทำอะไรได้บ้าง (add/edit/delete/changeStatus x all/own x task/subtask) เช็คในตัว controller เอง
@@ -187,6 +192,10 @@ router.delete(
 router.get(
     "/V1/projects/:projectId/tasks/:taskId/issues", requireAuth, requireProjectMember,
     issueController.getForTask
+);
+router.get(
+    "/V1/projects/:projectId/tasks/:taskId/issues/replies", requireAuth, requireProjectMember,
+    issueController.getRepliesForTask
 );
 router.post(
     "/V1/projects/:projectId/tasks/:taskId/issues", requireAuth, requireProjectMember,
@@ -203,6 +212,16 @@ router.put(
 router.delete(
     "/V1/projects/:projectId/issues/:issueId", requireAuth, requireProjectMember,
     issueController.remove
+);
+
+// ตอบกลับปัญหา — สมาชิกโปรเจกต์ทุกคนตอบได้ ไม่มีสิทธิ์เฉพาะเหมือนแชท (ดูเหตุผลใน issue.controller.js)
+router.get(
+    "/V1/projects/:projectId/issues/:issueId/replies", requireAuth, requireProjectMember,
+    issueController.getReplies
+);
+router.post(
+    "/V1/projects/:projectId/issues/:issueId/replies", requireAuth, requireProjectMember,
+    uploadImage.array("images", 5), issueController.createReply
 );
 
 // ─── chat (แชทของ task/subtask) ──────────────────────────────────────────────
