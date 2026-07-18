@@ -51,17 +51,19 @@ async function canDoIssueAction(action, projectId, task, userId) {
 // ย่อ+บีบเป็น WebP ให้ไฟล์เล็กลงมาก แต่คงสัดส่วนภาพไว้ (ต่างจากรูปโปรไฟล์ที่ครอปเป็นสี่เหลี่ยมจัตุรัส)
 // เพราะรูปแนบปัญหามักเป็นภาพหน้าจอ/หลักฐาน สัดส่วนเดิมสำคัญกว่า
 async function saveIssueImages(issueId, files) {
-    for (const file of files ?? []) {
+    if ((files ?? []).length === 0) return;
+    await fs.mkdir(path.join(UPLOADS_DIR, "issues"), { recursive: true });
+    for (const file of files) {
         const filename = `issue-${Date.now()}-${Math.round(Math.random() * 1e9)}.webp`;
         await sharp(file.buffer)
             .resize(1600, 1600, { fit: "inside", withoutEnlargement: true })
             .webp({ quality: 78 })
-            .toFile(path.join(UPLOADS_DIR, filename));
+            .toFile(path.join(UPLOADS_DIR, "issues", filename));
 
         const image_id = await generateDailyId("tb_task_issue_images", "image_id", "IMA");
         await pool.query(
             "INSERT INTO tb_task_issue_images (image_id, issue_id, image_url) VALUES (?, ?, ?)",
-            [image_id, issueId, `/uploads/${filename}`]
+            [image_id, issueId, `/uploads/issues/${filename}`]
         );
     }
 }
@@ -70,7 +72,8 @@ async function deleteImages(imageRows) {
     if (!imageRows.length) return;
     await pool.query("DELETE FROM tb_task_issue_images WHERE image_id IN (?)", [imageRows.map((r) => r.image_id)]);
     for (const row of imageRows) {
-        await fs.unlink(path.join(UPLOADS_DIR, path.basename(row.image_url))).catch(() => {});
+        // ตัด "/uploads/" นำหน้าออกแล้ว join ต่อ (เก็บชื่อโฟลเดอร์ย่อยไว้) ไม่ใช้ path.basename เฉยๆ เพราะจะทิ้งโฟลเดอร์ย่อยไป หาไฟล์ไม่เจอ
+        await fs.unlink(path.join(UPLOADS_DIR, row.image_url.replace(/^\/uploads\//, ""))).catch(() => {});
     }
 }
 
@@ -267,7 +270,7 @@ async function remove(req, res, next) {
         const [images] = await pool.query("SELECT image_id, image_url FROM tb_task_issue_images WHERE issue_id = ?", [req.params.issueId]);
         await pool.query("DELETE FROM tb_task_issues WHERE issue_id = ?", [req.params.issueId]);
         for (const img of images) {
-            await fs.unlink(path.join(UPLOADS_DIR, path.basename(img.image_url))).catch(() => {});
+            await fs.unlink(path.join(UPLOADS_DIR, img.image_url.replace(/^\/uploads\//, ""))).catch(() => {});
         }
 
         res.status(204).end();
@@ -278,17 +281,19 @@ async function remove(req, res, next) {
 
 // รูปแนบของการตอบกลับ — ย่อ+บีบเป็น WebP เหมือน saveIssueImages ทุกอย่าง แค่ผูกกับ reply_id แทน issue_id
 async function saveReplyImages(replyId, files) {
-    for (const file of files ?? []) {
+    if ((files ?? []).length === 0) return;
+    await fs.mkdir(path.join(UPLOADS_DIR, "issue-replies"), { recursive: true });
+    for (const file of files) {
         const filename = `issue-reply-${Date.now()}-${Math.round(Math.random() * 1e9)}.webp`;
         await sharp(file.buffer)
             .resize(1600, 1600, { fit: "inside", withoutEnlargement: true })
             .webp({ quality: 78 })
-            .toFile(path.join(UPLOADS_DIR, filename));
+            .toFile(path.join(UPLOADS_DIR, "issue-replies", filename));
 
         const image_id = await generateDailyId("tb_task_issue_reply_images", "image_id", "IRI");
         await pool.query(
             "INSERT INTO tb_task_issue_reply_images (image_id, reply_id, image_url) VALUES (?, ?, ?)",
-            [image_id, replyId, `/uploads/${filename}`]
+            [image_id, replyId, `/uploads/issue-replies/${filename}`]
         );
     }
 }

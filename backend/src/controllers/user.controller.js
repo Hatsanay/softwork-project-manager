@@ -248,21 +248,24 @@ async function saveAvatarForUser(userId, file) {
     const oldAvatarUrl = rows[0].user_avatar_url;
 
     // resize + บีบเป็น WebP คุณภาพต่ำสุดที่ยังใช้เป็นรูปโปรไฟล์ได้ ให้ไฟล์เล็กที่สุด
+    // แยกโฟลเดอร์ avatars/ ออกจากรูปประเภทอื่น (issue/chat) กันโฟลเดอร์ uploads/ รวมทุกอย่างปนกันจนรกตอนไฟล์เยอะขึ้น
     const filename = `${Date.now()}-${Math.round(Math.random() * 1e9)}.webp`;
+    await fs.mkdir(path.join(UPLOADS_DIR, "avatars"), { recursive: true });
     await sharp(file.buffer)
         .resize(256, 256, { fit: "cover" })
         .webp({ quality: 70 })
-        .toFile(path.join(UPLOADS_DIR, filename));
+        .toFile(path.join(UPLOADS_DIR, "avatars", filename));
 
-    const user_avatar_url = `/uploads/${filename}`;
+    const user_avatar_url = `/uploads/avatars/${filename}`;
     await pool.query("UPDATE tb_users SET user_avatar_url = ? WHERE user_id = ?", [
         user_avatar_url,
         userId,
     ]);
 
     // ลบไฟล์รูปเก่าทิ้ง ไม่ให้ค้างอยู่ใน uploads/ เปล่าๆ หลังเปลี่ยนรูปใหม่
+    // ใช้ path ที่เก็บไว้ตรงๆ (ตัด "/uploads/" นำหน้าออก) ไม่ใช้ path.basename เฉยๆ เพราะจะทิ้งชื่อโฟลเดอร์ย่อยไป หาไฟล์ไม่เจอ
     if (oldAvatarUrl) {
-        await fs.unlink(path.join(UPLOADS_DIR, path.basename(oldAvatarUrl))).catch(() => {});
+        await fs.unlink(path.join(UPLOADS_DIR, oldAvatarUrl.replace(/^\/uploads\//, ""))).catch(() => {});
     }
 
     return user_avatar_url;

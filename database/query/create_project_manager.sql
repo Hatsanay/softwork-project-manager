@@ -63,6 +63,11 @@ CREATE TABLE tb_projects (
   PRIMARY KEY (project_id),
   UNIQUE KEY uq_project_share_token (project_share_token),
   KEY idx_project_client (client_id),
+  -- สามคอลัมน์นี้ถูกกรองบ่อยในทุก query ของ dashboard KPI/รายการโปรเจกต์ (project_status/project_type/project_due_date)
+  -- เพิ่ม index ไว้ล่วงหน้ากันข้อมูลโตแล้วช้า แม้ตอนนี้ข้อมูลยังน้อยจนยังไม่เห็นผลต่างชัดเจนก็ตาม
+  KEY idx_project_status (project_status),
+  KEY idx_project_type (project_type),
+  KEY idx_project_due_date (project_due_date),
   CONSTRAINT fk_project_client  FOREIGN KEY (client_id) REFERENCES tb_clients(client_id),
   CONSTRAINT fk_project_creator FOREIGN KEY (project_created_by) REFERENCES tb_users(user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -110,6 +115,9 @@ CREATE TABLE tb_tasks (
   PRIMARY KEY (task_id),
   KEY idx_task_project (project_id),
   KEY idx_task_parent (task_parent_id),
+  -- KPI ใน dashboard.controller.js กรอง/เทียบช่วงวันที่บนสองคอลัมน์นี้แทบทุก query (due date cohort, cycle time ตาม completed_at)
+  KEY idx_task_due_date (task_due_date),
+  KEY idx_task_status_completed (task_status, task_completed_at),
   CONSTRAINT fk_task_project  FOREIGN KEY (project_id) REFERENCES tb_projects(project_id) ON DELETE CASCADE,
   CONSTRAINT fk_task_parent   FOREIGN KEY (task_parent_id) REFERENCES tb_tasks(task_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -139,6 +147,8 @@ CREATE TABLE tb_task_issues (
   issue_updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (issue_id),
   KEY idx_issue_task (task_id),
+  -- dashboard "ปัญหาที่เปิดอยู่" และ KPI เวลาเฉลี่ยแก้ปัญหา กรอง/เทียบช่วงวันที่บนสองคอลัมน์นี้คู่กันเสมอ
+  KEY idx_issue_status_resolved (issue_status, issue_resolved_at),
   CONSTRAINT fk_issue_task FOREIGN KEY (task_id) REFERENCES tb_tasks(task_id) ON DELETE CASCADE,
   CONSTRAINT fk_issue_creator FOREIGN KEY (created_by) REFERENCES tb_users(user_id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

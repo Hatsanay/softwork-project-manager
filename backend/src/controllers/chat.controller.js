@@ -1,4 +1,5 @@
 const sharp = require("sharp");
+const fs = require("fs/promises");
 const path = require("path");
 const pool = require("../config/db");
 const { generateDailyId } = require("../utils/generateDailyId");
@@ -8,18 +9,21 @@ const UPLOADS_DIR = path.join(__dirname, "..", "..", "uploads");
 // สมาชิกโปรเจกต์ทุกคนแชทได้ ไม่ต้องมีสิทธิ์เฉพาะ — เช็คแค่ requireProjectMember ที่ route ก็พอ
 // (ใช้กับทั้งแชทของ task/subtask และแชทรวมของโปรเจกต์ — โครงสร้างตารางเหมือนกันทุกอย่าง ต่างแค่ผูกกับ task_id หรือ project_id)
 
-async function saveChatImages(imagesTable, imageIdPrefix, messageId, files) {
-    for (const file of files ?? []) {
+// subfolder แยก task-chat/project-chat ออกจากกัน แม้โครงสร้างตาราง/โค้ดจะใช้ร่วมกันก็ตาม เพราะเป็นคนละบริบทกัน
+async function saveChatImages(subfolder, imagesTable, imageIdPrefix, messageId, files) {
+    if ((files ?? []).length === 0) return;
+    await fs.mkdir(path.join(UPLOADS_DIR, subfolder), { recursive: true });
+    for (const file of files) {
         const filename = `chat-${Date.now()}-${Math.round(Math.random() * 1e9)}.webp`;
         await sharp(file.buffer)
             .resize(1600, 1600, { fit: "inside", withoutEnlargement: true })
             .webp({ quality: 78 })
-            .toFile(path.join(UPLOADS_DIR, filename));
+            .toFile(path.join(UPLOADS_DIR, subfolder, filename));
 
         const image_id = await generateDailyId(imagesTable, "image_id", imageIdPrefix);
         await pool.query(
             `INSERT INTO ${imagesTable} (image_id, message_id, image_url) VALUES (?, ?, ?)`,
-            [image_id, messageId, `/uploads/${filename}`]
+            [image_id, messageId, `/uploads/${subfolder}/${filename}`]
         );
     }
 }
@@ -108,7 +112,7 @@ async function create(req, res, next) {
             "INSERT INTO tb_task_chat_messages (message_id, task_id, user_id, message_text, reply_to_message_id) VALUES (?, ?, ?, ?, ?)",
             [message_id, req.params.taskId, req.user.user_id, message_text || null, reply_to_message_id]
         );
-        await saveChatImages("tb_task_chat_images", "MSI", message_id, req.files);
+        await saveChatImages("task-chat", "tb_task_chat_images", "MSI", message_id, req.files);
 
         res.status(201).json({ message_id });
     } catch (err) {
@@ -146,7 +150,7 @@ async function createForProject(req, res, next) {
             "INSERT INTO tb_project_chat_messages (message_id, project_id, user_id, message_text, reply_to_message_id) VALUES (?, ?, ?, ?, ?)",
             [message_id, req.params.projectId, req.user.user_id, message_text || null, reply_to_message_id]
         );
-        await saveChatImages("tb_project_chat_images", "PCI", message_id, req.files);
+        await saveChatImages("project-chat", "tb_project_chat_images", "PCI", message_id, req.files);
 
         res.status(201).json({ message_id });
     } catch (err) {
