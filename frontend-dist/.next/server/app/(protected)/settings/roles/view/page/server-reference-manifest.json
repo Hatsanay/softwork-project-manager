@@ -1,6 +1,6 @@
 {
   "node": {
-    "007bd972ae0d3cdcfbe3ad01c335516fcc839d5b70": {
+    "00209c3868809a8dbb672fbd88650c5bc5bc8790d7": {
       "workers": {
         "app/(protected)/settings/roles/view/page": {
           "moduleId": 82689,
@@ -12,19 +12,7 @@
       "exportedName": "logout",
       "filename": "app/logout.tsx"
     },
-    "008d599fd2cda7798e3691ffa6c8645005a114ffe4": {
-      "workers": {
-        "app/(protected)/settings/roles/view/page": {
-          "moduleId": 82689,
-          "async": false,
-          "exportedName": "getUserProfile",
-          "filename": "app/login/actions.ts"
-        }
-      },
-      "exportedName": "getUserProfile",
-      "filename": "app/login/actions.ts"
-    },
-    "00a599d57a0576c80eedae10837a7c5cdad9590edb": {
+    "004d829204d038ed50ced97ae0592c4fdf58ca6a73": {
       "workers": {
         "app/(protected)/settings/roles/view/page": {
           "moduleId": 82689,
@@ -36,7 +24,19 @@
       "exportedName": "getFullName",
       "filename": "app/login/actions.ts"
     },
-    "60f856374444059b936abaa2b12abf54ccf8708c84": {
+    "00fc5a8146da749c3409632ce30e58b1e1209445d1": {
+      "workers": {
+        "app/(protected)/settings/roles/view/page": {
+          "moduleId": 82689,
+          "async": false,
+          "exportedName": "getUserProfile",
+          "filename": "app/login/actions.ts"
+        }
+      },
+      "exportedName": "getUserProfile",
+      "filename": "app/login/actions.ts"
+    },
+    "607e6bc5d0c465363456aa676bc494a784a5740498": {
       "workers": {
         "app/(protected)/settings/roles/view/page": {
           "moduleId": 82689,
