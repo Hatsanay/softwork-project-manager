@@ -1,4 +1,4 @@
-const sharp = require("sharp");
+const { compressImage } = require("../utils/imageCompress");
 const fs = require("fs/promises");
 const path = require("path");
 const pool = require("../config/db");
@@ -14,11 +14,9 @@ async function saveChatImages(subfolder, imagesTable, imageIdPrefix, messageId, 
     if ((files ?? []).length === 0) return;
     await fs.mkdir(path.join(UPLOADS_DIR, subfolder), { recursive: true });
     for (const file of files) {
-        const filename = `chat-${Date.now()}-${Math.round(Math.random() * 1e9)}.webp`;
-        await sharp(file.buffer)
-            .resize(1600, 1600, { fit: "inside", withoutEnlargement: true })
-            .webp({ quality: 78 })
-            .toFile(path.join(UPLOADS_DIR, subfolder, filename));
+        const { data, ext } = await compressImage(file.buffer, { maxSize: 1600 });
+        const filename = `chat-${Date.now()}-${Math.round(Math.random() * 1e9)}.${ext}`;
+        await fs.writeFile(path.join(UPLOADS_DIR, subfolder, filename), data);
 
         const image_id = await generateDailyId(imagesTable, "image_id", imageIdPrefix);
         await pool.query(

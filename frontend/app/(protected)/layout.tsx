@@ -3,7 +3,7 @@ import Sidebar from "@/app/components/sidebar";
 import Footer from "@/app/components/footer";
 import { SidebarProvider } from "@/app/components/sidebar-context";
 import { PermissionProvider } from "@/app/components/permission-provider";
-import ForcePasswordChange from "@/app/components/force-password-change";
+import FirstLoginOnboarding from "@/app/components/first-login-onboarding";
 import { getUserProfile } from "@/app/login/actions";
 import { cookies } from "next/headers";
 import { Toaster } from "sonner";
@@ -12,12 +12,18 @@ export default async function ProtectedLayout({ children }: { children: React.Re
     const cookieStore = await cookies();
     const permission = cookieStore.get("permission")?.value ?? "";
 
-    const { fullname, avatarUrl, mustChangePassword, roleName } = await getUserProfile();
+    const { fullname, avatarUrl, mustChangePassword, roleName, username, needsEmail } = await getUserProfile();
 
-    if (mustChangePassword) {
+    // เข้าระบบครั้งแรก: ต้องตั้งรหัสผ่านใหม่ และ/หรือ ยืนยันอีเมล (ถ้าแอดมินไม่ได้ใส่ไว้) ให้ครบก่อนถึงจะใช้งานระบบได้
+    if (mustChangePassword || needsEmail) {
         return (
             <>
-                <ForcePasswordChange />
+                <FirstLoginOnboarding
+                    mustChangePassword={mustChangePassword}
+                    needsEmail={needsEmail}
+                    fullname={fullname}
+                    username={username}
+                />
                 <Toaster position="top-right" richColors />
             </>
         );

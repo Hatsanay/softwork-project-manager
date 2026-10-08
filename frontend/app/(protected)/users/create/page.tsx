@@ -14,6 +14,7 @@ import { toast } from "sonner";
 type FormState = {
     user_fname:     string;
     user_lname:     string;
+    user_username:  string;
     user_email:     string;
     user_phone:     string;
     user_line_id:   string;
@@ -22,6 +23,11 @@ type FormState = {
 };
 
 type FormErrors = Partial<Record<keyof FormState, string>>;
+
+// ต้องตรงกับ USERNAME_PATTERN ใน backend/src/controllers/user.controller.js — ห้ามมี @ (ช่อง login รับทั้งอีเมลและชื่อผู้ใช้)
+const USERNAME_PATTERN = /^[A-Za-z0-9._-]{3,50}$/;
+
+type CreatedUser = { user_id: string; user_username: string; user_email: string | null; temp_password: string };
 
 function validate(form: FormState): FormErrors {
     const errors: FormErrors = {};
@@ -32,9 +38,11 @@ function validate(form: FormState): FormErrors {
     if (!form.user_lname.trim())              errors.user_lname = "กรุณากรอกนามสกุล";
     else if (form.user_lname.trim().length < 2) errors.user_lname = "นามสกุลต้องมีอย่างน้อย 2 ตัวอักษร";
 
-    if (!form.user_email.trim())
-        errors.user_email = "กรุณากรอกอีเมล";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.user_email))
+    // ชื่อผู้ใช้/อีเมลไม่บังคับ — เว้นชื่อผู้ใช้ = ระบบใช้รหัสผู้ใช้แทน, เว้นอีเมล = ผู้ใช้ยืนยันอีเมลเองด้วย OTP ตอนเข้าระบบครั้งแรก
+    if (form.user_username.trim() && !USERNAME_PATTERN.test(form.user_username.trim()))
+        errors.user_username = "ยาว 3-50 ตัว ใช้ได้เฉพาะ a-z, 0-9, จุด, ขีดกลาง, ขีดล่าง";
+
+    if (form.user_email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.user_email.trim()))
         errors.user_email = "รูปแบบอีเมลไม่ถูกต้อง";
 
     if (form.user_phone && !/^[0-9]{9,10}$/.test(form.user_phone.replace(/-/g, "")))
@@ -59,7 +67,7 @@ async function loadRolesOptions(search: string) {
     }));
 }
 
-async function submitCreateUser(body: FormState): Promise<{ user_id: number; temp_password: string }> {
+async function submitCreateUser(body: FormState): Promise<CreatedUser> {
     const res = await window.fetch(`${api}/users`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeader() },
@@ -70,7 +78,7 @@ async function submitCreateUser(body: FormState): Promise<{ user_id: number; tem
     return data;
 }
 
-async function uploadAvatar(userId: number, file: File) {
+async function uploadAvatar(userId: string, file: File) {
     const fd = new FormData();
     fd.append("image", file);
     await window.fetch(`${api}/users/${userId}/image`, {
@@ -81,7 +89,7 @@ async function uploadAvatar(userId: number, file: File) {
 }
 
 const EMPTY_FORM: FormState = {
-    user_fname: "", user_lname: "", user_email: "",
+    user_fname: "", user_lname: "", user_username: "", user_email: "",
     user_phone: "", user_line_id: "", user_whatApp_no: "", user_role_id: "",
 };
 
@@ -93,7 +101,7 @@ export default function CreateUserPage() {
     const [form, setForm]             = useState<FormState>(EMPTY_FORM);
     const [errors, setErrors]         = useState<FormErrors>({});
     const [submitError, setSubmitError] = useState<string | null>(null);
-    const [tempPassword, setTempPassword] = useState<string | null>(null);
+    const [created, setCreated] = useState<CreatedUser | null>(null);
 
     function setField(name: keyof FormState, value: string) {
         setForm((prev) => ({ ...prev, [name]: value }));
@@ -112,21 +120,27 @@ export default function CreateUserPage() {
 
         startTransition(async () => {
             try {
-                const { user_id, temp_password } = await submitCreateUser(form);
-                if (avatarFile) await uploadAvatar(user_id, avatarFile);
-                setTempPassword(temp_password);
+                const result = await submitCreateUser(form);
+                if (avatarFile) await uploadAvatar(result.user_id, avatarFile);
+                setCreated(result);
             } catch (err) {
                 setSubmitError(err instanceof Error ? err.message : "เกิดข้อผิดพลาด");
             }
         });
     }
 
+    // ข้อมูลเข้าสู่ระบบที่ส่งให้ผู้ใช้ใหม่ — ชื่อผู้ใช้ใช้ login ได้เสมอ (อีเมลใช้ได้ด้วยถ้าแอดมินใส่ไว้)
+    function credentialLines(u: CreatedUser) {
+        return [
+            `ชื่อผู้ใช้: ${u.user_username}`,
+            u.user_email ? `อีเมล: ${u.user_email}` : null,
+            `รหัสผ่านชั่วคราว: ${u.temp_password}`,
+        ].filter((line): line is string => !!line);
+    }
+
     async function copyTempPasswordAndClose() {
-        if (tempPassword) {
-            const text = `อีเมล: ${form.user_email}\nรหัสผ่านชั่วคราว: ${tempPassword}`;
-            await navigator.clipboard.writeText(text).catch(() => {});
-        }
-        toast.success("คัดลอกอีเมลและรหัสผ่านชั่วคราวแล้ว");
+        if (created) await navigator.clipboard.writeText(credentialLines(created).join("\n")).catch(() => {});
+        toast.success("คัดลอกข้อมูลเข้าสู่ระบบแล้ว");
         router.push("/users");
     }
 
@@ -159,11 +173,22 @@ export default function CreateUserPage() {
                     {errors.user_lname && <p className="text-xs text-red-500">{errors.user_lname}</p>}
                 </div>
 
-                <div className="flex flex-col gap-1 col-span-2">
-                    <label className="text-sm font-medium text-gray-700">อีเมล</label>
+                <div className="flex flex-col gap-1">
+                    <label className="text-sm font-medium text-gray-700">ชื่อผู้ใช้ <span className="text-gray-400 font-normal">(ไม่บังคับ)</span></label>
+                    <Input name="user_username" value={form.user_username} onChange={handleChange}
+                        placeholder="เช่น somchai.k" autoComplete="off" error={!!errors.user_username} />
+                    {errors.user_username
+                        ? <p className="text-xs text-red-500">{errors.user_username}</p>
+                        : <p className="text-xs text-gray-400">ใช้เข้าสู่ระบบ · เว้นว่าง = ใช้รหัสผู้ใช้ที่ระบบสร้างให้</p>}
+                </div>
+
+                <div className="flex flex-col gap-1">
+                    <label className="text-sm font-medium text-gray-700">อีเมล <span className="text-gray-400 font-normal">(ไม่บังคับ)</span></label>
                     <Input type="email" name="user_email" value={form.user_email} onChange={handleChange}
                         placeholder="อีเมล" error={!!errors.user_email} />
-                    {errors.user_email && <p className="text-xs text-red-500">{errors.user_email}</p>}
+                    {errors.user_email
+                        ? <p className="text-xs text-red-500">{errors.user_email}</p>
+                        : <p className="text-xs text-gray-400">เว้นว่าง = ผู้ใช้ยืนยันอีเมลเองด้วยรหัส OTP ตอนเข้าระบบครั้งแรก</p>}
                 </div>
 
                 <div className="flex flex-col gap-1">
@@ -212,11 +237,13 @@ export default function CreateUserPage() {
             </Form>
 
             <ConfirmDialog
-                open={!!tempPassword}
+                open={!!created}
                 variant="info"
                 title="สร้างผู้ใช้งานสำเร็จ"
-                description={`อีเมล: ${form.user_email}  /  รหัสผ่านชั่วคราว: ${tempPassword} — ระบบจะบังคับให้ผู้ใช้ตั้งรหัสผ่านใหม่ตอน login ครั้งแรก กรุณาคัดลอกไปให้ผู้ใช้ก่อนปิดหน้าต่างนี้`}
-                confirmLabel="คัดลอกอีเมล + รหัสผ่าน"
+                description={created
+                    ? `${credentialLines(created).join("  /  ")} — ตอนเข้าระบบครั้งแรก ผู้ใช้ต้องตั้งรหัสผ่านใหม่${created.user_email ? "" : " และยืนยันอีเมลของตัวเองด้วยรหัส OTP"} แล้วอัปโหลดรูปโปรไฟล์ (ข้ามได้) กรุณาคัดลอกไปให้ผู้ใช้ก่อนปิดหน้าต่างนี้`
+                    : ""}
+                confirmLabel="คัดลอกข้อมูลเข้าสู่ระบบ"
                 cancelLabel="ปิด"
                 onConfirm={copyTempPasswordAndClose}
                 onCancel={closeTempPasswordDialog}

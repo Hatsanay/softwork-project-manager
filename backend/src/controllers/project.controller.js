@@ -14,8 +14,7 @@ async function getAll(req, res, next) {
         const statusClause = wantCancelled ? "p.project_status = 'cancelled'" : "p.project_status != 'cancelled'";
 
         // เห็นทุกโปรเจกต์ถ้ามีสิทธิ์ viewAllProjects ไม่งั้นเห็นแค่ที่ตัวเองเป็นสมาชิก (viewAllProjects/viewOwnProjects อย่างใดอย่างหนึ่งถูกบังคับไว้แล้วที่ route)
-        const [roleRows] = await pool.query("SELECT role_permission FROM tb_roles WHERE role_id = ?", [req.user.user_role_id]);
-        const rolePermission = roleRows[0]?.role_permission ?? "";
+        const rolePermission = req.user.role_permission; // ดึงสดจาก DB แล้วใน requireAuth
         const seesAll = hasBit(rolePermission, "viewAllProjects");
 
         const memberJoin = seesAll ? "" : "JOIN tb_project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?";
@@ -279,32 +278,10 @@ async function toggleTaskWeight(req, res, next) {
     }
 }
 
-// รวมสิทธิ์จากทุกตำแหน่งที่ตัวเองถือในโปรเจกต์นี้ เป็น bitmask เดียว (OR แต่ละบิต)
+// รวมสิทธิ์จากทุกตำแหน่งที่ตัวเองถือในโปรเจกต์นี้ เป็น bitmask เดียว (OR แต่ละบิต) — requireProjectMember คำนวณไว้แล้ว
 // ให้ frontend เอาไปเช็คเองว่าจะโชว์ปุ่มอะไรบ้าง — ไม่ส่งรายละเอียดตำแหน่ง/สิทธิ์ของสมาชิกคนอื่นออกไป
-async function getMyPermissions(req, res, next) {
-    try {
-        const [rows] = await pool.query(
-            `SELECT pp.position_permission
-             FROM tb_project_members pm
-             JOIN tb_project_member_positions pmp ON pmp.project_member_id = pm.project_member_id
-             JOIN tb_project_positions pp ON pp.position_id = pmp.position_id
-             WHERE pm.project_id = ? AND pm.user_id = ?`,
-            [req.params.id, req.user.user_id]
-        );
-
-        const length = Math.max(0, ...rows.map((r) => r.position_permission.length));
-        let combined = "0".repeat(length);
-        for (const r of rows) {
-            combined = combined
-                .split("")
-                .map((bit, i) => (bit === "1" || r.position_permission[i] === "1" ? "1" : "0"))
-                .join("");
-        }
-
-        res.json({ position_permission: combined });
-    } catch (err) {
-        next(err);
-    }
+function getMyPermissions(req, res) {
+    res.json({ position_permission: req.projectPermission ?? "" });
 }
 
 // ─── สมาชิกโปรเจกต์ ─────────────────────────────────────────────────────────────
@@ -350,7 +327,7 @@ async function notifyMemberAdded({ project_id, recipientUserId, position_ids, ad
             [adderUserId]
         );
         const [[recipient]] = await pool.query("SELECT user_email FROM tb_users WHERE user_id = ?", [recipientUserId]);
-        if (!recipient) return;
+        if (!recipient?.user_email) return; // ผู้ใช้ที่ยังไม่ได้ยืนยันอีเมล — ข้ามไป ไม่มีที่ให้ส่ง
 
         let positionNames = [];
         if (position_ids.length) {

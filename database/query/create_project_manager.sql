@@ -147,6 +147,7 @@ CREATE TABLE tb_task_issues (
   issue_updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (issue_id),
   KEY idx_issue_task (task_id),
+  KEY idx_issue_task_status (task_id, issue_status),
   -- dashboard "ปัญหาที่เปิดอยู่" และ KPI เวลาเฉลี่ยแก้ปัญหา กรอง/เทียบช่วงวันที่บนสองคอลัมน์นี้คู่กันเสมอ
   KEY idx_issue_status_resolved (issue_status, issue_resolved_at),
   CONSTRAINT fk_issue_task FOREIGN KEY (task_id) REFERENCES tb_tasks(task_id) ON DELETE CASCADE,
@@ -191,6 +192,7 @@ CREATE TABLE tb_task_issue_replies (
   reply_created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY (reply_id),
   KEY idx_issue_reply_issue (issue_id),
+  KEY idx_issue_reply_created (issue_id, reply_created_at),
   CONSTRAINT fk_issue_reply_issue FOREIGN KEY (issue_id) REFERENCES tb_task_issues(issue_id) ON DELETE CASCADE,
   CONSTRAINT fk_issue_reply_user FOREIGN KEY (user_id) REFERENCES tb_users(user_id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -231,6 +233,7 @@ CREATE TABLE tb_task_chat_messages (
   message_created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY (message_id),
   KEY idx_chat_task (task_id),
+  KEY idx_chat_task_created (task_id, message_created_at),
   CONSTRAINT fk_chat_task FOREIGN KEY (task_id) REFERENCES tb_tasks(task_id) ON DELETE CASCADE,
   CONSTRAINT fk_chat_user FOREIGN KEY (user_id) REFERENCES tb_users(user_id) ON DELETE SET NULL,
   CONSTRAINT fk_chat_reply_to FOREIGN KEY (reply_to_message_id) REFERENCES tb_task_chat_messages(message_id) ON DELETE SET NULL
@@ -271,6 +274,7 @@ CREATE TABLE tb_project_chat_messages (
   message_created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY (message_id),
   KEY idx_project_chat_project (project_id),
+  KEY idx_project_chat_created (project_id, message_created_at),
   CONSTRAINT fk_project_chat_project FOREIGN KEY (project_id) REFERENCES tb_projects(project_id) ON DELETE CASCADE,
   CONSTRAINT fk_project_chat_user FOREIGN KEY (user_id) REFERENCES tb_users(user_id) ON DELETE SET NULL,
   CONSTRAINT fk_project_chat_reply_to FOREIGN KEY (reply_to_message_id) REFERENCES tb_project_chat_messages(message_id) ON DELETE SET NULL
@@ -311,6 +315,8 @@ CREATE TABLE tb_task_activity_log (
   PRIMARY KEY (log_id),
   KEY idx_tal_task (task_id),
   KEY idx_tal_created (log_created_at),
+  -- KPI cycle time หาเวลาที่เปลี่ยนเป็น in_progress ครั้งแรก (TASK_START_LOG_SUBQUERY) อ่านจาก index นี้อย่างเดียวไม่ต้องสแกนตาราง
+  KEY idx_tal_status_start (log_action, log_new_value, task_id, log_created_at),
   CONSTRAINT fk_tal_task FOREIGN KEY (task_id) REFERENCES tb_tasks(task_id) ON DELETE CASCADE,
   CONSTRAINT fk_tal_user FOREIGN KEY (user_id) REFERENCES tb_users(user_id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

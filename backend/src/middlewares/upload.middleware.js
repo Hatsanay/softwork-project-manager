@@ -6,7 +6,9 @@ const storage = multer.memoryStorage();
 
 function imageFileFilter(req, file, cb) {
     if (!file.mimetype.startsWith("image/")) {
-        return cb(new Error("อนุญาตเฉพาะไฟล์รูปภาพ"));
+        const err = new Error("อนุญาตเฉพาะไฟล์รูปภาพ");
+        err.isUploadValidation = true; // errorHandler ตอบ 400 แทน 500
+        return cb(err);
     }
     cb(null, true);
 }
@@ -14,7 +16,7 @@ function imageFileFilter(req, file, cb) {
 const uploadImage = multer({
     storage,
     fileFilter: imageFileFilter,
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+    limits: { fileSize: 10 * 1024 * 1024, files: 5 }, // 10 MB ต่อไฟล์, สูงสุด 5 ไฟล์ต่อ request
 });
 
 module.exports = { uploadImage };

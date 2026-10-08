@@ -1,4 +1,4 @@
-const sharp = require("sharp");
+const { compressImage } = require("../utils/imageCompress");
 const fs = require("fs/promises");
 const path = require("path");
 const pool = require("../config/db");
@@ -15,18 +15,6 @@ async function isAssignee(taskId, userId) {
     return rows.length > 0;
 }
 
-async function hasProjectPositionBit(projectId, userId, key) {
-    const [permRows] = await pool.query(
-        `SELECT pp.position_permission
-         FROM tb_project_members pm
-         JOIN tb_project_member_positions pmp ON pmp.project_member_id = pm.project_member_id
-         JOIN tb_project_positions pp ON pp.position_id = pmp.position_id
-         WHERE pm.project_id = ? AND pm.user_id = ?`,
-        [projectId, userId]
-    );
-    return permRows.some((r) => hasProjectBit(r.position_permission, key));
-}
-
 // บิตของปัญหาแยก task/subtask กันเต็มรูปแบบ ไม่ใช้ร่วมกันแบบที่ task/subtask ปกติทำ (ตามที่ผู้ใช้ระบุไว้ชัดเจน)
 // "ของตัวเอง" หมายถึงเป็นผู้รับผิดชอบ (assignee) ของ task/subtask นั้นเอง — ไม่ใช่คนที่แจ้งปัญหา
 // action: "add" | "edit" | "delete" | "changeStatus" — ชื่อบิต changeStatus สลับคำเป็น changeIssueStatus* ไม่ใช่ changeStatusIssue*
@@ -37,28 +25,26 @@ const ISSUE_OWN_BIT_PREFIX = {
     add: "addOwnIssue", edit: "editOwnIssue", delete: "deleteOwnIssue", changeStatus: "changeOwnIssueStatus",
 };
 
-async function canDoIssueAction(action, projectId, task, userId) {
+// perm = สิทธิ์รวมในโปรเจกต์นี้จาก requireProjectMember (req.projectPermission) — เช็คบิตก่อน query ผู้รับผิดชอบเฉพาะตอนจำเป็น
+async function canDoIssueAction(action, perm, task, userId) {
     const isSubtask = !!task.task_parent_id;
     const scope = isSubtask ? "Subtask" : "Task";
     const allKey = `${ISSUE_BIT_PREFIX[action]}${scope}`;
     const ownKey = `${ISSUE_OWN_BIT_PREFIX[action]}${scope}`;
 
-    if (await hasProjectPositionBit(projectId, userId, allKey)) return true;
-    if ((await isAssignee(task.task_id, userId)) && (await hasProjectPositionBit(projectId, userId, ownKey))) return true;
-    return false;
+    if (hasProjectBit(perm, allKey)) return true;
+    return hasProjectBit(perm, ownKey) && (await isAssignee(task.task_id, userId));
 }
 
-// ย่อ+บีบเป็น WebP ให้ไฟล์เล็กลงมาก แต่คงสัดส่วนภาพไว้ (ต่างจากรูปโปรไฟล์ที่ครอปเป็นสี่เหลี่ยมจัตุรัส)
-// เพราะรูปแนบปัญหามักเป็นภาพหน้าจอ/หลักฐาน สัดส่วนเดิมสำคัญกว่า
+// ย่อ+บีบให้ไฟล์เล็กลงมาก แต่คงสัดส่วนภาพไว้ (ต่างจากรูปโปรไฟล์ที่ครอปเป็นสี่เหลี่ยมจัตุรัส)
+// เพราะรูปแนบปัญหามักเป็นภาพหน้าจอ/หลักฐาน สัดส่วนเดิมสำคัญกว่า — วิธีบีบดู utils/imageCompress.js
 async function saveIssueImages(issueId, files) {
     if ((files ?? []).length === 0) return;
     await fs.mkdir(path.join(UPLOADS_DIR, "issues"), { recursive: true });
     for (const file of files) {
-        const filename = `issue-${Date.now()}-${Math.round(Math.random() * 1e9)}.webp`;
-        await sharp(file.buffer)
-            .resize(1600, 1600, { fit: "inside", withoutEnlargement: true })
-            .webp({ quality: 78 })
-            .toFile(path.join(UPLOADS_DIR, "issues", filename));
+        const { data, ext } = await compressImage(file.buffer, { maxSize: 1600 });
+        const filename = `issue-${Date.now()}-${Math.round(Math.random() * 1e9)}.${ext}`;
+        await fs.writeFile(path.join(UPLOADS_DIR, "issues", filename), data);
 
         const image_id = await generateDailyId("tb_task_issue_images", "image_id", "IMA");
         await pool.query(
@@ -152,14 +138,9 @@ async function create(req, res, next) {
         const { issue_title, issue_description } = req.body;
         if (!issue_title) return res.status(400).json({ message: "กรุณากรอกชื่อปัญหา" });
 
-        const [taskRows] = await pool.query(
-            "SELECT task_id, project_id, task_parent_id FROM tb_tasks WHERE task_id = ?",
-            [req.params.taskId]
-        );
-        const task = taskRows[0];
-        if (!task) return res.status(404).json({ message: "ไม่พบ task นี้" });
+        const task = req.task; // ยืนยันแล้วว่าอยู่ในโปรเจกต์นี้โดย requireTaskInProject
 
-        const allowed = await canDoIssueAction("add", task.project_id, task, req.user.user_id);
+        const allowed = await canDoIssueAction("add", req.projectPermission, task, req.user.user_id);
         if (!allowed) return res.status(403).json({ message: "ไม่มีสิทธิ์เพิ่มปัญหาใน task นี้" });
 
         const issue_id = await generateDailyId("tb_task_issues", "issue_id", "ISS");
@@ -177,26 +158,14 @@ async function create(req, res, next) {
     }
 }
 
-async function getIssueWithTask(issueId) {
-    const [rows] = await pool.query(
-        `SELECT i.issue_id, i.task_id, i.issue_status, t.project_id, t.task_parent_id
-         FROM tb_task_issues i
-         JOIN tb_tasks t ON t.task_id = i.task_id
-         WHERE i.issue_id = ?`,
-        [issueId]
-    );
-    return rows[0];
-}
-
 async function update(req, res, next) {
     try {
         const { issue_title, issue_description } = req.body;
         if (!issue_title) return res.status(400).json({ message: "กรุณากรอกชื่อปัญหา" });
 
-        const row = await getIssueWithTask(req.params.issueId);
-        if (!row) return res.status(404).json({ message: "ไม่พบปัญหานี้" });
+        const row = req.issue; // โหลดและยืนยันว่าอยู่ในโปรเจกต์นี้แล้วโดย requireIssueInProject
 
-        const allowed = await canDoIssueAction("edit", row.project_id, row, req.user.user_id);
+        const allowed = await canDoIssueAction("edit", req.projectPermission, row, req.user.user_id);
         if (!allowed) return res.status(403).json({ message: "ไม่มีสิทธิ์แก้ไขปัญหานี้" });
 
         await pool.query(
@@ -233,10 +202,9 @@ async function updateStatus(req, res, next) {
             return res.status(400).json({ message: "สถานะไม่ถูกต้อง" });
         }
 
-        const row = await getIssueWithTask(req.params.issueId);
-        if (!row) return res.status(404).json({ message: "ไม่พบปัญหานี้" });
+        const row = req.issue; // โหลดและยืนยันว่าอยู่ในโปรเจกต์นี้แล้วโดย requireIssueInProject
 
-        const allowed = await canDoIssueAction("changeStatus", row.project_id, row, req.user.user_id);
+        const allowed = await canDoIssueAction("changeStatus", req.projectPermission, row, req.user.user_id);
         if (!allowed) return res.status(403).json({ message: "ไม่มีสิทธิ์เปลี่ยนสถานะปัญหานี้" });
 
         // issue_resolved_at ตั้งครั้งเดียวตอน "เพิ่งเปลี่ยน" เป็น resolved เท่านั้น (เหมือน task_completed_at/project_completed_at)
@@ -261,10 +229,9 @@ async function updateStatus(req, res, next) {
 
 async function remove(req, res, next) {
     try {
-        const row = await getIssueWithTask(req.params.issueId);
-        if (!row) return res.status(404).json({ message: "ไม่พบปัญหานี้" });
+        const row = req.issue; // โหลดและยืนยันว่าอยู่ในโปรเจกต์นี้แล้วโดย requireIssueInProject
 
-        const allowed = await canDoIssueAction("delete", row.project_id, row, req.user.user_id);
+        const allowed = await canDoIssueAction("delete", req.projectPermission, row, req.user.user_id);
         if (!allowed) return res.status(403).json({ message: "ไม่มีสิทธิ์ลบปัญหานี้" });
 
         const [images] = await pool.query("SELECT image_id, image_url FROM tb_task_issue_images WHERE issue_id = ?", [req.params.issueId]);
@@ -279,16 +246,14 @@ async function remove(req, res, next) {
     }
 }
 
-// รูปแนบของการตอบกลับ — ย่อ+บีบเป็น WebP เหมือน saveIssueImages ทุกอย่าง แค่ผูกกับ reply_id แทน issue_id
+// รูปแนบของการตอบกลับ — ย่อ+บีบเหมือน saveIssueImages ทุกอย่าง แค่ผูกกับ reply_id แทน issue_id
 async function saveReplyImages(replyId, files) {
     if ((files ?? []).length === 0) return;
     await fs.mkdir(path.join(UPLOADS_DIR, "issue-replies"), { recursive: true });
     for (const file of files) {
-        const filename = `issue-reply-${Date.now()}-${Math.round(Math.random() * 1e9)}.webp`;
-        await sharp(file.buffer)
-            .resize(1600, 1600, { fit: "inside", withoutEnlargement: true })
-            .webp({ quality: 78 })
-            .toFile(path.join(UPLOADS_DIR, "issue-replies", filename));
+        const { data, ext } = await compressImage(file.buffer, { maxSize: 1600 });
+        const filename = `issue-reply-${Date.now()}-${Math.round(Math.random() * 1e9)}.${ext}`;
+        await fs.writeFile(path.join(UPLOADS_DIR, "issue-replies", filename), data);
 
         const image_id = await generateDailyId("tb_task_issue_reply_images", "image_id", "IRI");
         await pool.query(
@@ -314,9 +279,6 @@ async function attachReplyImages(replies) {
 // ไม่ต้องมีสิทธิ์เฉพาะเหมือนบิต addIssue/editIssue เพราะเป็นแค่การพูดคุย/อัปเดตความคืบหน้า ไม่ใช่การกระทำต่อ workflow ของปัญหา
 async function getReplies(req, res, next) {
     try {
-        const [issueRows] = await pool.query("SELECT issue_id FROM tb_task_issues WHERE issue_id = ?", [req.params.issueId]);
-        if (!issueRows[0]) return res.status(404).json({ message: "ไม่พบปัญหานี้" });
-
         const [rows] = await pool.query(
             `SELECT r.reply_id, r.issue_id, r.user_id,
                     CONCAT(u.user_fname, ' ', u.user_lname) AS user_fullname, u.user_avatar_url,
@@ -385,9 +347,6 @@ async function createReply(req, res, next) {
         const reply_text = (req.body.reply_text || "").trim();
         const hasImages = (req.files ?? []).length > 0;
         if (!reply_text && !hasImages) return res.status(400).json({ message: "กรุณาพิมพ์ข้อความหรือแนบรูป" });
-
-        const [issueRows] = await pool.query("SELECT issue_id FROM tb_task_issues WHERE issue_id = ?", [req.params.issueId]);
-        if (!issueRows[0]) return res.status(404).json({ message: "ไม่พบปัญหานี้" });
 
         const reply_id = await generateDailyId("tb_task_issue_replies", "reply_id", "IRP");
         await pool.query(

@@ -7,23 +7,19 @@ import Button from "@/components/ui/Button/Button";
 import Input from "@/components/ui/Input/input";
 import Form from "@/components/ui/form/Form";
 import AvatarCrop from "@/components/ui/AvatarCrop";
+import EmailOtpForm from "@/app/components/email-otp-form";
 import { toast } from "sonner";
 
+// อีเมลไม่อยู่ในฟอร์มนี้แล้ว — เปลี่ยนได้ทางเดียวคือยืนยันด้วย OTP (ส่วน "อีเมล" ด้านล่าง) backend ก็ไม่รับอีเมลจาก PUT /users/me แล้ว
 type FormState = {
     user_fname: string;
     user_lname: string;
-    user_email: string;
     user_phone: string;
     user_line_id: string;
     user_whatApp_no: string;
 };
 
 type FormErrors = Partial<Record<keyof FormState, string>>;
-
-function decodeToken(token: string): { user_id: string } {
-    const payload = token.split(".")[1];
-    return JSON.parse(atob(payload));
-}
 
 function authHeader() {
     return { Authorization: `Bearer ${localStorage.getItem("token")}` };
@@ -35,19 +31,14 @@ function validate(form: FormState): FormErrors {
     if (!form.user_fname.trim()) errors.user_fname = "กรุณากรอกชื่อ";
     if (!form.user_lname.trim()) errors.user_lname = "กรุณากรอกนามสกุล";
 
-    if (!form.user_email.trim())
-        errors.user_email = "กรุณากรอกอีเมล";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.user_email))
-        errors.user_email = "รูปแบบอีเมลไม่ถูกต้อง";
-
     if (form.user_phone && !/^[0-9]{9,10}$/.test(form.user_phone.replace(/-/g, "")))
         errors.user_phone = "เบอร์โทรต้องเป็นตัวเลข 9-10 หลัก";
 
     return errors;
 }
 
-async function fetchMyProfile(userId: string) {
-    const res = await fetch(`${api}/users/me?user_id=${userId}`, { headers: authHeader() });
+async function fetchMyProfile() {
+    const res = await fetch(`${api}/users/me`, { headers: authHeader() });
     if (!res.ok) return null;
     return res.json();
 }
@@ -85,7 +76,7 @@ async function submitChangePassword(newPassword: string) {
 }
 
 const EMPTY_FORM: FormState = {
-    user_fname: "", user_lname: "", user_email: "",
+    user_fname: "", user_lname: "",
     user_phone: "", user_line_id: "", user_whatApp_no: "",
 };
 
@@ -98,6 +89,9 @@ export default function ProfilePage() {
     const [avatarFile, setAvatarFile] = useState<File | null>(null);
     const [currentAvatar, setCurrentAvatar] = useState<string | undefined>(undefined);
     const [roleName, setRoleName] = useState("");
+    const [username, setUsername] = useState("");
+    const [email, setEmail] = useState("");
+    const [changingEmail, setChangingEmail] = useState(false);
     const [form, setForm] = useState<FormState>(EMPTY_FORM);
     const [errors, setErrors] = useState<FormErrors>({});
     const [submitError, setSubmitError] = useState<string | null>(null);
@@ -108,17 +102,14 @@ export default function ProfilePage() {
     const [passwordPending, setPasswordPending] = useState(false);
 
     useEffect(() => {
-        const token = localStorage.getItem("token");
-        if (!token) return;
-        const { user_id } = decodeToken(token);
-
         startTransition(async () => {
-            const data = await fetchMyProfile(user_id);
+            const data = await fetchMyProfile();
             if (!data) return;
+            setUsername(data.user_username ?? "");
+            setEmail(data.user_email ?? "");
             setForm({
                 user_fname: data.user_fname ?? "",
                 user_lname: data.user_lname ?? "",
-                user_email: data.user_email ?? "",
                 user_phone: data.user_phone ?? "",
                 user_line_id: data.user_line_uid ?? "",
                 user_whatApp_no: data.user_whatsapp_no ?? "",
@@ -206,11 +197,22 @@ export default function ProfilePage() {
                         {errors.user_lname && <p className="text-xs text-red-500">{errors.user_lname}</p>}
                     </div>
 
-                    <div className="flex flex-col gap-1 col-span-2">
+                    <div className="flex flex-col gap-1">
+                        <label className="text-sm font-medium text-gray-700">ชื่อผู้ใช้</label>
+                        <p className="px-3 py-2 bg-gray-50 rounded-lg text-gray-600 text-sm break-all">{username || "-"}</p>
+                    </div>
+
+                    <div className="flex flex-col gap-1">
                         <label className="text-sm font-medium text-gray-700">อีเมล</label>
-                        <Input type="email" name="user_email" value={form.user_email} onChange={handleChange}
-                            placeholder="อีเมล" error={!!errors.user_email} />
-                        {errors.user_email && <p className="text-xs text-red-500">{errors.user_email}</p>}
+                        <div className="flex items-center gap-2">
+                            <p className="flex-1 min-w-0 px-3 py-2 bg-gray-50 rounded-lg text-gray-600 text-sm break-all">{email || "-"}</p>
+                            {!changingEmail && (
+                                <button type="button" onClick={() => setChangingEmail(true)}
+                                    className="shrink-0 text-sm text-blue-600 hover:text-blue-700">
+                                    {email ? "เปลี่ยน" : "เพิ่ม"}
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     <div className="flex flex-col gap-1">
@@ -241,6 +243,18 @@ export default function ProfilePage() {
                     </div>
                 </Form>
             </div>
+
+            {/* อยู่นอก <Form> ด้านบนโดยตั้งใจ — EmailOtpForm เป็น <form> ของตัวเอง ซ้อน form ใน form ไม่ได้ */}
+            {changingEmail && (
+                <div className="bg-white shadow-sm border border-gray-100 rounded-xl p-4 sm:p-6">
+                    <div className="flex items-center justify-between mb-4">
+                        <h2 className="text-lg font-bold text-gray-800">{email ? "เปลี่ยนอีเมล" : "เพิ่มอีเมล"}</h2>
+                        <button type="button" onClick={() => setChangingEmail(false)}
+                            className="text-sm text-gray-500 hover:text-gray-700">ยกเลิก</button>
+                    </div>
+                    <EmailOtpForm onVerified={(verified) => { setEmail(verified); setChangingEmail(false); }} />
+                </div>
+            )}
 
             <div>
                 <h2 className="text-lg font-bold text-gray-800 mb-3">เปลี่ยนรหัสผ่าน</h2>

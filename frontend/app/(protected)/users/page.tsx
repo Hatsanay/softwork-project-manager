@@ -15,7 +15,8 @@ import Button from "@/components/ui/Button/Button";
 
 type User = {
     user_id: number;
-    user_email: string;
+    user_username: string;
+    user_email: string | null;
     user_fname: string;
     user_lname: string;
     user_phone: string;
@@ -58,7 +59,9 @@ export default function UsersPage() {
     const columns: Column<User>[] = [
         { key: "user_id", header: "รหัสผู้ใช้งาน", className: "w-20" },
         { key: "by_fullname", header: "ชื่อผู้ใช้งาน" },
-        { key: "user_email", header: "อีเมล" },
+        { key: "user_username", header: "ชื่อผู้ใช้" },
+        // ยังไม่มีอีเมล = แอดมินสร้างไว้โดยไม่ใส่อีเมล และผู้ใช้ยังไม่ได้เข้าระบบครั้งแรกไปยืนยัน
+        { key: "user_email", header: "อีเมล", render: (v) => (v as string) || <span className="text-gray-400">รอยืนยัน</span> },
         { key: "role_name", header: "สิทธิ์" },
         // { key: "role_type", header: "ประเภทสิทธิ์" },
         { key: "user_phone", header: "เบอร์โทรศัพท์", render: (v) => (v as string) || "-" },

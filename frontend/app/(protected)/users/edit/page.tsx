@@ -14,6 +14,7 @@ import { toast } from "sonner";
 type FormState = {
     user_fname: string;
     user_lname: string;
+    user_username: string;
     user_email: string;
     user_phone: string;
     user_line_id: string;
@@ -24,6 +25,9 @@ type FormState = {
 
 type FormErrors = Partial<Record<keyof FormState, string>>;
 
+// ต้องตรงกับ USERNAME_PATTERN ใน backend/src/controllers/user.controller.js — ห้ามมี @ (ช่อง login รับทั้งอีเมลและชื่อผู้ใช้)
+const USERNAME_PATTERN = /^[A-Za-z0-9._-]{3,50}$/;
+
 function validate(form: FormState): FormErrors {
     const errors: FormErrors = {};
 
@@ -33,9 +37,13 @@ function validate(form: FormState): FormErrors {
     if (!form.user_lname.trim()) errors.user_lname = "กรุณากรอกนามสกุล";
     else if (form.user_lname.trim().length < 2) errors.user_lname = "นามสกุลต้องมีอย่างน้อย 2 ตัวอักษร";
 
-    if (!form.user_email.trim())
-        errors.user_email = "กรุณากรอกอีเมล";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.user_email))
+    if (!form.user_username.trim())
+        errors.user_username = "กรุณากรอกชื่อผู้ใช้";
+    else if (!USERNAME_PATTERN.test(form.user_username.trim()))
+        errors.user_username = "ยาว 3-50 ตัว ใช้ได้เฉพาะ a-z, 0-9, จุด, ขีดกลาง, ขีดล่าง";
+
+    // อีเมลไม่บังคับ — ล้างทิ้ง = ผู้ใช้จะถูกขอให้ยืนยันอีเมลใหม่ด้วย OTP ตอนเข้าระบบครั้งถัดไป
+    if (form.user_email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.user_email.trim()))
         errors.user_email = "รูปแบบอีเมลไม่ถูกต้อง";
 
     if (form.user_phone && !/^[0-9]{9,10}$/.test(form.user_phone.replace(/-/g, "")))
@@ -100,7 +108,7 @@ async function resetPassword(id: string): Promise<{ temp_password: string }> {
 const SERVER_BASE = new URL(api).origin;
 
 const EMPTY_FORM: FormState = {
-    user_fname: "", user_lname: "", user_email: "", user_phone: "",
+    user_fname: "", user_lname: "", user_username: "", user_email: "", user_phone: "",
     user_line_id: "", user_whatApp_no: "", user_role_id: "", user_status: "active",
 };
 
@@ -130,6 +138,7 @@ export default function EditUserPage() {
             setForm({
                 user_fname: data.user_fname ?? "",
                 user_lname: data.user_lname ?? "",
+                user_username: data.user_username ?? "",
                 user_email: data.user_email ?? "",
                 user_phone: data.user_phone ?? "",
                 user_line_id: data.user_line_uid ?? "",
@@ -185,12 +194,18 @@ export default function EditUserPage() {
         }
     }
 
+    // ชื่อผู้ใช้ใช้ login ได้เสมอ (อีเมลใช้ได้ด้วยถ้ามี)
+    function credentialLines(temp: string) {
+        return [
+            `ชื่อผู้ใช้: ${form.user_username}`,
+            form.user_email.trim() ? `อีเมล: ${form.user_email.trim()}` : null,
+            `รหัสผ่านชั่วคราว: ${temp}`,
+        ].filter((line): line is string => !!line);
+    }
+
     async function copyTempPassword() {
-        if (tempPassword) {
-            const text = `อีเมล: ${form.user_email}\nรหัสผ่านชั่วคราว: ${tempPassword}`;
-            await navigator.clipboard.writeText(text).catch(() => {});
-        }
-        toast.success("คัดลอกอีเมลและรหัสผ่านชั่วคราวแล้ว");
+        if (tempPassword) await navigator.clipboard.writeText(credentialLines(tempPassword).join("\n")).catch(() => {});
+        toast.success("คัดลอกข้อมูลเข้าสู่ระบบแล้ว");
         setTempPassword(null);
     }
 
@@ -231,11 +246,20 @@ export default function EditUserPage() {
                     {errors.user_lname && <p className="text-xs text-red-500">{errors.user_lname}</p>}
                 </div>
 
-                <div className="flex flex-col gap-1 col-span-2">
-                    <label className="text-sm font-medium text-gray-700">อีเมล</label>
+                <div className="flex flex-col gap-1">
+                    <label className="text-sm font-medium text-gray-700">ชื่อผู้ใช้</label>
+                    <Input name="user_username" value={form.user_username} onChange={handleChange}
+                        placeholder="ชื่อผู้ใช้" autoComplete="off" error={!!errors.user_username} />
+                    {errors.user_username && <p className="text-xs text-red-500">{errors.user_username}</p>}
+                </div>
+
+                <div className="flex flex-col gap-1">
+                    <label className="text-sm font-medium text-gray-700">อีเมล <span className="text-gray-400 font-normal">(ไม่บังคับ)</span></label>
                     <Input type="email" name="user_email" value={form.user_email} onChange={handleChange}
                         placeholder="อีเมล" error={!!errors.user_email} />
-                    {errors.user_email && <p className="text-xs text-red-500">{errors.user_email}</p>}
+                    {errors.user_email
+                        ? <p className="text-xs text-red-500">{errors.user_email}</p>
+                        : <p className="text-xs text-gray-400">เว้นว่าง = ผู้ใช้ต้องยืนยันอีเมลเองด้วย OTP ตอนเข้าระบบครั้งถัดไป</p>}
                 </div>
 
                 <div className="flex flex-col gap-1">
@@ -310,8 +334,8 @@ export default function EditUserPage() {
                 open={!!tempPassword}
                 variant="info"
                 title="เปลี่ยนรหัสผ่านสำเร็จ"
-                description={`อีเมล: ${form.user_email}  /  รหัสผ่านชั่วคราว: ${tempPassword} — กรุณาคัดลอกไปให้ผู้ใช้ก่อนปิดหน้าต่างนี้`}
-                confirmLabel="คัดลอกอีเมล + รหัสผ่าน"
+                description={tempPassword ? `${credentialLines(tempPassword).join("  /  ")} — กรุณาคัดลอกไปให้ผู้ใช้ก่อนปิดหน้าต่างนี้` : ""}
+                confirmLabel="คัดลอกข้อมูลเข้าสู่ระบบ"
                 cancelLabel="ปิด"
                 onConfirm={copyTempPassword}
                 onCancel={() => setTempPassword(null)}

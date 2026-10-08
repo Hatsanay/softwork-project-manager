@@ -66,7 +66,7 @@ export default function ViewUserPage() {
                     />
                     <div>
                         <p className="text-lg font-semibold text-gray-800">{user.user_fullname}</p>
-                        <p className="text-sm text-gray-500">{user.user_email}</p>
+                        <p className="text-sm text-gray-500">@{user.user_username}{user.user_email ? ` · ${user.user_email}` : ""}</p>
                         {user.role_name && (
                             <span className="inline-block mt-1 px-2 py-0.5 text-xs rounded-full bg-blue-50 text-blue-600">
                                 {user.role_name}
@@ -80,7 +80,8 @@ export default function ViewUserPage() {
                 <div className="grid grid-cols-2 gap-x-6 gap-y-4">
                     <Field label="ชื่อ"         value={user.user_fname} />
                     <Field label="นามสกุล"       value={user.user_lname} />
-                    <Field label="อีเมล"         value={user.user_email} />
+                    <Field label="ชื่อผู้ใช้"      value={user.user_username} />
+                    <Field label="อีเมล"         value={user.user_email ?? "ยังไม่ได้ยืนยันอีเมล"} />
                     <Field label="เบอร์โทรศัพท์" value={user.user_phone} />
                     <Field label="Line ID"      value={user.user_line_uid} />
                     <Field label="WhatsApp No." value={user.user_whatsapp_no} />

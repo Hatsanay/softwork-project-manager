@@ -57,5 +57,12 @@ echo     1. NPM install
 echo     2. Run script -^> build
 echo     3. Restart App
 echo   Startup file: server.js
+echo.
+echo   Database (every deploy, safe to re-run):
+echo     Run database\query\deploy_schema.sql on the production DB
+echo     (phpMyAdmin -^> SQL tab). Last query must return 0 rows.
+echo     Do this BEFORE restarting backend.
+echo.
+echo   Backend: NPM install -^> Restart App
 echo ============================================
 pause

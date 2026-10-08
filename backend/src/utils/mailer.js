@@ -394,4 +394,91 @@ async function sendClientShareLinkEmail({ to, ...data }) {
     });
 }
 
-module.exports = { sendTaskAssignedEmail, sendProjectMemberAddedEmail, sendClientShareLinkEmail };
+function buildEmailOtpEmail({ code, fullname, expiresMinutes }) {
+    const name = escapeHtml(fullname || "");
+    const safeCode = escapeHtml(code);
+
+    const html = `<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light" />
+<title>รหัสยืนยันอีเมล</title>
+</head>
+<body style="margin:0;padding:0;background:#eef1f7;font-family:'Segoe UI',Arial,'Noto Sans Thai',sans-serif;">
+  <div style="display:none;max-height:0;overflow:hidden;">รหัสยืนยันอีเมลของคุณคือ ${safeCode} ใช้ได้ภายใน ${expiresMinutes} นาที</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef1f7;padding:40px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border:1px solid #e3e7f0;border-radius:14px;overflow:hidden;">
+
+        <tr><td style="padding:26px 32px 20px;border-bottom:1px solid #e3e7f0;">
+          <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+            <td style="width:26px;height:26px;background:#2554c7;border-radius:7px;" width="26" height="26"></td>
+            <td style="padding-left:10px;font-size:14px;font-weight:600;color:#10192e;">Softwork Project Manager <span style="color:#8b93a7;font-weight:400;">· ยืนยันอีเมล</span></td>
+          </tr></table>
+        </td></tr>
+
+        <tr><td style="padding:32px;">
+          <p style="margin:0 0 10px;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#2554c7;">รหัสยืนยันอีเมล</p>
+          <p style="margin:0 0 22px;font-size:15px;line-height:1.7;color:#4b5568;">
+            ${name ? `สวัสดีคุณ<b style="color:#10192e;">${name}</b><br />` : ""}
+            กรอกรหัสด้านล่างในหน้าเว็บเพื่อยืนยันว่าอีเมลนี้เป็นของคุณ
+          </p>
+
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef1f7;border:1px solid #e3e7f0;border-radius:10px;margin-bottom:22px;">
+            <tr><td align="center" style="padding:22px;">
+              <p style="margin:0;font-size:34px;letter-spacing:10px;font-weight:700;color:#10192e;font-family:Consolas,'Courier New',monospace;">${safeCode}</p>
+              <p style="margin:8px 0 0;font-size:12.5px;color:#8b93a7;">ใช้ได้ภายใน ${expiresMinutes} นาที และใช้ได้ครั้งเดียว</p>
+            </td></tr>
+          </table>
+
+          <p style="margin:0;font-size:13px;line-height:1.7;color:#8b93a7;">
+            ห้ามบอกรหัสนี้กับผู้อื่น ทีมงานไม่มีนโยบายขอรหัสนี้จากคุณ
+          </p>
+        </td></tr>
+
+        <tr><td style="border-top:1px solid #e3e7f0;padding:20px 32px 26px;font-size:12px;line-height:1.7;color:#8b93a7;">
+          อีเมลนี้ส่งอัตโนมัติจากระบบ <strong style="color:#4b5568;">Softwork Project Manager</strong>
+          หากคุณไม่ได้ขอรหัสนี้ สามารถเพิกเฉยต่ออีเมลนี้ได้ อีเมลของคุณจะไม่ถูกผูกกับบัญชีใด
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+    const text = [
+        fullname ? `สวัสดีคุณ${fullname}` : null,
+        `รหัสยืนยันอีเมลของคุณคือ ${code}`,
+        `ใช้ได้ภายใน ${expiresMinutes} นาที และใช้ได้ครั้งเดียว ห้ามบอกรหัสนี้กับผู้อื่น`,
+        "หากคุณไม่ได้ขอรหัสนี้ สามารถเพิกเฉยต่ออีเมลนี้ได้",
+    ].filter(Boolean).join("\n");
+
+    return { html, text };
+}
+
+// ส่งรหัส OTP — ผู้ใช้กดขอรหัสเองแล้วรออยู่หน้าจอ ต้องรู้ผลจริง จึง throw เหมือน sendClientShareLinkEmail
+// OTP_DEV_LOG=true (ตั้งเฉพาะบนเครื่อง dev เท่านั้น ห้ามตั้งบน production) = พิมพ์รหัสลง log ของ backend แทนการส่งจริง
+// ใช้ทดสอบ flow ได้โดยไม่ต้องมี SMTP และไม่ส่งเมลไปหาอีเมลทดสอบมั่วๆ
+async function sendEmailOtpEmail({ to, ...data }) {
+    if (process.env.OTP_DEV_LOG === "true") {
+        console.log(`[mailer] OTP_DEV_LOG: รหัสยืนยันของ ${to} คือ ${data.code} (ไม่ได้ส่งอีเมลจริง)`);
+        return;
+    }
+    const t = getTransporter();
+    if (!t) {
+        throw new Error("SMTP_NOT_CONFIGURED");
+    }
+    const { html, text } = buildEmailOtpEmail(data);
+    await t.sendMail({
+        from: `"${process.env.SMTP_FROM_NAME || "Softwork Project Manager"}" <${process.env.SMTP_USER}>`,
+        to,
+        subject: `รหัสยืนยันอีเมล: ${data.code}`,
+        html,
+        text,
+    });
+}
+
+module.exports = { sendTaskAssignedEmail, sendProjectMemberAddedEmail, sendClientShareLinkEmail, sendEmailOtpEmail };

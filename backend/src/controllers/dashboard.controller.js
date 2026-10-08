@@ -37,8 +37,7 @@ async function getSummary(req, res, next) {
     try {
         const userId = req.user.user_id;
 
-        const [roleRows] = await pool.query("SELECT role_permission FROM tb_roles WHERE role_id = ?", [req.user.user_role_id]);
-        const rolePermission = roleRows[0]?.role_permission ?? "";
+        const rolePermission = req.user.role_permission; // ดึงสดจาก DB แล้วใน requireAuth
         const seesAllProjects = hasBit(rolePermission, "viewAllProjects");
         const hasProjectAccess = seesAllProjects || hasBit(rolePermission, "viewOwnProjects");
 
@@ -61,7 +60,9 @@ async function getSummary(req, res, next) {
         const memberJoin = seesAllProjects ? "" : "JOIN tb_project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?";
         const memberParams = seesAllProjects ? [] : [userId];
 
-        const [[{ count: activeProjectCount }]] = await pool.query(
+        // ทุก query ด้านล่างไม่ขึ้นต่อกัน — สั่งยิงพร้อมกันทั้งหมดก่อน แล้วค่อยรอผลทีเดียวที่ Promise.all ข้างล่าง
+        // (เดิม await ทีละตัวเรียงกัน เวลารวม = ผลบวกของทุก query, ตอนนี้ ≈ query ที่ช้าที่สุดตัวเดียว)
+        const activeProjectCountQuery = pool.query(
             `SELECT COUNT(DISTINCT p.project_id) AS count
              FROM tb_projects p
              ${memberJoin}
@@ -69,7 +70,7 @@ async function getSummary(req, res, next) {
             memberParams
         );
 
-        const [projects] = await pool.query(
+        const projectsQuery = pool.query(
             `SELECT DISTINCT p.project_id, p.project_name, p.project_status,
                     p.project_progress_percent, p.project_due_date
              FROM tb_projects p
@@ -80,7 +81,7 @@ async function getSummary(req, res, next) {
             memberParams
         );
 
-        const [myTasks] = await pool.query(
+        const myTasksQuery = pool.query(
             `SELECT t.task_id, t.task_title, t.task_status, t.task_due_date, t.task_parent_id,
                     t.project_id, p.project_name
              FROM tb_tasks t
@@ -120,60 +121,77 @@ async function getSummary(req, res, next) {
             OR ${unreadReplyCondition}
         )`;
 
-        const [[{ count: openIssueCount }]] = await pool.query(
+        // ชุดปัญหาที่ "เป็นไปได้" ของผู้ใช้คนนี้ — ดึงจาก index ฝั่งผู้ใช้ก่อน (task ที่รับผิดชอบ / subtask ใต้ task ที่รับผิดชอบ /
+        // ถูกแท็ก / สร้างเอง) แล้วค่อยกรองด้วยเงื่อนไขเดิมทุกตัวด้านล่าง ผลจึงเหมือนเดิมทุกประการ
+        // เดิมไม่มีชุดนี้ MySQL ต้องไล่ตรวจ EXISTS กับ "ทุกปัญหาในระบบ" (full scan) ช้าขึ้นตามจำนวนปัญหาทั้งบริษัท
+        // (~300 ms ต่อ query ที่ 30,000 ปัญหา วัดจริง 2026-10-08) ตอนนี้ช้าขึ้นตามจำนวนงานของผู้ใช้คนนั้นเท่านั้น
+        // ทุก placeholder ในชุดนี้คือ userId เหมือน placeholder อื่นของ query ปัญหา (ลำดับจึงไม่มีผล)
+        const candidateIssues = `(
+            SELECT i0.issue_id FROM tb_task_assignees ca
+            JOIN tb_task_issues i0 ON i0.task_id = ca.task_id
+            WHERE ca.user_id = ? AND i0.issue_status = 'open'
+            UNION
+            SELECT i1.issue_id FROM tb_task_assignees cp
+            JOIN tb_tasks st ON st.task_parent_id = cp.task_id
+            JOIN tb_task_issues i1 ON i1.task_id = st.task_id
+            WHERE cp.user_id = ? AND i1.issue_status = 'open'
+            UNION
+            SELECT ct.issue_id FROM tb_task_issue_tags ct WHERE ct.user_id = ?
+            UNION
+            SELECT i2.issue_id FROM tb_task_issues i2 WHERE i2.created_by = ?
+        )`;
+        const CANDIDATE_PARAMS = 4;
+
+        const openIssueCountQuery = pool.query(
             `SELECT COUNT(DISTINCT i.issue_id) AS count
-             FROM tb_task_issues i
+             FROM ${candidateIssues} cand
+             JOIN tb_task_issues i ON i.issue_id = cand.issue_id
              JOIN tb_tasks t ON t.task_id = i.task_id
              WHERE ${issueScopeCondition}`,
-            Array(6).fill(userId)
+            Array(6 + CANDIDATE_PARAMS).fill(userId)
         );
 
         // นับแบบ "เฉพาะที่รับผิดชอบตรงๆ หรือถูกแท็ก หรือมีตอบกลับใหม่ที่ยังไม่อ่าน" (ไม่รวม subtask ที่ได้มาจาก parent cascade)
         // ไว้คู่กับ toggle "แสดงเฉพาะ subtask ของตัวเอง" ฝั่ง frontend ให้ตัวเลข stat tile สลับไปมาได้ตรงกับ list ที่กรองอยู่
         // ปัญหาที่ถูกแท็ก/มีตอบกลับใหม่ยังนับตรงนี้เสมอ ไม่ถูกตัดออกด้วย toggle นี้ เพราะ toggle นี้ตั้งใจกรองแค่ "parent cascade"
         // ที่เป็น noise ไม่ใช่การเรียกร้องความสนใจโดยตรง (แท็ก/ตอบกลับ)
-        const [[{ count: openIssueCountOwnOnly }]] = await pool.query(
+        const openIssueCountOwnOnlyQuery = pool.query(
             `SELECT COUNT(DISTINCT i.issue_id) AS count
-             FROM tb_task_issues i
+             FROM ${candidateIssues} cand
+             JOIN tb_task_issues i ON i.issue_id = cand.issue_id
              JOIN tb_tasks t ON t.task_id = i.task_id
              WHERE (i.issue_status = 'open' AND (
                  EXISTS (SELECT 1 FROM tb_task_assignees ta WHERE ta.task_id = t.task_id AND ta.user_id = ?)
                  OR EXISTS (SELECT 1 FROM tb_task_issue_tags tag WHERE tag.issue_id = i.issue_id AND tag.user_id = ?)
              )) OR ${unreadReplyCondition}`,
-            Array(5).fill(userId)
+            Array(5 + CANDIDATE_PARAMS).fill(userId)
         );
 
         // รายการปัญหาที่เปิดอยู่ (task ของตัวเอง + subtask ใต้ task ของตัวเอง + ที่ถูกแท็กไว้ + ของตัวเองที่มีตอบกลับใหม่ไม่ว่าสถานะปัญหาจะเป็นอะไร)
         // is_subtask ไว้แยก tab, is_direct_assignee ไว้กรองตอนติ๊ก "แสดงเฉพาะ subtask ของตัวเอง" (ไม่รวมที่มาจาก parent cascade)
         // is_tagged/is_unread_reply ไว้ให้ frontend ขึ้นพื้นหลังสีแดง/badge (เฉพาะในมุมมองของคนที่เกี่ยวข้องเอง ไม่ใช่ทุกคนที่เห็นปัญหานี้)
-        const [openIssues] = await pool.query(
+        const openIssuesQuery = pool.query(
             `SELECT DISTINCT i.issue_id, i.issue_title, i.issue_status, i.issue_created_at,
                     t.task_id, t.task_title, t.project_id, p.project_name,
                     (t.task_parent_id IS NOT NULL) AS is_subtask,
                     EXISTS (SELECT 1 FROM tb_task_assignees ta3 WHERE ta3.task_id = t.task_id AND ta3.user_id = ?) AS is_direct_assignee,
                     EXISTS (SELECT 1 FROM tb_task_issue_tags tag2 WHERE tag2.issue_id = i.issue_id AND tag2.user_id = ?) AS is_tagged,
                     ${unreadReplyCondition} AS is_unread_reply
-             FROM tb_task_issues i
+             FROM ${candidateIssues} cand
+             JOIN tb_task_issues i ON i.issue_id = cand.issue_id
              JOIN tb_tasks t ON t.task_id = i.task_id
              JOIN tb_projects p ON p.project_id = t.project_id
              WHERE ${issueScopeCondition}
              ORDER BY i.issue_created_at DESC
              LIMIT 30`,
-            // is_direct_assignee(1) + is_tagged(1) + is_unread_reply select(3) + issueScopeCondition(6) = 11 placeholders, ทั้งหมดคือ userId ของ viewer
-            Array(11).fill(userId)
+            // is_direct_assignee(1) + is_tagged(1) + is_unread_reply select(3) + candidateIssues(4) + issueScopeCondition(6)
+            // = 15 placeholders ทั้งหมดคือ userId ของ viewer
+            Array(11 + CANDIDATE_PARAMS).fill(userId)
         );
-        // MySQL คืน (expr)/EXISTS(...) เป็น 0/1 (ไม่ใช่ boolean จริง) ต้องแปลงเองไม่งั้น type ไม่ตรงกับที่ frontend คาดไว้
-        for (const iss of openIssues) {
-            iss.is_subtask = !!iss.is_subtask;
-            iss.is_unread_reply = !!iss.is_unread_reply;
-            iss.is_direct_assignee = !!iss.is_direct_assignee;
-            iss.is_tagged = !!iss.is_tagged;
-        }
-
         // sub-query เดียวกันสองที่: อันนี้เอาผลรวมจริงทั้งหมด (ไม่ลิมิต) ไว้ทำ stat tile
         // ต้อง GROUP BY task_id ก่อนแล้วค่อย SUM ทับอีกที ไม่งั้นถ้า SUM ตรงๆ จาก COUNT(*) รวมทุก task
         // มันจะได้ผลลัพธ์ถูกต้องอยู่แล้วเหมือนกัน แต่แยก query ไว้ชัดเจนกว่าเผื่อ query ลิสต์ด้านล่าง LIMIT ไว้แค่ 10 แถว
-        const [[{ count: unreadTaskChatCountRaw }]] = await pool.query(
+        const unreadTaskChatCountQuery = pool.query(
             `SELECT COALESCE(SUM(unread), 0) AS count FROM (
                 SELECT COUNT(*) AS unread
                 FROM tb_task_chat_messages c
@@ -188,7 +206,7 @@ async function getSummary(req, res, next) {
 
         // เหมือนกันแต่นับแชทรวมของโปรเจกต์แทน — สโคปด้วย "เป็นสมาชิกโปรเจกต์" (tb_project_members)
         // ไม่ใช่ viewAllProjects เพราะ widget นี้เป็นข้อมูลส่วนตัว (แชทที่ตัวเองเข้าไปคุยได้จริง) ไม่ใช่มุมมองข้ามบริษัท
-        const [[{ count: unreadProjectChatCountRaw }]] = await pool.query(
+        const unreadProjectChatCountQuery = pool.query(
             `SELECT COALESCE(SUM(unread), 0) AS count FROM (
                 SELECT COUNT(*) AS unread
                 FROM tb_project_chat_messages c
@@ -200,12 +218,9 @@ async function getSummary(req, res, next) {
              ) sub`,
             [userId, userId, userId]
         );
-        // mysql2 คืนผลลัพธ์ SUM() เป็น string เสมอ (ต่างจาก COUNT() ที่ได้ number ตรงๆ) ต้องแปลงเองไม่งั้น type ไม่ตรงกับที่ frontend คาดไว้
-        const unreadChatCount = Number(unreadTaskChatCountRaw) + Number(unreadProjectChatCountRaw);
-
         // รายชื่อ task ที่มีข้อความแชทยังไม่ได้อ่าน (จำกัด 10 อันล่าสุดสำหรับแสดงเป็นลิสต์คลิกเข้าไปอ่านได้)
         // ต่างจากตัวเลขสรุปด้านบน — อันนี้ลิมิตจำนวนแถวเพื่อแสดงผล ไม่ใช่ตัวเลขสรุปที่ต้องถูกต้องครบทุก task
-        const [unreadTaskChats] = await pool.query(
+        const unreadTaskChatsQuery = pool.query(
             `SELECT c.task_id, t.task_title, t.project_id, p.project_name,
                     COUNT(*) AS unread_count, MAX(c.message_created_at) AS last_message_at
              FROM tb_task_chat_messages c
@@ -220,25 +235,8 @@ async function getSummary(req, res, next) {
              LIMIT 10`,
             [userId, userId, userId]
         );
-        for (const chat of unreadTaskChats) {
-            chat.chat_type = "task";
-            const [[lastMsg]] = await pool.query(
-                `SELECT c.message_text, CONCAT(u.user_fname, ' ', u.user_lname) AS user_fullname,
-                        EXISTS(SELECT 1 FROM tb_task_chat_images i WHERE i.message_id = c.message_id) AS has_images
-                 FROM tb_task_chat_messages c
-                 LEFT JOIN tb_users u ON u.user_id = c.user_id
-                 WHERE c.task_id = ?
-                 ORDER BY c.message_created_at DESC
-                 LIMIT 1`,
-                [chat.task_id]
-            );
-            chat.last_message_text = lastMsg?.message_text ?? null;
-            chat.last_message_sender = lastMsg?.user_fullname ?? "ผู้ใช้งานที่ถูกลบ";
-            chat.last_message_has_images = !!lastMsg?.has_images;
-        }
-
         // เหมือนกันแต่ของแชทรวมของโปรเจกต์ (task_id/task_title เป็น null เสมอ ไว้ merge รวมลิสต์เดียวกับด้านบน)
-        const [unreadProjectChats] = await pool.query(
+        const unreadProjectChatsQuery = pool.query(
             `SELECT c.project_id, p.project_name,
                     COUNT(*) AS unread_count, MAX(c.message_created_at) AS last_message_at
              FROM tb_project_chat_messages c
@@ -252,30 +250,6 @@ async function getSummary(req, res, next) {
              LIMIT 10`,
             [userId, userId, userId]
         );
-        for (const chat of unreadProjectChats) {
-            chat.chat_type = "project";
-            chat.task_id = null;
-            chat.task_title = null;
-            const [[lastMsg]] = await pool.query(
-                `SELECT c.message_text, CONCAT(u.user_fname, ' ', u.user_lname) AS user_fullname,
-                        EXISTS(SELECT 1 FROM tb_project_chat_images i WHERE i.message_id = c.message_id) AS has_images
-                 FROM tb_project_chat_messages c
-                 LEFT JOIN tb_users u ON u.user_id = c.user_id
-                 WHERE c.project_id = ?
-                 ORDER BY c.message_created_at DESC
-                 LIMIT 1`,
-                [chat.project_id]
-            );
-            chat.last_message_text = lastMsg?.message_text ?? null;
-            chat.last_message_sender = lastMsg?.user_fullname ?? "ผู้ใช้งานที่ถูกลบ";
-            chat.last_message_has_images = !!lastMsg?.has_images;
-        }
-
-        // รวมสองลิสต์เป็นลิสต์เดียว เรียงตามข้อความล่าสุดจริง แล้วตัดเหลือ 10 (chat_type ให้ frontend แยกไปเปิด task chat กับ project chat ถูกที่)
-        const unreadChats = [...unreadTaskChats, ...unreadProjectChats]
-            .sort((a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime())
-            .slice(0, 10);
-
         // ภาพรวมทีม — เฉพาะคนที่มี viewAllProjects เท่านั้น ตัวข้อมูลจริง (พร้อมฟิลเตอร์ task/subtask + โปรเจกต์)
         // ย้ายไปดึงจาก endpoint แยก (getTeamWorkload) แล้วเพื่อให้ frontend เปลี่ยนฟิลเตอร์ได้โดยไม่ต้องโหลดทั้งหน้าใหม่
         // canViewTeamWorkload ไว้ให้ frontend รู้ว่าจะ render widget นี้ไหมเท่านั้น
@@ -283,18 +257,99 @@ async function getSummary(req, res, next) {
 
         // ฟีดกิจกรรมล่าสุดข้ามทุกโปรเจกต์ที่เห็นได้ (สโคปเดียวกับ "โปรเจกต์ที่กำลังทำ" แต่ไม่กรองสถานะโปรเจกต์
         // เพราะอยากเห็นความเคลื่อนไหวล่าสุดจริงๆ แม้โปรเจกต์นั้นจะเพิ่งเสร็จ/ถูกยกเลิกไปก็ตาม)
-        const [recentActivity] = await pool.query(
-            `SELECT l.log_id, l.task_id, t.task_title, l.log_fullname, l.log_action,
+        const activityColumns = `l.log_id, l.task_id, t.task_title, l.log_fullname, l.log_action,
                     l.log_old_value, l.log_new_value, l.log_created_at,
-                    t.project_id, p.project_name
+                    t.project_id, p.project_name`;
+        const recentActivityFullQuery = () => pool.query(
+            `SELECT ${activityColumns}
              FROM tb_task_activity_log l
              JOIN tb_tasks t ON t.task_id = l.task_id
              JOIN tb_projects p ON p.project_id = t.project_id
              ${memberJoin}
-             ORDER BY l.log_created_at DESC
+             ORDER BY l.log_created_at DESC, l.log_id DESC
              LIMIT 10`,
             memberParams
         );
+        // คนที่เห็นแค่โปรเจกต์ของตัวเอง: แบบเดิมต้องดึงประวัติ "ทั้งหมด" ของทุกโปรเจกต์ที่เป็นสมาชิกมาเรียงก่อนตัดเหลือ 10
+        // (186 ms ที่ 500k แถว และช้าขึ้นเรื่อยๆ ตามอายุระบบ) — อ่าน index เวลาย้อนจากล่าสุดแทน หยุดทันทีที่ได้ครบ 10 แถว (~6 ms)
+        // จำกัดแค่ 90 วันล่าสุดกันกรณีโปรเจกต์ของคนนั้นเงียบไปนาน (ไม่งั้นต้องไล่อ่านย้อนทั้งตาราง) ถ้าได้ไม่ครบ 10 แถว
+        // ค่อยถอยไปใช้ query เดิม — ได้ครบ 10 ในช่วง 90 วันแปลว่าเป็น 10 แถวล่าสุดจริง ผลจึงเหมือนเดิมทุกกรณี
+        const recentActivityQuery = seesAllProjects
+            ? recentActivityFullQuery()
+            : pool.query(
+                `SELECT ${activityColumns}
+                 FROM tb_task_activity_log l FORCE INDEX (idx_tal_created)
+                 STRAIGHT_JOIN tb_tasks t ON t.task_id = l.task_id
+                 STRAIGHT_JOIN tb_projects p ON p.project_id = t.project_id
+                 WHERE l.log_created_at >= NOW() - INTERVAL 90 DAY
+                   AND EXISTS (SELECT 1 FROM tb_project_members pm WHERE pm.project_id = t.project_id AND pm.user_id = ?)
+                 ORDER BY l.log_created_at DESC, l.log_id DESC
+                 LIMIT 10`,
+                [userId]
+            ).then((result) => (result[0].length >= 10 ? result : recentActivityFullQuery()));
+
+        const [
+            [[{ count: activeProjectCount }]],
+            [projects],
+            [myTasks],
+            [[{ count: openIssueCount }]],
+            [[{ count: openIssueCountOwnOnly }]],
+            [openIssues],
+            [[{ count: unreadTaskChatCountRaw }]],
+            [[{ count: unreadProjectChatCountRaw }]],
+            [unreadTaskChats],
+            [unreadProjectChats],
+            [recentActivity],
+        ] = await Promise.all([
+            activeProjectCountQuery, projectsQuery, myTasksQuery,
+            openIssueCountQuery, openIssueCountOwnOnlyQuery, openIssuesQuery,
+            unreadTaskChatCountQuery, unreadProjectChatCountQuery, unreadTaskChatsQuery, unreadProjectChatsQuery,
+            recentActivityQuery,
+        ]);
+
+        // MySQL คืน (expr)/EXISTS(...) เป็น 0/1 (ไม่ใช่ boolean จริง) ต้องแปลงเองไม่งั้น type ไม่ตรงกับที่ frontend คาดไว้
+        for (const iss of openIssues) {
+            iss.is_subtask = !!iss.is_subtask;
+            iss.is_unread_reply = !!iss.is_unread_reply;
+            iss.is_direct_assignee = !!iss.is_direct_assignee;
+            iss.is_tagged = !!iss.is_tagged;
+        }
+
+        // mysql2 คืนผลลัพธ์ SUM() เป็น string เสมอ (ต่างจาก COUNT() ที่ได้ number ตรงๆ) ต้องแปลงเองไม่งั้น type ไม่ตรงกับที่ frontend คาดไว้
+        const unreadChatCount = Number(unreadTaskChatCountRaw) + Number(unreadProjectChatCountRaw);
+
+        // ข้อความล่าสุดของแต่ละแชท (preview ในลิสต์) — ยิงพร้อมกันทุกแชทแทนการวนทีละอัน
+        for (const chat of unreadTaskChats) chat.chat_type = "task";
+        for (const chat of unreadProjectChats) {
+            chat.chat_type = "project";
+            chat.task_id = null;
+            chat.task_title = null;
+        }
+        const lastMessageSql = (messagesTable, imagesTable, idColumn) =>
+            `SELECT c.message_text, CONCAT(u.user_fname, ' ', u.user_lname) AS user_fullname,
+                    EXISTS(SELECT 1 FROM ${imagesTable} i WHERE i.message_id = c.message_id) AS has_images
+             FROM ${messagesTable} c
+             LEFT JOIN tb_users u ON u.user_id = c.user_id
+             WHERE c.${idColumn} = ?
+             ORDER BY c.message_created_at DESC
+             LIMIT 1`;
+        const taskLastSql = lastMessageSql("tb_task_chat_messages", "tb_task_chat_images", "task_id");
+        const projectLastSql = lastMessageSql("tb_project_chat_messages", "tb_project_chat_images", "project_id");
+        await Promise.all([
+            ...unreadTaskChats.map(async (chat) => [chat, (await pool.query(taskLastSql, [chat.task_id]))[0][0]]),
+            ...unreadProjectChats.map(async (chat) => [chat, (await pool.query(projectLastSql, [chat.project_id]))[0][0]]),
+        ]).then((pairs) => {
+            for (const [chat, lastMsg] of pairs) {
+                chat.last_message_text = lastMsg?.message_text ?? null;
+                chat.last_message_sender = lastMsg?.user_fullname ?? "ผู้ใช้งานที่ถูกลบ";
+                chat.last_message_has_images = !!lastMsg?.has_images;
+            }
+        });
+
+        // รวมสองลิสต์เป็นลิสต์เดียว เรียงตามข้อความล่าสุดจริง แล้วตัดเหลือ 10 (chat_type ให้ frontend แยกไปเปิด task chat กับ project chat ถูกที่)
+        const unreadChats = [...unreadTaskChats, ...unreadProjectChats]
+            .sort((a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime())
+            .slice(0, 10);
 
         res.json({
             hasProjectAccess: true,
@@ -322,8 +377,7 @@ async function search(req, res, next) {
         const q = (req.query.q || "").trim();
         if (!q) return res.json({ projects: [], tasks: [] });
 
-        const [roleRows] = await pool.query("SELECT role_permission FROM tb_roles WHERE role_id = ?", [req.user.user_role_id]);
-        const rolePermission = roleRows[0]?.role_permission ?? "";
+        const rolePermission = req.user.role_permission; // ดึงสดจาก DB แล้วใน requireAuth
         const seesAllProjects = hasBit(rolePermission, "viewAllProjects");
         // ไม่มีสิทธิ์ดูโปรเจกต์เลย (ไม่มีทั้ง viewAllProjects/viewOwnProjects) ก็ค้นหาโปรเจกต์/งานไม่ได้เหมือนกัน
         if (!seesAllProjects && !hasBit(rolePermission, "viewOwnProjects")) return res.json({ projects: [], tasks: [] });
@@ -364,8 +418,7 @@ async function search(req, res, next) {
 // taskType: "all" | "task" | "subtask" — กรองด้วย task_parent_id, projectId: "all" หรือ project_id เจาะจง
 async function getTeamWorkload(req, res, next) {
     try {
-        const [roleRows] = await pool.query("SELECT role_permission FROM tb_roles WHERE role_id = ?", [req.user.user_role_id]);
-        const seesAllProjects = hasBit(roleRows[0]?.role_permission ?? "", "viewAllProjects");
+        const seesAllProjects = hasBit(req.user.role_permission, "viewAllProjects");
         if (!seesAllProjects) return res.status(403).json({ message: "ไม่มีสิทธิ์เข้าถึง" });
 
         const taskType = ["task", "subtask"].includes(req.query.taskType) ? req.query.taskType : "all";
@@ -420,12 +473,11 @@ async function getTeamWorkload(req, res, next) {
 // ทุก task ที่เพิ่งเปลี่ยนสถานะเป็น "in_progress" ครั้งแรกจะมี log ผูกไว้ (task.controller.js writeTaskLog)
 // ใช้เวลานั้นเป็นจุดเริ่ม "cycle time" (เวลาทำงานจริง) แทน task_created_at (เวลาสร้าง อาจรอคิวนานก่อนมีคนเริ่มทำ)
 // task ที่ไม่เคยผ่านสถานะ in_progress เลย (เช่นข้ามจาก todo ไป done ตรงๆ) จะไม่มีแถวใน subquery นี้ ถูกตัดออกจากค่าเฉลี่ยไปเอง (ไม่ใช่ 0)
-const TASK_START_LOG_SUBQUERY = `(
-    SELECT task_id, MIN(log_created_at) AS started_at
-    FROM tb_task_activity_log
-    WHERE log_action = 'status_changed' AND log_new_value = 'in_progress'
-    GROUP BY task_id
-)`;
+// เขียนเป็น subquery ต่อแถว (ไม่ใช่ derived table GROUP BY ทั้งตาราง) — อ่านจาก index idx_tal_status_start เฉพาะ task
+// ที่อยู่ในผลลัพธ์ เดิม GROUP BY activity log ทั้งตารางทุกครั้ง ช้า ~2 วินาทีที่ข้อมูล 500k แถว (วัดจริง 2026-10-07)
+// ผลเท่าเดิม: task ที่ไม่เคยผ่าน in_progress ได้ค่า NULL → GREATEST/TIMESTAMPDIFF เป็น NULL → AVG ไม่นับ (เหมือน JOIN เดิม)
+const TASK_STARTED_AT = `(SELECT MIN(l.log_created_at) FROM tb_task_activity_log l
+    WHERE l.task_id = t.task_id AND l.log_action = 'status_changed' AND l.log_new_value = 'in_progress')`;
 
 // KPI ภาพรวม "ของตัวเอง" รายเดือน/รายปี — แยก endpoint จาก getSummary เพื่อสลับช่วงเวลาได้โดยไม่โหลดทั้งหน้าใหม่
 // เป็นข้อมูลส่วนตัวเหมือน "งานของฉัน"/"ปัญหาที่เปิดอยู่" เห็นได้เสมอไม่ต้องมี viewAllProjects (ต่างจาก "KPI รายคน" ที่ดูของคนอื่นได้
@@ -445,8 +497,7 @@ const TASK_START_LOG_SUBQUERY = `(
 async function getKpis(req, res, next) {
     try {
         const userId = req.user.user_id;
-        const [roleRows] = await pool.query("SELECT role_permission FROM tb_roles WHERE role_id = ?", [req.user.user_role_id]);
-        const rolePermission = roleRows[0]?.role_permission ?? "";
+        const rolePermission = req.user.role_permission; // ดึงสดจาก DB แล้วใน requireAuth
         const hasProjectAccess = hasBit(rolePermission, "viewAllProjects") || hasBit(rolePermission, "viewOwnProjects");
         const { start, end, periodStr } = periodRange(req.query.month);
         const taskType = ["task", "subtask"].includes(req.query.taskType) ? req.query.taskType : "all";
@@ -510,11 +561,10 @@ async function getKpis(req, res, next) {
         // KPI 3: เวลาเฉลี่ยทำงานจริงของตัวเอง (cycle time: จาก in_progress ครั้งแรกถึงเสร็จ) ตาม taskType เดียวกับข้างบน
         // นับตาม "เดือนที่เสร็จ" (ไม่ใช่ due date) เพราะเป็นตัวชี้วัดความเร็วในการทำงาน ไม่ใช่ความตรงเวลาต่อ deadline
         const [[avgCycle]] = await pool.query(
-            `SELECT AVG(GREATEST(TIMESTAMPDIFF(HOUR, start_log.started_at, t.task_completed_at), 0)) AS avg_hours
+            `SELECT AVG(GREATEST(TIMESTAMPDIFF(HOUR, ${TASK_STARTED_AT}, t.task_completed_at), 0)) AS avg_hours
              FROM tb_tasks t
              JOIN tb_task_assignees ta ON ta.task_id = t.task_id AND ta.user_id = ?
              JOIN tb_projects p ON p.project_id = t.project_id
-             JOIN ${TASK_START_LOG_SUBQUERY} start_log ON start_log.task_id = t.task_id
              WHERE t.task_status = 'done' AND t.task_completed_at >= ? AND t.task_completed_at < ? AND ${parentCondition} ${projectTypeClause}`,
             [userId, start, end, ...projectTypeParam]
         );
@@ -556,8 +606,7 @@ async function getKpis(req, res, next) {
 async function getKpisByMember(req, res, next) {
     try {
         const userId = req.user.user_id;
-        const [roleRows] = await pool.query("SELECT role_permission FROM tb_roles WHERE role_id = ?", [req.user.user_role_id]);
-        const seesAllProjects = hasBit(roleRows[0]?.role_permission ?? "", "viewAllProjects");
+        const seesAllProjects = hasBit(req.user.role_permission, "viewAllProjects");
         const memberJoin = seesAllProjects ? "" : "JOIN tb_project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?";
         const memberParams = seesAllProjects ? [] : [userId];
 
@@ -578,12 +627,11 @@ async function getKpisByMember(req, res, next) {
         const [taskRows] = await pool.query(
             `SELECT ta.user_id, CONCAT(u.user_fname, ' ', u.user_lname) AS user_fullname, u.user_avatar_url,
                     COUNT(*) AS tasks_completed,
-                    AVG(GREATEST(TIMESTAMPDIFF(HOUR, start_log.started_at, t.task_completed_at), 0)) AS avg_cycle_hours
+                    AVG(GREATEST(TIMESTAMPDIFF(HOUR, ${TASK_STARTED_AT}, t.task_completed_at), 0)) AS avg_cycle_hours
              FROM tb_tasks t
              JOIN tb_task_assignees ta ON ta.task_id = t.task_id
              JOIN tb_users u ON u.user_id = ta.user_id
              JOIN tb_projects p ON p.project_id = t.project_id
-             LEFT JOIN ${TASK_START_LOG_SUBQUERY} start_log ON start_log.task_id = t.task_id
              ${memberJoin}
              WHERE t.task_status = 'done' AND t.task_completed_at >= ? AND t.task_completed_at < ?
                AND ${parentCondition} ${projectFilterClause} ${projectTypeClause}
@@ -706,8 +754,7 @@ async function getKpisByMember(req, res, next) {
 // ต้องมี viewAllProjects เหมือนกับตัว widget เอง เพราะเป็นการดูข้อมูลของ "คนอื่น" ไม่ใช่ข้อมูลตัวเอง
 async function getMemberTasks(req, res, next) {
     try {
-        const [roleRows] = await pool.query("SELECT role_permission FROM tb_roles WHERE role_id = ?", [req.user.user_role_id]);
-        const seesAllProjects = hasBit(roleRows[0]?.role_permission ?? "", "viewAllProjects");
+        const seesAllProjects = hasBit(req.user.role_permission, "viewAllProjects");
         if (!seesAllProjects) return res.status(403).json({ message: "ไม่มีสิทธิ์เข้าถึง" });
 
         const targetUserId = req.params.userId;

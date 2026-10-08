@@ -32,51 +32,36 @@ async function isAssignee(taskId, userId) {
     return rows.length > 0;
 }
 
-async function hasProjectPositionBit(projectId, userId, key) {
-    const [permRows] = await pool.query(
-        `SELECT pp.position_permission
-         FROM tb_project_members pm
-         JOIN tb_project_member_positions pmp ON pmp.project_member_id = pm.project_member_id
-         JOIN tb_project_positions pp ON pp.position_id = pmp.position_id
-         WHERE pm.project_id = ? AND pm.user_id = ?`,
-        [projectId, userId]
-    );
-    return permRows.some((r) => hasProjectBit(r.position_permission, key));
-}
 
 // แก้ไขข้อมูล task (full edit) ได้ถ้ามีสิทธิ์ editTask (แก้ไขได้ทุก task) ในโปรเจกต์
 // หรือมีสิทธิ์ editOwnTask "และ" เป็นผู้รับผิดชอบของ task นั้นเอง (ทั้ง task หลักและ subtask)
 // ความรับผิดชอบต่อ "task แม่" ไม่นับต่อมาถึง subtask สำหรับการแก้ไขข้อมูลเต็มรูปแบบ
 // ถ้าไม่มีทั้งสองสิทธิ์นี้เลย แก้ไขข้อมูล task ไม่ได้ แม้จะเป็นผู้รับผิดชอบก็ตาม
-async function canEditTask(projectId, taskId, userId) {
-    if (await hasProjectPositionBit(projectId, userId, "editTask")) return true;
-    if ((await isAssignee(taskId, userId)) && (await hasProjectPositionBit(projectId, userId, "editOwnTask"))) return true;
-    return false;
+// perm = สิทธิ์รวมของผู้ใช้ในโปรเจกต์นี้ที่ requireProjectMember คำนวณไว้แล้ว (req.projectPermission)
+// เช็คบิตก่อนเสมอ (ไม่ต้องยิง DB) แล้วค่อย query ว่าเป็นผู้รับผิดชอบไหมเฉพาะตอนที่จำเป็นจริงๆ
+async function canEditTask(perm, taskId, userId) {
+    if (hasProjectBit(perm, "editTask")) return true;
+    return hasProjectBit(perm, "editOwnTask") && (await isAssignee(taskId, userId));
 }
 
 // เพิ่ม task ระดับบนสุดต้องมีสิทธิ์ addTask เท่านั้น
 // เพิ่ม subtask ได้เพิ่มถ้ามีสิทธิ์ addOwnSubtask "และ" เป็นผู้รับผิดชอบของ task แม่
-async function canAddTask(projectId, parentTaskId, userId) {
-    if (await hasProjectPositionBit(projectId, userId, "addTask")) return true;
-    if (parentTaskId) {
-        const isParentAssignee = await isAssignee(parentTaskId, userId);
-        if (isParentAssignee && (await hasProjectPositionBit(projectId, userId, "addOwnSubtask"))) return true;
-    }
-    return false;
+async function canAddTask(perm, parentTaskId, userId) {
+    if (hasProjectBit(perm, "addTask")) return true;
+    return !!parentTaskId && hasProjectBit(perm, "addOwnSubtask") && (await isAssignee(parentTaskId, userId));
 }
 
 // เปลี่ยนสถานะ task/subtask ตอนนี้ต้องมีสิทธิ์ชัดเจนเสมอ ไม่มี bypass อัตโนมัติแบบเดิมอีกต่อไป
 // - task ระดับบนสุด: ต้องมี changeTaskStatus (เปลี่ยนได้ทุก task) หรือ changeOwnTaskStatus "และ" เป็นผู้รับผิดชอบของ task นั้นเอง
 // - subtask: ต้องมี changeSubtaskStatus (เปลี่ยนได้ทุก subtask) หรือ changeOwnSubtaskStatus "และ" เป็นผู้รับผิดชอบของ subtask นั้นเอง
 // ความรับผิดชอบต่อ "task แม่" ไม่นับต่อมาถึง subtask — ต้องเป็นผู้รับผิดชอบของตัว subtask เองเท่านั้น
-async function canChangeStatus(projectId, task, userId) {
+async function canChangeStatus(perm, task, userId) {
     const isSubtask = !!task.task_parent_id;
     const allKey = isSubtask ? "changeSubtaskStatus" : "changeTaskStatus";
     const ownKey = isSubtask ? "changeOwnSubtaskStatus" : "changeOwnTaskStatus";
 
-    if (await hasProjectPositionBit(projectId, userId, allKey)) return true;
-    if ((await isAssignee(task.task_id, userId)) && (await hasProjectPositionBit(projectId, userId, ownKey))) return true;
-    return false;
+    if (hasProjectBit(perm, allKey)) return true;
+    return hasProjectBit(perm, ownKey) && (await isAssignee(task.task_id, userId));
 }
 
 async function attachAssignees(projectId, tasks) {
@@ -113,7 +98,7 @@ async function notifyNewAssignees({
             [assignerUserId]
         );
         const [recipients] = await pool.query(
-            "SELECT user_id, user_email FROM tb_users WHERE user_id IN (?)",
+            "SELECT user_id, user_email FROM tb_users WHERE user_id IN (?) AND user_email IS NOT NULL", // ยังไม่ยืนยันอีเมล = ข้าม
             [newlyAdded]
         );
 
@@ -228,9 +213,10 @@ async function create(req, res, next) {
 
     // จำกัด subtask ไว้แค่ 1 ชั้น — parent ที่ระบุต้องเป็น task ระดับบนสุดเท่านั้น ห้ามเป็น subtask อยู่แล้ว
     if (task_parent_id) {
+        // parent ต้องอยู่ในโปรเจกต์เดียวกันด้วย กันสร้าง subtask ไปห้อยใต้ task ของโปรเจกต์อื่น
         const [parentRows] = await pool.query(
-            "SELECT task_parent_id FROM tb_tasks WHERE task_id = ?",
-            [task_parent_id]
+            "SELECT task_parent_id FROM tb_tasks WHERE task_id = ? AND project_id = ?",
+            [task_parent_id, req.params.projectId]
         );
         if (!parentRows[0]) return res.status(400).json({ message: "ไม่พบ task แม่ที่ระบุ" });
         if (parentRows[0].task_parent_id) {
@@ -238,7 +224,7 @@ async function create(req, res, next) {
         }
     }
 
-    const allowed = await canAddTask(req.params.projectId, task_parent_id || null, req.user.user_id);
+    const allowed = await canAddTask(req.projectPermission, task_parent_id || null, req.user.user_id);
     if (!allowed) return res.status(403).json({ message: "ไม่มีสิทธิ์เพิ่ม task นี้" });
 
     const task_id = await generateDailyId("tb_tasks", "task_id", "TAS");
@@ -286,14 +272,9 @@ async function create(req, res, next) {
 async function update(req, res, next) {
     const conn = await pool.getConnection();
     try {
-        const [existingRows] = await pool.query(
-            "SELECT project_id, task_weight, task_status FROM tb_tasks WHERE task_id = ?",
-            [req.params.id]
-        );
-        const task = existingRows[0];
-        if (!task) return res.status(404).json({ message: "ไม่พบ task นี้" });
+        const task = req.task; // โหลดและยืนยันว่าอยู่ในโปรเจกต์นี้แล้วโดย requireTaskInProject
 
-        const allowed = await canEditTask(task.project_id, req.params.id, req.user.user_id);
+        const allowed = await canEditTask(req.projectPermission, req.params.id, req.user.user_id);
         if (!allowed) return res.status(403).json({ message: "ไม่มีสิทธิ์แก้ไข task นี้" });
 
         const {
@@ -359,14 +340,9 @@ async function updateStatus(req, res, next) {
             return res.status(400).json({ message: "สถานะไม่ถูกต้อง" });
         }
 
-        const [taskRows] = await pool.query(
-            "SELECT task_id, project_id, task_parent_id, task_status FROM tb_tasks WHERE task_id = ?",
-            [req.params.id]
-        );
-        const task = taskRows[0];
-        if (!task) return res.status(404).json({ message: "ไม่พบ task นี้" });
+        const task = req.task;
 
-        const allowed = await canChangeStatus(task.project_id, task, req.user.user_id);
+        const allowed = await canChangeStatus(req.projectPermission, task, req.user.user_id);
         if (!allowed) return res.status(403).json({ message: "ไม่มีสิทธิ์เปลี่ยนสถานะ task นี้" });
 
         const completedAt = task_status === "done" ? new Date() : null;
@@ -389,9 +365,7 @@ async function updateStatus(req, res, next) {
 
 async function remove(req, res, next) {
     try {
-        const [taskRows] = await pool.query("SELECT project_id FROM tb_tasks WHERE task_id = ?", [req.params.id]);
-        const task = taskRows[0];
-        if (!task) return res.status(404).json({ message: "ไม่พบ task นี้" });
+        const task = req.task;
 
         await pool.query("DELETE FROM tb_tasks WHERE task_id = ?", [req.params.id]);
         await recomputeProjectProgress(task.project_id);
@@ -409,12 +383,7 @@ async function remove(req, res, next) {
 // เพราะสมาชิกคนละคนที่รับ subtask คนละอันใต้ task แม่เดียวกัน ถือว่าเป็นเจ้าของ task แม่ร่วมกันตามที่ตกลงไว้
 async function claim(req, res, next) {
     try {
-        const [taskRows] = await pool.query(
-            "SELECT task_id, project_id, task_parent_id FROM tb_tasks WHERE task_id = ?",
-            [req.params.id]
-        );
-        const task = taskRows[0];
-        if (!task) return res.status(404).json({ message: "ไม่พบ task นี้" });
+        const task = req.task;
 
         const [projectRows] = await pool.query(
             "SELECT project_type, project_status FROM tb_projects WHERE project_id = ?",

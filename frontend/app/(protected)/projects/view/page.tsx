@@ -109,6 +109,11 @@ type ProjectChatMessage = {
     images: ChatImage[];
 };
 
+// แชทไม่มีแก้ไข/ลบข้อความ — จำนวนเท่าเดิมและข้อความล่าสุดเป็นตัวเดิม = ไม่มีอะไรเปลี่ยน
+function sameMessageList(prev: { message_id: string }[], next: { message_id: string }[]): boolean {
+    return prev.length === next.length && prev.at(-1)?.message_id === next.at(-1)?.message_id;
+}
+
 function truncateReplyPreview(text: string): string {
     return text.length > REPLY_PREVIEW_MAX_CHARS ? `${text.slice(0, REPLY_PREVIEW_MAX_CHARS)}…` : text;
 }
@@ -389,11 +394,22 @@ export default function ViewProjectPage() {
     }, []);
 
     // แชทเปิดอยู่ระหว่างดู task ไหน ก็ poll ข้อความใหม่ของ task นั้นเป็นระยะ (ไม่มี websocket ใช้ polling แทน)
+    // ข้ามรอบที่แท็บถูกซ่อนอยู่ (สลับไปแท็บอื่น/ย่อหน้าต่าง) ไม่ต้องยิง backend ทุก 4 วินาทีทั้งที่ไม่มีใครดู แล้วโหลดทันทีตอนกลับมา
     useEffect(() => {
         if (!chatOpen || !detailTask) return;
-        loadChatMessages(detailTask.task_id);
-        const timer = setInterval(() => loadChatMessages(detailTask.task_id), CHAT_POLL_INTERVAL_MS);
-        return () => clearInterval(timer);
+        const taskId = detailTask.task_id;
+        loadChatMessages(taskId);
+        const timer = setInterval(() => {
+            if (document.visibilityState === "visible") loadChatMessages(taskId);
+        }, CHAT_POLL_INTERVAL_MS);
+        const onVisible = () => {
+            if (document.visibilityState === "visible") loadChatMessages(taskId);
+        };
+        document.addEventListener("visibilitychange", onVisible);
+        return () => {
+            clearInterval(timer);
+            document.removeEventListener("visibilitychange", onVisible);
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [chatOpen, detailTask?.task_id]);
 
@@ -407,8 +423,17 @@ export default function ViewProjectPage() {
     useEffect(() => {
         if (!projectChatOpen || !id) return;
         loadProjectChatMessages();
-        const timer = setInterval(() => loadProjectChatMessages(), CHAT_POLL_INTERVAL_MS);
-        return () => clearInterval(timer);
+        const timer = setInterval(() => {
+            if (document.visibilityState === "visible") loadProjectChatMessages();
+        }, CHAT_POLL_INTERVAL_MS);
+        const onVisible = () => {
+            if (document.visibilityState === "visible") loadProjectChatMessages();
+        };
+        document.addEventListener("visibilitychange", onVisible);
+        return () => {
+            clearInterval(timer);
+            document.removeEventListener("visibilitychange", onVisible);
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [projectChatOpen, id]);
 
@@ -666,9 +691,15 @@ export default function ViewProjectPage() {
         const res = await fetch(`${api}/projects/${id}/tasks/${taskId}/chat`, { headers: authHeader() });
         if (!res.ok) return;
         const data = await res.json();
-        setChatMessages(data.data ?? []);
+        // poll ทุก 4 วินาที ส่วนใหญ่ไม่มีข้อความใหม่ — คืน state เดิมถ้าไม่มีอะไรเปลี่ยน React จะได้ไม่ re-render ทั้งหน้า
+        // (และไม่เลื่อน scroll ลงล่างสุดใหม่ทุกรอบขณะผู้ใช้กำลังเลื่อนอ่านข้อความเก่า)
+        setChatMessages((prev) => (sameMessageList(prev, data.data ?? []) ? prev : data.data ?? []));
         // ดึงข้อความสำเร็จ = backend mark-read ให้แล้ว เคลียร์ badge ฝั่ง state ทันทีแบบ optimistic ไม่ต้องรอ loadAll
-        setTasks((prev) => prev.map((t) => (t.task_id === taskId ? { ...t, unread_chat_count: 0 } : t)));
+        setTasks((prev) =>
+            prev.some((t) => t.task_id === taskId && t.unread_chat_count)
+                ? prev.map((t) => (t.task_id === taskId ? { ...t, unread_chat_count: 0 } : t))
+                : prev
+        );
     }
 
     async function openTaskDetail(task: Task) {
@@ -874,9 +905,9 @@ export default function ViewProjectPage() {
         const res = await fetch(`${api}/projects/${id}/chat`, { headers: authHeader() });
         if (!res.ok) return;
         const data = await res.json();
-        setProjectChatMessages(data.data ?? []);
+        setProjectChatMessages((prev) => (sameMessageList(prev, data.data ?? []) ? prev : data.data ?? []));
         // ดึงข้อความสำเร็จ = backend mark-read ให้แล้ว เคลียร์ badge ฝั่ง state ทันทีแบบ optimistic เหมือน loadChatMessages
-        setProject((prev) => (prev ? { ...prev, unread_chat_count: 0 } : prev));
+        setProject((prev) => (prev?.unread_chat_count ? { ...prev, unread_chat_count: 0 } : prev));
     }
 
     function handlePickProjectChatImages(files: FileList | null) {

@@ -46,5 +46,6 @@
     "additionalDirectories": [
       "D:\\project\\softwork-project-manager"
     ]
-  }
+  },
+  "plansDirectory": "./docs/plans"
 }

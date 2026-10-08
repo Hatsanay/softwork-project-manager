@@ -48,4 +48,16 @@ function hasProjectBit(positionPermission, key) {
     return positionPermission?.[index] === "1";
 }
 
-module.exports = { PROJECT_PERMISSION_KEYS, PROJECT_BIT_INDEX, hasProjectBit };
+// รวมสิทธิ์จากหลายตำแหน่งเป็น bitmask เดียว (OR ทีละบิต) — ถือตำแหน่งไหนที่มีบิตนั้นก็ถือว่ามีสิทธิ์
+// ค่า null (สมาชิกที่ยังไม่มีตำแหน่ง จาก LEFT JOIN) ข้ามไป
+function combinePositionPermissions(permissions) {
+    const valid = permissions.filter(Boolean);
+    const length = Math.max(0, ...valid.map((p) => p.length));
+    let combined = "";
+    for (let i = 0; i < length; i++) {
+        combined += valid.some((p) => p[i] === "1") ? "1" : "0";
+    }
+    return combined;
+}
+
+module.exports = { PROJECT_PERMISSION_KEYS, PROJECT_BIT_INDEX, hasProjectBit, combinePositionPermissions };

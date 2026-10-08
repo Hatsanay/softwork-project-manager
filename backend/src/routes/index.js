@@ -14,8 +14,12 @@ const dashboardController = require("../controllers/dashboard.controller");
 const shareController = require("../controllers/share.controller");
 const { requireAuth } = require("../middlewares/auth.middleware");
 const { requirePermission } = require("../middlewares/permission.middleware");
-const { requireProjectMember, requireProjectPermission } = require("../middlewares/projectPermission.middleware");
+const {
+    requireProjectMember, requireProjectPermission, requireRealMember,
+    requireTaskInProject, requireIssueInProject, requireMemberInProject,
+} = require("../middlewares/projectPermission.middleware");
 const { uploadImage } = require("../middlewares/upload.middleware");
+const { loginRateLimit, otpRequestRateLimit } = require("../middlewares/rateLimit.middleware");
 
 const router = express.Router();
 
@@ -35,7 +39,7 @@ router.get(
 router.get("/V1/dashboard/team/:userId/tasks", requireAuth, requirePermission("dashboard"), dashboardController.getMemberTasks);
 
 // ─── auth ───────────────────────────────────────────────────────────────────
-router.post("/V1/auth/login", authController.login);
+router.post("/V1/auth/login", loginRateLimit, authController.login);
 router.post("/V1/auth/logout", requireAuth, authController.logout);
 router.get("/V1/auth/verifyPermission", requireAuth, authController.verifyPermission);
 
@@ -44,6 +48,9 @@ router.get("/V1/auth/verifyPermission", requireAuth, authController.verifyPermis
 router.get("/V1/users/me", requireAuth, userController.me);
 router.put("/V1/users/me", requireAuth, userController.updateMyProfile);
 router.put("/V1/users/me/password", requireAuth, userController.changeOwnPassword);
+// ยืนยันอีเมลของตัวเองด้วย OTP (onboarding ครั้งแรกเมื่อแอดมินไม่ได้ใส่อีเมลไว้ / เปลี่ยนอีเมลที่หน้าโปรไฟล์)
+router.post("/V1/users/me/email/otp", requireAuth, otpRequestRateLimit, userController.requestMyEmailOtp);
+router.post("/V1/users/me/email/verify", requireAuth, userController.verifyMyEmailOtp);
 router.put(
     "/V1/users/me/image",
     requireAuth,
@@ -94,8 +101,11 @@ router.put("/V1/project-positions/:id", requireAuth, requirePermission("editProj
 router.delete("/V1/project-positions/:id", requireAuth, requirePermission("deleteProjectPosition"), projectPositionController.remove);
 
 // ─── logs ───────────────────────────────────────────────────────────────────
+// log ทั้งหมดอ่านอย่างเดียว ไม่มี endpoint แก้/ลบ (ดูเหตุผลใน log.controller.js) — ใช้บิตเมนู "Log ข้อมูล" เดิม
 router.get("/V1/logs", requireAuth, requirePermission("loginLogs"), logController.getAll);
-router.delete("/V1/logs", requireAuth, requirePermission("loginLogs"), logController.removeAll);
+router.get("/V1/audit-logs", requireAuth, requirePermission("loginLogs"), logController.getAuditLogs);
+router.get("/V1/audit-logs/:id", requireAuth, requirePermission("loginLogs"), logController.getAuditLog);
+router.get("/V1/error-logs", requireAuth, requirePermission("loginLogs"), logController.getErrorLogs);
 
 // ─── clients ────────────────────────────────────────────────────────────────
 // getAll/getOne ใช้ทั้งหน้า "จัดการลูกค้า" และ dropdown ตอนสร้าง/แก้โปรเจกต์ เลยล็อกแค่ requireAuth
@@ -150,11 +160,11 @@ router.post(
 );
 router.put(
     "/V1/projects/:id/members/:memberId", requireAuth, requireProjectMember,
-    requireProjectPermission("manageMembers"), projectController.updateMemberPositions
+    requireProjectPermission("manageMembers"), requireMemberInProject, projectController.updateMemberPositions
 );
 router.delete(
     "/V1/projects/:id/members/:memberId", requireAuth, requireProjectMember,
-    requireProjectPermission("manageMembers"), projectController.removeMember
+    requireProjectPermission("manageMembers"), requireMemberInProject, projectController.removeMember
 );
 
 // ─── tasks (ซ้อนใต้ project) ─────────────────────────────────────────────────
@@ -165,74 +175,74 @@ router.post(
     taskController.create
 );
 router.get("/V1/projects/:projectId/activity", requireAuth, requireProjectMember, taskController.getActivity);
-router.get("/V1/projects/:projectId/tasks/:id", requireAuth, requireProjectMember, taskController.getOne);
+router.get("/V1/projects/:projectId/tasks/:id", requireAuth, requireProjectMember, requireTaskInProject("id"), taskController.getOne);
 // แก้ไข task ได้ถ้ามีสิทธิ์ editTask หรือเป็นผู้รับผิดชอบของ task นั้นเอง — เช็คในตัว controller เอง
 router.put(
-    "/V1/projects/:projectId/tasks/:id", requireAuth, requireProjectMember,
+    "/V1/projects/:projectId/tasks/:id", requireAuth, requireProjectMember, requireTaskInProject("id"),
     taskController.update
 );
 // เปลี่ยนสถานะงานตัวเองทำได้เสมอ (เช็คในตัว controller เอง) เลยล็อกแค่ requireProjectMember ที่ route
 router.put(
-    "/V1/projects/:projectId/tasks/:id/status", requireAuth, requireProjectMember,
+    "/V1/projects/:projectId/tasks/:id/status", requireAuth, requireProjectMember, requireTaskInProject("id"),
     taskController.updateStatus
 );
 router.delete(
     "/V1/projects/:projectId/tasks/:id", requireAuth, requireProjectMember,
-    requireProjectPermission("deleteTask"), taskController.remove
+    requireProjectPermission("deleteTask"), requireTaskInProject("id"), taskController.remove
 );
 // รับ task/subtask เอง (Agile) — สมาชิกโปรเจกต์คนไหนก็กดรับได้ ไม่เช็คบิตสิทธิ์ assign ใดๆ เช็คในตัว controller แค่ project_type/สถานะ
 router.post(
-    "/V1/projects/:projectId/tasks/:id/claim", requireAuth, requireProjectMember,
-    taskController.claim
+    "/V1/projects/:projectId/tasks/:id/claim", requireAuth, requireProjectMember, requireRealMember,
+    requireTaskInProject("id"), taskController.claim
 );
 
 // ─── issues (ปัญหาของ task/subtask ซ้อนใต้ project) ──────────────────────────
 // สิทธิ์ทำอะไรได้บ้าง (add/edit/delete/changeStatus x all/own x task/subtask) เช็คในตัว controller เอง
 // เพราะต้องรู้ว่า task นั้นเป็น subtask หรือไม่ก่อนถึงจะเลือกบิตที่ถูกต้องมาเช็คได้
 router.get(
-    "/V1/projects/:projectId/tasks/:taskId/issues", requireAuth, requireProjectMember,
+    "/V1/projects/:projectId/tasks/:taskId/issues", requireAuth, requireProjectMember, requireTaskInProject("taskId"),
     issueController.getForTask
 );
 router.get(
-    "/V1/projects/:projectId/tasks/:taskId/issues/replies", requireAuth, requireProjectMember,
+    "/V1/projects/:projectId/tasks/:taskId/issues/replies", requireAuth, requireProjectMember, requireTaskInProject("taskId"),
     issueController.getRepliesForTask
 );
 router.post(
-    "/V1/projects/:projectId/tasks/:taskId/issues", requireAuth, requireProjectMember,
+    "/V1/projects/:projectId/tasks/:taskId/issues", requireAuth, requireProjectMember, requireTaskInProject("taskId"),
     uploadImage.array("images", 5), issueController.create
 );
 router.put(
-    "/V1/projects/:projectId/issues/:issueId", requireAuth, requireProjectMember,
+    "/V1/projects/:projectId/issues/:issueId", requireAuth, requireProjectMember, requireIssueInProject,
     uploadImage.array("images", 5), issueController.update
 );
 router.put(
-    "/V1/projects/:projectId/issues/:issueId/status", requireAuth, requireProjectMember,
+    "/V1/projects/:projectId/issues/:issueId/status", requireAuth, requireProjectMember, requireIssueInProject,
     issueController.updateStatus
 );
 router.delete(
-    "/V1/projects/:projectId/issues/:issueId", requireAuth, requireProjectMember,
+    "/V1/projects/:projectId/issues/:issueId", requireAuth, requireProjectMember, requireIssueInProject,
     issueController.remove
 );
 
 // ตอบกลับปัญหา — สมาชิกโปรเจกต์ทุกคนตอบได้ ไม่มีสิทธิ์เฉพาะเหมือนแชท (ดูเหตุผลใน issue.controller.js)
 router.get(
-    "/V1/projects/:projectId/issues/:issueId/replies", requireAuth, requireProjectMember,
+    "/V1/projects/:projectId/issues/:issueId/replies", requireAuth, requireProjectMember, requireIssueInProject,
     issueController.getReplies
 );
 router.post(
-    "/V1/projects/:projectId/issues/:issueId/replies", requireAuth, requireProjectMember,
-    uploadImage.array("images", 5), issueController.createReply
+    "/V1/projects/:projectId/issues/:issueId/replies", requireAuth, requireProjectMember, requireRealMember,
+    requireIssueInProject, uploadImage.array("images", 5), issueController.createReply
 );
 
 // ─── chat (แชทของ task/subtask) ──────────────────────────────────────────────
 // สมาชิกโปรเจกต์ทุกคนแชทได้ — ล็อกแค่ requireProjectMember ไม่มีสิทธิ์เฉพาะเหมือน issue
 router.get(
-    "/V1/projects/:projectId/tasks/:taskId/chat", requireAuth, requireProjectMember,
+    "/V1/projects/:projectId/tasks/:taskId/chat", requireAuth, requireProjectMember, requireTaskInProject("taskId"),
     chatController.getForTask
 );
 router.post(
-    "/V1/projects/:projectId/tasks/:taskId/chat", requireAuth, requireProjectMember,
-    uploadImage.array("images", 5), chatController.create
+    "/V1/projects/:projectId/tasks/:taskId/chat", requireAuth, requireProjectMember, requireRealMember,
+    requireTaskInProject("taskId"), uploadImage.array("images", 5), chatController.create
 );
 
 // ─── chat (แชทรวมของโปรเจกต์ ไม่ผูกกับ task ไหน) ────────────────────────────────
@@ -241,7 +251,7 @@ router.get(
     chatController.getForProject
 );
 router.post(
-    "/V1/projects/:projectId/chat", requireAuth, requireProjectMember,
+    "/V1/projects/:projectId/chat", requireAuth, requireProjectMember, requireRealMember,
     uploadImage.array("images", 5), chatController.createForProject
 );
 
