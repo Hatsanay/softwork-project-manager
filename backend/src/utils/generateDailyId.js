@@ -1,12 +1,5 @@
 const pool = require("../config/db");
-
-function getDateYYYYMMDD() {
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, "0");
-    const dd = String(now.getDate()).padStart(2, "0");
-    return `${yyyy}${mm}${dd}`;
-}
+const { compactDateBangkok } = require("./bangkok-time");
 
 function runningOf(id) {
     return parseInt(id.slice(-7), 10);
@@ -20,7 +13,8 @@ function runningOf(id) {
 // และนับ id ที่ "ออกไปแล้วแต่ caller ยังไม่ได้ insert" ด้วย (จาก tb_maxID) ไม่ใช่ดูจากตัวตารางอย่างเดียว
 // ยังเทียบกับเลขล่าสุดในตัวตารางเองด้วยเสมอ เผื่อมีแถวที่ insert มือ/seed ตรงๆ โดยไม่ผ่านฟังก์ชันนี้
 async function generateDailyId(table, column, prefix) {
-    const date = getDateYYYYMMDD();
+    // วันที่ตามเวลาไทยเสมอ — เดิมใช้เวลาเครื่อง ถ้าเซิร์ฟเวอร์เป็น UTC id ที่ออกช่วง 00:00–07:00 จะได้วันที่ของเมื่อวาน
+    const date = compactDateBangkok();
     const todayPrefix = `${prefix}${date}`;
 
     const conn = await pool.getConnection();

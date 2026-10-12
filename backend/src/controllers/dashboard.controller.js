@@ -1,5 +1,6 @@
 const pool = require("../config/db");
 const { hasBit } = require("../utils/permissions");
+const { currentYearMonthBangkok } = require("../utils/bangkok-time");
 
 // แปลง query param เป็นช่วงวันที่ [start, end) สำหรับกรอง KPI — รับได้ทั้ง "YYYY-MM" (รายเดือน) และ "YYYY" (รายปีทั้งปี)
 // ไม่ใส่มา/ใส่รูปแบบผิด default เป็นเดือนปัจจุบัน
@@ -14,9 +15,8 @@ function periodRange(periodParam) {
     if (typeof periodParam === "string" && /^\d{4}-\d{2}$/.test(periodParam)) {
         [year, month] = periodParam.split("-").map(Number);
     } else {
-        const now = new Date();
-        year = now.getFullYear();
-        month = now.getMonth() + 1;
+        // เดือนปัจจุบันตามเวลาไทย — ถ้าใช้เวลาเครื่องแล้วเซิร์ฟเวอร์เป็น UTC ช่วง 00:00–07:00 ของวันที่ 1 จะได้เดือนก่อน (risk-fixes R21)
+        ({ year, month } = currentYearMonthBangkok());
     }
     const pad = (n) => String(n).padStart(2, "0");
     const start = `${year}-${pad(month)}-01`;

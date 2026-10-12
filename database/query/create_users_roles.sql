@@ -181,7 +181,7 @@ VALUES ('ROL202601010000001', 'Admin', '111111111111111111111111111', 'S');
 
 -- user แรกของระบบ ผูกกับ role Admin — ต้องมีอย่างน้อยคนเดียวถึงจะ login ผ่าน Postman ได้
 -- (createUser endpoint ต้องมี token ก่อน แต่จะ login ได้ต้องมี user อยู่แล้ว เลย seed ตรงนี้ครั้งเดียว)
--- login: admin หรือ admin@softwork.local / password: Admin@12345 — user_must_change_password = FALSE เพราะเป็น bootstrap account
+-- login: admin หรือ admin@softwork.local / password: Admin@12345 — บังคับเปลี่ยนรหัสผ่านตอน login ครั้งแรก (2026-10-12, risk-fixes R23 — รหัสนี้ทุกคนรู้)
 INSERT INTO tb_users (user_id, user_username, user_email, user_password, user_fname, user_lname, user_role_id, user_must_change_password)
 VALUES (
   'USE202601010000001',
@@ -191,7 +191,7 @@ VALUES (
   'System',
   'Admin',
   'ROL202601010000001',
-  FALSE
+  TRUE
 );
 
 commit;

@@ -59,6 +59,7 @@ export default function RoleSettingsPage() {
 
     const [deleteTarget, setDeleteTarget] = useState<Role | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
 
     async function handleDelete() {
         if (!deleteTarget) return;
@@ -69,17 +70,24 @@ export default function RoleSettingsPage() {
                 method: "DELETE",
                 headers: { Authorization: `Bearer ${token}` },
             });
-            if (res.ok) {
-                setRoles((prev) => prev.filter((r) => r.role_id !== deleteTarget.role_id));
-                setTotal((prev) => prev - 1);
-                toast.success(`ลบ "${deleteTarget.role_name}" สำเร็จ`);
-            } else {
-                toast.error("ลบไม่สำเร็จ กรุณาลองใหม่");
+            if (!res.ok) {
+                // ค้างหน้าต่างไว้พร้อมเหตุผลจาก backend (เช่น ยังมีผู้ใช้ใช้สิทธิ์นี้อยู่) — ไม่ใช้ toast ที่หายเอง
+                const data = await res.json().catch(() => ({}));
+                setDeleteError(data.message ?? "ลบไม่สำเร็จ กรุณาลองใหม่");
+                return;
             }
+            setRoles((prev) => prev.filter((r) => r.role_id !== deleteTarget.role_id));
+            setTotal((prev) => prev - 1);
+            toast.success(`ลบ "${deleteTarget.role_name}" สำเร็จ`);
+            closeDeleteDialog();
         } finally {
             setIsDeleting(false);
-            setDeleteTarget(null);
         }
+    }
+
+    function closeDeleteDialog() {
+        setDeleteTarget(null);
+        setDeleteError(null);
     }
 
     useEffect(() => {
@@ -141,11 +149,16 @@ export default function RoleSettingsPage() {
             <ConfirmDialog
                 open={!!deleteTarget}
                 title="ลบสิทธิ์นี้?"
-                description={deleteTarget ? `"${deleteTarget.role_id}" จะถูกลบและไม่สามารถกู้คืนได้` : undefined}
+                description={
+                    deleteTarget
+                        ? `"${deleteTarget.role_name}" จะถูกลบและกู้คืนไม่ได้ · ลบได้เฉพาะสิทธิ์ที่ไม่มีผู้ใช้คนไหนใช้อยู่`
+                        : undefined
+                }
                 confirmLabel="ลบ"
                 loading={isDeleting}
+                errorMessage={deleteError}
                 onConfirm={handleDelete}
-                onCancel={() => setDeleteTarget(null)}
+                onCancel={closeDeleteDialog}
             />
         </div>
     );

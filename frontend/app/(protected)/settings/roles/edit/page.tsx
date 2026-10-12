@@ -1,23 +1,23 @@
 "use client";
 
-import { useRef, useEffect, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/app/constans";
-import { PERMISSION_GROUPS, GROUP_STARTS, TOTAL_BITS } from "@/app/components/bit";
+import { TOTAL_BITS } from "@/app/components/bit";
 import Button from "@/components/ui/Button/Button";
 import Input from "@/components/ui/Input/input";
 import SearchableSelect from "@/components/ui/SearchableSelect";
+import PermissionChecklist from "../_components/permission-checklist";
 
-function IndeterminateCheckbox({
-    indeterminate,
-    ...props
-}: React.InputHTMLAttributes<HTMLInputElement> & { indeterminate?: boolean }) {
-    const ref = useRef<HTMLInputElement>(null);
-    useEffect(() => {
-        if (ref.current) ref.current.indeterminate = indeterminate ?? false;
-    }, [indeterminate]);
-    return <input ref={ref} type="checkbox" {...props} />;
-}
+type RoleDetail = {
+    role_id: number;
+    role_name: string;
+    role_permission: string;
+    role_department: string | null;
+    total_bits: number;
+    is_system_role: boolean;
+    can_edit: boolean;
+};
 
 async function fetchRoleById(id: string) {
     const token = localStorage.getItem("token");
@@ -25,9 +25,18 @@ async function fetchRoleById(id: string) {
         headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) return null;
-    return res.json() as Promise<{
-        role_id: number; role_name: string; role_permission: string; role_department: string | null;
-    }>;
+    return res.json() as Promise<RoleDetail>;
+}
+
+async function loadDepartmentOptions(search: string) {
+    const token = localStorage.getItem("token");
+    const res = await fetch(
+        `${api}/departments?${new URLSearchParams({ limit: "20", offset: "0", status: "active", search })}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!res.ok) return [];
+    const { data } = await res.json() as { data: { dep_id: string; dep_name: string }[] };
+    return data.map((d) => ({ value: d.dep_id, label: d.dep_name }));
 }
 
 export default function EditRolePage() {
@@ -39,65 +48,29 @@ export default function EditRolePage() {
     const [department, setDepartment] = useState("");
     const [checked, setChecked] = useState<boolean[]>(Array(TOTAL_BITS).fill(false));
     const [error, setError] = useState<string | null>(null);
+    // หน้านี้เปิดค้างไว้ตั้งแต่ก่อนระบบเพิ่มสิทธิ์ใหม่ → รู้จักบิตไม่ครบ ห้ามบันทึก (2026-10-12, risk-fixes R1)
+    const [isOutdatedPage, setIsOutdatedPage] = useState(false);
+    // role ระบบได้สิทธิ์ครบทุกข้อเสมอ แก้ได้แค่ชื่อและแผนก (2026-10-12, risk-fixes R24)
+    const [isSystemRole, setIsSystemRole] = useState(false);
+    // role ที่มีสิทธิ์บางข้อที่คนแก้ไม่มี แก้ไม่ได้ทั้ง role (2026-10-12, risk-fixes R25)
+    const [canEdit, setCanEdit] = useState(true);
 
     const id = searchParams.get("id");
+    const canSave = canEdit && !isOutdatedPage;
 
     useEffect(() => {
         if (!id) return;
         startTransition(async () => {
             const data = await fetchRoleById(id);
-            if (data) {
-                setRoleName(data.role_name);
-                setChecked(data.role_permission.split("").map((b) => b === "1"));
-                setDepartment(data.role_department ?? "");
-            }
+            if (!data) return;
+            setRoleName(data.role_name);
+            setChecked(data.role_permission.split("").map((bit) => bit === "1"));
+            setDepartment(data.role_department ?? "");
+            setIsOutdatedPage(data.total_bits !== TOTAL_BITS);
+            setIsSystemRole(data.is_system_role);
+            setCanEdit(data.can_edit !== false);
         });
     }, [id]);
-
-    async function loadDepartmentOptions(search: string) {
-        const token = localStorage.getItem("token");
-        const res = await fetch(
-            `${api}/departments?${new URLSearchParams({ limit: "20", offset: "0", status: "active", search })}`,
-            { headers: { Authorization: `Bearer ${token}` } }
-        );
-        if (!res.ok) return [];
-        const { data } = await res.json() as { data: { dep_id: string; dep_name: string }[] };
-        return data.map((d) => ({ value: d.dep_id, label: d.dep_name }));
-    }
-
-    function toggleBit(index: number) {
-        setChecked((prev) => {
-            const next = [...prev];
-            next[index] = !next[index];
-            if (next[index]) {
-                for (let gi = 0; gi < PERMISSION_GROUPS.length; gi++) {
-                    const start = GROUP_STARTS[gi];
-                    const len = PERMISSION_GROUPS[gi].bits.length;
-                    if (index > start && index < start + len) {
-                        next[start] = true;
-                        break;
-                    }
-                }
-            }
-            return next;
-        });
-    }
-
-    function toggleAll() {
-        setChecked((prev) => {
-            const allChecked = prev.every(Boolean);
-            return Array(TOTAL_BITS).fill(!allChecked);
-        });
-    }
-
-    function toggleGroup(start: number, length: number) {
-        setChecked((prev) => {
-            const allChecked = prev.slice(start, start + length).every(Boolean);
-            const next = [...prev];
-            for (let i = start; i < start + length; i++) next[i] = !allChecked;
-            return next;
-        });
-    }
 
     function handleSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
         e.preventDefault();
@@ -106,7 +79,7 @@ export default function EditRolePage() {
         const token = localStorage.getItem("token");
         if (!token) { setError("ไม่พบ token กรุณาเข้าสู่ระบบใหม่"); return; }
 
-        const role_permission = checked.map((v) => (v ? "1" : "0")).join("");
+        const role_permission = checked.map((isChecked) => (isChecked ? "1" : "0")).join("");
 
         startTransition(async () => {
             const res = await fetch(`${api}/roles/${id}`, {
@@ -132,6 +105,37 @@ export default function EditRolePage() {
             <h1 className="text-xl sm:text-2xl font-bold text-gray-800 mb-6">แก้ไขสิทธิ์</h1>
 
             <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-6">
+                {/* แถบแจ้งอยู่บนสุดของฟอร์ม ให้เห็นก่อนเริ่มแก้ — ไม่ใช่เลื่อนลงไปเจอหลังแก้เสร็จ */}
+                {!canEdit && (
+                    <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                        <p className="font-medium">คุณแก้ไข role นี้ไม่ได้</p>
+                        <p>
+                            role นี้มีสิทธิ์บางข้อที่คุณเองไม่มี — กันการแก้ role ที่สูงกว่าตัวเอง
+                            ให้ผู้ที่มีสิทธิ์สูงกว่าเป็นคนจัดการ
+                        </p>
+                    </div>
+                )}
+
+                {canEdit && isOutdatedPage && (
+                    <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                        <p className="font-medium">หน้านี้เป็นเวอร์ชันเก่า บันทึกไม่ได้</p>
+                        <p>
+                            ระบบเพิ่งเพิ่มสิทธิ์ใหม่ที่หน้านี้ยังไม่รู้จัก กรุณารีเฟรชหน้า (Ctrl+F5) ก่อนแก้สิทธิ์
+                            — ป้องกันไม่ให้สิทธิ์ใหม่ของ role นี้หายไปตอนบันทึก
+                        </p>
+                    </div>
+                )}
+
+                {canEdit && isSystemRole && (
+                    <div role="status" className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                        <p className="font-medium">นี่คือ role ระบบ — ได้สิทธิ์ครบทุกข้อเสมอ</p>
+                        <p>
+                            แก้ได้เฉพาะชื่อและแผนก ส่วนสิทธิ์ล็อกไว้ เพื่อให้มีคนจัดการระบบได้เสมอ
+                            และได้สิทธิ์ใหม่ที่ระบบเพิ่มในอนาคตโดยอัตโนมัติ
+                        </p>
+                    </div>
+                )}
+
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                         ชื่อสิทธิ์
@@ -140,6 +144,7 @@ export default function EditRolePage() {
                         value={roleName}
                         onChange={(e) => setRoleName(e.target.value)}
                         required
+                        disabled={!canEdit}
                         className="w-full"
                         placeholder="ชื่อสิทธิ์"
                     />
@@ -152,64 +157,11 @@ export default function EditRolePage() {
                         value={department}
                         onChange={setDepartment}
                         placeholder="— เลือกแผนก (ไม่บังคับ) —"
-                        disabled={isPending}
+                        disabled={isPending || !canEdit}
                     />
                 </div>
 
-                <div>
-                    <label className="flex items-center gap-3 cursor-pointer mb-3">
-                        <IndeterminateCheckbox
-                            checked={checked.every(Boolean)}
-                            indeterminate={!checked.every(Boolean) && checked.some(Boolean)}
-                            onChange={toggleAll}
-                            className="w-4 h-4 accent-blue-500"
-                        />
-                        <span className="text-sm font-medium text-gray-700">ทั้งหมด</span>
-                    </label>
-                    <div className="space-y-2">
-                        {PERMISSION_GROUPS.map((group, gi) => {
-                            const start = GROUP_STARTS[gi];
-                            const length = group.bits.length;
-                            const slice = checked.slice(start, start + length);
-                            const allChecked = slice.every(Boolean);
-                            const someChecked = slice.some(Boolean);
-
-                            return (
-                                <div key={group.groupLabel} className="rounded-lg border border-gray-100 overflow-hidden">
-                                    <label className="flex items-center gap-3 cursor-pointer px-4 py-2.5 bg-gray-50 hover:bg-gray-100">
-                                        <IndeterminateCheckbox
-                                            checked={allChecked}
-                                            indeterminate={!allChecked && someChecked}
-                                            onChange={() => toggleGroup(start, length)}
-                                            className="w-4 h-4 accent-blue-500"
-                                        />
-                                        <span className="text-sm font-medium text-gray-800">
-                                            {group.groupLabel}
-                                        </span>
-                                    </label>
-                                    <div className="divide-y divide-gray-50">
-                                        {group.bits.map((bit, bi) => (
-                                            <label
-                                                key={bit.key}
-                                                className="flex items-center gap-3 cursor-pointer px-4 py-2 pl-10 hover:bg-blue-50"
-                                            >
-                                                <input
-                                                    type="checkbox"
-                                                    checked={checked[start + bi]}
-                                                    onChange={() => toggleBit(start + bi)}
-                                                    className="w-4 h-4 accent-blue-500"
-                                                />
-                                                <span className="text-sm text-gray-700">
-                                                    {bit.label}
-                                                </span>
-                                            </label>
-                                        ))}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
+                <PermissionChecklist checked={checked} onChange={setChecked} disabled={isSystemRole || !canEdit} />
 
                 {error && <p className="text-sm text-red-600">{error}</p>}
 
@@ -221,9 +173,11 @@ export default function EditRolePage() {
                     >
                         ยกเลิก
                     </button>
-                    <Button type="submit" disabled={isPending}>
-                        {isPending ? "กำลังบันทึก..." : "บันทึก"}
-                    </Button>
+                    {canSave && (
+                        <Button type="submit" disabled={isPending}>
+                            {isPending ? "กำลังบันทึก..." : "บันทึก"}
+                        </Button>
+                    )}
                 </div>
             </form>
         </div>

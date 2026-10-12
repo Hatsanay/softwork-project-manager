@@ -7,7 +7,7 @@ import ProgressBar from "@/components/ui/ProgressBar";
 import Button from "@/components/ui/Button/Button";
 import SearchableSelect from "@/components/ui/SearchableSelect";
 import { api } from "@/app/constans";
-import formatDate, { formatDateOnly } from "@/app/function";
+import formatDate, { formatDateOnly, toDateInputValue } from "@/app/function";
 import { usePermission, BITS } from "@/app/components/permission-provider";
 
 const SERVER_BASE = new URL(api).origin;
@@ -173,11 +173,11 @@ function authHeader() {
     return { Authorization: `Bearer ${localStorage.getItem("token")}` };
 }
 
+// เทียบเป็นวันที่ตามเวลาไทยทั้งสองฝั่ง ("YYYY-MM-DD" เทียบแบบสตริงได้ตรงลำดับเวลา) — เดิมใช้เวลาเครื่องของผู้ดู
+// คนที่เปิดจากต่างประเทศจะเห็น "เลยกำหนด" เพี้ยนไปได้ 1 วัน (2026-10-12, risk-fixes R22)
 function isOverdue(dueDate: string | null) {
     if (!dueDate) return false;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return new Date(dueDate) < today;
+    return toDateInputValue(dueDate) < toDateInputValue(new Date());
 }
 
 function StatTile({ label, value, sub, color }: { label: string; value: number; sub?: string; color: string }) {

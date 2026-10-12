@@ -1,0 +1,256 @@
+{
+    "tables": {
+        "tb_audit_logs": [
+            "aud_action",
+            "aud_changes",
+            "aud_created_at",
+            "aud_duration_ms",
+            "aud_entity_id",
+            "aud_entity_type",
+            "aud_error",
+            "aud_event",
+            "aud_id",
+            "aud_ip",
+            "aud_method",
+            "aud_path",
+            "aud_payload",
+            "aud_project_id",
+            "aud_request_id",
+            "aud_role_name",
+            "aud_status",
+            "aud_success",
+            "aud_user_agent",
+            "aud_user_fullname",
+            "aud_user_id",
+            "aud_user_username"
+        ],
+        "tb_clients": [
+            "client_company",
+            "client_created_at",
+            "client_email",
+            "client_id",
+            "client_name",
+            "client_phone",
+            "client_updated_at"
+        ],
+        "tb_department": [
+            "dep_created_at",
+            "dep_id",
+            "dep_name",
+            "dep_status",
+            "dep_updated_at"
+        ],
+        "tb_email_otps": [
+            "otp_attempts",
+            "otp_code_hash",
+            "otp_created_at",
+            "otp_email",
+            "otp_expires_at",
+            "otp_id",
+            "otp_purpose",
+            "otp_used_at",
+            "otp_user_id"
+        ],
+        "tb_error_logs": [
+            "err_count",
+            "err_fingerprint",
+            "err_first_seen",
+            "err_id",
+            "err_last_ip",
+            "err_last_request_id",
+            "err_last_seen",
+            "err_last_user_id",
+            "err_message",
+            "err_method",
+            "err_path",
+            "err_stack",
+            "err_status"
+        ],
+        "tb_login_logs": [
+            "log_action",
+            "log_created_at",
+            "log_email",
+            "log_fullname",
+            "log_id",
+            "log_ip_address",
+            "log_user_agent",
+            "log_user_id"
+        ],
+        "tb_maxID": [
+            "max_id",
+            "max_table"
+        ],
+        "tb_project_chat_images": [
+            "image_created_at",
+            "image_id",
+            "image_url",
+            "message_id"
+        ],
+        "tb_project_chat_messages": [
+            "message_created_at",
+            "message_id",
+            "message_text",
+            "project_id",
+            "reply_to_message_id",
+            "user_id"
+        ],
+        "tb_project_chat_reads": [
+            "last_read_at",
+            "project_id",
+            "user_id"
+        ],
+        "tb_project_member_positions": [
+            "position_id",
+            "project_member_id"
+        ],
+        "tb_project_members": [
+            "joined_at",
+            "project_id",
+            "project_member_id",
+            "user_id"
+        ],
+        "tb_project_positions": [
+            "position_created_at",
+            "position_id",
+            "position_name",
+            "position_permission",
+            "position_status",
+            "position_updated_at"
+        ],
+        "tb_projects": [
+            "client_id",
+            "project_completed_at",
+            "project_created_at",
+            "project_created_by",
+            "project_description",
+            "project_due_date",
+            "project_id",
+            "project_name",
+            "project_progress_percent",
+            "project_share_enabled",
+            "project_share_token",
+            "project_start_date",
+            "project_status",
+            "project_type",
+            "project_updated_at",
+            "project_use_task_weight"
+        ],
+        "tb_roles": [
+            "role_department",
+            "role_granted_at",
+            "role_granted_by_id",
+            "role_id",
+            "role_name",
+            "role_permission",
+            "role_type",
+            "role_update_at"
+        ],
+        "tb_task_activity_log": [
+            "log_action",
+            "log_created_at",
+            "log_fullname",
+            "log_id",
+            "log_message",
+            "log_new_value",
+            "log_old_value",
+            "task_id",
+            "user_id"
+        ],
+        "tb_task_assignees": [
+            "task_id",
+            "user_id"
+        ],
+        "tb_task_chat_images": [
+            "image_created_at",
+            "image_id",
+            "image_url",
+            "message_id"
+        ],
+        "tb_task_chat_messages": [
+            "message_created_at",
+            "message_id",
+            "message_text",
+            "reply_to_message_id",
+            "task_id",
+            "user_id"
+        ],
+        "tb_task_chat_reads": [
+            "last_read_at",
+            "task_id",
+            "user_id"
+        ],
+        "tb_task_issue_images": [
+            "image_created_at",
+            "image_id",
+            "image_url",
+            "issue_id"
+        ],
+        "tb_task_issue_replies": [
+            "issue_id",
+            "reply_created_at",
+            "reply_id",
+            "reply_text",
+            "user_id"
+        ],
+        "tb_task_issue_reply_images": [
+            "image_created_at",
+            "image_id",
+            "image_url",
+            "reply_id"
+        ],
+        "tb_task_issue_reply_reads": [
+            "issue_id",
+            "last_read_at",
+            "user_id"
+        ],
+        "tb_task_issue_tags": [
+            "issue_id",
+            "tagged_at",
+            "user_id"
+        ],
+        "tb_task_issues": [
+            "created_by",
+            "issue_created_at",
+            "issue_description",
+            "issue_id",
+            "issue_resolved_at",
+            "issue_status",
+            "issue_title",
+            "issue_updated_at",
+            "task_id"
+        ],
+        "tb_tasks": [
+            "project_id",
+            "task_completed_at",
+            "task_created_at",
+            "task_description",
+            "task_due_date",
+            "task_id",
+            "task_parent_id",
+            "task_sort_order",
+            "task_start_date",
+            "task_status",
+            "task_title",
+            "task_updated_at",
+            "task_weight"
+        ],
+        "tb_users": [
+            "user_avatar_url",
+            "user_created_at",
+            "user_email",
+            "user_fname",
+            "user_id",
+            "user_last_login_at",
+            "user_line_uid",
+            "user_lname",
+            "user_must_change_password",
+            "user_password",
+            "user_phone",
+            "user_role_id",
+            "user_status",
+            "user_updated_at",
+            "user_username",
+            "user_whatsapp_no"
+        ]
+    }
+}

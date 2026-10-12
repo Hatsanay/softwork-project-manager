@@ -7,6 +7,8 @@ const { generateDailyId } = require("../utils/generateDailyId");
 const { generateTempPassword } = require("../utils/generatePassword");
 const { issueOtp, consumeOtp, markOtpUsed, OTP_TTL_MINUTES } = require("../utils/emailOtp");
 const { sendEmailOtpEmail } = require("../utils/mailer");
+const { effectiveRolePermission } = require("../utils/permissions");
+const { ACCESS_ERRORS, findRolePermission, findUserAccess, canActOn, sendAccessError } = require("../utils/role-access");
 
 const UPLOADS_DIR = path.join(__dirname, "..", "..", "uploads");
 
@@ -184,8 +186,8 @@ async function getAll(req, res, next) {
         const [rows] = await pool.query(
             `SELECT u.user_id, u.user_username, CONCAT(u.user_fname, ' ', u.user_lname) AS by_fullname,
                     u.user_email, u.user_phone,
-                    u.user_created_at, u.user_updated_at,
-                    r.role_name, r.role_type
+                    u.user_created_at, u.user_updated_at, u.user_role_id,
+                    r.role_name, r.role_type, r.role_permission
              FROM tb_users u
              LEFT JOIN tb_roles r ON r.role_id = u.user_role_id
              WHERE u.user_fname LIKE ? OR u.user_lname LIKE ? OR u.user_email LIKE ? OR u.user_username LIKE ?
@@ -193,16 +195,27 @@ async function getAll(req, res, next) {
              LIMIT ? OFFSET ?`,
             [search, search, search, search, limit, offset]
         );
+        // can_manage: คนที่ดูอยู่จัดการผู้ใช้คนนี้ได้ไหม (สิทธิ์ไม่เกินตัวเอง — risk-fixes R25) ไม่ส่งสตริงสิทธิ์ดิบออกไป
+        const data = rows.map(({ role_permission, user_role_id, ...user }) => ({
+            ...user,
+            can_manage: canActOn(req.user.role_permission, userPermission(user_role_id, user.role_type, role_permission)),
+        }));
         const [[{ total }]] = await pool.query(
             `SELECT COUNT(*) AS total FROM tb_users
              WHERE user_fname LIKE ? OR user_lname LIKE ? OR user_email LIKE ? OR user_username LIKE ?`,
             [search, search, search, search]
         );
 
-        res.json({ data: rows, total });
+        res.json({ data, total });
     } catch (err) {
         next(err);
     }
+}
+
+// ผู้ใช้ที่ไม่มี role = ไม่มีสิทธิ์ใดเลย
+function userPermission(roleId, roleType, storedPermission) {
+    if (!roleId) return "";
+    return effectiveRolePermission(roleType, storedPermission);
 }
 
 async function getOne(req, res, next) {
@@ -213,17 +226,44 @@ async function getOne(req, res, next) {
                     u.user_email, u.user_phone, u.user_line_uid, u.user_whatsapp_no,
                     u.user_avatar_url, u.user_role_id, u.user_status, u.user_must_change_password,
                     u.user_last_login_at, u.user_created_at, u.user_updated_at,
-                    r.role_name
+                    r.role_name, r.role_type, r.role_permission
              FROM tb_users u
              LEFT JOIN tb_roles r ON r.role_id = u.user_role_id
              WHERE u.user_id = ?`,
             [req.params.id]
         );
         if (!rows[0]) return res.status(404).json({ message: "ไม่พบผู้ใช้งาน" });
-        res.json(rows[0]);
+
+        const { role_type, role_permission, ...user } = rows[0];
+        res.json({
+            ...user,
+            // หน้าแก้ไขผู้ใช้ใช้แสดงแถบแจ้งและซ่อนปุ่มที่ทำไม่ได้ (risk-fixes R25)
+            can_manage: canActOn(req.user.role_permission, userPermission(user.user_role_id, role_type, role_permission)),
+            is_self: user.user_id === req.user.user_id,
+        });
     } catch (err) {
         next(err);
     }
+}
+
+// ผู้กระทำจัดการผู้ใช้คนนี้ได้ไหม (สิทธิ์ของผู้ใช้คนนี้ไม่เกินผู้กระทำ — risk-fixes R25)
+// คืน { error } พร้อมสถานะที่ต้องตอบ หรือ { target } ข้อมูลสิทธิ์ปัจจุบันของผู้ใช้คนนั้น
+async function checkCanManageUser(req, userId) {
+    const target = await findUserAccess(userId);
+    if (!target) return { notFound: true };
+    const isSelf = userId === req.user.user_id;
+    if (!isSelf && !canActOn(req.user.role_permission, target.permission)) {
+        return { error: ACCESS_ERRORS.userAboveActor };
+    }
+    return { target, isSelf };
+}
+
+// role ที่จะมอบต้องมีอยู่จริงและมีสิทธิ์ไม่เกินผู้มอบ (risk-fixes R25)
+async function checkCanAssignRole(req, roleId) {
+    const rolePermission = await findRolePermission(roleId);
+    if (rolePermission === null) return { invalid: true };
+    if (!canActOn(req.user.role_permission, rolePermission)) return { error: ACCESS_ERRORS.assignRoleAboveActor };
+    return {};
 }
 
 async function create(req, res, next) {
@@ -241,6 +281,12 @@ async function create(req, res, next) {
         if (email.error) return res.status(400).json({ message: email.error });
         const username = parseUsername(req.body.user_username);
         if (username.error) return res.status(400).json({ message: username.error });
+
+        const roleCheck = await checkCanAssignRole(req, user_role_id || null);
+        if (roleCheck.invalid) {
+            return res.status(400).json({ message: "ไม่พบสิทธิ์ (role) ที่เลือก อาจถูกลบไปแล้ว กรุณาเลือกใหม่" });
+        }
+        if (roleCheck.error) return sendAccessError(res, roleCheck.error);
 
         // ไม่รับรหัสผ่านจากฟอร์มแล้ว — gen รหัสผ่านชั่วคราวให้แทน แล้วบังคับเปลี่ยนตอน login ครั้งแรก
         const temp_password = generateTempPassword();
@@ -285,7 +331,26 @@ async function update(req, res, next) {
         const username = parseUsername(req.body.user_username);
         if (username.error) return res.status(400).json({ message: username.error });
 
-        const [result] = await pool.query(
+        const access = await checkCanManageUser(req, req.params.id);
+        if (access.notFound) return res.status(404).json({ message: "ไม่พบผู้ใช้งาน" });
+        if (access.error) return sendAccessError(res, access.error);
+
+        const newRoleId = user_role_id || null;
+        const newStatus = user_status === "inactive" ? "inactive" : "active";
+
+        // แก้ข้อมูลตัวเองผ่านหน้าจัดการผู้ใช้ได้ แต่เปลี่ยน role/สถานะของตัวเองไม่ได้ — กันมอบสิทธิ์ให้ตัวเอง
+        // และกันปิดบัญชีตัวเองจนเข้าระบบไม่ได้ (risk-fixes R25)
+        const isChangingOwnAccess = access.isSelf
+            && (newRoleId !== (access.target.roleId ?? null) || newStatus !== access.target.status);
+        if (isChangingOwnAccess) return sendAccessError(res, ACCESS_ERRORS.changeOwnAccess);
+
+        const roleCheck = await checkCanAssignRole(req, newRoleId);
+        if (roleCheck.invalid) {
+            return res.status(400).json({ message: "ไม่พบสิทธิ์ (role) ที่เลือก อาจถูกลบไปแล้ว กรุณาเลือกใหม่" });
+        }
+        if (roleCheck.error) return sendAccessError(res, roleCheck.error);
+
+        await pool.query(
             `UPDATE tb_users SET
                 user_username = COALESCE(?, user_username),
                 user_fname = ?, user_lname = ?, user_email = ?, user_phone = ?,
@@ -294,12 +359,10 @@ async function update(req, res, next) {
             [
                 username.value,
                 user_fname, user_lname, email.value, user_phone || null,
-                user_line_id || null, user_whatApp_no || null, user_role_id || null,
-                user_status === "inactive" ? "inactive" : "active",
+                user_line_id || null, user_whatApp_no || null, newRoleId, newStatus,
                 req.params.id,
             ]
         );
-        if (result.affectedRows === 0) return res.status(404).json({ message: "ไม่พบผู้ใช้งาน" });
 
         res.json({ message: "แก้ไขผู้ใช้งานสำเร็จ" });
     } catch (err) {
@@ -310,9 +373,64 @@ async function update(req, res, next) {
     }
 }
 
+// ประวัติที่ทำให้ลบผู้ใช้ไม่ได้ (2026-10-12, risk-fixes R7/R20)
+// - สามข้อแรกมี foreign key ที่ไม่ยอมให้ลบ — เดิมลบแล้วได้ error 500 ที่ไม่บอกเหตุผล
+// - ที่เหลือเป็น SET NULL: ลบได้ แต่ประวัติงาน/แชท/ปัญหาจะไม่เหลือชื่อคนทำ และ KPI ย้อนหลังเพี้ยน
+// ผู้ใช้ที่เคยทำงานในระบบแล้วให้ "ยกเลิกใช้งาน" แทน — ลบจริงได้เฉพาะบัญชีที่สร้างผิดและยังไม่เคยใช้งาน
+const USER_HISTORY_CHECKS = [
+    { label: "สร้างโปรเจกต์", unit: "โปรเจกต์", sql: "SELECT COUNT(*) AS n FROM tb_projects WHERE project_created_by = ?" },
+    { label: "เป็นสมาชิก", unit: "โปรเจกต์", sql: "SELECT COUNT(*) AS n FROM tb_project_members WHERE user_id = ?" },
+    { label: "สร้างสิทธิ์ (role)", unit: "รายการ", sql: "SELECT COUNT(*) AS n FROM tb_roles WHERE role_granted_by_id = ?" },
+    { label: "ประวัติการทำงานในงาน", unit: "รายการ", sql: "SELECT COUNT(*) AS n FROM tb_task_activity_log WHERE user_id = ?" },
+    { label: "แจ้งปัญหา", unit: "เรื่อง", sql: "SELECT COUNT(*) AS n FROM tb_task_issues WHERE created_by = ?" },
+    { label: "ตอบปัญหา", unit: "ครั้ง", sql: "SELECT COUNT(*) AS n FROM tb_task_issue_replies WHERE user_id = ?" },
+    { label: "ข้อความแชทในงาน", unit: "ข้อความ", sql: "SELECT COUNT(*) AS n FROM tb_task_chat_messages WHERE user_id = ?" },
+    { label: "ข้อความแชทโปรเจกต์", unit: "ข้อความ", sql: "SELECT COUNT(*) AS n FROM tb_project_chat_messages WHERE user_id = ?" },
+];
+
+async function findUserHistory(userId) {
+    const found = [];
+    for (const check of USER_HISTORY_CHECKS) {
+        const [[{ n }]] = await pool.query(check.sql, [userId]);
+        if (n > 0) found.push(`${check.label} ${n} ${check.unit}`);
+    }
+    return found;
+}
+
 async function remove(req, res, next) {
     try {
-        await pool.query("DELETE FROM tb_users WHERE user_id = ?", [req.params.id]);
+        const userId = req.params.id;
+        if (userId === req.user.user_id) {
+            return res.status(409).json({
+                code: "CANNOT_DELETE_SELF",
+                message: "ลบบัญชีของตัวเองไม่ได้ ให้ผู้ดูแลคนอื่นเป็นคนจัดการ",
+            });
+        }
+
+        const [rows] = await pool.query("SELECT user_avatar_url FROM tb_users WHERE user_id = ?", [userId]);
+        const user = rows[0];
+        if (!user) {
+            return res.status(404).json({ message: "ไม่พบผู้ใช้นี้ อาจถูกลบไปแล้ว" });
+        }
+
+        const access = await checkCanManageUser(req, userId);
+        if (access.error) return sendAccessError(res, access.error);
+
+        const history = await findUserHistory(userId);
+        if (history.length > 0) {
+            return res.status(409).json({
+                code: "USER_HAS_HISTORY",
+                message: `ลบผู้ใช้นี้ไม่ได้ เพราะมีประวัติในระบบ (${history.join(", ")}) ` +
+                    "ถ้าไม่ต้องการให้เข้าระบบแล้ว ให้แก้ไขผู้ใช้และเปลี่ยนสถานะเป็น \"ยกเลิกใช้งาน\" แทน — ประวัติและ KPI ยังอยู่ครบ",
+            });
+        }
+
+        await pool.query("DELETE FROM tb_users WHERE user_id = ?", [userId]);
+
+        // ลบไฟล์รูปโปรไฟล์ด้วย ไม่ให้ค้างใน uploads/ (ฐานข้อมูลไม่ลบไฟล์ให้)
+        if (user.user_avatar_url) {
+            await fs.unlink(path.join(UPLOADS_DIR, user.user_avatar_url.replace(/^\/uploads\//, ""))).catch(() => {});
+        }
         res.status(204).end();
     } catch (err) {
         next(err);
@@ -340,6 +458,11 @@ async function changeOwnPassword(req, res, next) {
 
 async function resetPassword(req, res, next) {
     try {
+        // รีเซ็ตรหัสผ่านของคนที่สิทธิ์สูงกว่า = ได้รหัสชั่วคราวไปเข้าระบบในชื่อเขา (risk-fixes R25)
+        const access = await checkCanManageUser(req, req.params.id);
+        if (access.notFound) return res.status(404).json({ message: "ไม่พบผู้ใช้งาน" });
+        if (access.error) return sendAccessError(res, access.error);
+
         const temp_password = generateTempPassword();
         const passwordHash = await bcrypt.hash(temp_password, 10);
 
@@ -391,6 +514,10 @@ async function saveAvatarForUser(userId, file) {
 async function uploadImage(req, res, next) {
     try {
         if (!req.file) return res.status(400).json({ message: "ไม่พบไฟล์รูปภาพ" });
+        const access = await checkCanManageUser(req, req.params.id);
+        if (access.notFound) return res.status(404).json({ message: "ไม่พบผู้ใช้งาน" });
+        if (access.error) return sendAccessError(res, access.error);
+
         const user_avatar_url = await saveAvatarForUser(req.params.id, req.file);
         res.json({ user_avatar_url });
     } catch (err) {

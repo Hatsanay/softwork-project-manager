@@ -1,6 +1,11 @@
 const crypto = require("crypto");
 const multer = require("multer");
 const pool = require("../config/db");
+const { getSchemaStatus } = require("../utils/schema-check");
+
+function isMissingSchemaError(err) {
+    return err?.code === "ER_NO_SUCH_TABLE" || err?.code === "ER_BAD_FIELD_ERROR";
+}
 
 function notFound(req, res) {
     res.status(404).json({ message: "ไม่พบ endpoint นี้" });
@@ -50,6 +55,32 @@ function errorHandler(err, req, res, next) {
     // JSON body พังหรือใหญ่เกิน (มาจาก express.json)
     if (err.type === "entity.parse.failed" || err.type === "entity.too.large") {
         return res.status(err.status ?? 400).json({ message: "ข้อมูลที่ส่งมาไม่ถูกต้อง" });
+    }
+
+    // ตาข่ายกันพลาดเรื่อง foreign key (2026-10-12, risk-fixes R20) — controller ควรเช็กก่อนลบและบอกเหตุผลที่ชัดกว่านี้เอง
+    // แต่ถ้าหลุดมาถึงตรงนี้ อย่างน้อยผู้ใช้ได้รู้ว่าทำไม แทน "เกิดข้อผิดพลาดที่เซิร์ฟเวอร์"
+    if (err.code === "ER_ROW_IS_REFERENCED_2") {
+        return res.status(409).json({
+            code: "IN_USE",
+            message: "ทำรายการนี้ไม่ได้ เพราะข้อมูลนี้ยังถูกใช้งานอยู่ในส่วนอื่นของระบบ ถ้าไม่ต้องการใช้แล้วให้เปลี่ยนเป็นยกเลิกใช้งานแทนการลบ",
+        });
+    }
+    if (err.code === "ER_NO_REFERENCED_ROW_2") {
+        return res.status(400).json({
+            code: "REFERENCE_NOT_FOUND",
+            message: "ข้อมูลที่เลือกไว้ไม่มีอยู่แล้ว (อาจถูกลบไปก่อน) กรุณาโหลดหน้าใหม่แล้วเลือกใหม่",
+        });
+    }
+
+    // โค้ดใหม่ขึ้นไปแล้วแต่ยังไม่ได้รัน deploy_schema.sql — บอกตรงๆ ว่าต้องทำอะไร แทน error 500 กลางๆ (risk-fixes R16)
+    // ใช้ผลตรวจโครงสร้างตอนเริ่มระบบยืนยันก่อน: ถ้าโครงสร้างครบแต่ยังเจอ error นี้ แปลว่าเป็นบั๊กในโค้ด ให้ไปเป็น 500 ตามปกติ
+    if (isMissingSchemaError(err) && getSchemaStatus().isOutdated) {
+        recordError(err, req, 503);
+        return res.status(503).json({
+            code: "DATABASE_OUTDATED",
+            message: "ฐานข้อมูลยังไม่ได้อัปเดตให้ตรงกับระบบเวอร์ชันนี้ แจ้งผู้ดูแลระบบให้รัน database/query/deploy_schema.sql",
+            request_id: req.id ?? null,
+        });
     }
 
     // error ที่ตั้ง status เองไว้ (4xx) ส่งข้อความต่อได้ แต่ 500 ห้ามส่ง err.message ออกไป

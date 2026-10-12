@@ -43,13 +43,17 @@ async function fetchUsers(params: { limit: number; offset: number; search: strin
     return res.json() as Promise<{ data: User[]; total: number }>;
 }
 
-async function deleteUser(id: number) {
+// ลบไม่สำเร็จ = คืนข้อความเหตุผลจาก backend (เช่น ผู้ใช้มีประวัติในระบบ ให้ยกเลิกใช้งานแทน)
+async function deleteUser(id: number): Promise<{ ok: true } | { ok: false; message: string }> {
     const token = localStorage.getItem("token");
     const res = await window.fetch(`${api}/users/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
     });
-    return res.ok;
+    if (res.ok) return { ok: true };
+
+    const data = await res.json().catch(() => ({}));
+    return { ok: false, message: data.message ?? "ลบไม่สำเร็จ กรุณาลองใหม่" };
 }
 
 export default function UsersPage() {
@@ -78,6 +82,7 @@ export default function UsersPage() {
 
     const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
 
     useEffect(() => {
         const limit = pageSize === -1 ? 99999 : pageSize;
@@ -103,18 +108,24 @@ export default function UsersPage() {
         if (!deleteTarget) return;
         setIsDeleting(true);
         try {
-            const ok = await deleteUser(deleteTarget.user_id);
-            if (ok) {
-                setUsers((prev) => prev.filter((u) => u.user_id !== deleteTarget.user_id));
-                setTotal((prev) => prev - 1);
-                toast.success(`ลบ "${deleteTarget.by_fullname}" สำเร็จ`);
-            } else {
-                toast.error("ลบไม่สำเร็จ กรุณาลองใหม่");
+            const result = await deleteUser(deleteTarget.user_id);
+            if (!result.ok) {
+                // ค้างหน้าต่างไว้พร้อมเหตุผล ให้ผู้ใช้อ่านแล้วตัดสินใจเอง (ไม่ใช้ toast ที่หายเอง)
+                setDeleteError(result.message);
+                return;
             }
+            setUsers((prev) => prev.filter((u) => u.user_id !== deleteTarget.user_id));
+            setTotal((prev) => prev - 1);
+            toast.success(`ลบ "${deleteTarget.by_fullname}" สำเร็จ`);
+            closeDeleteDialog();
         } finally {
             setIsDeleting(false);
-            setDeleteTarget(null);
         }
+    }
+
+    function closeDeleteDialog() {
+        setDeleteTarget(null);
+        setDeleteError(null);
     }
 
     return (
@@ -157,11 +168,17 @@ export default function UsersPage() {
             <ConfirmDialog
                 open={!!deleteTarget}
                 title="ลบผู้ใช้งานนี้?"
-                description={deleteTarget ? `"${deleteTarget.by_fullname}" จะถูกลบและไม่สามารถกู้คืนได้` : undefined}
+                description={
+                    deleteTarget
+                        ? `"${deleteTarget.by_fullname}" จะถูกลบและกู้คืนไม่ได้ · ลบได้เฉพาะผู้ใช้ที่ยังไม่เคยใช้งานระบบ (เช่น สร้างผิด) ` +
+                          `ถ้าเคยทำงานแล้วให้แก้ไขผู้ใช้และเปลี่ยนสถานะเป็น "ยกเลิกใช้งาน" แทน`
+                        : undefined
+                }
                 confirmLabel="ลบ"
                 loading={isDeleting}
+                errorMessage={deleteError}
                 onConfirm={handleDelete}
-                onCancel={() => setDeleteTarget(null)}
+                onCancel={closeDeleteDialog}
             />
         </div>
     );

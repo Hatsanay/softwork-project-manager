@@ -55,16 +55,17 @@ function authHeader() {
     return { Authorization: `Bearer ${localStorage.getItem("token")}` };
 }
 
+// แสดงเฉพาะ role ที่มอบได้ (สิทธิ์ไม่เกินคนที่ใช้งานอยู่ — risk-fixes R25)
 async function loadRolesOptions(search: string) {
     const res = await window.fetch(`${api}/roles?${new URLSearchParams({ limit: "20", offset: "0", search })}`, {
         headers: authHeader(),
     });
     if (!res.ok) return [];
     const data = await res.json();
-    return (data.data ?? []).map((r: { role_id: number; role_name: string }) => ({
-        value: r.role_id,
-        label: r.role_name,
-    }));
+    type RoleOption = { role_id: number; role_name: string; can_assign: boolean };
+    return (data.data ?? [])
+        .filter((r: RoleOption) => r.can_assign)
+        .map((r: RoleOption) => ({ value: r.role_id, label: r.role_name }));
 }
 
 async function submitCreateUser(body: FormState): Promise<CreatedUser> {
@@ -220,7 +221,9 @@ export default function CreateUserPage() {
                         disabled={isPending}
                         error={!!errors.user_role_id}
                     />
-                    {errors.user_role_id && <p className="text-xs text-red-500">{errors.user_role_id}</p>}
+                    {errors.user_role_id
+                        ? <p className="text-xs text-red-500">{errors.user_role_id}</p>
+                        : <p className="text-xs text-gray-400">แสดงเฉพาะสิทธิ์ที่ไม่เกินสิทธิ์ของคุณ</p>}
                 </div>
 
                 {submitError && <p className="col-span-2 text-sm text-red-600">{submitError}</p>}

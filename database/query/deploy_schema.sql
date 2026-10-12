@@ -925,10 +925,11 @@ INSERT INTO tb_roles (role_id, role_name, role_permission, role_type)
 SELECT 'ROL202601010000001', 'Admin', '111111111111111111111111111', 'S'
 FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM tb_roles);
 
--- ผู้ใช้คนแรก: admin (หรือ admin@softwork.local) / Admin@12345 — เปลี่ยนรหัสผ่านทันทีหลัง login ครั้งแรกบน production
+-- ผู้ใช้คนแรก: admin (หรือ admin@softwork.local) / Admin@12345 — ระบบบังคับเปลี่ยนรหัสผ่านตอน login ครั้งแรก
+-- (2026-10-12, risk-fixes R23: เดิมเป็น FALSE ทำให้ระบบที่ติดตั้งใหม่ใช้รหัสที่ทุกคนรู้ได้ตลอด · มีผลเฉพาะฐานข้อมูลว่าง)
 INSERT INTO tb_users (user_id, user_username, user_email, user_password, user_fname, user_lname, user_role_id, user_must_change_password)
 SELECT 'USE202601010000001', 'admin', 'admin@softwork.local', '$2a$10$UnrGKjjYX4uf1ojXLAPNOOdAT26aZg/eVmTDGvv2wWF95gYoQ5G0K',
-       'System', 'Admin', 'ROL202601010000001', FALSE
+       'System', 'Admin', 'ROL202601010000001', TRUE
 FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM tb_users)
   AND EXISTS (SELECT 1 FROM tb_roles WHERE role_id = 'ROL202601010000001');
 

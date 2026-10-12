@@ -8,6 +8,9 @@ interface ConfirmDialogProps {
     cancelLabel?: string;
     variant?: "danger" | "warning" | "info";
     loading?: boolean;
+    // ทำรายการไม่สำเร็จ: แสดงเหตุผลค้างไว้ในหน้าต่างนี้ (ไม่ใช้ toast ที่หายเองก่อนอ่านทัน — docs/plans/2026-10-12-ui-guidance.md)
+    // มีข้อความ = ซ่อนปุ่มยืนยัน เหลือปุ่มปิด เพราะกดซ้ำก็ไม่สำเร็จเหมือนเดิม
+    errorMessage?: string | null;
     onConfirm: () => void;
     onCancel: () => void;
 }
@@ -26,6 +29,7 @@ export default function ConfirmDialog({
     cancelLabel = "ยกเลิก",
     variant = "danger",
     loading = false,
+    errorMessage = null,
     onConfirm,
     onCancel,
 }: ConfirmDialogProps) {
@@ -51,21 +55,29 @@ export default function ConfirmDialog({
                     )}
                 </div>
 
+                {errorMessage && (
+                    <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                        {errorMessage}
+                    </div>
+                )}
+
                 <div className="flex gap-3 pt-2">
                     <button
                         onClick={onCancel}
                         disabled={loading}
                         className="flex-1 px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
                     >
-                        {cancelLabel}
+                        {errorMessage ? "ปิด" : cancelLabel}
                     </button>
-                    <button
-                        onClick={onConfirm}
-                        disabled={loading}
-                        className={`flex-1 px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 transition-colors ${confirmClass}`}
-                    >
-                        {loading ? "กำลังลบ..." : confirmLabel}
-                    </button>
+                    {!errorMessage && (
+                        <button
+                            onClick={onConfirm}
+                            disabled={loading}
+                            className={`flex-1 px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 transition-colors ${confirmClass}`}
+                        >
+                            {loading ? "กำลังลบ..." : confirmLabel}
+                        </button>
+                    )}
                 </div>
             </div>
         </div>

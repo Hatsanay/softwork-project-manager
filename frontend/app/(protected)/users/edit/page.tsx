@@ -56,16 +56,18 @@ function authHeader() {
     return { Authorization: `Bearer ${localStorage.getItem("token")}` };
 }
 
-async function loadRolesOptions(search: string) {
+// แสดงเฉพาะ role ที่มอบได้ (สิทธิ์ไม่เกินคนที่ใช้งานอยู่ — risk-fixes R25)
+// ยกเว้น role ปัจจุบันของผู้ใช้คนนี้ ต้องแสดงไว้เสมอ ไม่งั้นช่องจะว่างเปล่า
+async function loadRolesOptions(search: string, currentRoleId: string) {
     const res = await window.fetch(`${api}/roles?${new URLSearchParams({ limit: "20", offset: "0", search })}`, {
         headers: authHeader(),
     });
     if (!res.ok) return [];
     const data = await res.json();
-    return (data.data ?? []).map((r: { role_id: number; role_name: string }) => ({
-        value: r.role_id,
-        label: r.role_name,
-    }));
+    type RoleOption = { role_id: number; role_name: string; can_assign: boolean };
+    return (data.data ?? [])
+        .filter((r: RoleOption) => r.can_assign || String(r.role_id) === currentRoleId)
+        .map((r: RoleOption) => ({ value: r.role_id, label: r.role_name }));
 }
 
 async function fetchUser(id: string) {
@@ -130,6 +132,11 @@ export default function EditUserPage() {
     const [resetPending, setResetPending] = useState(false);
     const [tempPassword, setTempPassword] = useState<string | null>(null);
 
+    // จัดการได้เฉพาะผู้ใช้ที่สิทธิ์ไม่เกินตัวเอง และเปลี่ยน role/สถานะของตัวเองไม่ได้ (risk-fixes R25) — backend ส่งธงมาให้
+    const [canManage, setCanManage] = useState(true);
+    const [isSelf, setIsSelf] = useState(false);
+    const [currentRoleId, setCurrentRoleId] = useState<string | null>(null);
+
     useEffect(() => {
         if (!id) return;
         startTransition(async () => {
@@ -147,6 +154,9 @@ export default function EditUserPage() {
                 user_status: data.user_status === "inactive" ? "inactive" : "active",
             });
             if (data.user_avatar_url) setCurrentAvatar(`${SERVER_BASE}${data.user_avatar_url}`);
+            setCanManage(data.can_manage !== false);
+            setIsSelf(data.is_self === true);
+            setCurrentRoleId(String(data.user_role_id ?? ""));
         });
     }, [id]);
 
@@ -215,16 +225,28 @@ export default function EditUserPage() {
         <div className="p-4 sm:p-6 max-w-2xl mx-auto">
             <div className="flex items-center justify-between mb-6">
                 <h1 className="text-xl sm:text-2xl font-bold text-gray-800">แก้ไขผู้ใช้งาน</h1>
-                <button
-                    type="button"
-                    onClick={() => setConfirmResetOpen(true)}
-                    className="px-4 py-2 text-sm text-amber-600 border border-amber-200 rounded hover:bg-amber-50"
-                >
-                    เปลี่ยนรหัสผ่าน
-                </button>
+                {canManage && (
+                    <button
+                        type="button"
+                        onClick={() => setConfirmResetOpen(true)}
+                        className="px-4 py-2 text-sm text-amber-600 border border-amber-200 rounded hover:bg-amber-50"
+                    >
+                        เปลี่ยนรหัสผ่าน
+                    </button>
+                )}
             </div>
 
             <Form cols={2} onSubmit={handleSubmit} className="bg-white shadow-sm border-gray-100 rounded-xl">
+
+                {!canManage && (
+                    <div role="status" className="col-span-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                        <p className="font-medium">คุณจัดการผู้ใช้นี้ไม่ได้</p>
+                        <p>
+                            ผู้ใช้นี้มีสิทธิ์บางข้อที่คุณไม่มี จึงแก้ไขข้อมูลหรือเปลี่ยนรหัสผ่านไม่ได้
+                            — กันการเข้าถึงบัญชีที่มีสิทธิ์สูงกว่า ให้ผู้ที่มีสิทธิ์สูงกว่าเป็นคนจัดการ
+                        </p>
+                    </div>
+                )}
 
                 <div className="flex flex-col gap-1 col-span-2">
                     <label className="text-sm font-medium text-gray-700">รูปโปรไฟล์</label>
@@ -283,15 +305,23 @@ export default function EditUserPage() {
 
                 <div className="flex flex-col gap-1">
                     <label className="text-sm font-medium text-gray-700">สิทธิ์</label>
+                    {/* key: โหลดรายการ role ใหม่หลังรู้ role ปัจจุบันแล้ว (SearchableSelect โหลดตัวเลือกครั้งเดียวตอน mount) */}
                     <SearchableSelect
-                        loadOptions={loadRolesOptions}
+                        key={currentRoleId ?? "loading"}
+                        loadOptions={(search) => loadRolesOptions(search, currentRoleId ?? "")}
                         value={form.user_role_id}
                         onChange={(v) => setField("user_role_id", v)}
                         placeholder="— เลือกสิทธิ์ —"
-                        disabled={isPending}
+                        disabled={isPending || isSelf || !canManage}
                         error={!!errors.user_role_id}
                     />
-                    {errors.user_role_id && <p className="text-xs text-red-500">{errors.user_role_id}</p>}
+                    {errors.user_role_id
+                        ? <p className="text-xs text-red-500">{errors.user_role_id}</p>
+                        : <p className="text-xs text-gray-400">
+                            {isSelf
+                                ? "เปลี่ยนสิทธิ์ของตัวเองไม่ได้ ให้ผู้ดูแลคนอื่นเป็นคนเปลี่ยน"
+                                : "แสดงเฉพาะสิทธิ์ที่ไม่เกินสิทธิ์ของคุณ"}
+                        </p>}
                 </div>
 
                 <div className="flex flex-col gap-1">
@@ -299,11 +329,13 @@ export default function EditUserPage() {
                     <select
                         value={form.user_status}
                         onChange={handleStatusChange}
-                        className="px-4 py-2 border rounded focus:outline-none focus:ring-2 border-gray-300 focus:border-blue-400 focus:ring-blue-500/20"
+                        disabled={isSelf || !canManage}
+                        className="px-4 py-2 border rounded focus:outline-none focus:ring-2 border-gray-300 focus:border-blue-400 focus:ring-blue-500/20 disabled:bg-gray-50 disabled:text-gray-500"
                     >
                         <option value="active">ใช้งาน</option>
                         <option value="inactive">ยกเลิกใช้งาน</option>
                     </select>
+                    {isSelf && <p className="text-xs text-gray-400">ปิดใช้งานบัญชีของตัวเองไม่ได้</p>}
                 </div>
 
                 {submitError && <p className="col-span-2 text-sm text-red-600">{submitError}</p>}
@@ -313,9 +345,11 @@ export default function EditUserPage() {
                         className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50">
                         ยกเลิก
                     </button>
-                    <Button type="submit" disabled={isPending}>
-                        {isPending ? "กำลังบันทึก..." : "บันทึก"}
-                    </Button>
+                    {canManage && (
+                        <Button type="submit" disabled={isPending}>
+                            {isPending ? "กำลังบันทึก..." : "บันทึก"}
+                        </Button>
+                    )}
                 </div>
             </Form>
 
