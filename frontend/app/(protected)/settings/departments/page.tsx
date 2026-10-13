@@ -11,6 +11,9 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useRouter } from "next/navigation";
 import { usePermission, BITS } from "@/app/components/permission-provider";
 import { toast } from "sonner";
+import PageHeader from "@/components/ui/page-header";
+import { Plus } from "lucide-react";
+import { ActiveStatusPill } from "@/components/ui/status-pill";
 
 type Department = {
     dep_id: string;
@@ -44,11 +47,7 @@ export default function DepartmentSettingsPage() {
         {
             key: "dep_status",
             header: "สถานะ",
-            render: (v) => (
-                <span className={v === "active" ? "text-green-600" : "text-gray-400"}>
-                    {v === "active" ? "ใช้งาน" : "ยกเลิกใช้งาน"}
-                </span>
-            ),
+            render: (v) => <ActiveStatusPill isActive={v === "active"} />,
         },
         { key: "dep_created_at", header: "สร้างเมื่อ", render: (v) => formatDate(v) },
         { key: "dep_updated_at", header: "อัปเดตเมื่อ", render: (v) => formatDate(v) },
@@ -63,6 +62,7 @@ export default function DepartmentSettingsPage() {
 
     const [deleteTarget, setDeleteTarget] = useState<Department | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
 
     async function handleDelete() {
         if (!deleteTarget) return;
@@ -77,14 +77,20 @@ export default function DepartmentSettingsPage() {
                 setDepartments((prev) => prev.filter((d) => d.dep_id !== deleteTarget.dep_id));
                 setTotal((prev) => prev - 1);
                 toast.success(`ลบ "${deleteTarget.dep_name}" สำเร็จ`);
+                closeDeleteDialog();
             } else {
+                // ค้างหน้าต่างไว้พร้อมเหตุผลจาก backend (เช่น ยังถูกใช้งานอยู่) — ไม่ใช้ toast ที่หายเอง
                 const data = await res.json().catch(() => ({}));
-                toast.error(data.message ?? "ลบไม่สำเร็จ กรุณาลองใหม่");
+                setDeleteError(data.message ?? "ลบไม่สำเร็จ กรุณาลองใหม่");
             }
         } finally {
             setIsDeleting(false);
-            setDeleteTarget(null);
         }
+    }
+
+    function closeDeleteDialog() {
+        setDeleteTarget(null);
+        setDeleteError(null);
     }
 
     useEffect(() => {
@@ -108,13 +114,20 @@ export default function DepartmentSettingsPage() {
     }
 
     return (
-        <div className="p-4 sm:p-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-6">
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-800">จัดการแผนก</h1>
-                {hasBit(BITS.createDepartment) && (
-                    <Button onClick={() => router.push("/settings/departments/create")}>สร้างแผนก</Button>
-                )}
-            </div>
+        <div className="grid gap-6">
+            <PageHeader
+                eyebrow="ตั้งค่าระบบ"
+                title="แผนก"
+                description="แผนกของบริษัท ใช้จัดกลุ่มสิทธิ์ (role) · ลบได้เฉพาะแผนกที่ไม่มีสิทธิ์ผูกอยู่ ถ้ายังใช้อยู่ให้แก้ไขแล้วเปลี่ยนเป็นปิดใช้งานแทน"
+                actions={
+                    hasBit(BITS.createDepartment) && (
+                        <Button onClick={() => router.push("/settings/departments/create")}>
+                            <Plus size={16} />
+                            สร้างแผนก
+                        </Button>
+                    )
+                }
+            />
             <DataTable
                 columns={columns}
                 data={departments}
@@ -147,7 +160,8 @@ export default function DepartmentSettingsPage() {
                 confirmLabel="ลบ"
                 loading={isDeleting}
                 onConfirm={handleDelete}
-                onCancel={() => setDeleteTarget(null)}
+                errorMessage={deleteError}
+                onCancel={closeDeleteDialog}
             />
         </div>
     );

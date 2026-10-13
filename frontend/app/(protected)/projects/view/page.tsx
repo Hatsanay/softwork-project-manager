@@ -16,6 +16,8 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import SearchableSelect from "@/components/ui/SearchableSelect";
 import { PROJECT_PERMISSION_BITS } from "@/app/components/project-position-bits";
 import { toast } from "sonner";
+import { buttonClass } from "@/components/ui/button";
+import { inputClass } from "@/components/ui/form-field";
 
 const SERVER_BASE = new URL(api).origin;
 
@@ -1629,7 +1631,7 @@ export default function ViewProjectPage() {
                                     value={taskForm.task_description}
                                     onChange={(e) => setTaskForm((p) => ({ ...p, task_description: e.target.value }))}
                                     rows={3}
-                                    className="px-4 py-2 border rounded focus:outline-none focus:ring-2 border-gray-300 focus:border-blue-400 focus:ring-blue-500/20"
+                                    className={inputClass(false)}
                                 />
                             </div>
 
@@ -1699,7 +1701,7 @@ export default function ViewProjectPage() {
                                 <button
                                     type="button"
                                     onClick={() => setTaskModalOpen(false)}
-                                    className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+                                    className={buttonClass("secondary", "md")}
                                 >
                                     ยกเลิก
                                 </button>
@@ -2272,7 +2274,7 @@ export default function ViewProjectPage() {
                                     <button
                                         type="button"
                                         onClick={closeTaskDetail}
-                                        className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+                                        className={buttonClass("secondary", "md")}
                                     >
                                         ปิด
                                     </button>
@@ -2527,7 +2529,7 @@ export default function ViewProjectPage() {
                                 <button
                                     type="button"
                                     onClick={() => setMemberModalOpen(false)}
-                                    className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+                                    className={buttonClass("secondary", "md")}
                                 >
                                     ยกเลิก
                                 </button>
@@ -2584,7 +2586,7 @@ export default function ViewProjectPage() {
                                     onChange={(e) => setShareEmailForm((p) => ({ ...p, message: e.target.value }))}
                                     rows={3}
                                     placeholder="เช่น อัปเดตความคืบหน้าล่าสุดของโปรเจกต์ให้ทราบครับ"
-                                    className="px-4 py-2 border rounded focus:outline-none focus:ring-2 border-gray-300 focus:border-blue-400 focus:ring-blue-500/20"
+                                    className={inputClass(false)}
                                 />
                             </div>
 
@@ -2607,7 +2609,7 @@ export default function ViewProjectPage() {
                                 <button
                                     type="button"
                                     onClick={() => setShareEmailModalOpen(false)}
-                                    className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+                                    className={buttonClass("secondary", "md")}
                                 >
                                     ยกเลิก
                                 </button>

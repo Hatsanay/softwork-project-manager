@@ -9,6 +9,7 @@ import SearchableSelect from "@/components/ui/SearchableSelect";
 import { api } from "@/app/constans";
 import formatDate, { formatDateOnly, toDateInputValue } from "@/app/function";
 import { usePermission, BITS } from "@/app/components/permission-provider";
+import { buttonClass } from "@/components/ui/button";
 
 const SERVER_BASE = new URL(api).origin;
 
@@ -1091,7 +1092,7 @@ export default function DashboardPage() {
                             <button
                                 type="button"
                                 onClick={closeMemberTasks}
-                                className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+                                className={buttonClass("secondary", "md")}
                             >
                                 ปิด
                             </button>

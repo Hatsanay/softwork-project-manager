@@ -11,15 +11,19 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useRouter } from "next/navigation";
 import { usePermission, BITS } from "@/app/components/permission-provider";
 import { toast } from "sonner";
+import PageHeader from "@/components/ui/page-header";
+import { Plus } from "lucide-react";
+import { ActiveStatusPill } from "@/components/ui/status-pill";
+import { CLIENT_MESSAGES } from "./_messages";
+import type { Client } from "./_types";
 
-type Client = {
-    client_id: string;
-    client_name: string;
-    client_company: string | null;
-    client_email: string | null;
-    client_phone: string | null;
-    client_created_at: string;
-};
+const CLIENT_TYPE_LABELS: Record<Client["client_type"], string> = { juristic: "นิติบุคคล", individual: "บุคคลธรรมดา" };
+
+// สาขาของลูกค้านิติบุคคล — "00000" แสดงเป็นคำว่าสำนักงานใหญ่
+function branchLabel(branchCode: string | null) {
+    if (!branchCode) return "";
+    return branchCode === "00000" ? " · สำนักงานใหญ่" : ` · สาขา ${branchCode}`;
+}
 
 async function fetchClients(params: { limit: number; offset: number; search: string }) {
     const token = localStorage.getItem("token");
@@ -40,10 +44,40 @@ export default function ClientsPage() {
     const hasBit = usePermission();
 
     const columns: Column<Client>[] = [
-        { key: "client_name", header: "ชื่อลูกค้า" },
-        { key: "client_company", header: "บริษัท", render: (v) => (v as string) || "-" },
-        { key: "client_email", header: "อีเมล", render: (v) => (v as string) || "-" },
-        { key: "client_phone", header: "เบอร์โทรศัพท์", render: (v) => (v as string) || "-" },
+        {
+            key: "client_name",
+            header: "ลูกค้า",
+            render: (_, row) => (
+                <div className="grid min-w-0 gap-0.5">
+                    <span className="font-medium text-gray-800">{row.client_name}</span>
+                    {row.client_company && <span className="text-xs text-gray-500">{row.client_company}</span>}
+                </div>
+            ),
+        },
+        {
+            key: "client_tax_id",
+            header: "ประเภท / เลขผู้เสียภาษี",
+            render: (_, row) => (
+                <div className="grid gap-0.5">
+                    <span>{CLIENT_TYPE_LABELS[row.client_type]}{row.client_country !== "TH" ? ` · ${row.client_country}` : ""}</span>
+                    <span className="text-xs text-gray-500 tabular-nums">
+                        {row.client_tax_id ? `${row.client_tax_id}${branchLabel(row.client_branch_code)}` : "ยังไม่มีเลขผู้เสียภาษี"}
+                    </span>
+                </div>
+            ),
+        },
+        {
+            key: "client_contact_name",
+            header: "ติดต่อ",
+            render: (_, row) => (
+                <div className="grid gap-0.5 text-sm">
+                    <span>{row.client_contact_name || row.client_email || "-"}</span>
+                    {row.client_phone && <span className="text-xs text-gray-500">{row.client_phone}</span>}
+                </div>
+            ),
+        },
+        { key: "client_currency", header: "สกุลเงิน" },
+        { key: "client_status", header: "สถานะ", render: (_, row) => <ActiveStatusPill isActive={row.client_status === "active"} /> },
         { key: "client_created_at", header: "สร้างเมื่อ", render: (v) => formatDate(v) },
     ];
 
@@ -56,6 +90,7 @@ export default function ClientsPage() {
 
     const [deleteTarget, setDeleteTarget] = useState<Client | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
 
     async function handleDelete() {
         if (!deleteTarget) return;
@@ -70,14 +105,20 @@ export default function ClientsPage() {
                 setClients((prev) => prev.filter((c) => c.client_id !== deleteTarget.client_id));
                 setTotal((prev) => prev - 1);
                 toast.success(`ลบ "${deleteTarget.client_name}" สำเร็จ`);
+                closeDeleteDialog();
             } else {
+                // ค้างหน้าต่างไว้พร้อมเหตุผลจาก backend (เช่น ยังถูกใช้งานอยู่) — ไม่ใช้ toast ที่หายเอง
                 const data = await res.json().catch(() => ({}));
-                toast.error(data.message ?? "ลบไม่สำเร็จ กรุณาลองใหม่");
+                setDeleteError(data.message ?? "ลบไม่สำเร็จ กรุณาลองใหม่");
             }
         } finally {
             setIsDeleting(false);
-            setDeleteTarget(null);
         }
+    }
+
+    function closeDeleteDialog() {
+        setDeleteTarget(null);
+        setDeleteError(null);
     }
 
     useEffect(() => {
@@ -101,13 +142,20 @@ export default function ClientsPage() {
     }
 
     return (
-        <div className="p-4 sm:p-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-6">
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-800">จัดการลูกค้า</h1>
-                {hasBit(BITS.createClient) && (
-                    <Button onClick={() => router.push("/clients/create")}>สร้างลูกค้า</Button>
-                )}
-            </div>
+        <div className="grid gap-6">
+            <PageHeader
+                eyebrow="งาน"
+                title="ลูกค้า"
+                description={CLIENT_MESSAGES.pageDescription}
+                actions={
+                    hasBit(BITS.createClient) && (
+                        <Button onClick={() => router.push("/clients/create")}>
+                            <Plus size={16} />
+                            สร้างลูกค้า
+                        </Button>
+                    )
+                }
+            />
             <DataTable
                 columns={columns}
                 data={clients}
@@ -141,7 +189,8 @@ export default function ClientsPage() {
                 confirmLabel="ลบ"
                 loading={isDeleting}
                 onConfirm={handleDelete}
-                onCancel={() => setDeleteTarget(null)}
+                errorMessage={deleteError}
+                onCancel={closeDeleteDialog}
             />
         </div>
     );

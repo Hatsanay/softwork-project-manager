@@ -8,7 +8,7 @@ SET NAMES utf8mb4 collate utf8mb4_unicode_ci;
 
 -- ─── 1) สิทธิ์การใช้งาน (role) ──────────────────────────────────────────────────
 -- role_permission เป็น bitmask string ('0'/'1') ยาวตาม TOTAL_BITS ใน app/components/bit.tsx
--- ลำดับบิตต้องตรงกับลำดับ leaf ใน PERMISSION_GROUPS ของไฟล์นั้นเป๊ะๆ (ปัจจุบัน 27 บิต)
+-- ลำดับบิตต้องตรงกับลำดับ leaf ใน PERMISSION_GROUPS ของไฟล์นั้นเป๊ะๆ (ปัจจุบัน 29 บิต)
 CREATE TABLE tb_roles (
   role_id            VARCHAR(18) NOT NULL,
   role_name          VARCHAR(50)        NOT NULL,
@@ -35,6 +35,7 @@ CREATE TABLE tb_users (
   user_whatsapp_no    VARCHAR(20)        NULL,
   user_avatar_url     VARCHAR(255)       NULL,
   user_role_id        VARCHAR(18)                NULL,
+  user_branch_id      VARCHAR(18)        NULL COMMENT 'สาขาเริ่มต้นของเอกสารที่ผู้ใช้นี้สร้าง — ว่าง = สำนักงานใหญ่ (FK ใน create_sales.sql)',
   user_status         ENUM('active','inactive') NOT NULL DEFAULT 'active',
   user_must_change_password BOOLEAN NOT NULL DEFAULT TRUE COMMENT 'บังคับเปลี่ยนรหัสผ่านตอน login ครั้งแรก (สำหรับรหัสผ่านชั่วคราวที่ระบบ gen ให้)',
   user_last_login_at  DATETIME           NULL,
@@ -44,6 +45,7 @@ CREATE TABLE tb_users (
   UNIQUE KEY uq_user_username (user_username),
   UNIQUE KEY uq_user_email (user_email),
   KEY idx_user_role (user_role_id),
+  KEY fk_user_branch (user_branch_id),
   CONSTRAINT fk_user_role FOREIGN KEY (user_role_id) REFERENCES tb_roles(role_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -174,10 +176,10 @@ CREATE TABLE tb_error_logs (
 commit;
 
 -- ─── ข้อมูลเริ่มต้น ───────────────────────────────────────────────────────────
--- role admin: เปิดสิทธิ์ทุกบิต (27 บิต ตาม TOTAL_BITS ปัจจุบันใน frontend/app/components/bit.tsx) — ปรับความยาวถ้า bit.tsx เพิ่มบิต
+-- role admin: เปิดสิทธิ์ทุกบิต (29 บิต ตาม TOTAL_BITS ปัจจุบันใน frontend/app/components/bit.tsx) — ปรับความยาวถ้า bit.tsx เพิ่มบิต
 -- id ใส่ตรงๆ เพราะ seed ครั้งเดียวตอนตั้งระบบ ไม่ได้ผ่าน generateDailyId()
 INSERT INTO tb_roles (role_id, role_name, role_permission, role_type)
-VALUES ('ROL202601010000001', 'Admin', '111111111111111111111111111', 'S');
+VALUES ('ROL202601010000001', 'Admin', '11111111111111111111111111111', 'S');
 
 -- user แรกของระบบ ผูกกับ role Admin — ต้องมีอย่างน้อยคนเดียวถึงจะ login ผ่าน Postman ได้
 -- (createUser endpoint ต้องมี token ก่อน แต่จะ login ได้ต้องมี user อยู่แล้ว เลย seed ตรงนี้ครั้งเดียว)

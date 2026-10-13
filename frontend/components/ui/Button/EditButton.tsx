@@ -1,18 +1,17 @@
+// ปุ่ม "แก้ไข" ในแถวตาราง — มีตัวหนังสือเสมอ (ไม่ใช้ไอคอนล้วนที่ต้องเดาความหมาย และระบบไม่ใช้ tooltip)
 import { ButtonHTMLAttributes } from "react";
 import { Pencil } from "lucide-react";
+import { buttonClass } from "@/components/ui/button";
 
 interface EditButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  children?: React.ReactNode;
+    children?: React.ReactNode;
 }
 
-export default function EditButton({ children, ...props }: EditButtonProps) {
-  return (
-    <button
-      {...props}
-      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-400 hover:bg-amber-500 text-white text-sm rounded transition-colors duration-200 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-    >
-      <Pencil className="w-4 h-4" />
-      {children}
-    </button>
-  );
+export default function EditButton({ children, type = "button", ...props }: EditButtonProps) {
+    return (
+        <button type={type} {...props} className={buttonClass("secondary", "sm")}>
+            <Pencil size={14} className="text-gray-400" />
+            {children ?? "แก้ไข"}
+        </button>
+    );
 }

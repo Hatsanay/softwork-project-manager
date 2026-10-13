@@ -10,6 +10,12 @@ import AvatarCrop from "@/components/ui/AvatarCrop";
 import SearchableSelect from "@/components/ui/SearchableSelect";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { toast } from "sonner";
+import PageHeader from "@/components/ui/page-header";
+import { buttonClass } from "@/components/ui/button";
+import BranchSelect from "../_components/branch-select";
+import UserSignaturePanel from "../_components/user-signature-panel";
+import { KeyRound } from "lucide-react";
+import { inputClass } from "@/components/ui/form-field";
 
 type FormState = {
     user_fname: string;
@@ -21,6 +27,7 @@ type FormState = {
     user_whatApp_no: string;
     user_role_id: string;
     user_status: "active" | "inactive";
+    user_branch_id: string;
 };
 
 type FormErrors = Partial<Record<keyof FormState, string>>;
@@ -111,7 +118,7 @@ const SERVER_BASE = new URL(api).origin;
 
 const EMPTY_FORM: FormState = {
     user_fname: "", user_lname: "", user_username: "", user_email: "", user_phone: "",
-    user_line_id: "", user_whatApp_no: "", user_role_id: "", user_status: "active",
+    user_line_id: "", user_whatApp_no: "", user_role_id: "", user_status: "active", user_branch_id: "",
 };
 
 export default function EditUserPage() {
@@ -136,6 +143,7 @@ export default function EditUserPage() {
     const [canManage, setCanManage] = useState(true);
     const [isSelf, setIsSelf] = useState(false);
     const [currentRoleId, setCurrentRoleId] = useState<string | null>(null);
+    const [savedBranchId, setSavedBranchId] = useState("");
 
     useEffect(() => {
         if (!id) return;
@@ -152,7 +160,9 @@ export default function EditUserPage() {
                 user_whatApp_no: data.user_whatsapp_no ?? "",
                 user_role_id: String(data.user_role_id ?? ""),
                 user_status: data.user_status === "inactive" ? "inactive" : "active",
+                user_branch_id: data.user_branch_id ?? "",
             });
+            setSavedBranchId(data.user_branch_id ?? "");
             if (data.user_avatar_url) setCurrentAvatar(`${SERVER_BASE}${data.user_avatar_url}`);
             setCanManage(data.can_manage !== false);
             setIsSelf(data.is_self === true);
@@ -222,24 +232,25 @@ export default function EditUserPage() {
     if (!id || notFound) return <p className="p-6 text-gray-500">ไม่พบผู้ใช้งาน</p>;
 
     return (
-        <div className="p-4 sm:p-6 max-w-2xl mx-auto">
-            <div className="flex items-center justify-between mb-6">
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-800">แก้ไขผู้ใช้งาน</h1>
-                {canManage && (
-                    <button
-                        type="button"
-                        onClick={() => setConfirmResetOpen(true)}
-                        className="px-4 py-2 text-sm text-amber-600 border border-amber-200 rounded hover:bg-amber-50"
-                    >
-                        เปลี่ยนรหัสผ่าน
-                    </button>
-                )}
-            </div>
+        <div className="mx-auto grid max-w-3xl gap-6">
+            <PageHeader
+                eyebrow="จัดการข้อมูลผู้ใช้งาน"
+                title="แก้ไขผู้ใช้งาน"
+                description="แก้ข้อมูล สิทธิ์ และสถานะของผู้ใช้ · เปลี่ยนสิทธิ์หรือสถานะของตัวเองไม่ได้ · ปิดใช้งานแล้วผู้ใช้เข้าระบบไม่ได้ทันที แต่ประวัติยังอยู่ครบ"
+                actions={
+                    canManage && (
+                        <button type="button" onClick={() => setConfirmResetOpen(true)} className={buttonClass("secondary", "md")}>
+                            <KeyRound size={16} className="text-gray-400" />
+                            ตั้งรหัสผ่านชั่วคราวใหม่
+                        </button>
+                    )
+                }
+            />
 
-            <Form cols={2} onSubmit={handleSubmit} className="bg-white shadow-sm border-gray-100 rounded-xl">
+            <Form cols={2} onSubmit={handleSubmit}>
 
                 {!canManage && (
-                    <div role="status" className="col-span-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    <div role="status" className="col-span-full rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                         <p className="font-medium">คุณจัดการผู้ใช้นี้ไม่ได้</p>
                         <p>
                             ผู้ใช้นี้มีสิทธิ์บางข้อที่คุณไม่มี จึงแก้ไขข้อมูลหรือเปลี่ยนรหัสผ่านไม่ได้
@@ -248,7 +259,7 @@ export default function EditUserPage() {
                     </div>
                 )}
 
-                <div className="flex flex-col gap-1 col-span-2">
+                <div className="flex flex-col gap-1 col-span-full">
                     <label className="text-sm font-medium text-gray-700">รูปโปรไฟล์</label>
                     {/* key เปลี่ยนตาม currentAvatar เพื่อ remount ใหม่เมื่อ fetch เสร็จ — AvatarCrop เก็บ preview เป็น internal state ที่ตั้งค่าแค่ตอน mount */}
                     <AvatarCrop key={currentAvatar ?? "loading"} value={currentAvatar} onChange={setAvatarFile} disabled={isPending} />
@@ -297,7 +308,7 @@ export default function EditUserPage() {
                         placeholder="Line ID" />
                 </div>
 
-                <div className="flex flex-col gap-1 col-span-2">
+                <div className="flex flex-col gap-1 col-span-full">
                     <label className="text-sm font-medium text-gray-700">WhatsApp No.</label>
                     <Input name="user_whatApp_no" value={form.user_whatApp_no} onChange={handleChange}
                         placeholder="WhatsApp No." />
@@ -330,7 +341,7 @@ export default function EditUserPage() {
                         value={form.user_status}
                         onChange={handleStatusChange}
                         disabled={isSelf || !canManage}
-                        className="px-4 py-2 border rounded focus:outline-none focus:ring-2 border-gray-300 focus:border-blue-400 focus:ring-blue-500/20 disabled:bg-gray-50 disabled:text-gray-500"
+                        className={inputClass(false)}
                     >
                         <option value="active">ใช้งาน</option>
                         <option value="inactive">ยกเลิกใช้งาน</option>
@@ -338,11 +349,18 @@ export default function EditUserPage() {
                     {isSelf && <p className="text-xs text-gray-400">ปิดใช้งานบัญชีของตัวเองไม่ได้</p>}
                 </div>
 
-                {submitError && <p className="col-span-2 text-sm text-red-600">{submitError}</p>}
+                <BranchSelect
+                    value={form.user_branch_id}
+                    onChange={(branchId) => setField("user_branch_id", branchId)}
+                    savedBranchId={savedBranchId}
+                    disabled={isPending || !canManage}
+                />
 
-                <div className="col-span-2 flex justify-end gap-3">
+                {submitError && <p className="col-span-full text-sm text-red-600">{submitError}</p>}
+
+                <div className="col-span-full flex justify-end gap-3">
                     <button type="button" onClick={() => router.push("/users")}
-                        className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50">
+                        className={buttonClass("secondary", "md")}>
                         ยกเลิก
                     </button>
                     {canManage && (
@@ -352,6 +370,8 @@ export default function EditUserPage() {
                     )}
                 </div>
             </Form>
+
+            {id && !notFound && <UserSignaturePanel userId={id} canManage={canManage} />}
 
             <ConfirmDialog
                 open={confirmResetOpen}

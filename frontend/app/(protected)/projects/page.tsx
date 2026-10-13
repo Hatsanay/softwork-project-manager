@@ -11,6 +11,10 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useRouter } from "next/navigation";
 import { usePermission, BITS } from "@/app/components/permission-provider";
 import { toast } from "sonner";
+import { Archive, Ban, FolderKanban, Plus, RotateCcw } from "lucide-react";
+import { buttonClass } from "@/components/ui/button";
+import PageHeader from "@/components/ui/page-header";
+import StatusPill, { type PillTone } from "@/components/ui/status-pill";
 
 type Project = {
     project_id: string;
@@ -31,12 +35,12 @@ const STATUS_LABEL: Record<Project["project_status"], string> = {
     cancelled: "ยกเลิก",
 };
 
-const STATUS_COLOR: Record<Project["project_status"], string> = {
-    planning: "text-gray-500",
-    in_progress: "text-blue-600",
-    on_hold: "text-amber-600",
-    completed: "text-green-600",
-    cancelled: "text-red-500",
+const STATUS_TONE: Record<Project["project_status"], PillTone> = {
+    planning: "neutral",
+    in_progress: "info",
+    on_hold: "wait",
+    completed: "success",
+    cancelled: "danger",
 };
 
 function authHeader() {
@@ -146,9 +150,9 @@ export default function ProjectsPage() {
             key: "project_status",
             header: "สถานะ",
             render: (v) => (
-                <span className={STATUS_COLOR[v as Project["project_status"]]}>
+                <StatusPill tone={STATUS_TONE[v as Project["project_status"]] ?? "neutral"}>
                     {STATUS_LABEL[v as Project["project_status"]] ?? String(v)}
-                </span>
+                </StatusPill>
             ),
         },
         {
@@ -162,24 +166,32 @@ export default function ProjectsPage() {
     ];
 
     return (
-        <div className="p-4 sm:p-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-6">
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-800">
-                    {showCancelled ? "โปรเจกต์ที่ยกเลิก" : "โปรเจกต์"}
-                </h1>
-                <div className="flex items-center gap-2">
-                    <button
-                        type="button"
-                        onClick={toggleShowCancelled}
-                        className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
-                    >
-                        {showCancelled ? "ดูโปรเจกต์ปกติ" : "ดูโปรเจกต์ที่ยกเลิก"}
-                    </button>
-                    {!showCancelled && hasBit(BITS.createProject) && (
-                        <Button onClick={() => router.push("/projects/create")}>สร้างโปรเจกต์</Button>
-                    )}
-                </div>
-            </div>
+        <div className="grid gap-6">
+            <PageHeader
+                eyebrow="งาน"
+                title={showCancelled ? "โปรเจกต์ที่ยกเลิก" : "โปรเจกต์"}
+                description={
+                    showCancelled
+                        ? "โปรเจกต์ที่ยกเลิกไว้ ข้อมูลและงานยังอยู่ครบ · กู้คืนได้ถ้ามีสิทธิ์ยกเลิกโปรเจกต์"
+                        : hasBit(BITS.viewAllProjects)
+                          ? "โปรเจกต์ทั้งหมดของบริษัท · กดดูเพื่อจัดการงาน สมาชิก และลิงก์ให้ลูกค้า"
+                          : "โปรเจกต์ที่คุณเป็นสมาชิก · โปรเจกต์อื่นจะเห็นเมื่อถูกเพิ่มเป็นสมาชิก"
+                }
+                actions={
+                    <>
+                        <button type="button" onClick={toggleShowCancelled} className={buttonClass("secondary", "md")}>
+                            {showCancelled ? <FolderKanban size={16} /> : <Archive size={16} />}
+                            {showCancelled ? "ดูโปรเจกต์ปกติ" : "ดูโปรเจกต์ที่ยกเลิก"}
+                        </button>
+                        {!showCancelled && hasBit(BITS.createProject) && (
+                            <Button onClick={() => router.push("/projects/create")}>
+                                <Plus size={16} />
+                                สร้างโปรเจกต์
+                            </Button>
+                        )}
+                    </>
+                }
+            />
             <DataTable
                 columns={columns}
                 data={projects}
@@ -203,8 +215,9 @@ export default function ProjectsPage() {
                                     type="button"
                                     onClick={() => handleReactivate(row)}
                                     disabled={reactivatingId === row.project_id}
-                                    className="px-3 py-1.5 text-sm text-white bg-green-500 hover:bg-green-600 rounded font-medium disabled:opacity-50"
+                                    className={buttonClass("secondary", "sm")}
                                 >
+                                    <RotateCcw size={14} className="text-gray-400" />
                                     {reactivatingId === row.project_id ? "กำลังกู้คืน..." : "กู้คืน"}
                                 </button>
                             )
@@ -212,8 +225,9 @@ export default function ProjectsPage() {
                                 <button
                                     type="button"
                                     onClick={() => setCancelTarget(row)}
-                                    className="px-3 py-1.5 text-sm text-white bg-red-400 hover:bg-red-500 rounded font-medium"
+                                    className={buttonClass("ghost", "sm", "text-red-600 hover:bg-red-50 hover:text-red-700")}
                                 >
+                                    <Ban size={14} />
                                     ยกเลิก
                                 </button>
                             )}
@@ -224,7 +238,12 @@ export default function ProjectsPage() {
             <ConfirmDialog
                 open={!!cancelTarget}
                 title="ยกเลิกโปรเจกต์นี้?"
-                description={cancelTarget ? `"${cancelTarget.project_name}" จะถูกย้ายไปที่รายการโปรเจกต์ที่ยกเลิก กู้คืนได้ภายหลัง` : undefined}
+                description={cancelTarget ? `"${cancelTarget.project_name}"` : undefined}
+                consequences={[
+                    "ย้ายไปที่รายการโปรเจกต์ที่ยกเลิก",
+                    "งาน แชท และปัญหายังอยู่ครบ",
+                    "กู้คืนได้ภายหลังจากรายการโปรเจกต์ที่ยกเลิก",
+                ]}
                 confirmLabel="ยกเลิกโปรเจกต์"
                 variant="warning"
                 loading={isCancelling}

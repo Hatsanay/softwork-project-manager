@@ -4,6 +4,8 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/app/constans";
 import { PERMISSION_GROUPS, GROUP_STARTS } from "@/app/components/bit";
+import PageHeader from "@/components/ui/page-header";
+import { buttonClass } from "@/components/ui/button";
 
 type Role = {
     role_id: number;
@@ -48,12 +50,14 @@ export default function ViewRolePage() {
     if (!id) return <p className="p-6 text-gray-500">ไม่พบ Role</p>;
 
     return (
-        <div className="p-4 sm:p-6 max-w-2xl mx-auto">
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-800 mb-6">
-                {isPending ? "..." : (role?.role_name ?? "ไม่พบข้อมูล")}
-            </h1>
+        <div className="mx-auto grid max-w-3xl gap-6">
+            <PageHeader
+                eyebrow="ตั้งค่าระบบ · จัดการสิทธิ์"
+                title={isPending ? "กำลังโหลด..." : (role?.role_name ?? "ไม่พบข้อมูล")}
+                description="ดูสิทธิ์ของ role นี้อย่างเดียว · แก้ไขได้จากหน้ารายการสิทธิ์ถ้ามีสิทธิ์แก้ไข"
+            />
 
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-6">
+            <div className="space-y-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-card sm:p-6">
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                         ชื่อสิทธิ์
@@ -115,7 +119,7 @@ export default function ViewRolePage() {
                     <button
                         type="button"
                         onClick={() => router.push("/settings/roles")}
-                        className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+                        className={buttonClass("secondary", "md")}
                     >
                         ยกเลิก
                     </button>

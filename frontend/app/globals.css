@@ -1,26 +1,52 @@
 @import "tailwindcss";
 
+/*
+ * ธีมของระบบ (ปรับใหม่ 13 ต.ค. 2026 — docs/plans/2026-10-13-ui-refresh.md)
+ * สีใช้ชื่อสี Tailwind เดิมเท่านั้น (gray, blue-500/600, green/amber/red) — ไม่ประกาศสีใหม่ กันหลุดธีม
+ * ที่เพิ่มในนี้คือ ฟอนต์ เงา และไล่เฉดฟ้า (blue-500 → blue-600) ที่เจ้าของระบบอนุมัติ
+ */
+@theme {
+    --font-sans: var(--font-kanit), "Noto Sans Thai", system-ui, sans-serif;
+
+    --shadow-card: 0 1px 2px rgb(16 24 40 / 0.04), 0 4px 16px -8px rgb(16 24 40 / 0.08);
+    --shadow-float: 0 24px 48px -16px rgb(16 24 40 / 0.22), 0 4px 12px -4px rgb(16 24 40 / 0.08);
+    --shadow-brand: 0 8px 18px -8px rgb(37 99 235 / 0.6);
+}
+
+/* พื้นไล่เฉดฟ้าของปุ่มหลัก/เมนูที่เลือก/การ์ดต้อนรับ */
+@utility bg-brand-gradient {
+    background-image: linear-gradient(135deg, var(--color-blue-500), var(--color-blue-600));
+}
+
+/* ระบบมีแต่ธีมสว่าง — บอกเบราว์เซอร์ให้ช่องกรอก/แถบเลื่อนเป็นแบบสว่างเสมอ แม้เครื่องผู้ใช้ตั้งโหมดมืด */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+    color-scheme: light;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+    background: var(--color-gray-50);
+    color: var(--color-gray-700);
+    font-weight: 300;
+    -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+    letter-spacing: -0.01em;
+}
+
+/* ตัวเลขในตาราง/สรุปยอดเรียงหลักตรงกัน */
+.tabular-nums {
+    font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        transition-duration: 0s !important;
+        animation-duration: 0s !important;
+    }
 }

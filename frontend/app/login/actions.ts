@@ -28,10 +28,9 @@ export async function handleLogin(_prevState: State, formData: FormData): Promis
 
         const { user_role_id, user_id } = decodeToken(token);
 
-        const permRes = await fetch(
-            `${api}/auth/verifyPermission?user_role_id=${user_role_id}`,
-            { headers: { Authorization: `Bearer ${token}` } }
-        );
+        const permRes = await fetch(`${api}/auth/verifyPermission?user_role_id=${user_role_id}`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
 
         if (!permRes.ok) return { error: "ไม่สามารถตรวจสอบสิทธิ์ได้" };
 
@@ -56,18 +55,29 @@ function decodeToken(token: string): { user_role_id: number; user_id: number } {
     return JSON.parse(Buffer.from(payload, "base64").toString());
 }
 
-
 export async function getFullName(): Promise<string> {
     return (await getUserProfile()).fullname;
 }
 
 type UserProfile = {
-    fullname: string; avatarUrl: string | null; mustChangePassword: boolean; roleName: string;
-    username: string; needsEmail: boolean;
+    fullname: string;
+    avatarUrl: string | null;
+    mustChangePassword: boolean;
+    roleName: string;
+    username: string;
+    needsEmail: boolean;
+    // สิทธิ์ล่าสุดจาก backend ("" = ดึงไม่ได้ ให้ใช้ค่าที่จำไว้ตอน login แทน)
+    permission: string;
 };
 
 const EMPTY_PROFILE: UserProfile = {
-    fullname: "", avatarUrl: null, mustChangePassword: false, roleName: "", username: "", needsEmail: false,
+    fullname: "",
+    avatarUrl: null,
+    mustChangePassword: false,
+    roleName: "",
+    username: "",
+    needsEmail: false,
+    permission: "",
 };
 
 export async function getUserProfile(): Promise<UserProfile> {
@@ -94,14 +104,13 @@ export async function getUserProfile(): Promise<UserProfile> {
     const data = await res.json();
     const serverBase = new URL(api).origin;
     return {
-        fullname:  data.user_fullname ?? data.fullname ?? "",
+        fullname: data.user_fullname ?? data.fullname ?? "",
         avatarUrl: data.user_avatar_url ? `${serverBase}${data.user_avatar_url}` : null,
         mustChangePassword: !!data.user_must_change_password,
         roleName: data.role_name ?? "",
         username: data.user_username ?? "",
         // แอดมินสร้างบัญชีโดยไม่ใส่อีเมล → ต้องยืนยันอีเมลด้วย OTP ก่อนใช้งานระบบ (ขั้นที่ 2 ของ onboarding)
         needsEmail: !data.user_email,
+        permission: typeof data.role_permission === "string" ? data.role_permission : "",
     };
 }
-
-

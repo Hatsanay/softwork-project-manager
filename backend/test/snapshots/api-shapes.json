@@ -1,0 +1,1134 @@
+{
+    "health": {
+        "request": "GET /health",
+        "status": 200,
+        "body": {
+            "status": "string"
+        }
+    },
+    "verify permission": {
+        "request": "GET /V1/auth/verifyPermission",
+        "status": 200,
+        "body": {
+            "role_permission": "string"
+        }
+    },
+    "ดูโปรไฟล์ตัวเอง": {
+        "request": "GET /V1/users/me",
+        "status": 200,
+        "body": {
+            "role_name": "string",
+            "role_permission": "string",
+            "user_avatar_url": "null",
+            "user_email": "string",
+            "user_fname": "string",
+            "user_fullname": "string",
+            "user_id": "string",
+            "user_line_uid": "null",
+            "user_lname": "string",
+            "user_must_change_password": "number",
+            "user_phone": "null",
+            "user_username": "string",
+            "user_whatsapp_no": "null"
+        }
+    },
+    "แก้โปรไฟล์ตัวเอง": {
+        "request": "PUT /V1/users/me",
+        "status": 200,
+        "body": {
+            "message": "string"
+        }
+    },
+    "อัปโหลดรูปโปรไฟล์ตัวเอง": {
+        "request": "PUT /V1/users/me/image",
+        "status": 200,
+        "body": {
+            "user_avatar_url": "string"
+        }
+    },
+    "ขอ OTP อีเมล (ไม่มี SMTP)": {
+        "request": "POST /V1/users/me/email/otp",
+        "status": 503,
+        "body": {
+            "message": "string"
+        }
+    },
+    "ยืนยัน OTP ผิดรูปแบบ": {
+        "request": "POST /V1/users/me/email/verify",
+        "status": 400,
+        "body": {
+            "message": "string"
+        }
+    },
+    "สร้าง role": {
+        "request": "POST /V1/roles",
+        "status": 201,
+        "body": {
+            "role_id": "string"
+        }
+    },
+    "รายการ role": {
+        "request": "GET /V1/roles",
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "by_fullname": "string",
+                    "can_assign": "boolean",
+                    "role_department_name": "null",
+                    "role_granted_at": "string",
+                    "role_id": "string",
+                    "role_name": "string",
+                    "role_update_at": "string"
+                }
+            ],
+            "total": "number"
+        }
+    },
+    "ดู role": {
+        "request": "GET /V1/roles/:id",
+        "status": 200,
+        "body": {
+            "by_fullname": "string",
+            "can_edit": "boolean",
+            "is_system_role": "boolean",
+            "role_department": "null",
+            "role_department_name": "null",
+            "role_granted_at": "string",
+            "role_id": "string",
+            "role_name": "string",
+            "role_permission": "string",
+            "role_type": "string",
+            "role_update_at": "string",
+            "total_bits": "number"
+        }
+    },
+    "แก้ role": {
+        "request": "PUT /V1/roles/:id",
+        "status": 200,
+        "body": {
+            "message": "string"
+        }
+    },
+    "สร้างแผนก": {
+        "request": "POST /V1/departments",
+        "status": 201,
+        "body": {
+            "dep_id": "string",
+            "dep_name": "string"
+        }
+    },
+    "รายการแผนก": {
+        "request": "GET /V1/departments",
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "dep_created_at": "string",
+                    "dep_id": "string",
+                    "dep_name": "string",
+                    "dep_status": "string",
+                    "dep_updated_at": "string"
+                }
+            ],
+            "total": "number"
+        }
+    },
+    "ดูแผนก": {
+        "request": "GET /V1/departments/:id",
+        "status": 200,
+        "body": {
+            "dep_created_at": "string",
+            "dep_id": "string",
+            "dep_name": "string",
+            "dep_status": "string",
+            "dep_updated_at": "string"
+        }
+    },
+    "แก้แผนก": {
+        "request": "PUT /V1/departments/:id",
+        "status": 200,
+        "body": {
+            "message": "string"
+        }
+    },
+    "สร้างตำแหน่ง": {
+        "request": "POST /V1/project-positions",
+        "status": 201,
+        "body": {
+            "position_id": "string"
+        }
+    },
+    "รายการตำแหน่ง": {
+        "request": "GET /V1/project-positions",
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "position_created_at": "string",
+                    "position_id": "string",
+                    "position_name": "string",
+                    "position_permission": "string",
+                    "position_status": "string",
+                    "position_updated_at": "string"
+                }
+            ],
+            "total": "number"
+        }
+    },
+    "ดูตำแหน่ง": {
+        "request": "GET /V1/project-positions/:id",
+        "status": 200,
+        "body": {
+            "position_created_at": "string",
+            "position_id": "string",
+            "position_name": "string",
+            "position_permission": "string",
+            "position_status": "string",
+            "position_updated_at": "string"
+        }
+    },
+    "แก้ตำแหน่ง": {
+        "request": "PUT /V1/project-positions/:id",
+        "status": 200,
+        "body": {
+            "message": "string"
+        }
+    },
+    "สร้างผู้ใช้": {
+        "request": "POST /V1/users",
+        "status": 201,
+        "body": {
+            "temp_password": "string",
+            "user_email": "null",
+            "user_id": "string",
+            "user_username": "string"
+        }
+    },
+    "รายชื่อผู้ใช้สำหรับเลือก": {
+        "request": "GET /V1/users/for-select",
+        "status": 200,
+        "body": [
+            {
+                "user_fullname": "string",
+                "user_id": "string"
+            }
+        ]
+    },
+    "รายการผู้ใช้": {
+        "request": "GET /V1/users",
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "by_fullname": "string",
+                    "can_manage": "boolean",
+                    "role_name": "string",
+                    "role_type": "string",
+                    "user_avatar_url": "null",
+                    "user_created_at": "string",
+                    "user_email": "null",
+                    "user_id": "string",
+                    "user_phone": "null",
+                    "user_status": "string",
+                    "user_updated_at": "string",
+                    "user_username": "string"
+                }
+            ],
+            "total": "number"
+        }
+    },
+    "ดูผู้ใช้": {
+        "request": "GET /V1/users/:id",
+        "status": 200,
+        "body": {
+            "can_manage": "boolean",
+            "is_self": "boolean",
+            "role_name": "string",
+            "user_avatar_url": "null",
+            "user_branch_id": "null",
+            "user_created_at": "string",
+            "user_email": "null",
+            "user_fname": "string",
+            "user_fullname": "string",
+            "user_id": "string",
+            "user_last_login_at": "null",
+            "user_line_uid": "null",
+            "user_lname": "string",
+            "user_must_change_password": "number",
+            "user_phone": "null",
+            "user_role_id": "string",
+            "user_status": "string",
+            "user_updated_at": "string",
+            "user_username": "string",
+            "user_whatsapp_no": "null"
+        }
+    },
+    "แก้ผู้ใช้": {
+        "request": "PUT /V1/users/:id",
+        "status": 200,
+        "body": {
+            "message": "string"
+        }
+    },
+    "รีเซ็ตรหัสผ่านผู้ใช้": {
+        "request": "PUT /V1/users/:id/reset-password",
+        "status": 200,
+        "body": {
+            "temp_password": "string"
+        }
+    },
+    "อัปโหลดรูปผู้ใช้": {
+        "request": "PUT /V1/users/:id/image",
+        "status": 200,
+        "body": {
+            "user_avatar_url": "string"
+        }
+    },
+    "สร้างผู้ใช้ที่จะลบ": {
+        "request": "POST /V1/users",
+        "status": 201,
+        "body": {
+            "temp_password": "string",
+            "user_email": "null",
+            "user_id": "string",
+            "user_username": "string"
+        }
+    },
+    "ลบผู้ใช้ที่ไม่เคยใช้งาน": {
+        "request": "DELETE /V1/users/:id",
+        "status": 204,
+        "body": "null"
+    },
+    "สร้างลูกค้า": {
+        "request": "POST /V1/clients",
+        "status": 201,
+        "body": {
+            "client_id": "string",
+            "client_name": "string"
+        }
+    },
+    "รายการลูกค้า": {
+        "request": "GET /V1/clients",
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "client_address": "null",
+                    "client_branch_code": "null",
+                    "client_company": "string",
+                    "client_contact_name": "null",
+                    "client_country": "string",
+                    "client_created_at": "string",
+                    "client_credit_days": "null",
+                    "client_currency": "string",
+                    "client_email": "string",
+                    "client_id": "string",
+                    "client_language": "string",
+                    "client_name": "string",
+                    "client_phone": "string",
+                    "client_status": "string",
+                    "client_tax_id": "null",
+                    "client_type": "string",
+                    "client_updated_at": "string",
+                    "client_vat_treatment": "string",
+                    "client_wht_rate": "null"
+                }
+            ],
+            "total": "number"
+        }
+    },
+    "ดูลูกค้า": {
+        "request": "GET /V1/clients/:id",
+        "status": 200,
+        "body": {
+            "client_address": "null",
+            "client_branch_code": "null",
+            "client_company": "string",
+            "client_contact_name": "null",
+            "client_country": "string",
+            "client_created_at": "string",
+            "client_credit_days": "null",
+            "client_currency": "string",
+            "client_email": "string",
+            "client_id": "string",
+            "client_language": "string",
+            "client_name": "string",
+            "client_phone": "string",
+            "client_status": "string",
+            "client_tax_id": "null",
+            "client_type": "string",
+            "client_updated_at": "string",
+            "client_vat_treatment": "string",
+            "client_wht_rate": "null"
+        }
+    },
+    "แก้ลูกค้า": {
+        "request": "PUT /V1/clients/:id",
+        "status": 200,
+        "body": {
+            "message": "string"
+        }
+    },
+    "สร้างโปรเจกต์": {
+        "request": "POST /V1/projects",
+        "status": 201,
+        "body": {
+            "project_id": "string",
+            "project_share_token": "string"
+        }
+    },
+    "รายการโปรเจกต์": {
+        "request": "GET /V1/projects",
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "client_name": "string",
+                    "member_count": "number",
+                    "project_due_date": "string",
+                    "project_id": "string",
+                    "project_name": "string",
+                    "project_progress_percent": "string",
+                    "project_start_date": "string",
+                    "project_status": "string",
+                    "project_type": "string"
+                }
+            ],
+            "total": "number"
+        }
+    },
+    "ดูโปรเจกต์": {
+        "request": "GET /V1/projects/:id",
+        "status": 200,
+        "body": {
+            "client_company": "string",
+            "client_email": "string",
+            "client_id": "string",
+            "client_name": "string",
+            "client_phone": "string",
+            "project_completed_at": "null",
+            "project_created_at": "string",
+            "project_created_by": "string",
+            "project_description": "null",
+            "project_due_date": "string",
+            "project_id": "string",
+            "project_name": "string",
+            "project_progress_percent": "string",
+            "project_share_enabled": "number",
+            "project_share_token": "string",
+            "project_start_date": "string",
+            "project_status": "string",
+            "project_type": "string",
+            "project_updated_at": "string",
+            "project_use_task_weight": "number",
+            "unread_chat_count": "number"
+        }
+    },
+    "สิทธิ์ของฉันในโปรเจกต์": {
+        "request": "GET /V1/projects/:id/my-permissions",
+        "status": 200,
+        "body": {
+            "position_permission": "string"
+        }
+    },
+    "แก้โปรเจกต์": {
+        "request": "PUT /V1/projects/:id",
+        "status": 200,
+        "body": {
+            "message": "string"
+        }
+    },
+    "เปิดลิงก์ลูกค้า": {
+        "request": "PUT /V1/projects/:id/share/:token",
+        "status": 200,
+        "body": {
+            "message": "string"
+        }
+    },
+    "สร้างลิงก์ลูกค้าใหม่": {
+        "request": "PUT /V1/projects/:id/share/:token",
+        "status": 200,
+        "body": {
+            "project_share_token": "string"
+        }
+    },
+    "ส่งลิงก์ลูกค้าทางอีเมล (ไม่มี SMTP)": {
+        "request": "POST /V1/projects/:id/share/:token",
+        "status": 503,
+        "body": {
+            "message": "string"
+        }
+    },
+    "เปิดใช้น้ำหนักงาน": {
+        "request": "PUT /V1/projects/:id/task-weight/toggle",
+        "status": 200,
+        "body": {
+            "message": "string"
+        }
+    },
+    "ยกเลิกโปรเจกต์": {
+        "request": "PUT /V1/projects/:id/cancel",
+        "status": 200,
+        "body": {
+            "message": "string"
+        }
+    },
+    "กู้คืนโปรเจกต์": {
+        "request": "PUT /V1/projects/:id/reactivate",
+        "status": 200,
+        "body": {
+            "message": "string"
+        }
+    },
+    "เพิ่มสมาชิก": {
+        "request": "POST /V1/projects/:id/members",
+        "status": 201,
+        "body": {
+            "project_member_id": "string"
+        }
+    },
+    "รายชื่อสมาชิก": {
+        "request": "GET /V1/projects/:id/members",
+        "status": 200,
+        "body": [
+            {
+                "positions": [
+                    {
+                        "position_id": "string",
+                        "position_name": "string",
+                        "project_member_id": "string"
+                    }
+                ],
+                "project_member_id": "string",
+                "user_avatar_url": "string",
+                "user_fname": "string",
+                "user_fullname": "string",
+                "user_id": "string",
+                "user_lname": "string"
+            }
+        ]
+    },
+    "แก้ตำแหน่งสมาชิก": {
+        "request": "PUT /V1/projects/:id/members/:id",
+        "status": 200,
+        "body": {
+            "message": "string"
+        }
+    },
+    "สร้างงาน": {
+        "request": "POST /V1/projects/:id/tasks",
+        "status": 201,
+        "body": {
+            "task_id": "string"
+        }
+    },
+    "สร้างงานย่อย": {
+        "request": "POST /V1/projects/:id/tasks",
+        "status": 201,
+        "body": {
+            "task_id": "string"
+        }
+    },
+    "สร้างงานที่ยังไม่มีคนรับ": {
+        "request": "POST /V1/projects/:id/tasks",
+        "status": 201,
+        "body": {
+            "task_id": "string"
+        }
+    },
+    "รายการงาน": {
+        "request": "GET /V1/projects/:id/tasks",
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "assignees": [
+                        "object"
+                    ],
+                    "open_issue_count": "number",
+                    "project_id": "string",
+                    "subtask_open_issue_count": "number",
+                    "task_completed_at": "null",
+                    "task_created_at": "string",
+                    "task_due_date": "string",
+                    "task_id": "string",
+                    "task_parent_id": "null",
+                    "task_sort_order": "number",
+                    "task_start_date": "string",
+                    "task_status": "string",
+                    "task_title": "string",
+                    "task_updated_at": "string",
+                    "task_weight": "number",
+                    "unread_chat_count": "number"
+                }
+            ]
+        }
+    },
+    "ดูงาน": {
+        "request": "GET /V1/projects/:id/tasks/:id",
+        "status": 200,
+        "body": {
+            "assignees": [
+                {
+                    "user_fullname": "string",
+                    "user_id": "string"
+                }
+            ],
+            "project_id": "string",
+            "task_completed_at": "null",
+            "task_created_at": "string",
+            "task_description": "string",
+            "task_due_date": "string",
+            "task_id": "string",
+            "task_parent_id": "null",
+            "task_quotation_item_id": "null",
+            "task_sort_order": "number",
+            "task_start_date": "string",
+            "task_status": "string",
+            "task_title": "string",
+            "task_updated_at": "string",
+            "task_weight": "number"
+        }
+    },
+    "แก้งาน": {
+        "request": "PUT /V1/projects/:id/tasks/:id",
+        "status": 200,
+        "body": {
+            "message": "string"
+        }
+    },
+    "เปลี่ยนสถานะงาน": {
+        "request": "PUT /V1/projects/:id/tasks/:id/status",
+        "status": 200,
+        "body": {
+            "message": "string"
+        }
+    },
+    "กดรับงาน (agile)": {
+        "request": "POST /V1/projects/:id/tasks/:id/claim",
+        "status": 200,
+        "body": {
+            "message": "string"
+        }
+    },
+    "ประวัติกิจกรรมของโปรเจกต์": {
+        "request": "GET /V1/projects/:id/activity",
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "log_action": "string",
+                    "log_created_at": "string",
+                    "log_fullname": "string",
+                    "log_id": "string",
+                    "log_message": "string",
+                    "log_new_value": "null",
+                    "log_old_value": "null",
+                    "task_id": "string",
+                    "task_title": "string"
+                }
+            ]
+        }
+    },
+    "แจ้งปัญหา": {
+        "request": "POST /V1/projects/:id/tasks/:id/issues",
+        "status": 201,
+        "body": {
+            "issue_id": "string"
+        }
+    },
+    "รายการปัญหาของงาน": {
+        "request": "GET /V1/projects/:id/tasks/:id/issues",
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "created_by": "string",
+                    "created_by_name": "string",
+                    "images": [
+                        "object"
+                    ],
+                    "issue_created_at": "string",
+                    "issue_description": "string",
+                    "issue_id": "string",
+                    "issue_status": "string",
+                    "issue_title": "string",
+                    "issue_updated_at": "string",
+                    "tags": [
+                        "object"
+                    ],
+                    "task_id": "string"
+                }
+            ]
+        }
+    },
+    "แก้ปัญหา": {
+        "request": "PUT /V1/projects/:id/issues/:id",
+        "status": 200,
+        "body": {
+            "message": "string"
+        }
+    },
+    "ตอบกลับปัญหา": {
+        "request": "POST /V1/projects/:id/issues/:id/replies",
+        "status": 201,
+        "body": {
+            "reply_id": "string"
+        }
+    },
+    "รายการคำตอบของปัญหา": {
+        "request": "GET /V1/projects/:id/issues/:id/replies",
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "images": [
+                        "object"
+                    ],
+                    "issue_id": "string",
+                    "reply_created_at": "string",
+                    "reply_id": "string",
+                    "reply_text": "string",
+                    "user_avatar_url": "string",
+                    "user_fullname": "string",
+                    "user_id": "string"
+                }
+            ]
+        }
+    },
+    "คำตอบของทุกปัญหาในงาน": {
+        "request": "GET /V1/projects/:id/tasks/:id/issues/replies",
+        "status": 200,
+        "body": {
+            "data": {
+                "ISS202610130000001": [
+                    {
+                        "images": [
+                            "object"
+                        ],
+                        "issue_id": "string",
+                        "reply_created_at": "string",
+                        "reply_id": "string",
+                        "reply_text": "string",
+                        "user_avatar_url": "string",
+                        "user_fullname": "string",
+                        "user_id": "string"
+                    }
+                ]
+            }
+        }
+    },
+    "ปิดปัญหา": {
+        "request": "PUT /V1/projects/:id/issues/:id/status",
+        "status": 200,
+        "body": {
+            "message": "string"
+        }
+    },
+    "ส่งแชทในงาน": {
+        "request": "POST /V1/projects/:id/tasks/:id/chat",
+        "status": 201,
+        "body": {
+            "message_id": "string"
+        }
+    },
+    "อ่านแชทในงาน": {
+        "request": "GET /V1/projects/:id/tasks/:id/chat",
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "images": [
+                        "object"
+                    ],
+                    "message_created_at": "string",
+                    "message_id": "string",
+                    "message_text": "string",
+                    "reply_to_image_count": "number",
+                    "reply_to_message_id": "null",
+                    "reply_to_text": "null",
+                    "reply_to_user_fullname": "null",
+                    "task_id": "string",
+                    "user_avatar_url": "string",
+                    "user_fullname": "string",
+                    "user_id": "string"
+                }
+            ]
+        }
+    },
+    "ส่งแชทโปรเจกต์": {
+        "request": "POST /V1/projects/:id/chat",
+        "status": 201,
+        "body": {
+            "message_id": "string"
+        }
+    },
+    "อ่านแชทโปรเจกต์": {
+        "request": "GET /V1/projects/:id/chat",
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "images": [
+                        "object"
+                    ],
+                    "message_created_at": "string",
+                    "message_id": "string",
+                    "message_text": "string",
+                    "project_id": "string",
+                    "reply_to_image_count": "number",
+                    "reply_to_message_id": "null",
+                    "reply_to_text": "null",
+                    "reply_to_user_fullname": "null",
+                    "user_avatar_url": "string",
+                    "user_fullname": "string",
+                    "user_id": "string"
+                }
+            ]
+        }
+    },
+    "แดชบอร์ด: สรุป": {
+        "request": "GET /V1/dashboard/summary",
+        "status": 200,
+        "body": {
+            "activeProjectCount": "number",
+            "canViewTeamWorkload": "boolean",
+            "hasProjectAccess": "boolean",
+            "myTasks": [
+                {
+                    "project_id": "string",
+                    "project_name": "string",
+                    "task_due_date": "null",
+                    "task_id": "string",
+                    "task_parent_id": "null",
+                    "task_status": "string",
+                    "task_title": "string"
+                }
+            ],
+            "openIssueCount": "number",
+            "openIssueCountOwnOnly": "number",
+            "openIssues": [],
+            "projects": [
+                {
+                    "project_due_date": "string",
+                    "project_id": "string",
+                    "project_name": "string",
+                    "project_progress_percent": "string",
+                    "project_status": "string"
+                }
+            ],
+            "recentActivity": [
+                {
+                    "log_action": "string",
+                    "log_created_at": "string",
+                    "log_fullname": "string",
+                    "log_id": "string",
+                    "log_new_value": "null",
+                    "log_old_value": "null",
+                    "project_id": "string",
+                    "project_name": "string",
+                    "task_id": "string",
+                    "task_title": "string"
+                }
+            ],
+            "unreadChatCount": "number",
+            "unreadChats": []
+        }
+    },
+    "แดชบอร์ด: ค้นหา": {
+        "request": "GET /V1/dashboard/search?q=%E0%B8%97%E0%B8%94%E0%B8%AA%E0%B8%AD%E0%B8%9A",
+        "status": 200,
+        "body": {
+            "projects": [
+                {
+                    "project_id": "string",
+                    "project_name": "string",
+                    "project_status": "string"
+                }
+            ],
+            "tasks": [
+                {
+                    "project_id": "string",
+                    "project_name": "string",
+                    "task_id": "string",
+                    "task_parent_id": "null",
+                    "task_title": "string"
+                }
+            ]
+        }
+    },
+    "แดชบอร์ด: ภาระงานทีม": {
+        "request": "GET /V1/dashboard/team-workload",
+        "status": 200,
+        "body": {
+            "projectOptions": [
+                {
+                    "project_id": "string",
+                    "project_name": "string"
+                }
+            ],
+            "teamWorkload": [
+                {
+                    "done_task_count": "number",
+                    "overdue_task_count": "number",
+                    "pending_task_count": "number",
+                    "user_avatar_url": "string",
+                    "user_fullname": "string",
+                    "user_id": "string"
+                }
+            ]
+        }
+    },
+    "แดชบอร์ด: KPI ของฉัน": {
+        "request": "GET /V1/dashboard/kpis?month=2026-01",
+        "status": 200,
+        "body": {
+            "avgIssueResolveHours": "null",
+            "avgTaskCycleHours": "null",
+            "period": "string",
+            "projectOnTimeEligible": "number",
+            "projectOnTimeRate": "null",
+            "projectType": "string",
+            "taskOnTimeEligible": "number",
+            "taskOnTimeRate": "null",
+            "taskType": "string"
+        }
+    },
+    "แดชบอร์ด: KPI รายคน": {
+        "request": "GET /V1/dashboard/kpis/by-member?month=2026-01",
+        "status": 200,
+        "body": {
+            "members": [],
+            "period": "string",
+            "projectOptions": [
+                {
+                    "project_id": "string",
+                    "project_name": "string"
+                }
+            ],
+            "projectType": "string",
+            "taskType": "string"
+        }
+    },
+    "แดชบอร์ด: งานของสมาชิก": {
+        "request": "GET /V1/dashboard/team/:id/tasks",
+        "status": 200,
+        "body": {
+            "done": [],
+            "overdue": [],
+            "pending": [
+                {
+                    "project_id": "string",
+                    "project_name": "string",
+                    "task_due_date": "null",
+                    "task_id": "string",
+                    "task_parent_id": "null",
+                    "task_status": "string",
+                    "task_title": "string"
+                }
+            ],
+            "user_fullname": "string"
+        }
+    },
+    "log เข้าสู่ระบบ": {
+        "request": "GET /V1/logs",
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "by_fullname": "string",
+                    "log_action": "string",
+                    "log_created_at": "string",
+                    "log_email": "string",
+                    "log_id": "string",
+                    "log_ip_address": "string",
+                    "log_user_agent": "string"
+                }
+            ],
+            "total": "number"
+        }
+    },
+    "audit log": {
+        "request": "GET /V1/audit-logs",
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "aud_action": "string",
+                    "aud_created_at": "string",
+                    "aud_duration_ms": "number",
+                    "aud_entity_id": "string",
+                    "aud_entity_type": "string",
+                    "aud_error": "null",
+                    "aud_event": "string",
+                    "aud_id": "number",
+                    "aud_ip": "string",
+                    "aud_method": "string",
+                    "aud_path": "string",
+                    "aud_project_id": "string",
+                    "aud_request_id": "string",
+                    "aud_role_name": "string",
+                    "aud_status": "number",
+                    "aud_success": "boolean",
+                    "aud_user_fullname": "string",
+                    "aud_user_id": "string",
+                    "aud_user_username": "string",
+                    "has_changes": "boolean"
+                }
+            ],
+            "total": "number"
+        }
+    },
+    "ดู audit log": {
+        "request": "GET /V1/audit-logs/:id",
+        "status": 200,
+        "body": {
+            "aud_action": "string",
+            "aud_changes": {
+                "message_created_at": {
+                    "from": "null",
+                    "to": "string"
+                },
+                "message_id": {
+                    "from": "null",
+                    "to": "string"
+                },
+                "message_text": {
+                    "from": "null",
+                    "to": "string"
+                },
+                "project_id": {
+                    "from": "null",
+                    "to": "string"
+                },
+                "user_id": {
+                    "from": "null",
+                    "to": "string"
+                }
+            },
+            "aud_created_at": "string",
+            "aud_duration_ms": "number",
+            "aud_entity_id": "string",
+            "aud_entity_type": "string",
+            "aud_error": "null",
+            "aud_event": "string",
+            "aud_id": "number",
+            "aud_ip": "string",
+            "aud_method": "string",
+            "aud_path": "string",
+            "aud_payload": {
+                "__files": [
+                    {
+                        "name": "string",
+                        "size": "number",
+                        "type": "string"
+                    }
+                ],
+                "message_text": "string"
+            },
+            "aud_project_id": "string",
+            "aud_request_id": "string",
+            "aud_role_name": "string",
+            "aud_status": "number",
+            "aud_success": "boolean",
+            "aud_user_agent": "string",
+            "aud_user_fullname": "string",
+            "aud_user_id": "string",
+            "aud_user_username": "string"
+        }
+    },
+    "error log": {
+        "request": "GET /V1/error-logs",
+        "status": 200,
+        "body": {
+            "data": [],
+            "total": "number"
+        }
+    },
+    "ลิงก์ลูกค้า (ไม่ต้อง login)": {
+        "request": "GET /V1/share/:token",
+        "status": 200,
+        "body": {
+            "project": {
+                "client_name": "string",
+                "project_description": "null",
+                "project_due_date": "string",
+                "project_id": "string",
+                "project_name": "string",
+                "project_progress_percent": "string",
+                "project_start_date": "string",
+                "project_status": "string"
+            },
+            "tasks": [
+                {
+                    "assignee_names": "string",
+                    "task_completed_at": "null",
+                    "task_due_date": "null",
+                    "task_id": "string",
+                    "task_start_date": "null",
+                    "task_status": "string",
+                    "task_title": "string"
+                }
+            ],
+            "timeline": [
+                {
+                    "log_action": "string",
+                    "log_created_at": "string",
+                    "log_id": "string",
+                    "log_message": "null",
+                    "log_new_value": "string",
+                    "log_old_value": "string",
+                    "task_title": "string"
+                }
+            ]
+        }
+    },
+    "ลบปัญหา": {
+        "request": "DELETE /V1/projects/:id/issues/:id",
+        "status": 204,
+        "body": "null"
+    },
+    "ลบงานย่อย": {
+        "request": "DELETE /V1/projects/:id/tasks/:id",
+        "status": 204,
+        "body": "null"
+    },
+    "ลบสมาชิก": {
+        "request": "DELETE /V1/projects/:id/members/:id",
+        "status": 204,
+        "body": "null"
+    },
+    "ลบโปรเจกต์": {
+        "request": "DELETE /V1/projects/:id",
+        "status": 204,
+        "body": "null"
+    },
+    "ลบลูกค้า": {
+        "request": "DELETE /V1/clients/:id",
+        "status": 204,
+        "body": "null"
+    },
+    "ลบตำแหน่ง": {
+        "request": "DELETE /V1/project-positions/:id",
+        "status": 204,
+        "body": "null"
+    },
+    "ลบแผนก": {
+        "request": "DELETE /V1/departments/:id",
+        "status": 204,
+        "body": "null"
+    },
+    "ลบ role": {
+        "request": "DELETE /V1/roles/:id",
+        "status": 204,
+        "body": "null"
+    },
+    "ออกจากระบบ": {
+        "request": "POST /V1/auth/logout",
+        "status": 200,
+        "body": {
+            "message": "string"
+        }
+    }
+}

@@ -35,9 +35,23 @@ CREATE TABLE tb_clients (
   client_company    VARCHAR(150) NULL,
   client_email      VARCHAR(255) NULL,
   client_phone      VARCHAR(20)  NULL,
+  -- วงจรขาย 1A (2026-10-13) — FK สกุลเงินอยู่ใน create_sales.sql
+  client_type          ENUM('juristic','individual') NOT NULL DEFAULT 'juristic',
+  client_country       CHAR(2)      NOT NULL DEFAULT 'TH' COMMENT 'ISO 3166 — เลขผู้เสียภาษีบังคับ 13 หลักเฉพาะ TH',
+  client_tax_id        VARCHAR(30)  NULL,
+  client_branch_code   VARCHAR(5)   NULL COMMENT '00000 = สำนักงานใหญ่',
+  client_address       TEXT         NULL COMMENT 'ที่อยู่สำหรับออกเอกสาร',
+  client_contact_name  VARCHAR(100) NULL,
+  client_credit_days   INT          NULL,
+  client_wht_rate      DECIMAL(5,2) NULL,
+  client_currency      CHAR(3)      NOT NULL DEFAULT 'THB',
+  client_language      ENUM('th','en') NOT NULL DEFAULT 'th',
+  client_vat_treatment ENUM('standard','zero') NOT NULL DEFAULT 'standard',
+  client_status        ENUM('active','inactive') NOT NULL DEFAULT 'active',
   client_created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   client_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (client_id)
+  PRIMARY KEY (client_id),
+  KEY fk_client_currency (client_currency)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ─── 3) โปรเจกต์ (project) ──────────────────────────────────────────────────────
@@ -110,6 +124,7 @@ CREATE TABLE tb_tasks (
   task_completed_at DATETIME NULL,
   task_weight      INT NOT NULL DEFAULT 1,
   task_sort_order  INT NOT NULL DEFAULT 0,
+  task_quotation_item_id BIGINT UNSIGNED NULL COMMENT 'สร้างจากรายการไหนของใบเสนอราคา (FK ใน create_sales.sql)',
   task_created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
   task_updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (task_id),
@@ -118,6 +133,7 @@ CREATE TABLE tb_tasks (
   -- KPI ใน dashboard.controller.js กรอง/เทียบช่วงวันที่บนสองคอลัมน์นี้แทบทุก query (due date cohort, cycle time ตาม completed_at)
   KEY idx_task_due_date (task_due_date),
   KEY idx_task_status_completed (task_status, task_completed_at),
+  KEY fk_task_quotation_item (task_quotation_item_id),
   CONSTRAINT fk_task_project  FOREIGN KEY (project_id) REFERENCES tb_projects(project_id) ON DELETE CASCADE,
   CONSTRAINT fk_task_parent   FOREIGN KEY (task_parent_id) REFERENCES tb_tasks(task_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

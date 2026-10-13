@@ -224,7 +224,7 @@ test("ผู้ใช้ที่ยังไม่ได้เปลี่ย�
 
 // ── R24: role ระบบได้สิทธิ์ครบเสมอ ─────────────────────────────────────────────
 test("role ระบบยังได้สิทธิ์ครบทุกข้อ แม้สิทธิ์ที่เก็บในฐานข้อมูลถูกล้างเป็น 0 ทั้งหมด", async () => {
-    await pool.query("UPDATE tb_roles SET role_permission = REPEAT('0', 27) WHERE role_id = ?", [SEED_ADMIN_ROLE_ID]);
+    await pool.query("UPDATE tb_roles SET role_permission = REPEAT('0', ?) WHERE role_id = ?", [PERMISSION_KEYS.length, SEED_ADMIN_ROLE_ID]);
 
     const usersPage = await callApi("GET", "/users");
     assert.equal(usersPage.status, 200);

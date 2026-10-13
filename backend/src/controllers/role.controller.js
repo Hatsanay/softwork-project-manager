@@ -189,6 +189,19 @@ async function remove(req, res, next) {
             });
         }
 
+        // role ที่เป็นผู้อนุมัติในกติกาอนุมัติ — ลบแล้วชั้นนั้นอาจไม่มีใครอนุมัติได้ ใบค้าง (2026-10-13, risk R6)
+        const [approvalLevels] = await pool.query(
+            "SELECT alr_level FROM tb_approval_level_roles WHERE alr_role_id = ? ORDER BY alr_level",
+            [req.params.id]
+        );
+        if (approvalLevels.length > 0) {
+            const levelNames = approvalLevels.map((row) => `ชั้น ${row.alr_level}`).join(", ");
+            return res.status(409).json({
+                code: "ROLE_IN_APPROVAL_RULES",
+                message: `ลบสิทธิ์นี้ไม่ได้ เพราะเป็นผู้อนุมัติใบเสนอราคา (${levelNames}) เอาออกจากกติกาก่อนที่ ตั้งค่าระบบ › ข้อมูลบริษัท › การอนุมัติ แล้วค่อยลบ`,
+            });
+        }
+
         await pool.query("DELETE FROM tb_roles WHERE role_id = ?", [req.params.id]);
         res.status(204).end();
     } catch (err) {

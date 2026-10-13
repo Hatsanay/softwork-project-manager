@@ -1,5 +1,6 @@
 "use client";
 
+import StatusPill from "@/components/ui/status-pill";
 import { useEffect, useState, useTransition } from "react";
 import { X } from "lucide-react";
 import DataTable, { Column } from "@/components/ui/datatable/datatable";
@@ -178,9 +179,15 @@ export default function AuditLogTab() {
         },
         {
             key: "aud_success", header: "ผลลัพธ์",
+            // เหตุผลที่ไม่สำเร็จแสดงบนหน้าเลย (ระบบไม่ใช้ tooltip) — ข้อความยาวตัดที่ 2 บรรทัด ดูเต็มได้ในรายละเอียด
             render: (_, r) => r.aud_success
-                ? <span className="text-green-700">สำเร็จ</span>
-                : <span className="text-red-600" title={r.aud_error ?? undefined}>ไม่สำเร็จ ({r.aud_status})</span>,
+                ? <StatusPill tone="success">สำเร็จ</StatusPill>
+                : (
+                    <div className="grid max-w-xs gap-1">
+                        <StatusPill tone="danger">ไม่สำเร็จ ({r.aud_status})</StatusPill>
+                        {r.aud_error && <span className="line-clamp-2 text-xs text-red-600">{r.aud_error}</span>}
+                    </div>
+                ),
         },
         { key: "aud_ip", header: "IP", render: (v) => (v as string) || "-" },
     ];

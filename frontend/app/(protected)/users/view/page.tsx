@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/app/constans";
 import formatDate from "@/app/function";
 import Image from "next/image";
+import PageHeader from "@/components/ui/page-header";
+import { buttonClass } from "@/components/ui/button";
 
 async function fetchUser(id: string) {
     const res = await window.fetch(`${api}/users/${id}`, {
@@ -49,10 +51,14 @@ export default function ViewUserPage() {
     const avatarUrl = user.user_avatar_url ? `${SERVER_BASE}${user.user_avatar_url}` : "/defult.png";
 
     return (
-        <div className="p-4 sm:p-6 max-w-2xl mx-auto">
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-800 mb-6">ข้อมูลผู้ใช้งาน</h1>
+        <div className="mx-auto grid max-w-3xl gap-6">
+            <PageHeader
+                eyebrow="จัดการข้อมูลผู้ใช้งาน"
+                title="ข้อมูลผู้ใช้งาน"
+                description="ดูข้อมูลอย่างเดียว · แก้ไขได้จากหน้ารายการผู้ใช้ถ้ามีสิทธิ์แก้ไข"
+            />
 
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-6">
+            <div className="space-y-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-card sm:p-6">
 
                 {/* Avatar + name header */}
                 <div className="flex items-center gap-4">
@@ -94,7 +100,7 @@ export default function ViewUserPage() {
                 <div className="flex justify-end">
                     <button
                         onClick={() => router.push("/users")}
-                        className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+                        className={buttonClass("secondary", "md")}
                     >
                         ย้อนกลับ
                     </button>

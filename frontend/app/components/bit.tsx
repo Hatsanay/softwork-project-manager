@@ -7,7 +7,7 @@ export type MenuItem = {
 };
 
 // ─── Sidebar menu structure ───────────────────────────────────────────────────
-// Leaf order here = bitmask positions. Must stay in sync with PERMISSION_GROUPS below.
+// แต่ละเมนูผูกกับบิตสิทธิ์ด้วย key (ไม่ใช่ลำดับ) — key ต้องมีอยู่ใน PERMISSION_GROUPS (backend/test/permission-order.test.js คุม)
 export const MENU_DEFS: MenuItem[] = [
     { key: "dashboard", label: "Dashboard", href: "/dashboard" },
     {
@@ -46,11 +46,19 @@ export const MENU_DEFS: MenuItem[] = [
             { key: "createProjectPosition",     label: "สร้างตำแหน่ง",     href: "/settings/project-positions/create", hidden: true },
             { key: "editProjectPosition",       label: "แก้ไขตำแหน่ง",     href: "/settings/project-positions/edit",   hidden: true },
             { key: "deleteProjectPosition",     label: "ลบตำแหน่ง",       href: "/settings/project-positions/delete", hidden: true },
+            { key: "companySettings", label: "ข้อมูลบริษัท", href: "/settings/company" },
             // loginLogs อยู่ล่างสุดเสมอ — ห้ามแทรกกลาง ตำแหน่ง bit ผูกกับ role_permission ที่เก็บไว้ใน DB แล้ว
             { key: "loginLogs",      label: "Log ข้อมูล",   href: "/settings/logs" },
         ],
     },
     // เพิ่มบิตใหม่ต่อท้ายสุดของลำดับทั้งหมดเสมอ (append-only) ห้ามแทรกก่อนหน้านี้ ไม่งั้น role_permission เดิมในฐานข้อมูลจะเพี้ยน
+    // (ลำดับเมนูในแถบข้างไม่เกี่ยวกับลำดับบิต — เมนูผูกกับบิตด้วย key)
+    {
+        key: "sales",
+        label: "ขาย",
+        href: "/sales",
+        children: [{ key: "productManagement", label: "สินค้า/บริการ", href: "/sales/products" }],
+    },
     {
         key: "clientManagement", label: "จัดการลูกค้า", href: "/clients",
         children: [
@@ -63,7 +71,7 @@ export const MENU_DEFS: MenuItem[] = [
 ];
 
 // ─── Permission groups (used by create/edit role page) ────────────────────────
-// Each group's bits must match the leaf order in MENU_DEFS exactly.
+// ลำดับบิตเรียงตาม PERMISSION_KEYS ใน backend/src/shared/permissions.mjs เป๊ะ (backend/test/permission-order.test.js คุม)
 export type PermGroup = {
     groupLabel: string;
     bits: MenuItem[];
@@ -129,6 +137,19 @@ export const PERMISSION_GROUPS: PermGroup[] = [
             { key: "viewMemberKpi", label: "ดู KPI รายคน บนแดชบอร์ด", href: "/dashboard" },
         ],
     },
+    {
+        groupLabel: "ข้อมูลบริษัท",
+        bits: [
+            { key: "companySettings", label: "ตั้งค่าบริษัท (ข้อมูลบริษัท, VAT, สาขา, บัญชีธนาคาร, สกุลเงิน, กติกาอนุมัติ)", href: "/settings/company" },
+        ],
+    },
+    // วงจรขาย — บิตใบเสนอราคาจะต่อท้ายกลุ่มนี้ในขั้น 1A-3
+    {
+        groupLabel: "ขาย",
+        bits: [
+            { key: "productManagement", label: "จัดการสินค้า/บริการ (เพิ่ม/แก้/ลบ/ปิดใช้งาน สินค้า หมวดหมู่ และชุดรายการ)", href: "/sales/products" },
+        ],
+    },
 ];
 
 // Start index (in flat bitmask) for each group
@@ -149,10 +170,51 @@ export function getLeaves(items: MenuItem[]): MenuItem[] {
     return items.flatMap((item) => (item.children?.length ? item.children : [item]));
 }
 
+// ตำแหน่งบิตของแต่ละสิทธิ์ — หาจาก key ไม่ใช่ลำดับเมนู เพราะบางบิตไม่มีเมนู (เช่น viewMemberKpi)
+// ถ้าใช้ลำดับเมนู พอเพิ่มบิตที่มีเมนูต่อท้าย viewMemberKpi เมนูจะไปอ่านบิตผิดตำแหน่ง
+const BIT_INDEX_BY_KEY = new Map(
+    PERMISSION_GROUPS.flatMap((group) => group.bits).map((bit, index) => [bit.key, index])
+);
+
+function hasMenuPermission(bitmask: string, key: string): boolean {
+    const index = BIT_INDEX_BY_KEY.get(key);
+    if (index === undefined) return false;
+    return bitmask[index] === "1";
+}
+
+/** มีสิทธิ์ key นี้ไหม (ใช้ได้ทั้ง server และ client component) — แค่ซ่อน/แสดงบนหน้าจอ backend ตรวจสิทธิ์จริงเสมอ */
+export function hasPermissionKey(bitmask: string, key: string): boolean {
+    return hasMenuPermission(bitmask, key);
+}
+
+/**
+ * เส้นทางหน้า (breadcrumb) จาก path — หาเมนูที่ href ตรงหรือเป็นต้นทางยาวที่สุด รวมเมนูซ่อน (/users/edit = "แก้ไขผู้ใช้งาน")
+ * เช่น /settings/company → ["ตั้งค่าระบบ", "ข้อมูลบริษัท"] · ไม่พบเมนู → []
+ */
+export function findBreadcrumbs(pathname: string): string[] {
+    let best: { labels: string[]; hrefLength: number } | null = null;
+
+    function consider(labels: string[], href: string) {
+        const isMatch = pathname === href || pathname.startsWith(`${href}/`);
+        if (!isMatch) return;
+        if (best && best.hrefLength >= href.length) return;
+        best = { labels, hrefLength: href.length };
+    }
+
+    for (const item of MENU_DEFS) {
+        consider([item.label], item.href);
+        for (const child of item.children ?? []) {
+            const isSameAsParent = child.label === item.label;
+            consider(isSameAsParent ? [item.label] : [item.label, child.label], child.href);
+        }
+    }
+    return best ? (best as { labels: string[] }).labels : [];
+}
+
 export function getVisibleItems(items: MenuItem[], bitmask: string): MenuItem[] {
     const leaves = getLeaves(items);
     const visibleHrefs = new Set(
-        leaves.filter((_, i) => bitmask[i] === "1").map((l) => l.href)
+        leaves.filter((leaf) => hasMenuPermission(bitmask, leaf.key)).map((leaf) => leaf.href)
     );
 
     return items

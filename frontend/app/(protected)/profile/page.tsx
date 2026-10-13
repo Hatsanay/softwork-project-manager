@@ -9,6 +9,8 @@ import Form from "@/components/ui/form/Form";
 import AvatarCrop from "@/components/ui/AvatarCrop";
 import EmailOtpForm from "@/app/components/email-otp-form";
 import { toast } from "sonner";
+import PageHeader from "@/components/ui/page-header";
+import MySignatureCard from "./_components/my-signature-card";
 
 // อีเมลไม่อยู่ในฟอร์มนี้แล้ว — เปลี่ยนได้ทางเดียวคือยืนยันด้วย OTP (ส่วน "อีเมล" ด้านล่าง) backend ก็ไม่รับอีเมลจาก PUT /users/me แล้ว
 type FormState = {
@@ -165,19 +167,22 @@ export default function ProfilePage() {
     }
 
     return (
-        <div className="p-4 sm:p-6 max-w-2xl mx-auto space-y-6">
+        <div className="mx-auto grid max-w-3xl gap-6">
+            <PageHeader
+                eyebrow="บัญชีของฉัน"
+                title="โปรไฟล์ของฉัน"
+                description="ชื่อและรูปที่คนอื่นเห็นในระบบ · เปลี่ยนอีเมลต้องยืนยันด้วยรหัส OTP ที่ส่งไปอีเมลใหม่"
+            />
             <div>
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-800 mb-6">โปรไฟล์ของฉัน</h1>
-
-                <Form cols={2} onSubmit={handleSubmit} className="bg-white shadow-sm border-gray-100 rounded-xl">
-                    <div className="flex flex-col gap-1 col-span-2">
+                <Form cols={2} onSubmit={handleSubmit}>
+                    <div className="flex flex-col gap-1 col-span-full">
                         <label className="text-sm font-medium text-gray-700">รูปโปรไฟล์</label>
                         {/* key เปลี่ยนตาม currentAvatar เพื่อ remount ใหม่เมื่อ fetch เสร็จ */}
                         <AvatarCrop key={currentAvatar ?? "loading"} value={currentAvatar} onChange={setAvatarFile} disabled={isPending} />
                     </div>
 
                     {roleName && (
-                        <div className="flex flex-col gap-1 col-span-2">
+                        <div className="flex flex-col gap-1 col-span-full">
                             <label className="text-sm font-medium text-gray-700">สิทธิ์</label>
                             <p className="px-3 py-2 bg-gray-50 rounded-lg text-gray-600 text-sm">{roleName}</p>
                         </div>
@@ -200,6 +205,7 @@ export default function ProfilePage() {
                     <div className="flex flex-col gap-1">
                         <label className="text-sm font-medium text-gray-700">ชื่อผู้ใช้</label>
                         <p className="px-3 py-2 bg-gray-50 rounded-lg text-gray-600 text-sm break-all">{username || "-"}</p>
+                        <p className="text-xs leading-relaxed text-gray-500">ใช้เข้าสู่ระบบแทนอีเมลได้ · เปลี่ยนเองไม่ได้ ให้ผู้ดูแลระบบเปลี่ยนให้</p>
                     </div>
 
                     <div className="flex flex-col gap-1">
@@ -228,15 +234,15 @@ export default function ProfilePage() {
                             placeholder="Line ID" />
                     </div>
 
-                    <div className="flex flex-col gap-1 col-span-2">
+                    <div className="flex flex-col gap-1 col-span-full">
                         <label className="text-sm font-medium text-gray-700">WhatsApp No.</label>
                         <Input name="user_whatApp_no" value={form.user_whatApp_no} onChange={handleChange}
                             placeholder="WhatsApp No." />
                     </div>
 
-                    {submitError && <p className="col-span-2 text-sm text-red-600">{submitError}</p>}
+                    {submitError && <p className="col-span-full text-sm text-red-600">{submitError}</p>}
 
-                    <div className="col-span-2 flex justify-end">
+                    <div className="col-span-full flex justify-end">
                         <Button type="submit" disabled={isPending}>
                             {isPending ? "กำลังบันทึก..." : "บันทึก"}
                         </Button>
@@ -246,9 +252,9 @@ export default function ProfilePage() {
 
             {/* อยู่นอก <Form> ด้านบนโดยตั้งใจ — EmailOtpForm เป็น <form> ของตัวเอง ซ้อน form ใน form ไม่ได้ */}
             {changingEmail && (
-                <div className="bg-white shadow-sm border border-gray-100 rounded-xl p-4 sm:p-6">
+                <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-card sm:p-6">
                     <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-lg font-bold text-gray-800">{email ? "เปลี่ยนอีเมล" : "เพิ่มอีเมล"}</h2>
+                        <h2 className="text-base font-medium text-gray-900">{email ? "เปลี่ยนอีเมล" : "เพิ่มอีเมล"}</h2>
                         <button type="button" onClick={() => setChangingEmail(false)}
                             className="text-sm text-gray-500 hover:text-gray-700">ยกเลิก</button>
                     </div>
@@ -256,9 +262,11 @@ export default function ProfilePage() {
                 </div>
             )}
 
+            <MySignatureCard />
+
             <div>
-                <h2 className="text-lg font-bold text-gray-800 mb-3">เปลี่ยนรหัสผ่าน</h2>
-                <form onSubmit={handlePasswordSubmit} className="bg-white shadow-sm border border-gray-100 rounded-xl p-4 sm:p-6 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+                <h2 className="mb-3 text-base font-medium text-gray-900">เปลี่ยนรหัสผ่าน</h2>
+                <form onSubmit={handlePasswordSubmit} className="grid grid-cols-1 gap-x-6 gap-y-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-card sm:grid-cols-2 sm:p-6">
                     <div className="flex flex-col gap-1">
                         <label className="text-sm font-medium text-gray-700">รหัสผ่านใหม่</label>
                         <Input
@@ -268,6 +276,7 @@ export default function ProfilePage() {
                             placeholder="อย่างน้อย 8 ตัวอักษร"
                             error={!!passwordError}
                         />
+                        <p className="text-xs leading-relaxed text-gray-500">อย่างน้อย 8 ตัวอักษร · ใช้รหัสใหม่ตั้งแต่การเข้าสู่ระบบครั้งถัดไป</p>
                     </div>
                     <div className="flex flex-col gap-1">
                         <label className="text-sm font-medium text-gray-700">ยืนยันรหัสผ่านใหม่</label>
@@ -280,9 +289,9 @@ export default function ProfilePage() {
                         />
                     </div>
 
-                    {passwordError && <p className="sm:col-span-2 text-sm text-red-600">{passwordError}</p>}
+                    {passwordError && <p className="sm:col-span-full text-sm text-red-600">{passwordError}</p>}
 
-                    <div className="sm:col-span-2 flex justify-end">
+                    <div className="sm:col-span-full flex justify-end">
                         <Button type="submit" disabled={passwordPending}>
                             {passwordPending ? "กำลังบันทึก..." : "เปลี่ยนรหัสผ่าน"}
                         </Button>

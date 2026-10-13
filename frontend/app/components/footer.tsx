@@ -1,7 +1,7 @@
 export default function Footer() {
     return (
-        <footer className="h-12 bg-white border-t border-gray-200 flex items-center justify-center">
-            <p className="text-sm text-gray-400">© 2026 Softwork Development. All rights reserved.</p>
+        <footer className="px-4 pb-6 pt-2 sm:px-6 lg:px-8">
+            <p className="text-xs text-gray-400">© 2026 Softwork Development</p>
         </footer>
     );
 }

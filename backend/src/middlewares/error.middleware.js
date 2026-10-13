@@ -2,6 +2,8 @@ const crypto = require("crypto");
 const multer = require("multer");
 const pool = require("../config/db");
 const { getSchemaStatus } = require("../utils/schema-check");
+const { AppError } = require("../utils/app-error");
+const { MoneyInputError } = require("../shared/money.mjs");
 
 function isMissingSchemaError(err) {
     return err?.code === "ER_NO_SUCH_TABLE" || err?.code === "ER_BAD_FIELD_ERROR";
@@ -43,6 +45,33 @@ function recordError(err, req, status) {
 
 // eslint-disable-next-line no-unused-vars
 function errorHandler(err, req, res, next) {
+    // รูปแบบกลางของโมดูลใหม่ (2026-10-13, CODING_GUIDELINES หัวข้อ 3.3) — { message, code, fields, request_id }
+    // 4xx คือผู้ใช้กรอกผิด/ทำไม่ได้ตามกติกา ไม่ใช่บั๊ก — log บรรทัดเดียวพอ ไม่พิมพ์ stack ให้ log ของเซิร์ฟเวอร์รกจนหา error จริงไม่เจอ
+    if (err instanceof AppError) {
+        if (err.status >= 500) {
+            console.error(`[${req.id ?? "-"}]`, err);
+            recordError(err, req, err.status);
+        } else {
+            console.warn(`[${req.id ?? "-"}] ${err.status} ${err.code} ${req.method} ${req.originalUrl.split("?")[0]}`);
+        }
+        return res.status(err.status).json({
+            message: err.message,
+            code: err.code,
+            fields: err.fields ?? null,
+            request_id: req.id ?? null,
+        });
+    }
+    // ตัวเลขเงินที่กรอกผิด (จาก shared/money.mjs) — service ควรจับแล้วบอกแถว/ช่องเอง ตรงนี้เป็นตาข่ายกันหลุดเป็น 500
+    if (err instanceof MoneyInputError) {
+        return res.status(400).json({
+            message: err.message,
+            code: "INVALID_AMOUNT",
+            fields: null,
+            request_id: req.id ?? null,
+        });
+    }
+
+    // โค้ดเดิมยัง log ทุก error แบบเต็มเหมือนเดิม
     console.error(`[${req.id ?? "-"}]`, err);
 
     // error จากการอัปโหลด (ขนาด/จำนวนไฟล์เกิน หรือไม่ใช่ไฟล์รูป) เป็นความผิดของ input ไม่ใช่เซิร์ฟเวอร์พัง

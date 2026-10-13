@@ -12,6 +12,10 @@ import { useRouter } from "next/navigation";
 import { usePermission, BITS } from "@/app/components/permission-provider";
 import { toast } from "sonner";
 import Button from "@/components/ui/Button/Button";
+import PageHeader from "@/components/ui/page-header";
+import PersonCell from "@/components/ui/person-cell";
+import { ActiveStatusPill } from "@/components/ui/status-pill";
+import { Plus } from "lucide-react";
 
 type User = {
     user_id: number;
@@ -21,7 +25,8 @@ type User = {
     user_lname: string;
     user_phone: string;
     user_role_id: string;
-    user_status: string;
+    user_status: "active" | "inactive";
+    user_avatar_url: string | null;
     user_created_at: Date;
     user_updated_at: Date;
     by_fullname: string;
@@ -61,15 +66,27 @@ export default function UsersPage() {
     const hasBit = usePermission();
 
     const columns: Column<User>[] = [
-        { key: "user_id", header: "รหัสผู้ใช้งาน", className: "w-20" },
-        { key: "by_fullname", header: "ชื่อผู้ใช้งาน" },
-        { key: "user_username", header: "ชื่อผู้ใช้" },
+        {
+            key: "by_fullname",
+            header: "ผู้ใช้งาน",
+            render: (_, row) => (
+                <PersonCell name={row.by_fullname} subtitle={`@${row.user_username}`} avatarPath={row.user_avatar_url} />
+            ),
+        },
         // ยังไม่มีอีเมล = แอดมินสร้างไว้โดยไม่ใส่อีเมล และผู้ใช้ยังไม่ได้เข้าระบบครั้งแรกไปยืนยัน
         { key: "user_email", header: "อีเมล", render: (v) => (v as string) || <span className="text-gray-400">รอยืนยัน</span> },
-        { key: "role_name", header: "สิทธิ์" },
+        {
+            key: "role_name",
+            header: "สิทธิ์",
+            render: (v) => (
+                <span className="inline-flex h-6 items-center rounded-lg bg-gray-100 px-2.5 text-xs text-gray-600">
+                    {(v as string) || "-"}
+                </span>
+            ),
+        },
+        { key: "user_status", header: "สถานะ", render: (v) => <ActiveStatusPill isActive={v === "active"} /> },
         // { key: "role_type", header: "ประเภทสิทธิ์" },
         { key: "user_phone", header: "เบอร์โทรศัพท์", render: (v) => (v as string) || "-" },
-        { key: "user_created_at", header: "สร้างเมื่อ", render: (v) => formatDate(v) },
         { key: "user_updated_at", header: "อัปเดตเมื่อ", render: (v) => formatDate(v) },
     ];
 
@@ -129,13 +146,20 @@ export default function UsersPage() {
     }
 
     return (
-        <div className="p-4 sm:p-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-6">
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-800">จัดการผู้ใช้งาน</h1>
-                {hasBit(BITS.createUsers) && (
-                    <Button onClick={() => router.push("/users/create")}>สร้างผู้ใช้งาน</Button>
-                )}
-            </div>
+        <div className="grid gap-6">
+            <PageHeader
+                eyebrow="จัดการข้อมูลผู้ใช้งาน"
+                title="ผู้ใช้งาน"
+                description="ผู้ใช้ที่เข้าระบบได้ · จัดการได้เฉพาะผู้ใช้ที่สิทธิ์ไม่เกินของคุณ · ผู้ใช้ที่เคยทำงานแล้วลบไม่ได้ ให้แก้ไขแล้วเปลี่ยนเป็นปิดใช้งานแทน"
+                actions={
+                    hasBit(BITS.createUsers) && (
+                        <Button onClick={() => router.push("/users/create")}>
+                            <Plus size={16} />
+                            สร้างผู้ใช้งาน
+                        </Button>
+                    )
+                }
+            />
 
             <DataTable
                 columns={columns}

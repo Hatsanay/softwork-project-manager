@@ -92,7 +92,7 @@ export default function SearchableSelect({
 
     const borderCls = error
         ? "border-red-400 focus:border-red-400 focus:ring-red-500/20"
-        : "border-gray-300 focus:border-blue-400 focus:ring-blue-500/20";
+        : "border-gray-200 hover:border-gray-300 focus:border-blue-500 focus:ring-blue-500/15";
 
     return (
         <div ref={containerRef} className={`relative ${className}`}>
@@ -100,9 +100,9 @@ export default function SearchableSelect({
                 type="button"
                 disabled={disabled}
                 onClick={toggleOpen}
-                className={`w-full flex items-center justify-between gap-2 px-4 py-2 border rounded text-sm text-left focus:outline-none focus:ring-2
+                className={`w-full flex items-center justify-between gap-2 px-3.5 py-2.5 border rounded-xl text-sm font-light text-left shadow-xs transition focus:outline-none focus:ring-4
                     ${disabled
-                        ? "bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200"
+                        ? "bg-gray-50 text-gray-400 cursor-not-allowed border-gray-200"
                         : `bg-white cursor-pointer ${borderCls}`}`}
             >
                 <span className={selected ? "text-gray-800" : "text-gray-400"}>
@@ -122,9 +122,9 @@ export default function SearchableSelect({
             </button>
 
             {open && (
-                <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg">
+                <div className="absolute z-50 mt-1.5 w-full overflow-hidden bg-white border border-gray-200 rounded-2xl shadow-float">
                     <div className="p-2 border-b border-gray-100">
-                        <div className="flex items-center gap-2 px-2 py-1 border border-gray-200 rounded">
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-50">
                             {loading
                                 ? <Loader2 size={14} className="text-blue-400 shrink-0 animate-spin" />
                                 : <Search size={14} className="text-gray-400 shrink-0" />
@@ -139,9 +139,9 @@ export default function SearchableSelect({
                             />
                         </div>
                     </div>
-                    <ul className="max-h-52 overflow-y-auto py-1">
+                    <ul className="max-h-60 overflow-y-auto p-1.5">
                         {displayed.length === 0 ? (
-                            <li className="px-4 py-2 text-sm text-gray-400">
+                            <li className="px-3 py-2 text-sm text-gray-400">
                                 {loading ? "กำลังโหลด..." : "ไม่พบข้อมูล"}
                             </li>
                         ) : (
@@ -149,7 +149,7 @@ export default function SearchableSelect({
                                 <li
                                     key={opt.value}
                                     onClick={() => select(opt)}
-                                    className={`px-4 py-2 text-sm cursor-pointer hover:bg-blue-50 hover:text-blue-700
+                                    className={`px-3 py-2 rounded-lg text-sm cursor-pointer hover:bg-blue-50 hover:text-blue-700
                                         ${String(opt.value) === value
                                             ? "bg-blue-50 text-blue-700 font-medium"
                                             : "text-gray-700"}`}

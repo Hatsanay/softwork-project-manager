@@ -12,6 +12,8 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useRouter } from "next/navigation";
 import { usePermission, BITS } from "@/app/components/permission-provider";
 import { toast } from "sonner";
+import PageHeader from "@/components/ui/page-header";
+import { Plus } from "lucide-react";
 
 
 type Role = {
@@ -111,13 +113,20 @@ export default function RoleSettingsPage() {
     }
 
     return (
-        <div className="p-4 sm:p-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-6">
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-800">จัดการสิทธิ์</h1>
-                {hasBit(BITS.createRole) && (
-                    <Button onClick={() => router.push("/settings/roles/create")}>สร้างสิทธิ์</Button>
-                )}
-            </div>
+        <div className="grid gap-6">
+            <PageHeader
+                eyebrow="ตั้งค่าระบบ"
+                title="จัดการสิทธิ์"
+                description="กำหนดว่าผู้ใช้แต่ละกลุ่มเข้าเมนูและทำอะไรได้บ้าง · สร้าง/แก้ได้เฉพาะสิทธิ์ที่ไม่เกินของคุณ · role ระบบได้สิทธิ์ครบเสมอ"
+                actions={
+                    hasBit(BITS.createRole) && (
+                        <Button onClick={() => router.push("/settings/roles/create")}>
+                            <Plus size={16} />
+                            สร้างสิทธิ์
+                        </Button>
+                    )
+                }
+            />
             <DataTable
                 columns={columns}
                 data={roles}

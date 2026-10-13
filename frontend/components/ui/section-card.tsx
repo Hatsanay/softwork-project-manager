@@ -1,0 +1,38 @@
+// การ์ดของแต่ละส่วนในฟอร์ม/หน้าตั้งค่า (UI ใหม่ 13 ต.ค. 2026): การ์ดกลาง + ไอคอนหัวข้อในกรอบฟ้าอ่อน (ถ้ามี)
+import type { LucideIcon } from "lucide-react";
+import { buttonClass } from "@/components/ui/button";
+import { CARD_CLASS } from "@/components/ui/card";
+
+type SectionCardProps = {
+    title: string;
+    description?: React.ReactNode;
+    icon?: LucideIcon;
+    actions?: React.ReactNode;
+    children: React.ReactNode;
+};
+
+export default function SectionCard({ title, description, icon: Icon, actions, children }: SectionCardProps) {
+    return (
+        <section className={`grid gap-5 p-5 sm:p-6 ${CARD_CLASS}`}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex min-w-0 items-start gap-3.5">
+                    {Icon && (
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                            <Icon size={19} />
+                        </span>
+                    )}
+                    <div className="grid max-w-3xl gap-0.5">
+                        <h2 className="text-base font-medium text-gray-900">{title}</h2>
+                        {description && <p className="text-sm text-gray-500">{description}</p>}
+                    </div>
+                </div>
+                {actions}
+            </div>
+            {children}
+        </section>
+    );
+}
+
+// ปุ่มตามแบบใหม่ — คงชื่อเดิมไว้ให้แท็บที่ใช้อยู่ไม่ต้องแก้
+export const PRIMARY_BUTTON = buttonClass("primary", "md");
+export const SECONDARY_BUTTON = buttonClass("secondary", "md");

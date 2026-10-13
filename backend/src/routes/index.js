@@ -20,6 +20,9 @@ const {
 } = require("../middlewares/projectPermission.middleware");
 const { uploadImage } = require("../middlewares/upload.middleware");
 const { loginRateLimit, otpRequestRateLimit } = require("../middlewares/rateLimit.middleware");
+const { registerCompanyRoutes } = require("./company.routes");
+const { registerProductRoutes } = require("./product.routes");
+const { registerSalesSupportRoutes } = require("./sales-support.routes");
 
 const router = express.Router();
 
@@ -254,6 +257,15 @@ router.post(
     "/V1/projects/:projectId/chat", requireAuth, requireProjectMember, requireRealMember,
     uploadImage.array("images", 5), chatController.createForProject
 );
+
+// ─── ตั้งค่าบริษัท (วงจรขาย 1A) — แยกไฟล์ตามกติกาโมดูลใหม่ ─────────────────────
+registerCompanyRoutes(router);
+
+// ─── สินค้า/บริการ หมวดหมู่ ชุดรายการ (วงจรขาย 1A) ───────────────────────────────
+registerProductRoutes(router);
+
+// ─── อัตราแลกเปลี่ยน + ลายเซ็น (วงจรขาย 1A-2) ─────────────────────────────────────
+registerSalesSupportRoutes(router);
 
 // ─── public share (ลูกค้าดู ไม่ต้อง login) ───────────────────────────────────
 router.get("/V1/share/:token", shareController.getSharedProject);

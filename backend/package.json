@@ -7,7 +7,9 @@
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "test": "node scripts/run-tests.js",
-    "schema:manifest": "node scripts/schema-manifest.js"
+    "schema:manifest": "node scripts/schema-manifest.js",
+    "format:changed": "node scripts/format-changed.js",
+    "sync-shared": "node scripts/sync-shared.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -20,9 +22,13 @@
     "multer": "^2.0.0",
     "mysql2": "^3.11.0",
     "nodemailer": "^10.0.16",
-    "sharp": "^0.35.3"
+    "sharp": "^0.35.3",
+    "zod": "4.6.5"
   },
   "engines": {
     "node": "23.11.x"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.10"
   }
 }

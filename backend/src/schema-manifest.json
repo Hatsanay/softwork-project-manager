@@ -1,5 +1,17 @@
 {
     "tables": {
+        "tb_approval_level_roles": [
+            "alr_doc_type",
+            "alr_level",
+            "alr_role_id"
+        ],
+        "tb_approval_levels": [
+            "al_doc_type",
+            "al_level",
+            "al_min_amount_thb",
+            "al_require_distinct",
+            "al_updated_at"
+        ],
         "tb_audit_logs": [
             "aud_action",
             "aud_changes",
@@ -24,14 +36,85 @@
             "aud_user_id",
             "aud_user_username"
         ],
+        "tb_bank_accounts": [
+            "ba_account_name",
+            "ba_account_no",
+            "ba_bank_branch",
+            "ba_bank_name",
+            "ba_created_at",
+            "ba_currency",
+            "ba_id",
+            "ba_is_default",
+            "ba_status",
+            "ba_swift_code",
+            "ba_updated_at"
+        ],
+        "tb_branches": [
+            "branch_address_en",
+            "branch_address_th",
+            "branch_code",
+            "branch_created_at",
+            "branch_id",
+            "branch_name_en",
+            "branch_name_th",
+            "branch_phone",
+            "branch_status",
+            "branch_updated_at"
+        ],
         "tb_clients": [
+            "client_address",
+            "client_branch_code",
             "client_company",
+            "client_contact_name",
+            "client_country",
             "client_created_at",
+            "client_credit_days",
+            "client_currency",
             "client_email",
             "client_id",
+            "client_language",
             "client_name",
             "client_phone",
-            "client_updated_at"
+            "client_status",
+            "client_tax_id",
+            "client_type",
+            "client_updated_at",
+            "client_vat_treatment",
+            "client_wht_rate"
+        ],
+        "tb_company_settings": [
+            "cs_address_en",
+            "cs_address_th",
+            "cs_allow_self_approval",
+            "cs_email",
+            "cs_id",
+            "cs_logo_url",
+            "cs_name_en",
+            "cs_name_th",
+            "cs_phone",
+            "cs_quotation_terms_en",
+            "cs_quotation_terms_th",
+            "cs_quotation_valid_days",
+            "cs_tax_id",
+            "cs_updated_at",
+            "cs_vat_registered_from",
+            "cs_website"
+        ],
+        "tb_currencies": [
+            "cur_bot_unit",
+            "cur_code",
+            "cur_created_at",
+            "cur_decimals",
+            "cur_name_en",
+            "cur_name_th",
+            "cur_sort_order",
+            "cur_status",
+            "cur_subunit_en",
+            "cur_subunit_th",
+            "cur_symbol",
+            "cur_unit_en",
+            "cur_unit_th",
+            "cur_updated_at"
         ],
         "tb_department": [
             "dep_created_at",
@@ -39,6 +122,11 @@
             "dep_name",
             "dep_status",
             "dep_updated_at"
+        ],
+        "tb_document_sequences": [
+            "ds_date",
+            "ds_doc_type",
+            "ds_last"
         ],
         "tb_email_otps": [
             "otp_attempts",
@@ -66,6 +154,15 @@
             "err_stack",
             "err_status"
         ],
+        "tb_exchange_rates": [
+            "er_buying_sight",
+            "er_buying_transfer",
+            "er_currency",
+            "er_fetched_at",
+            "er_mid_rate",
+            "er_rate_date",
+            "er_selling"
+        ],
         "tb_login_logs": [
             "log_action",
             "log_created_at",
@@ -79,6 +176,46 @@
         "tb_maxID": [
             "max_id",
             "max_table"
+        ],
+        "tb_product_categories": [
+            "pc_created_at",
+            "pc_id",
+            "pc_name",
+            "pc_sort_order",
+            "pc_status",
+            "pc_updated_at"
+        ],
+        "tb_product_package_items": [
+            "pki_description",
+            "pki_id",
+            "pki_order",
+            "pki_package_id",
+            "pki_product_id",
+            "pki_quantity",
+            "pki_type",
+            "pki_unit",
+            "pki_unit_price"
+        ],
+        "tb_product_packages": [
+            "pkg_category_id",
+            "pkg_created_at",
+            "pkg_description",
+            "pkg_id",
+            "pkg_name",
+            "pkg_status",
+            "pkg_updated_at"
+        ],
+        "tb_products": [
+            "product_category_id",
+            "product_code",
+            "product_created_at",
+            "product_description",
+            "product_id",
+            "product_name",
+            "product_price",
+            "product_status",
+            "product_unit",
+            "product_updated_at"
         ],
         "tb_project_chat_images": [
             "image_created_at",
@@ -134,6 +271,108 @@
             "project_type",
             "project_updated_at",
             "project_use_task_weight"
+        ],
+        "tb_quotation_approvals": [
+            "qta_action",
+            "qta_created_at",
+            "qta_id",
+            "qta_level",
+            "qta_quotation_id",
+            "qta_reason",
+            "qta_role_id",
+            "qta_role_name",
+            "qta_round",
+            "qta_user_id",
+            "qta_user_name"
+        ],
+        "tb_quotation_items": [
+            "qti_amount",
+            "qti_description",
+            "qti_discount_amount",
+            "qti_discount_type",
+            "qti_discount_value",
+            "qti_id",
+            "qti_list_price",
+            "qti_order",
+            "qti_package_id",
+            "qti_product_id",
+            "qti_quantity",
+            "qti_quotation_id",
+            "qti_type",
+            "qti_unit",
+            "qti_unit_price"
+        ],
+        "tb_quotation_milestones": [
+            "qtm_amount",
+            "qtm_condition",
+            "qtm_id",
+            "qtm_name",
+            "qtm_order",
+            "qtm_percent",
+            "qtm_quotation_id"
+        ],
+        "tb_quotations": [
+            "qt_after_discount",
+            "qt_after_discount_thb",
+            "qt_approval_current_level",
+            "qt_approval_plan",
+            "qt_approval_round",
+            "qt_approved_at",
+            "qt_approved_by",
+            "qt_approved_by_name",
+            "qt_approved_by_title",
+            "qt_approver_signature_id",
+            "qt_branch_id",
+            "qt_cancel_reason",
+            "qt_cancelled_at",
+            "qt_cancelled_by",
+            "qt_client_id",
+            "qt_client_snapshot",
+            "qt_company_snapshot",
+            "qt_copied_from_id",
+            "qt_created_at",
+            "qt_created_by",
+            "qt_created_by_name",
+            "qt_created_by_title",
+            "qt_creator_signature_id",
+            "qt_currency",
+            "qt_decline_reason",
+            "qt_discount_amount",
+            "qt_discount_type",
+            "qt_discount_value",
+            "qt_exchange_rate",
+            "qt_expired_at",
+            "qt_id",
+            "qt_internal_note",
+            "qt_issue_date",
+            "qt_language",
+            "qt_number",
+            "qt_payment_mode",
+            "qt_previous_id",
+            "qt_project_id",
+            "qt_rate_bot",
+            "qt_rate_date",
+            "qt_rate_override_reason",
+            "qt_rate_source",
+            "qt_responded_at",
+            "qt_returned_reason",
+            "qt_revision",
+            "qt_root_id",
+            "qt_sent_at",
+            "qt_status",
+            "qt_submitted_at",
+            "qt_subtotal",
+            "qt_terms",
+            "qt_title",
+            "qt_total",
+            "qt_total_thb",
+            "qt_updated_at",
+            "qt_valid_days",
+            "qt_valid_until",
+            "qt_vat_amount",
+            "qt_vat_rate",
+            "qt_vat_treatment",
+            "qt_version"
         ],
         "tb_roles": [
             "role_department",
@@ -227,6 +466,7 @@
             "task_due_date",
             "task_id",
             "task_parent_id",
+            "task_quotation_item_id",
             "task_sort_order",
             "task_start_date",
             "task_status",
@@ -234,8 +474,18 @@
             "task_updated_at",
             "task_weight"
         ],
+        "tb_user_signatures": [
+            "sig_created_at",
+            "sig_file_path",
+            "sig_id",
+            "sig_method",
+            "sig_revoked_at",
+            "sig_revoked_by",
+            "sig_user_id"
+        ],
         "tb_users": [
             "user_avatar_url",
+            "user_branch_id",
             "user_created_at",
             "user_email",
             "user_fname",
@@ -251,6 +501,13 @@
             "user_updated_at",
             "user_username",
             "user_whatsapp_no"
+        ],
+        "tb_vat_rates": [
+            "vr_created_at",
+            "vr_created_by",
+            "vr_effective_from",
+            "vr_note",
+            "vr_rate"
         ]
     }
 }

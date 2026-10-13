@@ -48,3 +48,37 @@ test("error ที่ตั้ง status 4xx ไว้เอง ส่งข้�
     assert.equal(response.statusCode, 400);
     assert.equal(response.body.message, "ข้อมูลไม่ถูกต้อง");
 });
+
+test("AppError ได้รูปแบบกลาง { message, code, fields, request_id }", () => {
+    const { AppError } = require("../src/utils/app-error");
+    const error = new AppError(400, "VALIDATION", "ข้อมูลไม่ถูกต้อง 1 ช่อง", { client_tax_id: "เลขผู้เสียภาษีต้องมี 13 หลัก" });
+    const response = callErrorHandler(error);
+    assert.equal(response.statusCode, 400);
+    assert.deepEqual(response.body, {
+        message: "ข้อมูลไม่ถูกต้อง 1 ช่อง",
+        code: "VALIDATION",
+        fields: { client_tax_id: "เลขผู้เสียภาษีต้องมี 13 หลัก" },
+        request_id: "test-request",
+    });
+});
+
+test("AppError ที่ไม่มี fields ส่ง fields เป็น null (หน้าเว็บไม่ต้องเช็ก undefined)", () => {
+    const { AppError } = require("../src/utils/app-error");
+    const response = callErrorHandler(new AppError(409, "QUOTATION_STATUS_CHANGED", "ใบนี้ไม่ได้รออนุมัติแล้ว"));
+    assert.equal(response.statusCode, 409);
+    assert.equal(response.body.fields, null);
+});
+
+test("ตัวเลขเงินผิดที่หลุดมาจาก service ได้ 400 INVALID_AMOUNT ไม่ใช่ 500", () => {
+    const { calculateLine } = require("../src/shared/money.mjs");
+    let moneyError;
+    try {
+        calculateLine({ quantity: 1, unitPrice: "abc" });
+    } catch (error) {
+        moneyError = error;
+    }
+    const response = callErrorHandler(moneyError);
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.body.code, "INVALID_AMOUNT");
+    assert.match(response.body.message, /ราคาต่อหน่วย/);
+});

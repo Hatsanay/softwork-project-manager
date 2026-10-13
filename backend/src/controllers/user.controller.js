@@ -73,7 +73,9 @@ async function me(req, res, next) {
             [req.user.user_id]
         );
         if (!rows[0]) return res.status(404).json({ message: "ไม่พบผู้ใช้งาน" });
-        res.json(rows[0]);
+        // สิทธิ์ ณ ตอนนี้ (role ระบบได้ครบ) — หน้าเว็บใช้ซ่อน/แสดงเมนูให้ตรงกับสิทธิ์ล่าสุด (2026-10-13)
+        // เดิมใช้ค่าที่จำไว้ตอน login: แอดมินเปลี่ยนสิทธิ์ หรือระบบเพิ่มบิตใหม่ ผู้ใช้ต้องออกแล้วเข้าใหม่ถึงจะเห็นเมนูถูก
+        res.json({ ...rows[0], role_permission: req.user.role_permission });
     } catch (err) {
         next(err);
     }
@@ -185,7 +187,7 @@ async function getAll(req, res, next) {
 
         const [rows] = await pool.query(
             `SELECT u.user_id, u.user_username, CONCAT(u.user_fname, ' ', u.user_lname) AS by_fullname,
-                    u.user_email, u.user_phone,
+                    u.user_email, u.user_phone, u.user_status, u.user_avatar_url,
                     u.user_created_at, u.user_updated_at, u.user_role_id,
                     r.role_name, r.role_type, r.role_permission
              FROM tb_users u
@@ -224,7 +226,7 @@ async function getOne(req, res, next) {
             `SELECT u.user_id, u.user_username, u.user_fname, u.user_lname,
                     CONCAT(u.user_fname, ' ', u.user_lname) AS user_fullname,
                     u.user_email, u.user_phone, u.user_line_uid, u.user_whatsapp_no,
-                    u.user_avatar_url, u.user_role_id, u.user_status, u.user_must_change_password,
+                    u.user_avatar_url, u.user_role_id, u.user_branch_id, u.user_status, u.user_must_change_password,
                     u.user_last_login_at, u.user_created_at, u.user_updated_at,
                     r.role_name, r.role_type, r.role_permission
              FROM tb_users u
@@ -266,6 +268,23 @@ async function checkCanAssignRole(req, roleId) {
     return {};
 }
 
+// สาขาเริ่มต้นของผู้ใช้ (2026-10-13, วงจรขาย 1A) — ใช้เติมสาขาให้เอกสารที่ผู้ใช้สร้าง ไม่จำกัดการมองเห็น
+// ว่าง = สำนักงานใหญ่ · ต้องเป็นสาขาที่มีอยู่จริง · เลือกใหม่ต้องเป็นสาขาที่เปิดใช้งาน (สาขาเดิมที่ถูกปิดไปแล้วคงไว้ได้)
+// ไม่ส่งฟิลด์นี้มาเลย (หน้าเว็บเวอร์ชันเก่า) = ไม่เปลี่ยนค่าเดิม
+async function resolveBranchId(rawBranchId, currentBranchId) {
+    if (rawBranchId === undefined) return { value: currentBranchId };
+    const branchId = rawBranchId ? String(rawBranchId) : null;
+    if (branchId === null) return { value: null };
+
+    const [[branch]] = await pool.query("SELECT branch_status FROM tb_branches WHERE branch_id = ?", [branchId]);
+    if (!branch) return { error: "ไม่พบสาขาที่เลือก อาจถูกลบไปแล้ว กรุณาเลือกใหม่" };
+    const isUnchanged = branchId === currentBranchId;
+    if (branch.branch_status !== "active" && !isUnchanged) {
+        return { error: "สาขาที่เลือกถูกปิดใช้งานแล้ว กรุณาเลือกสาขาอื่น" };
+    }
+    return { value: branchId };
+}
+
 async function create(req, res, next) {
     try {
         const {
@@ -288,6 +307,9 @@ async function create(req, res, next) {
         }
         if (roleCheck.error) return sendAccessError(res, roleCheck.error);
 
+        const branch = await resolveBranchId(req.body.user_branch_id ?? null, null);
+        if (branch.error) return res.status(400).json({ message: branch.error });
+
         // ไม่รับรหัสผ่านจากฟอร์มแล้ว — gen รหัสผ่านชั่วคราวให้แทน แล้วบังคับเปลี่ยนตอน login ครั้งแรก
         const temp_password = generateTempPassword();
         const passwordHash = await bcrypt.hash(temp_password, 10);
@@ -298,11 +320,11 @@ async function create(req, res, next) {
         await pool.query(
             `INSERT INTO tb_users
                 (user_id, user_username, user_fname, user_lname, user_email, user_password, user_phone,
-                 user_line_uid, user_whatsapp_no, user_role_id, user_must_change_password)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)`,
+                 user_line_uid, user_whatsapp_no, user_role_id, user_branch_id, user_must_change_password)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)`,
             [
                 user_id, user_username, user_fname, user_lname, email.value, passwordHash, user_phone || null,
-                user_line_id || null, user_whatApp_no || null, user_role_id || null,
+                user_line_id || null, user_whatApp_no || null, user_role_id || null, branch.value,
             ]
         );
 
@@ -350,16 +372,20 @@ async function update(req, res, next) {
         }
         if (roleCheck.error) return sendAccessError(res, roleCheck.error);
 
+        const [[current]] = await pool.query("SELECT user_branch_id FROM tb_users WHERE user_id = ?", [req.params.id]);
+        const branch = await resolveBranchId(req.body.user_branch_id, current?.user_branch_id ?? null);
+        if (branch.error) return res.status(400).json({ message: branch.error });
+
         await pool.query(
             `UPDATE tb_users SET
                 user_username = COALESCE(?, user_username),
                 user_fname = ?, user_lname = ?, user_email = ?, user_phone = ?,
-                user_line_uid = ?, user_whatsapp_no = ?, user_role_id = ?, user_status = ?
+                user_line_uid = ?, user_whatsapp_no = ?, user_role_id = ?, user_status = ?, user_branch_id = ?
              WHERE user_id = ?`,
             [
                 username.value,
                 user_fname, user_lname, email.value, user_phone || null,
-                user_line_id || null, user_whatApp_no || null, newRoleId, newStatus,
+                user_line_id || null, user_whatApp_no || null, newRoleId, newStatus, branch.value,
                 req.params.id,
             ]
         );
@@ -386,6 +412,14 @@ const USER_HISTORY_CHECKS = [
     { label: "ตอบปัญหา", unit: "ครั้ง", sql: "SELECT COUNT(*) AS n FROM tb_task_issue_replies WHERE user_id = ?" },
     { label: "ข้อความแชทในงาน", unit: "ข้อความ", sql: "SELECT COUNT(*) AS n FROM tb_task_chat_messages WHERE user_id = ?" },
     { label: "ข้อความแชทโปรเจกต์", unit: "ข้อความ", sql: "SELECT COUNT(*) AS n FROM tb_project_chat_messages WHERE user_id = ?" },
+    // วงจรขาย (2026-10-13) — เอกสารขายต้องรู้เสมอว่าใครสร้าง/อนุมัติ/ยกเลิก
+    {
+        label: "สร้างหรืออนุมัติใบเสนอราคา",
+        unit: "ใบ",
+        sql: "SELECT COUNT(*) AS n FROM tb_quotations WHERE ? IN (qt_created_by, qt_approved_by, qt_cancelled_by)",
+    },
+    { label: "ประวัติการอนุมัติ", unit: "ครั้ง", sql: "SELECT COUNT(*) AS n FROM tb_quotation_approvals WHERE qta_user_id = ?" },
+    { label: "ลายเซ็น", unit: "ฉบับ", sql: "SELECT COUNT(*) AS n FROM tb_user_signatures WHERE sig_user_id = ?" },
 ];
 
 async function findUserHistory(userId) {

@@ -8,6 +8,8 @@ import Button from "@/components/ui/Button/Button";
 import Input from "@/components/ui/Input/input";
 import SearchableSelect from "@/components/ui/SearchableSelect";
 import PermissionChecklist from "../_components/permission-checklist";
+import PageHeader from "@/components/ui/page-header";
+import { buttonClass } from "@/components/ui/button";
 
 type RoleDetail = {
     role_id: number;
@@ -101,10 +103,14 @@ export default function EditRolePage() {
     if (!id) return <p className="p-6 text-gray-500">ไม่พบ Role</p>;
 
     return (
-        <div className="p-4 sm:p-6 max-w-2xl mx-auto">
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-800 mb-6">แก้ไขสิทธิ์</h1>
+        <div className="mx-auto grid max-w-3xl gap-6">
+            <PageHeader
+                eyebrow="ตั้งค่าระบบ · จัดการสิทธิ์"
+                title="แก้ไขสิทธิ์"
+                description="เปลี่ยนสิทธิ์แล้วมีผลกับผู้ใช้ทุกคนใน role นี้ทันทีที่เปลี่ยนหน้า · แก้ได้เฉพาะ role ที่สิทธิ์ไม่เกินของคุณ"
+            />
 
-            <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-card sm:p-6">
                 {/* แถบแจ้งอยู่บนสุดของฟอร์ม ให้เห็นก่อนเริ่มแก้ — ไม่ใช่เลื่อนลงไปเจอหลังแก้เสร็จ */}
                 {!canEdit && (
                     <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -169,7 +175,7 @@ export default function EditRolePage() {
                     <button
                         type="button"
                         onClick={() => router.push("/settings/roles")}
-                        className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+                        className={buttonClass("secondary", "md")}
                     >
                         ยกเลิก
                     </button>

@@ -30,9 +30,12 @@ const IGNORED_COLUMNS = /_updated?_at$/; // *_updated_at และ role_update_a
 
 // ─── นิยามข้อมูลแต่ละชนิด: path → ตาราง/คีย์ เพื่ออ่านค่าก่อน/หลัง + ชื่อการกระทำภาษาไทย ─────────────────
 // pattern เทียบกับ path หลังตัด "/api/V1" · id: "1" = กลุ่มที่ 1 ของ regex, "self" = ผู้ใช้ที่ login อยู่,
-// "response:xxx" = อ่านจาก JSON ที่ตอบกลับ (คำขอสร้างข้อมูลใหม่ที่ยังไม่มี id ตอนเริ่ม)
+// "response:xxx" = อ่านจาก JSON ที่ตอบกลับ (คำขอสร้างข้อมูลใหม่ที่ยังไม่มี id ตอนเริ่ม) · "fixed:xxx" = id ตายตัว (ตารางแถวเดียว)
 // เรียงจากเจาะจงไปกว้าง — ตัวแรกที่ตรงชนะ
 const ENTITIES = [
+    // ลายเซ็น (2026-10-13) — ไม่เก็บรูปใน log (R8) แค่ชื่อการกระทำ · /users/me/signature ต้องมาก่อน /users/:id/signature
+    { re: /^\/users\/me\/signature$/, type: "signature", label: { PUT: "ตั้งลายเซ็นของตัวเอง", DELETE: "ยกเลิกลายเซ็นของตัวเอง" } },
+    { re: /^\/users\/([^/]+)\/signature$/, type: "signature", label: { DELETE: "ยกเลิกลายเซ็นของผู้ใช้" } },
     { re: /^\/users\/me\/password$/, type: "user", table: "tb_users", pk: "user_id", id: "self", label: { PUT: "เปลี่ยนรหัสผ่านของตัวเอง" } },
     { re: /^\/users\/me\/image$/, type: "user", table: "tb_users", pk: "user_id", id: "self", label: { PUT: "เปลี่ยนรูปโปรไฟล์ของตัวเอง" } },
     { re: /^\/users\/me\/email\/otp$/, type: "user", table: "tb_users", pk: "user_id", id: "self", label: { POST: "ขอรหัส OTP ยืนยันอีเมล" } },
@@ -73,6 +76,27 @@ const ENTITIES = [
     { re: /^\/projects\/([^/]+)$/, type: "project", table: "tb_projects", pk: "project_id", id: "1", project: "1", label: { PUT: "แก้ไขโปรเจกต์", DELETE: "ลบโปรเจกต์" } },
     { re: /^\/projects$/, type: "project", table: "tb_projects", pk: "project_id", id: "response:project_id", project: "response:project_id", label: { POST: "สร้างโปรเจกต์" } },
 
+    // ตั้งค่าบริษัท (2026-10-13) — กติกาอนุมัติบันทึกทั้งชุด ไม่มีแถวเดียวให้เทียบ diff จึงเก็บแค่ payload
+    { re: /^\/company\/logo$/, type: "company", table: "tb_company_settings", pk: "cs_id", id: "fixed:1", label: { POST: "เปลี่ยนโลโก้บริษัท", DELETE: "ลบโลโก้บริษัท" } },
+    { re: /^\/company\/vat-rates\/([^/]+)$/, type: "vat_rate", table: "tb_vat_rates", pk: "vr_effective_from", id: "1", label: { DELETE: "ลบอัตรา VAT ที่ยังไม่มีผล" } },
+    { re: /^\/company\/vat-rates$/, type: "vat_rate", table: "tb_vat_rates", pk: "vr_effective_from", id: "response:vr_effective_from", label: { POST: "เพิ่มอัตรา VAT" } },
+    { re: /^\/company\/branches\/([^/]+)$/, type: "branch", table: "tb_branches", pk: "branch_id", id: "1", label: { PUT: "แก้ไขสาขา" } },
+    { re: /^\/company\/branches$/, type: "branch", table: "tb_branches", pk: "branch_id", id: "response:branch_id", label: { POST: "เพิ่มสาขา" } },
+    { re: /^\/company\/bank-accounts\/([^/]+)$/, type: "bank_account", table: "tb_bank_accounts", pk: "ba_id", id: "1", label: { PUT: "แก้ไขบัญชีธนาคาร" } },
+    { re: /^\/company\/bank-accounts$/, type: "bank_account", table: "tb_bank_accounts", pk: "ba_id", id: "response:ba_id", label: { POST: "เพิ่มบัญชีธนาคาร" } },
+    { re: /^\/company\/currencies\/([^/]+)$/, type: "currency", table: "tb_currencies", pk: "cur_code", id: "1", label: { PUT: "แก้ไขสกุลเงิน" } },
+    { re: /^\/company\/currencies$/, type: "currency", table: "tb_currencies", pk: "cur_code", id: "response:cur_code", label: { POST: "เพิ่มสกุลเงิน" } },
+    { re: /^\/company\/approval-levels$/, type: "approval_rules", label: { PUT: "แก้ไขกติกาอนุมัติใบเสนอราคา" } },
+    { re: /^\/company$/, type: "company", table: "tb_company_settings", pk: "cs_id", id: "fixed:1", label: { PUT: "แก้ไขข้อมูลบริษัท" } },
+
+    // สินค้า/บริการ หมวดหมู่ ชุดรายการ (2026-10-13)
+    { re: /^\/products\/([^/]+)$/, type: "product", table: "tb_products", pk: "product_id", id: "1", label: { PUT: "แก้ไขสินค้า/บริการ", DELETE: "ลบสินค้า/บริการ" } },
+    { re: /^\/products$/, type: "product", table: "tb_products", pk: "product_id", id: "response:product_id", label: { POST: "เพิ่มสินค้า/บริการ" } },
+    { re: /^\/product-categories\/([^/]+)$/, type: "product_category", table: "tb_product_categories", pk: "pc_id", id: "1", label: { PUT: "แก้ไขหมวดสินค้า", DELETE: "ลบหมวดสินค้า" } },
+    { re: /^\/product-categories$/, type: "product_category", table: "tb_product_categories", pk: "pc_id", id: "response:pc_id", label: { POST: "เพิ่มหมวดสินค้า" } },
+    { re: /^\/product-packages\/([^/]+)$/, type: "product_package", table: "tb_product_packages", pk: "pkg_id", id: "1", label: { PUT: "แก้ไขชุดรายการ", DELETE: "ลบชุดรายการ" } },
+    { re: /^\/product-packages$/, type: "product_package", table: "tb_product_packages", pk: "pkg_id", id: "response:pkg_id", label: { POST: "เพิ่มชุดรายการ" } },
+
     { re: /^\/(logs|audit-logs|error-logs)(\/[^/]+)?$/, type: "log", label: { GET: "เปิดดู log ของระบบ", DELETE: "ลบ log" } },
     { re: /^\/share\/([^/]+)$/, type: "project", table: "tb_projects", pk: "project_share_token", label: { GET: "ลูกค้าเปิดลิงก์ติดตามโปรเจกต์" }, shareView: true },
 ];
@@ -87,9 +111,37 @@ const SKIP = [/^\/auth\/(login|logout)$/, /^\/auth\/verifyPermission$/];
 // ใช้ทั้งใน audit log และ console log ของเซิร์ฟเวอร์ (app.js)
 const maskSecretPath = (p) => String(p).replace(/(\/share\/)([^/?]{4})[^/?]*/i, "$1$2…");
 
+// ไฟล์ที่ส่งมาเป็นข้อความ (ลายเซ็นที่วาดบนจอ = data URL, รูป base64) อ่านไม่ออกและกินที่ log — เหลือแค่ชนิด + ขนาด
+// (2026-10-13, risk-fixes R8) ใช้กับทุก endpoint ไม่ใช่แค่ลายเซ็น
+const DATA_URL_PREFIX = /^data:([\w/+.-]*)(;[\w=.-]+)*;base64,/i;
+const LONG_BASE64 = /^[A-Za-z0-9+/\r\n]{200,}={0,2}$/;
+
+function sizeInKilobytes(byteCount) {
+    return `${Math.max(1, Math.round(byteCount / 1024))} KB`;
+}
+
+// คืนคำอธิบายแทนตัวข้อมูล หรือ null ถ้าเป็นข้อความธรรมดา
+function describeEncodedFile(text) {
+    const dataUrl = text.match(DATA_URL_PREFIX);
+    if (dataUrl) {
+        const decodedBytes = ((text.length - dataUrl[0].length) * 3) / 4;
+        const kind = dataUrl[1].toLowerCase().startsWith("image/") ? "รูปภาพ" : "ไฟล์";
+        return `[${kind} ${sizeInKilobytes(decodedBytes)}]`;
+    }
+    if (LONG_BASE64.test(text)) {
+        return `[ข้อมูล base64 ${sizeInKilobytes((text.length * 3) / 4)}]`;
+    }
+    return null;
+}
+
 function redact(value, depth = 0) {
     if (value === null || value === undefined) return value;
     if (depth > 5) return "[ลึกเกินไป]";
+    if (Buffer.isBuffer(value)) return `[ไฟล์ ${sizeInKilobytes(value.length)}]`;
+    if (typeof value === "string") {
+        const fileDescription = describeEncodedFile(value);
+        if (fileDescription) return fileDescription;
+    }
     if (Array.isArray(value)) return value.slice(0, 100).map((v) => redact(v, depth + 1));
     if (typeof value === "object") {
         const out = {};
@@ -160,6 +212,7 @@ function diffSnapshots(before, after) {
 function resolveRef(ref, match, req, responseBody) {
     if (!ref) return null;
     if (ref === "self") return req.user?.user_id ?? req.auditSelfId ?? null;
+    if (ref.startsWith("fixed:")) return ref.slice(6);
     if (ref.startsWith("response:")) return responseBody?.[ref.slice(9)] ?? null;
     return match?.[Number(ref)] ? decodeURIComponent(match[Number(ref)]) : null;
 }

@@ -6,6 +6,8 @@ import { api } from "@/app/constans";
 import { PROJECT_PERMISSION_GROUPS, PROJECT_GROUP_STARTS, TOTAL_PROJECT_BITS } from "@/app/components/project-position-bits";
 import Button from "@/components/ui/Button/Button";
 import Input from "@/components/ui/Input/input";
+import PageHeader from "@/components/ui/page-header";
+import { buttonClass } from "@/components/ui/button";
 
 export default function CreateProjectPositionPage() {
     const router = useRouter();
@@ -57,10 +59,14 @@ export default function CreateProjectPositionPage() {
     }
 
     return (
-        <div className="p-4 sm:p-6 max-w-2xl mx-auto">
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-800 mb-6">สร้างตำแหน่งในโปรเจกต์</h1>
+        <div className="mx-auto grid max-w-3xl gap-6">
+            <PageHeader
+                eyebrow="ตั้งค่าระบบ · ตำแหน่งในโปรเจกต์"
+                title="สร้างตำแหน่งในโปรเจกต์"
+                description="ตำแหน่งกำหนดว่าสมาชิกทำอะไรได้ภายในโปรเจกต์ · มอบตำแหน่งให้สมาชิกได้ในหน้าโปรเจกต์ (คนเดียวถือหลายตำแหน่งได้)"
+            />
 
-            <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-card sm:p-6">
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                         ชื่อตำแหน่ง
@@ -123,7 +129,7 @@ export default function CreateProjectPositionPage() {
                     <button
                         type="button"
                         onClick={() => router.push("/settings/project-positions")}
-                        className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+                        className={buttonClass("secondary", "md")}
                     >
                         ยกเลิก
                     </button>

@@ -10,6 +10,9 @@ import AvatarCrop from "@/components/ui/AvatarCrop";
 import SearchableSelect from "@/components/ui/SearchableSelect";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { toast } from "sonner";
+import PageHeader from "@/components/ui/page-header";
+import { buttonClass } from "@/components/ui/button";
+import BranchSelect from "../_components/branch-select";
 
 type FormState = {
     user_fname:     string;
@@ -20,6 +23,7 @@ type FormState = {
     user_line_id:   string;
     user_whatApp_no: string;
     user_role_id:   string;
+    user_branch_id: string;
 };
 
 type FormErrors = Partial<Record<keyof FormState, string>>;
@@ -91,7 +95,7 @@ async function uploadAvatar(userId: string, file: File) {
 
 const EMPTY_FORM: FormState = {
     user_fname: "", user_lname: "", user_username: "", user_email: "",
-    user_phone: "", user_line_id: "", user_whatApp_no: "", user_role_id: "",
+    user_phone: "", user_line_id: "", user_whatApp_no: "", user_role_id: "", user_branch_id: "",
 };
 
 export default function CreateUserPage() {
@@ -150,12 +154,16 @@ export default function CreateUserPage() {
     }
 
     return (
-        <div className="p-4 sm:p-6 max-w-2xl mx-auto">
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-800 mb-6">สร้างผู้ใช้งาน</h1>
+        <div className="mx-auto grid max-w-3xl gap-6">
+            <PageHeader
+                eyebrow="จัดการข้อมูลผู้ใช้งาน"
+                title="สร้างผู้ใช้งาน"
+                description="สร้างบัญชีให้พนักงาน · ระบบสร้างรหัสผ่านชั่วคราวให้ ผู้ใช้ต้องตั้งรหัสผ่านใหม่และยืนยันอีเมลตอนเข้าระบบครั้งแรก"
+            />
 
-            <Form cols={2} onSubmit={handleSubmit} className="bg-white shadow-sm border-gray-100 rounded-xl">
+            <Form cols={2} onSubmit={handleSubmit}>
 
-                <div className="flex flex-col gap-1 col-span-2">
+                <div className="flex flex-col gap-1 col-span-full">
                     <label className="text-sm font-medium text-gray-700">รูปโปรไฟล์</label>
                     <AvatarCrop onChange={setAvatarFile} disabled={isPending} />
                 </div>
@@ -205,7 +213,7 @@ export default function CreateUserPage() {
                         placeholder="Line ID" />
                 </div>
 
-                <div className="flex flex-col gap-1 col-span-2">
+                <div className="flex flex-col gap-1 col-span-full">
                     <label className="text-sm font-medium text-gray-700">WhatsApp No.</label>
                     <Input name="user_whatApp_no" value={form.user_whatApp_no} onChange={handleChange}
                         placeholder="WhatsApp No." />
@@ -226,11 +234,17 @@ export default function CreateUserPage() {
                         : <p className="text-xs text-gray-400">แสดงเฉพาะสิทธิ์ที่ไม่เกินสิทธิ์ของคุณ</p>}
                 </div>
 
-                {submitError && <p className="col-span-2 text-sm text-red-600">{submitError}</p>}
+                <BranchSelect
+                    value={form.user_branch_id}
+                    onChange={(branchId) => setField("user_branch_id", branchId)}
+                    disabled={isPending}
+                />
 
-                <div className="col-span-2 flex justify-end gap-3">
+                {submitError && <p className="col-span-full text-sm text-red-600">{submitError}</p>}
+
+                <div className="col-span-full flex justify-end gap-3">
                     <button type="button" onClick={() => router.push("/users")}
-                        className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50">
+                        className={buttonClass("secondary", "md")}>
                         ยกเลิก
                     </button>
                     <Button type="submit" disabled={isPending}>

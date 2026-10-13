@@ -8,6 +8,9 @@ import Button from "@/components/ui/Button/Button";
 import Input from "@/components/ui/Input/input";
 import Form from "@/components/ui/form/Form";
 import SearchableSelect from "@/components/ui/SearchableSelect";
+import PageHeader from "@/components/ui/page-header";
+import { buttonClass } from "@/components/ui/button";
+import { inputClass } from "@/components/ui/form-field";
 
 type FormState = {
     project_name: string;
@@ -97,16 +100,20 @@ export default function EditProjectPage() {
     if (!id || notFound) return <p className="p-6 text-gray-500">ไม่พบโปรเจกต์นี้</p>;
 
     return (
-        <div className="p-4 sm:p-6 max-w-2xl mx-auto">
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-800 mb-6">แก้ไขโปรเจกต์</h1>
+        <div className="mx-auto grid max-w-3xl gap-6">
+            <PageHeader
+                eyebrow="งาน · โปรเจกต์"
+                title="แก้ไขโปรเจกต์"
+                description="แก้ข้อมูลหลักของโปรเจกต์ · สมาชิกและงานจัดการในหน้าโปรเจกต์"
+            />
 
-            <Form cols={2} onSubmit={handleSubmit} className="bg-white shadow-sm border-gray-100 rounded-xl">
-                <div className="flex flex-col gap-1 col-span-2">
+            <Form cols={2} onSubmit={handleSubmit}>
+                <div className="flex flex-col gap-1 col-span-full">
                     <label className="text-sm font-medium text-gray-700">ชื่อโปรเจกต์</label>
                     <Input name="project_name" value={form.project_name} onChange={handleChange} required />
                 </div>
 
-                <div className="flex flex-col gap-1 col-span-2">
+                <div className="flex flex-col gap-1 col-span-full">
                     <label className="text-sm font-medium text-gray-700 mb-1">ลูกค้า</label>
                     <SearchableSelect
                         loadOptions={loadClientOptions}
@@ -117,14 +124,14 @@ export default function EditProjectPage() {
                     />
                 </div>
 
-                <div className="flex flex-col gap-1 col-span-2">
+                <div className="flex flex-col gap-1 col-span-full">
                     <label className="text-sm font-medium text-gray-700">คำอธิบาย</label>
                     <textarea
                         name="project_description"
                         value={form.project_description}
                         onChange={handleChange}
                         rows={3}
-                        className="px-4 py-2 border rounded focus:outline-none focus:ring-2 border-gray-300 focus:border-blue-400 focus:ring-blue-500/20"
+                        className={inputClass(false)}
                     />
                 </div>
 
@@ -133,7 +140,7 @@ export default function EditProjectPage() {
                     <select
                         value={form.project_status}
                         onChange={(e) => setField("project_status", e.target.value)}
-                        className="px-4 py-2 border rounded focus:outline-none focus:ring-2 border-gray-300 focus:border-blue-400 focus:ring-blue-500/20"
+                        className={inputClass(false)}
                     >
                         <option value="planning">วางแผน</option>
                         <option value="in_progress">กำลังทำ</option>
@@ -141,6 +148,7 @@ export default function EditProjectPage() {
                         <option value="completed">เสร็จแล้ว</option>
                         <option value="cancelled">ยกเลิก</option>
                     </select>
+                    <p className="text-xs leading-relaxed text-gray-500">เปลี่ยนเป็น “เสร็จแล้ว” ระบบบันทึกวันที่เสร็จไว้คำนวณ KPI ส่งงานตรงเวลา</p>
                 </div>
 
                 <div />
@@ -153,13 +161,14 @@ export default function EditProjectPage() {
                 <div className="flex flex-col gap-1">
                     <label className="text-sm font-medium text-gray-700">วันครบกำหนด</label>
                     <Input type="date" name="project_due_date" value={form.project_due_date} onChange={handleChange} />
+                    <p className="text-xs leading-relaxed text-gray-500">ใช้คำนวณงานที่ใกล้/เลยกำหนดบนแดชบอร์ด และ KPI ส่งงานตรงเวลา</p>
                 </div>
 
-                {error && <p className="col-span-2 text-sm text-red-600">{error}</p>}
+                {error && <p className="col-span-full text-sm text-red-600">{error}</p>}
 
-                <div className="col-span-2 flex justify-end gap-3">
+                <div className="col-span-full flex justify-end gap-3">
                     <button type="button" onClick={() => router.push(`/projects/view?id=${id}`)}
-                        className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50">
+                        className={buttonClass("secondary", "md")}>
                         ยกเลิก
                     </button>
                     <Button type="submit" disabled={isPending}>
