@@ -97,6 +97,19 @@ const ENTITIES = [
     { re: /^\/product-packages\/([^/]+)$/, type: "product_package", table: "tb_product_packages", pk: "pkg_id", id: "1", label: { PUT: "แก้ไขชุดรายการ", DELETE: "ลบชุดรายการ" } },
     { re: /^\/product-packages$/, type: "product_package", table: "tb_product_packages", pk: "pkg_id", id: "response:pkg_id", label: { POST: "เพิ่มชุดรายการ" } },
 
+    // ใบเสนอราคา (2026-10-13) — ตารางลูก (รายการ/งวด) บันทึกพร้อมหัวเอกสาร diff ดูที่หัวเอกสาร
+    { re: /^\/quotations\/([^/]+)\/submit$/, type: "quotation", table: "tb_quotations", pk: "qt_id", id: "1", label: { POST: "ส่งใบเสนอราคาขออนุมัติ" } },
+    { re: /^\/quotations\/([^/]+)\/approve$/, type: "quotation", table: "tb_quotations", pk: "qt_id", id: "1", label: { POST: "อนุมัติใบเสนอราคา" } },
+    { re: /^\/quotations\/([^/]+)\/return$/, type: "quotation", table: "tb_quotations", pk: "qt_id", id: "1", label: { POST: "ตีกลับใบเสนอราคา" } },
+    { re: /^\/quotations\/([^/]+)\/send$/, type: "quotation", table: "tb_quotations", pk: "qt_id", id: "1", label: { POST: "บันทึกว่าส่งใบเสนอราคาให้ลูกค้าแล้ว" } },
+    { re: /^\/quotations\/([^/]+)\/accept$/, type: "quotation", table: "tb_quotations", pk: "qt_id", id: "1", label: { POST: "บันทึกว่าลูกค้าตอบรับใบเสนอราคา" } },
+    { re: /^\/quotations\/([^/]+)\/decline$/, type: "quotation", table: "tb_quotations", pk: "qt_id", id: "1", label: { POST: "บันทึกว่าลูกค้าปฏิเสธใบเสนอราคา" } },
+    { re: /^\/quotations\/([^/]+)\/cancel$/, type: "quotation", table: "tb_quotations", pk: "qt_id", id: "1", label: { POST: "ยกเลิกใบเสนอราคา" } },
+    { re: /^\/quotations\/([^/]+)\/revise$/, type: "quotation", table: "tb_quotations", pk: "qt_id", id: "response:qt_id", label: { POST: "ออก revision ใบเสนอราคา" } },
+    { re: /^\/quotations\/([^/]+)\/copy$/, type: "quotation", table: "tb_quotations", pk: "qt_id", id: "response:qt_id", label: { POST: "คัดลอกเป็นใบเสนอราคาใหม่" } },
+    { re: /^\/quotations\/([^/]+)$/, type: "quotation", table: "tb_quotations", pk: "qt_id", id: "1", label: { PUT: "แก้ร่างใบเสนอราคา", DELETE: "ลบร่างใบเสนอราคา" } },
+    { re: /^\/quotations$/, type: "quotation", table: "tb_quotations", pk: "qt_id", id: "response:qt_id", label: { POST: "สร้างร่างใบเสนอราคา" } },
+
     { re: /^\/(logs|audit-logs|error-logs)(\/[^/]+)?$/, type: "log", label: { GET: "เปิดดู log ของระบบ", DELETE: "ลบ log" } },
     { re: /^\/share\/([^/]+)$/, type: "project", table: "tb_projects", pk: "project_share_token", label: { GET: "ลูกค้าเปิดลิงก์ติดตามโปรเจกต์" }, shareView: true },
 ];

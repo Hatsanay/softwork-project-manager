@@ -166,7 +166,7 @@ export default function ProjectsPage() {
     ];
 
     return (
-        <div className="grid gap-6">
+        <div className="grid grid-cols-1 gap-6">
             <PageHeader
                 eyebrow="งาน"
                 title={showCancelled ? "โปรเจกต์ที่ยกเลิก" : "โปรเจกต์"}

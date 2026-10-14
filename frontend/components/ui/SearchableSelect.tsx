@@ -126,7 +126,7 @@ export default function SearchableSelect({
                     <div className="p-2 border-b border-gray-100">
                         <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-50">
                             {loading
-                                ? <Loader2 size={14} className="text-blue-400 shrink-0 animate-spin" />
+                                ? <Loader2 size={14} className="text-blue-600 shrink-0 animate-spin" />
                                 : <Search size={14} className="text-gray-400 shrink-0" />
                             }
                             <input
@@ -151,7 +151,7 @@ export default function SearchableSelect({
                                     onClick={() => select(opt)}
                                     className={`px-3 py-2 rounded-lg text-sm cursor-pointer hover:bg-blue-50 hover:text-blue-700
                                         ${String(opt.value) === value
-                                            ? "bg-blue-50 text-blue-700 font-medium"
+                                            ? "bg-blue-50 text-blue-600 font-medium"
                                             : "text-gray-700"}`}
                                 >
                                     {opt.label}

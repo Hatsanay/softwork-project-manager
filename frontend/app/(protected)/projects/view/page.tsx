@@ -18,6 +18,19 @@ import { PROJECT_PERMISSION_BITS } from "@/app/components/project-position-bits"
 import { toast } from "sonner";
 import { buttonClass } from "@/components/ui/button";
 import { inputClass } from "@/components/ui/form-field";
+import SectionCard from "@/components/ui/section-card";
+import Switch from "@/components/ui/switch";
+import StatusPill from "@/components/ui/status-pill";
+import StatusBanner from "@/components/ui/guidance/status-banner";
+import { PageSkeleton } from "@/components/ui/skeleton";
+import { ListChecks, Plus, UserPlus, Users } from "lucide-react";
+import {
+    AgileOverviewCard,
+    ProjectActivityCard,
+    ProjectHeader,
+    ShareLinkCard,
+    TASK_STATUS,
+} from "./_components/project-sections";
 
 const SERVER_BASE = new URL(api).origin;
 
@@ -124,8 +137,8 @@ function scrollToChatMessage(messageId: string) {
     const el = document.getElementById(`chat-msg-${messageId}`);
     if (!el) return;
     el.scrollIntoView({ behavior: "smooth", block: "center" });
-    el.classList.add("ring-2", "ring-amber-400");
-    setTimeout(() => el.classList.remove("ring-2", "ring-amber-400"), 1200);
+    el.classList.add("ring-2", "ring-blue-500");
+    setTimeout(() => el.classList.remove("ring-2", "ring-blue-500"), 1200);
 }
 
 type IssueFormState = { issue_title: string; issue_description: string; tagged_users: IssueTag[] };
@@ -184,26 +197,14 @@ const EMPTY_TASK_FORM: TaskFormState = {
     task_start_date: "", task_due_date: "", task_weight: "1",
 };
 
-const STATUS_LABEL: Record<ProjectStatus, string> = {
-    planning: "วางแผน", in_progress: "กำลังทำ", on_hold: "พักไว้", completed: "เสร็จแล้ว", cancelled: "ยกเลิก",
-};
-const STATUS_COLOR: Record<ProjectStatus, string> = {
-    planning: "text-gray-500", in_progress: "text-blue-600", on_hold: "text-amber-600",
-    completed: "text-green-600", cancelled: "text-red-500",
-};
-
 const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
     todo: "รอดำเนินการ", in_progress: "กำลังทำ", review: "ตรวจสอบ", done: "เสร็จแล้ว",
-};
-const TASK_STATUS_COLOR: Record<TaskStatus, string> = {
-    todo: "text-gray-500", in_progress: "text-blue-600", review: "text-amber-600", done: "text-green-600",
 };
 const TASK_STATUS_OPTIONS: { value: TaskStatus; label: string }[] = (
     Object.keys(TASK_STATUS_LABEL) as TaskStatus[]
 ).map((value) => ({ value, label: TASK_STATUS_LABEL[value] }));
 
 const ISSUE_STATUS_LABEL: Record<IssueStatus, string> = { open: "เปิดอยู่", resolved: "แก้ไขแล้ว" };
-const ISSUE_STATUS_COLOR: Record<IssueStatus, string> = { open: "text-red-600 bg-red-50", resolved: "text-green-600 bg-green-50" };
 
 const ACTION_LABEL: Record<ActivityEntry["log_action"], string> = {
     created: "สร้างงาน", status_changed: "เปลี่ยนสถานะงาน", edited: "แก้ไขงาน",
@@ -242,7 +243,7 @@ function IssueCountBadge({ count, color }: { count: number; color: "red" | "blue
 function ChatUnreadBadge({ count }: { count: number }) {
     if (!count) return null;
     return (
-        <span className="inline-flex items-center justify-center min-w-4.5 h-4.5 px-1 text-[11px] font-semibold text-white bg-red-500 rounded-full leading-none">
+        <span className="inline-flex items-center justify-center min-w-4.5 h-4.5 px-1 text-[11px] font-medium text-white bg-red-600 rounded-full leading-none">
             {count > 99 ? "99+" : count}
         </span>
     );
@@ -1190,8 +1191,14 @@ export default function ViewProjectPage() {
         }
     }
 
-    if (!id || notFound) return <p className="p-6 text-gray-500">ไม่พบโปรเจกต์นี้</p>;
-    if (!project) return <p className="p-6 text-gray-400">กำลังโหลด...</p>;
+    if (!id || notFound) {
+        return (
+            <StatusBanner tone="error" title="ไม่พบโปรเจกต์นี้">
+                โปรเจกต์อาจถูกลบไปแล้ว หรือคุณไม่ได้เป็นสมาชิก — กลับไปเลือกจากหน้ารายการโปรเจกต์
+            </StatusBanner>
+        );
+    }
+    if (!project) return <PageSkeleton />;
 
     const shareUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/share/${project.project_share_token}`;
 
@@ -1201,17 +1208,6 @@ export default function ViewProjectPage() {
         ? topLevelTasks.filter((t) => t.assignees.some((a) => a.user_id === currentUserId))
         : topLevelTasks;
 
-    // ภาพรวม Agile — นับจาก tasks ที่โหลดมาแล้วในหน้านี้เลย ไม่ต้องยิง request แยก
-    const agileSubtasks = tasks.filter((t) => t.task_parent_id !== null);
-    const agileClaimedTaskCount = topLevelTasks.filter((t) => t.assignees.length > 0).length;
-    const agileUnclaimedTaskCount = topLevelTasks.length - agileClaimedTaskCount;
-    const agileClaimedSubtaskCount = agileSubtasks.filter((t) => t.assignees.length > 0).length;
-    const agileUnclaimedSubtaskCount = agileSubtasks.length - agileClaimedSubtaskCount;
-    const agileOverviewList = agileOverviewTab === "task" ? topLevelTasks
-        : agileOverviewTab === "subtask" ? agileSubtasks
-        : tasks;
-    const agileParentNameById = Object.fromEntries(topLevelTasks.map((t) => [t.task_id, t.task_title]));
-
     const taskColumns: Column<Task>[] = [
         {
             key: "task_title",
@@ -1220,7 +1216,7 @@ export default function ViewProjectPage() {
                 <button
                     type="button"
                     onClick={() => openTaskDetail(row)}
-                    className="text-left hover:text-blue-600 hover:underline"
+                    className="-my-2 py-2 text-left hover:text-blue-600 hover:underline"
                 >
                     {v as string}
                 </button>
@@ -1258,7 +1254,7 @@ export default function ViewProjectPage() {
                         <button
                             type="button"
                             onClick={() => handleClaimTask(row)}
-                            className="text-xs font-medium text-blue-600 border border-blue-200 rounded-full px-2.5 py-1 hover:bg-blue-50"
+                            className={buttonClass("secondary", "sm")}
                         >
                             รับงาน
                         </button>
@@ -1274,13 +1270,14 @@ export default function ViewProjectPage() {
                 const status = v as TaskStatus;
                 const canChange = canChangeThisTaskStatus(row);
                 if (!canChange) {
-                    return <span className={TASK_STATUS_COLOR[status]}>{TASK_STATUS_LABEL[status]}</span>;
+                    return <StatusPill tone={TASK_STATUS[status].tone}>{TASK_STATUS[status].label}</StatusPill>;
                 }
                 return (
                     <select
                         value={status}
+                        aria-label={`สถานะของ ${row.task_title}`}
                         onChange={(e) => handleStatusChange(row, e.target.value as TaskStatus)}
-                        className="text-sm border border-gray-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        className={`${inputClass(false, "sm")} w-36`}
                     >
                         {TASK_STATUS_OPTIONS.map((opt) => (
                             <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -1311,9 +1308,9 @@ export default function ViewProjectPage() {
                 return (
                     <div className="flex flex-wrap gap-1">
                         {list.map((p) => (
-                            <span key={p.position_id} className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
+                            <StatusPill key={p.position_id} tone="info">
                                 {p.position_name}
-                            </span>
+                            </StatusPill>
                         ))}
                     </div>
                 );
@@ -1322,216 +1319,72 @@ export default function ViewProjectPage() {
     ];
 
     return (
-        <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-6">
-            {/* หัวข้อ + ข้อมูลโปรเจกต์ */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                    <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <h1 className="text-xl sm:text-2xl font-bold text-gray-800">{project.project_name}</h1>
-                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full bg-gray-50 ${STATUS_COLOR[project.project_status]}`}>
-                                {STATUS_LABEL[project.project_status]}
-                            </span>
-                            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-50 text-gray-500">
-                                {project.project_type === "agile" ? "Agile" : "Waterfall"}
-                            </span>
-                        </div>
-                        {project.client_name && <p className="text-sm text-gray-500 mt-1">ลูกค้า: {project.client_name}</p>}
-                        {project.project_description && (
-                            <p className="text-sm text-gray-600 mt-2 whitespace-pre-wrap">{project.project_description}</p>
-                        )}
-                    </div>
-                    <div className="flex gap-2 shrink-0">
-                        <button
-                            type="button"
-                            onClick={() => setProjectChatOpen(true)}
-                            className="flex items-center gap-1.5 px-4 py-2 text-sm text-blue-600 border border-blue-200 rounded hover:bg-blue-50"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-4 h-4">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm7.5 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm-3.75 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 12c0 4.556-4.365 8.25-9.75 8.25a10.4 10.4 0 0 1-2.573-.317c-.478.457-1.68 1.457-3.328 1.827-.244.055-.443-.187-.351-.42.198-.501.556-1.396.669-2.293C4.276 17.641 3 15.03 3 12c0-4.556 4.365-8.25 9.75-8.25S21.75 7.444 21.75 12Z" />
-                            </svg>
-                            แชทโปรเจกต์
-                            <ChatUnreadBadge count={project.unread_chat_count} />
-                        </button>
-                        {canEditProjectInfo && (
-                            <EditButton onClick={() => router.push(`/projects/edit?id=${id}`)}>แก้ไข</EditButton>
-                        )}
-                        {canDeleteProject && (
-                            <DeleteButton onClick={() => setDeleteProjectConfirm(true)}>ลบ</DeleteButton>
-                        )}
-                    </div>
-                </div>
-
-                <ProgressBar percent={Number(project.project_progress_percent)} />
-
-                <div className="flex flex-wrap gap-x-8 gap-y-1 text-sm text-gray-500">
-                    <span>วันเริ่ม: {formatDateOnly(project.project_start_date)}</span>
-                    <span>ครบกำหนด: {formatDateOnly(project.project_due_date)}</span>
-                    <span>สมาชิก: {members.length} คน</span>
-                </div>
-            </div>
+        <div className="mx-auto grid max-w-5xl gap-6">
+            {/* หัวข้อ + ข้อมูลโปรเจกต์ (ส่วนแสดงผลอยู่ที่ _components/project-sections.tsx) */}
+            <ProjectHeader
+                project={project}
+                memberCount={members.length}
+                canEdit={canEditProjectInfo}
+                canDelete={canDeleteProject}
+                onOpenChat={() => setProjectChatOpen(true)}
+                onEdit={() => router.push(`/projects/edit?id=${id}`)}
+                onDelete={() => setDeleteProjectConfirm(true)}
+            />
 
             {/* ลิงก์สำหรับลูกค้า */}
             {canManageShareLink && (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-3">
-                    <div className="flex items-center justify-between">
-                        <h2 className="text-base font-semibold text-gray-800">ลิงก์สำหรับลูกค้า</h2>
-                        <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={!!project.project_share_enabled}
-                                onChange={handleToggleShare}
-                                className="w-4 h-4 accent-blue-500"
-                            />
-                            เปิดใช้งาน
-                        </label>
-                    </div>
-                    <div className="flex flex-col sm:flex-row gap-2">
-                        <Input readOnly value={shareUrl} className="flex-1 bg-gray-50 text-gray-500" />
-                        <div className="flex gap-2 shrink-0">
-                            <Button type="button" onClick={handleCopyLink}>{copyFeedback ? "คัดลอกแล้ว" : "คัดลอก"}</Button>
-                            <button
-                                type="button"
-                                onClick={openShareEmailModal}
-                                className="px-4 py-2 text-sm text-blue-600 border border-blue-200 rounded hover:bg-blue-50"
-                            >
-                                ส่งให้ลูกค้าทางอีเมล
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handleRegenerateLink}
-                                disabled={isRegeneratingLink}
-                                className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
-                            >
-                                {isRegeneratingLink ? "กำลังสร้าง..." : "สร้างลิงก์ใหม่"}
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <ShareLinkCard
+                    isEnabled={Boolean(project.project_share_enabled)}
+                    shareUrl={shareUrl}
+                    copied={Boolean(copyFeedback)}
+                    isRegenerating={isRegeneratingLink}
+                    onToggle={handleToggleShare}
+                    onCopy={handleCopyLink}
+                    onEmail={openShareEmailModal}
+                    onRegenerate={handleRegenerateLink}
+                />
             )}
 
-            {/* ภาพรวม Agile — เฉพาะโปรเจกต์ agile: สรุปว่ามีงานทั้งหมดกี่ชิ้น รับไปแล้ว/ยังไม่มีคนรับกี่ชิ้น แยก task/subtask */}
+            {/* ภาพรวม Agile — เฉพาะโปรเจกต์ agile */}
             {project.project_type === "agile" && (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-4">
-                    <h2 className="text-base font-semibold text-gray-800">ภาพรวม Agile</h2>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        <div className="rounded-lg border border-gray-100 p-3">
-                            <p className="text-xs text-gray-400">ทั้งหมด (Task + Subtask)</p>
-                            <p className="text-xl font-semibold text-gray-800">{topLevelTasks.length + agileSubtasks.length}</p>
-                        </div>
-                        <div className="rounded-lg border border-gray-100 p-3">
-                            <p className="text-xs text-gray-400">Task ทั้งหมด</p>
-                            <p className="text-xl font-semibold text-gray-800">{topLevelTasks.length}</p>
-                        </div>
-                        <div className="rounded-lg border border-gray-100 p-3">
-                            <p className="text-xs text-gray-400">Subtask ทั้งหมด</p>
-                            <p className="text-xl font-semibold text-gray-800">{agileSubtasks.length}</p>
-                        </div>
-                        <div />
-                        <div className="rounded-lg border border-green-100 bg-green-50/50 p-3">
-                            <p className="text-xs text-green-600">Task ที่รับแล้ว</p>
-                            <p className="text-xl font-semibold text-green-700">{agileClaimedTaskCount}</p>
-                        </div>
-                        <div className="rounded-lg border border-green-100 bg-green-50/50 p-3">
-                            <p className="text-xs text-green-600">Subtask ที่รับแล้ว</p>
-                            <p className="text-xl font-semibold text-green-700">{agileClaimedSubtaskCount}</p>
-                        </div>
-                        <div className="rounded-lg border border-amber-100 bg-amber-50/50 p-3">
-                            <p className="text-xs text-amber-600">Task ที่ยังไม่มีคนรับ</p>
-                            <p className="text-xl font-semibold text-amber-700">{agileUnclaimedTaskCount}</p>
-                        </div>
-                        <div className="rounded-lg border border-amber-100 bg-amber-50/50 p-3">
-                            <p className="text-xs text-amber-600">Subtask ที่ยังไม่มีคนรับ</p>
-                            <p className="text-xl font-semibold text-amber-700">{agileUnclaimedSubtaskCount}</p>
-                        </div>
-                    </div>
-
-                    <div className="flex text-xs rounded-lg border border-gray-200 overflow-hidden w-fit">
-                        {(["all", "task", "subtask"] as const).map((t) => (
-                            <button
-                                key={t}
-                                type="button"
-                                onClick={() => setAgileOverviewTab(t)}
-                                className={`px-3 py-1.5 font-medium transition-colors ${
-                                    agileOverviewTab === t ? "bg-blue-500 text-white" : "bg-white text-gray-500 hover:bg-gray-50"
-                                }`}
-                            >
-                                {t === "all" ? "ทั้งหมด" : t === "task" ? "Task" : "Subtask"}
-                            </button>
-                        ))}
-                    </div>
-
-                    {agileOverviewList.length === 0 ? (
-                        <p className="text-sm text-gray-400">ยังไม่มีรายการ</p>
-                    ) : (
-                        <ul className="divide-y divide-gray-50 rounded-lg border border-gray-100 overflow-hidden max-h-96 overflow-y-auto">
-                            {agileOverviewList.map((t) => {
-                                const isSubtask = !!t.task_parent_id;
-                                const isClaimed = t.assignees.length > 0;
-                                return (
-                                    <li key={t.task_id} className="flex items-center justify-between gap-2 px-4 py-2.5">
-                                        <button
-                                            type="button"
-                                            onClick={() => openTaskDetail(t)}
-                                            className="flex-1 min-w-0 text-left"
-                                        >
-                                            <p className="text-sm text-gray-700 hover:underline truncate">
-                                                {t.task_title}
-                                                {isSubtask && t.task_parent_id && agileParentNameById[t.task_parent_id] && (
-                                                    <span className="text-gray-400"> — subtask ของ {agileParentNameById[t.task_parent_id]}</span>
-                                                )}
-                                            </p>
-                                        </button>
-                                        <span className="flex items-center gap-2 shrink-0">
-                                            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${isSubtask ? "bg-blue-50 text-blue-600" : "bg-gray-100 text-gray-500"}`}>
-                                                {isSubtask ? "Subtask" : "Task"}
-                                            </span>
-                                            {isClaimed ? (
-                                                <span className="text-xs text-green-600 truncate max-w-[140px]">
-                                                    {t.assignees.map((a) => a.user_fullname).join(", ")}
-                                                </span>
-                                            ) : (
-                                                <span className="text-xs font-medium text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">
-                                                    ยังไม่มีคนรับ
-                                                </span>
-                                            )}
-                                        </span>
-                                    </li>
-                                );
-                            })}
-                        </ul>
-                    )}
-                </div>
+                <AgileOverviewCard
+                    tasks={tasks}
+                    tab={agileOverviewTab}
+                    onTabChange={setAgileOverviewTab}
+                    onOpenTask={(task) => openTaskDetail(task as Task)}
+                />
             )}
 
             {/* งาน */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-4">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                    <h2 className="text-base font-semibold text-gray-800">งาน (Task)</h2>
-                    <div className="flex items-center gap-4">
-                        <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={showOnlyMyTasks}
-                                onChange={(e) => setShowOnlyMyTasks(e.target.checked)}
-                                className="w-4 h-4 accent-blue-500"
-                            />
-                            แสดงเฉพาะ task ที่ตัวเองรับผิดชอบ
-                        </label>
-                        {canEditProjectInfo && (
-                            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={!!project.project_use_task_weight}
-                                    onChange={handleToggleTaskWeight}
-                                    className="w-4 h-4 accent-blue-500"
-                                />
-                                ถ่วงน้ำหนัก task
-                            </label>
-                        )}
-                        {canAddTask && <Button onClick={() => openCreateTask()}>เพิ่ม Task</Button>}
-                    </div>
+            <SectionCard
+                icon={ListChecks}
+                title="งาน (Task)"
+                description="แสดงเฉพาะงานหลัก — กดชื่องานเพื่อดู subtask ปัญหา แชท และประวัติ · ป้ายแดง = ปัญหาของงานนั้น ป้ายฟ้า = ปัญหาใน subtask"
+                actions={
+                    canAddTask && (
+                        <button type="button" onClick={() => openCreateTask()} className={buttonClass("primary", "md")}>
+                            <Plus size={16} />
+                            เพิ่ม Task
+                        </button>
+                    )
+                }
+            >
+                <div className="flex flex-wrap gap-x-8 gap-y-3">
+                    <Switch
+                        id="show-only-my-tasks"
+                        label="เฉพาะงานที่ฉันรับผิดชอบ"
+                        checked={showOnlyMyTasks}
+                        onChange={setShowOnlyMyTasks}
+                    />
+                    {canEditProjectInfo && (
+                        <Switch
+                            id="use-task-weight"
+                            label="ถ่วงน้ำหนักงาน"
+                            description="เปิด = ความคืบหน้าโปรเจกต์คิดตามน้ำหนักของแต่ละงาน · ปิด = ทุกงานนับเท่ากัน"
+                            checked={Boolean(project.project_use_task_weight)}
+                            onChange={handleToggleTaskWeight}
+                        />
+                    )}
                 </div>
                 <DataTable
                     columns={taskColumns}
@@ -1547,14 +1400,22 @@ export default function ViewProjectPage() {
                         </div>
                     )}
                 />
-            </div>
+            </SectionCard>
 
             {/* สมาชิก */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                    <h2 className="text-base font-semibold text-gray-800">สมาชิกโปรเจกต์</h2>
-                    {canManageMembers && <Button onClick={openAddMember}>เพิ่มสมาชิก</Button>}
-                </div>
+            <SectionCard
+                icon={Users}
+                title="สมาชิกโปรเจกต์"
+                description="ตำแหน่งในโปรเจกต์กำหนดว่าแต่ละคนทำอะไรได้บ้าง (ตั้งตำแหน่งได้ที่ ตั้งค่าระบบ › ตำแหน่งในโปรเจกต์)"
+                actions={
+                    canManageMembers && (
+                        <button type="button" onClick={openAddMember} className={buttonClass("primary", "md")}>
+                            <UserPlus size={16} />
+                            เพิ่มสมาชิก
+                        </button>
+                    )
+                }
+            >
                 <DataTable
                     columns={memberColumns}
                     data={members}
@@ -1567,47 +1428,22 @@ export default function ViewProjectPage() {
                         </div>
                     )}
                 />
-            </div>
+            </SectionCard>
 
             {/* ประวัติกิจกรรม */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-4">
-                <h2 className="text-base font-semibold text-gray-800">ประวัติกิจกรรม</h2>
-                {activity.length === 0 ? (
-                    <p className="text-sm text-gray-400">ยังไม่มีกิจกรรม</p>
-                ) : (
-                    <ul className="space-y-3 max-h-96 overflow-y-auto">
-                        {activity.map((entry) => (
-                            <li key={entry.log_id} className="text-sm border-l-2 border-blue-100 pl-3">
-                                <p className="text-gray-700">
-                                    <span className="font-medium">{entry.log_fullname ?? "ผู้ใช้งานที่ถูกลบ"}</span>
-                                    {" "}{ACTION_LABEL[entry.log_action]}{" "}
-                                    <span className="font-medium">{entry.task_title}</span>
-                                    {entry.log_action === "status_changed" && entry.log_old_value && entry.log_new_value && (
-                                        <>
-                                            {" "}({TASK_STATUS_LABEL[entry.log_old_value as TaskStatus] ?? entry.log_old_value}
-                                            {" → "}
-                                            {TASK_STATUS_LABEL[entry.log_new_value as TaskStatus] ?? entry.log_new_value})
-                                        </>
-                                    )}
-                                </p>
-                                <p className="text-xs text-gray-400">{formatDate(entry.log_created_at)}</p>
-                            </li>
-                        ))}
-                    </ul>
-                )}
-            </div>
+            <ProjectActivityCard activity={activity} />
 
             {/* Modal เพิ่ม/แก้ไข Task */}
             {taskModalOpen && (
                 <div
-                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+                    className="fixed inset-0 z-50 flex items-end justify-center bg-gray-900/40 backdrop-blur-sm sm:items-center sm:p-4"
                     onClick={() => setTaskModalOpen(false)}
                 >
                     <div
-                        className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 p-6 space-y-4 max-h-[90vh] overflow-y-auto"
+                        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-float w-full max-w-lg p-6 space-y-4 max-h-[90dvh] overflow-y-auto"
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <h2 className="text-lg font-semibold text-gray-800">
+                        <h2 className="text-base font-medium text-gray-900">
                             {editingTask ? "แก้ไข Task" : parentTask ? "เพิ่ม Subtask" : "เพิ่ม Task"}
                         </h2>
                         {parentTask && (
@@ -1717,11 +1553,11 @@ export default function ViewProjectPage() {
             {/* Modal รายละเอียด Task */}
             {(detailTask || detailLoading) && (
                 <div
-                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+                    className="fixed inset-0 z-50 flex items-end justify-center bg-gray-900/40 backdrop-blur-sm sm:items-center sm:p-4"
                     onClick={closeTaskDetail}
                 >
                     <div
-                        className={`bg-white rounded-2xl shadow-xl w-full mx-4 max-h-[90vh] flex overflow-hidden ${chatOpen ? "max-w-4xl" : "max-w-lg"}`}
+                        className={`bg-white rounded-t-2xl sm:rounded-2xl shadow-float w-full max-h-[90dvh] flex overflow-hidden ${chatOpen ? "max-w-4xl" : "max-w-lg"}`}
                         onClick={(e) => e.stopPropagation()}
                     >
                         {detailLoading || !detailTask ? (
@@ -1746,7 +1582,7 @@ export default function ViewProjectPage() {
 
                                     <div className="flex-1 min-w-0 space-y-3">
                                         <div className="flex items-start justify-between gap-3">
-                                            <h2 className="text-lg font-semibold text-gray-800">{detailTask.task_title}</h2>
+                                            <h2 className="text-base font-medium text-gray-900">{detailTask.task_title}</h2>
                                             <div className="flex items-center gap-2 shrink-0">
                                                 {canChangeThisTaskStatus(detailTask) ? (
                                                     <select
@@ -1756,16 +1592,16 @@ export default function ViewProjectPage() {
                                                             await handleStatusChange(detailTask, task_status);
                                                             setDetailTask((prev) => (prev ? { ...prev, task_status } : prev));
                                                         }}
-                                                        className="text-sm border border-gray-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                                                        className={inputClass(false, "sm")}
                                                     >
                                                         {TASK_STATUS_OPTIONS.map((opt) => (
                                                             <option key={opt.value} value={opt.value}>{opt.label}</option>
                                                         ))}
                                                     </select>
                                                 ) : (
-                                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full bg-gray-50 ${TASK_STATUS_COLOR[detailTask.task_status]}`}>
-                                                        {TASK_STATUS_LABEL[detailTask.task_status]}
-                                                    </span>
+                                                    <StatusPill tone={TASK_STATUS[detailTask.task_status].tone}>
+                                                        {TASK_STATUS[detailTask.task_status].label}
+                                                    </StatusPill>
                                                 )}
                                                 <button
                                                     type="button"
@@ -1805,7 +1641,7 @@ export default function ViewProjectPage() {
 
                                         <div className="space-y-2">
                                             <div className="flex items-center justify-between">
-                                                <h3 className="text-sm font-semibold text-gray-700">Subtasks</h3>
+                                                <h3 className="text-sm font-medium text-gray-900">Subtasks</h3>
                                                 {canAddSubtaskTo(detailTask) && (
                                                     <button
                                                         type="button"
@@ -1848,9 +1684,9 @@ export default function ViewProjectPage() {
                                                                             {c.assignees.map((a) => a.user_fullname).join(", ")}
                                                                         </span>
                                                                     ) : null}
-                                                                    <span className={`text-xs ${TASK_STATUS_COLOR[c.task_status]}`}>
-                                                                        {TASK_STATUS_LABEL[c.task_status]}
-                                                                    </span>
+                                                                    <StatusPill tone={TASK_STATUS[c.task_status].tone}>
+                                                                        {TASK_STATUS[c.task_status].label}
+                                                                    </StatusPill>
                                                                 </span>
                                                             </li>
                                                         ))}
@@ -1865,7 +1701,7 @@ export default function ViewProjectPage() {
 
                                 <div className="space-y-2">
                                     <div className="flex items-center justify-between">
-                                        <h3 className="text-sm font-semibold text-gray-700">ปัญหา</h3>
+                                        <h3 className="text-sm font-medium text-gray-900">ปัญหา</h3>
                                         {canAddIssueTo(detailTask) && !issueFormOpen && (
                                             <button type="button" onClick={openAddIssue} className="text-xs text-blue-600 hover:underline">
                                                 + แจ้งปัญหา
@@ -1886,7 +1722,7 @@ export default function ViewProjectPage() {
                                                 onChange={(e) => setIssueForm((p) => ({ ...p, issue_description: e.target.value }))}
                                                 rows={2}
                                                 placeholder="รายละเอียด (ไม่บังคับ)"
-                                                className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-2 border-gray-300 focus:border-blue-400 focus:ring-blue-500/20"
+                                                className={inputClass()}
                                             />
 
                                             <div className="space-y-1">
@@ -1896,7 +1732,7 @@ export default function ViewProjectPage() {
                                                         {issueForm.tagged_users.map((u) => (
                                                             <span
                                                                 key={u.user_id}
-                                                                className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full"
+                                                                className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full"
                                                             >
                                                                 @{u.user_fullname}
                                                                 <button
@@ -1905,7 +1741,7 @@ export default function ViewProjectPage() {
                                                                         ...p,
                                                                         tagged_users: p.tagged_users.filter((t) => t.user_id !== u.user_id),
                                                                     }))}
-                                                                    className="text-blue-400 hover:text-red-600"
+                                                                    className="text-blue-600 hover:text-red-600"
                                                                 >
                                                                     ×
                                                                 </button>
@@ -1921,7 +1757,7 @@ export default function ViewProjectPage() {
                                                         onFocus={() => { if (issueTagBlurTimer.current) clearTimeout(issueTagBlurTimer.current); setIssueTagDropdownOpen(true); }}
                                                         onBlur={() => { issueTagBlurTimer.current = setTimeout(() => setIssueTagDropdownOpen(false), 150); }}
                                                         placeholder="พิมพ์ @ ตามด้วยชื่อเพื่อแท็กคน..."
-                                                        className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-2 border-gray-300 focus:border-blue-400 focus:ring-blue-500/20"
+                                                        className={inputClass()}
                                                     />
                                                     {issueTagDropdownOpen && issueTagQuery.trim() && (
                                                         <div className="absolute z-10 mt-1 w-full bg-white rounded-lg shadow-lg border border-gray-100 max-h-40 overflow-y-auto">
@@ -2063,7 +1899,7 @@ export default function ViewProjectPage() {
                                                                     {issue.tags.map((t) => (
                                                                         <span
                                                                             key={t.user_id}
-                                                                            className="text-[11px] font-medium text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded-full"
+                                                                            className="text-[11px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full"
                                                                         >
                                                                             @{t.user_fullname}
                                                                         </span>
@@ -2074,9 +1910,9 @@ export default function ViewProjectPage() {
                                                                 {issue.created_by_name ?? "ผู้ใช้งานที่ถูกลบ"} · {formatDate(issue.issue_created_at)}
                                                             </p>
                                                         </div>
-                                                        <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded-full ${ISSUE_STATUS_COLOR[issue.issue_status]}`}>
+                                                        <StatusPill tone={issue.issue_status === "open" ? "danger" : "success"}>
                                                             {ISSUE_STATUS_LABEL[issue.issue_status]}
-                                                        </span>
+                                                        </StatusPill>
                                                     </div>
                                                     <div className="flex items-center gap-3 pt-1">
                                                         {canChangeIssueStatusOf(detailTask) && (
@@ -2101,7 +1937,7 @@ export default function ViewProjectPage() {
                                                             <button
                                                                 type="button"
                                                                 onClick={() => setDeleteIssueTarget(issue)}
-                                                                className="text-xs text-red-500 hover:underline"
+                                                                className="text-xs text-red-600 hover:underline"
                                                             >
                                                                 ลบ
                                                             </button>
@@ -2182,7 +2018,7 @@ export default function ViewProjectPage() {
                                                                                         ...prev,
                                                                                         [issue.issue_id]: (prev[issue.issue_id] ?? []).filter((_, i) => i !== idx),
                                                                                     }))}
-                                                                                    className="absolute -top-1.5 -right-1.5 w-4 h-4 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] leading-none"
+                                                                                    className="absolute -top-1.5 -right-1.5 w-4 h-4 flex items-center justify-center rounded-full bg-red-600 text-white text-[10px] leading-none"
                                                                                 >
                                                                                     ×
                                                                                 </button>
@@ -2233,7 +2069,7 @@ export default function ViewProjectPage() {
                                 <hr className="border-gray-100" />
 
                                 <div className="space-y-2">
-                                    <h3 className="text-sm font-semibold text-gray-700">ประวัติ</h3>
+                                    <h3 className="text-sm font-medium text-gray-900">ประวัติ</h3>
                                     {(() => {
                                         const taskActivity = activity.filter((e) => e.task_id === detailTask.task_id);
                                         if (taskActivity.length === 0) {
@@ -2284,7 +2120,7 @@ export default function ViewProjectPage() {
                             {chatOpen && (
                                 <div className="w-[320px] shrink-0 border-l border-gray-100 flex flex-col">
                                     <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between shrink-0">
-                                        <h3 className="text-sm font-semibold text-gray-700">แชท</h3>
+                                        <h3 className="text-sm font-medium text-gray-900">แชท</h3>
                                         <button
                                             type="button"
                                             onClick={() => setChatOpen(false)}
@@ -2325,7 +2161,7 @@ export default function ViewProjectPage() {
                                                                 type="button"
                                                                 onClick={() => scrollToChatMessage(msg.reply_to_message_id!)}
                                                                 className={`block w-full text-left mb-1 pl-2 border-l-2 rounded ${
-                                                                    isOwn ? "border-blue-200 bg-blue-400/30" : "border-gray-300 bg-white/60"
+                                                                    isOwn ? "border-blue-200 bg-blue-50" : "border-gray-300 bg-white/60"
                                                                 }`}
                                                             >
                                                                 <p className={`text-[11px] font-medium ${isOwn ? "text-blue-50" : "text-gray-600"}`}>
@@ -2476,14 +2312,14 @@ export default function ViewProjectPage() {
             {/* Modal เพิ่ม/แก้ไขสมาชิก */}
             {memberModalOpen && (
                 <div
-                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+                    className="fixed inset-0 z-50 flex items-end justify-center bg-gray-900/40 backdrop-blur-sm sm:items-center sm:p-4"
                     onClick={() => setMemberModalOpen(false)}
                 >
                     <div
-                        className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6 space-y-4 max-h-[90vh] overflow-y-auto"
+                        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-float w-full max-w-md p-6 space-y-4 max-h-[90dvh] overflow-y-auto"
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <h2 className="text-lg font-semibold text-gray-800">
+                        <h2 className="text-base font-medium text-gray-900">
                             {editingMember ? "แก้ไขตำแหน่งสมาชิก" : "เพิ่มสมาชิก"}
                         </h2>
                         <form onSubmit={handleMemberSubmit} className="space-y-4">
@@ -2545,11 +2381,11 @@ export default function ViewProjectPage() {
             {/* Modal ส่งลิงก์ให้ลูกค้าทางอีเมล */}
             {shareEmailModalOpen && (
                 <div
-                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+                    className="fixed inset-0 z-50 flex items-end justify-center bg-gray-900/40 backdrop-blur-sm sm:items-center sm:p-4"
                     onClick={() => setShareEmailModalOpen(false)}
                 >
                     <div
-                        className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6 space-y-4 max-h-[90vh] overflow-y-auto"
+                        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-float w-full max-w-md p-6 space-y-4 max-h-[90dvh] overflow-y-auto"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="flex items-start gap-3">
@@ -2559,7 +2395,7 @@ export default function ViewProjectPage() {
                                 </svg>
                             </div>
                             <div>
-                                <h2 className="text-lg font-semibold text-gray-800">ส่งลิงก์ให้ลูกค้าทางอีเมล</h2>
+                                <h2 className="text-base font-medium text-gray-900">ส่งลิงก์ให้ลูกค้าทางอีเมล</h2>
                                 <p className="text-sm text-gray-500">ลูกค้าจะได้รับลิงก์ติดตามความคืบหน้าของ &ldquo;{project.project_name}&rdquo; แบบดูอย่างเดียว ไม่ต้องเข้าสู่ระบบ</p>
                             </div>
                         </div>
@@ -2624,15 +2460,15 @@ export default function ViewProjectPage() {
 
             {projectChatOpen && (
                 <div
-                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+                    className="fixed inset-0 z-50 flex items-end justify-center bg-gray-900/40 backdrop-blur-sm sm:items-center sm:p-4"
                     onClick={closeProjectChat}
                 >
                     <div
-                        className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 h-[80vh] max-h-150 flex flex-col overflow-hidden"
+                        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-float w-full max-w-lg h-[80dvh] max-h-150 flex flex-col overflow-hidden"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between shrink-0">
-                            <h3 className="text-sm font-semibold text-gray-700 truncate">แชทโปรเจกต์ · {project.project_name}</h3>
+                            <h3 className="text-sm font-medium text-gray-700 truncate">แชทโปรเจกต์ · {project.project_name}</h3>
                             <button
                                 type="button"
                                 onClick={closeProjectChat}
@@ -2673,7 +2509,7 @@ export default function ViewProjectPage() {
                                                     type="button"
                                                     onClick={() => scrollToChatMessage(msg.reply_to_message_id!)}
                                                     className={`block w-full text-left mb-1 pl-2 border-l-2 rounded ${
-                                                        isOwn ? "border-blue-200 bg-blue-400/30" : "border-gray-300 bg-white/60"
+                                                        isOwn ? "border-blue-200 bg-blue-50" : "border-gray-300 bg-white/60"
                                                     }`}
                                                 >
                                                     <p className={`text-[11px] font-medium ${isOwn ? "text-blue-50" : "text-gray-600"}`}>

@@ -19,6 +19,9 @@ type SortDir = "asc" | "desc" | null;
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 const SKELETON_ROWS = 5;
+// คอลัมน์ปุ่ม (ดู/แก้ไข/ลบ) ติดขอบขวาเสมอ — ตารางที่กว้างเกินการ์ดจะเลื่อนซ้ายขวาได้โดยปุ่มไม่หลุดจอ
+// พื้นหลังต้องทึบ (ใช้ color-mix แทนสีโปร่ง) ไม่งั้นข้อความที่เลื่อนลอดใต้ปุ่มจะซ้อนกันอ่านไม่ออก
+const STICKY_ACTIONS_CLASS = "sticky right-0 z-[1] shadow-[-10px_0_10px_-10px_rgb(17_24_39/0.12)]";
 
 type Props<T extends Record<string, unknown>> = {
     columns: Column<T>[];
@@ -191,7 +194,7 @@ export default function DataTable<T extends Record<string, unknown>>({
     const [titleColumn, ...detailColumns] = columns;
 
     return (
-        <div className="flex w-full flex-col gap-3">
+        <div className="flex w-full min-w-0 flex-col gap-3">
             {searchable && (
                 <div className="relative w-full sm:w-80">
                     <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -219,7 +222,7 @@ export default function DataTable<T extends Record<string, unknown>>({
                                             checked={allPageSelected}
                                             onChange={toggleAll}
                                             aria-label="เลือกทั้งหน้า"
-                                            className="cursor-pointer rounded border-gray-300 accent-blue-600"
+                                            className="cursor-pointer rounded border-gray-300 accent-blue-500"
                                         />
                                     </th>
                                 )}
@@ -240,7 +243,7 @@ export default function DataTable<T extends Record<string, unknown>>({
                                     </th>
                                 ))}
                                 {actions && (
-                                    <th className="border-b border-gray-100 bg-gray-50/70 px-4 py-2.5">
+                                    <th className={`border-b border-gray-100 px-4 py-2.5 ${STICKY_ACTIONS_CLASS} bg-[color-mix(in_oklab,var(--color-gray-50)_70%,white)]`}>
                                         <span className="sr-only">จัดการ</span>
                                     </th>
                                 )}
@@ -270,7 +273,7 @@ export default function DataTable<T extends Record<string, unknown>>({
                                     return (
                                         <tr
                                             key={String(id)}
-                                            className={`transition-colors ${isSelected ? "bg-blue-50" : "hover:bg-blue-50/40"}`}
+                                            className={`group transition-colors ${isSelected ? "bg-blue-50" : "hover:bg-blue-50/40"}`}
                                         >
                                             {selectable && (
                                                 <td className="w-10 border-b border-gray-100 px-4 py-3.5 text-center">
@@ -279,7 +282,7 @@ export default function DataTable<T extends Record<string, unknown>>({
                                                         checked={isSelected}
                                                         onChange={() => toggleRow(id)}
                                                         aria-label="เลือกแถวนี้"
-                                                        className="cursor-pointer rounded border-gray-300 accent-blue-600"
+                                                        className="cursor-pointer rounded border-gray-300 accent-blue-500"
                                                     />
                                                 </td>
                                             )}
@@ -292,7 +295,13 @@ export default function DataTable<T extends Record<string, unknown>>({
                                                 </td>
                                             ))}
                                             {actions && (
-                                                <td className="border-b border-gray-100 px-4 py-3.5 text-right">
+                                                <td
+                                                    className={`border-b border-gray-100 px-4 py-3.5 text-right transition-colors ${STICKY_ACTIONS_CLASS} ${
+                                                        isSelected
+                                                            ? "bg-blue-50"
+                                                            : "bg-white group-hover:bg-[color-mix(in_oklab,var(--color-blue-50)_40%,white)]"
+                                                    }`}
+                                                >
                                                     <div className="flex justify-end">{actions(row)}</div>
                                                 </td>
                                             )}
@@ -334,7 +343,7 @@ export default function DataTable<T extends Record<string, unknown>>({
                                                 checked={isSelected}
                                                 onChange={() => toggleRow(id)}
                                                 aria-label="เลือกแถวนี้"
-                                                className="mt-1 cursor-pointer rounded border-gray-300 accent-blue-600"
+                                                className="mt-1 cursor-pointer rounded border-gray-300 accent-blue-500"
                                             />
                                         )}
                                         <div className="min-w-0 flex-1 font-normal text-gray-900">
@@ -384,7 +393,7 @@ export default function DataTable<T extends Record<string, unknown>>({
                             onClick={() => goToPage(Math.max(1, safePage - 1))}
                             disabled={safePage === 1}
                             aria-label="หน้าก่อนหน้า"
-                            className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-30"
+                            className="flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 sm:h-8 sm:w-8 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-30"
                         >
                             <ChevronLeft className="h-4 w-4" />
                         </button>
@@ -400,7 +409,7 @@ export default function DataTable<T extends Record<string, unknown>>({
                                     onClick={() => goToPage(p)}
                                     aria-current={safePage === p ? "page" : undefined}
                                     className={[
-                                        "h-8 min-w-8 rounded-lg px-2 text-sm tabular-nums transition",
+                                        "h-10 min-w-10 rounded-lg px-2 text-sm tabular-nums transition sm:h-8 sm:min-w-8",
                                         safePage === p
                                             ? "border border-gray-200 bg-white font-medium text-gray-900 shadow-xs"
                                             : "text-gray-500 hover:bg-gray-100 hover:text-gray-800",
@@ -415,7 +424,7 @@ export default function DataTable<T extends Record<string, unknown>>({
                             onClick={() => goToPage(Math.min(totalPages, safePage + 1))}
                             disabled={safePage === totalPages}
                             aria-label="หน้าถัดไป"
-                            className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-30"
+                            className="flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 sm:h-8 sm:w-8 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-30"
                         >
                             <ChevronRight className="h-4 w-4" />
                         </button>

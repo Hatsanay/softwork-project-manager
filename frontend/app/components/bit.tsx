@@ -57,7 +57,10 @@ export const MENU_DEFS: MenuItem[] = [
         key: "sales",
         label: "ขาย",
         href: "/sales",
-        children: [{ key: "productManagement", label: "สินค้า/บริการ", href: "/sales/products" }],
+        children: [
+            { key: "viewQuotations", label: "ใบเสนอราคา", href: "/sales/quotations" },
+            { key: "productManagement", label: "สินค้า/บริการ", href: "/sales/products" },
+        ],
     },
     {
         key: "clientManagement", label: "จัดการลูกค้า", href: "/clients",
@@ -143,11 +146,15 @@ export const PERMISSION_GROUPS: PermGroup[] = [
             { key: "companySettings", label: "ตั้งค่าบริษัท (ข้อมูลบริษัท, VAT, สาขา, บัญชีธนาคาร, สกุลเงิน, กติกาอนุมัติ)", href: "/settings/company" },
         ],
     },
-    // วงจรขาย — บิตใบเสนอราคาจะต่อท้ายกลุ่มนี้ในขั้น 1A-3
+    // วงจรขาย — ลำดับบิตในกลุ่มต้องตรงกับ PERMISSION_KEYS (append-only)
     {
         groupLabel: "ขาย",
         bits: [
             { key: "productManagement", label: "จัดการสินค้า/บริการ (เพิ่ม/แก้/ลบ/ปิดใช้งาน สินค้า หมวดหมู่ และชุดรายการ)", href: "/sales/products" },
+            { key: "viewQuotations",   label: "ดูใบเสนอราคา (ทุกใบ ทุกสาขา)",                                         href: "/sales/quotations" },
+            { key: "createQuotation",  label: "สร้าง/แก้ใบเสนอราคา (ร่าง คัดลอก ส่งขออนุมัติ ส่งลูกค้า revision)",       href: "/sales/quotations/new" },
+            { key: "approveQuotation", label: "อนุมัติ/ตีกลับใบเสนอราคา (ต้องมี role อยู่ในชั้นที่รออยู่ด้วย)",            href: "/sales/quotations/approve" },
+            { key: "cancelQuotation",  label: "ยกเลิกใบเสนอราคา",                                                    href: "/sales/quotations/cancel" },
         ],
     },
 ];

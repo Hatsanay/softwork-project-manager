@@ -3,6 +3,7 @@
 // บันทึกทั้งชุดทีเดียว (ลบของเดิมแล้วใส่ใหม่ใน transaction เดียว) — ใบที่ส่งขออนุมัติไปแล้วเก็บแผนของตัวเองไว้ จึงไม่กระทบ
 // คำเตือน (warnings) ไม่บล็อกการบันทึก แต่บอกล่วงหน้าว่าชั้นไหน "ใบจะค้าง" เพราะไม่มีคนอนุมัติได้
 const { AppError } = require("../utils/app-error");
+const { effectiveRolePermission, hasBit } = require("../utils/permissions");
 
 /**
  * role ทั้งหมดสำหรับให้เลือกเป็นผู้อนุมัติ
@@ -19,8 +20,7 @@ async function findRoleChoices(conn) {
 
 /**
  * กติกาของเอกสารประเภทหนึ่ง พร้อมผู้ใช้ที่อนุมัติได้ในแต่ละชั้น และคำเตือน
- * ผู้อนุมัติได้ = ผู้ใช้ที่เปิดใช้งาน และ role อยู่ในชั้นนั้น
- * (ขั้น 1A-3 จะนับเฉพาะคนที่มีสิทธิ์ "อนุมัติใบเสนอราคา" ด้วย เมื่อเพิ่มบิตนั้น)
+ * ผู้อนุมัติได้ = ผู้ใช้ที่เปิดใช้งาน role อยู่ในชั้นนั้น และ role มีสิทธิ์ "อนุมัติใบเสนอราคา" (1A-3)
  * @param {import("mysql2/promise").Pool | import("mysql2/promise").PoolConnection} conn
  * @param {"QT"} documentType
  */
@@ -37,12 +37,15 @@ async function findApprovalRules(conn, documentType) {
         [documentType],
     );
     const [userRows] = await conn.query(
-        `SELECT u.user_id, CONCAT(u.user_fname, ' ', u.user_lname) AS full_name, u.user_role_id
-         FROM tb_users u
+        `SELECT u.user_id, CONCAT(u.user_fname, ' ', u.user_lname) AS full_name, u.user_role_id, r.role_permission, r.role_type
+         FROM tb_users u JOIN tb_roles r ON r.role_id = u.user_role_id
          WHERE u.user_status = 'active'
            AND u.user_role_id IN (SELECT alr_role_id FROM tb_approval_level_roles WHERE alr_doc_type = ?)
          ORDER BY u.user_fname`,
         [documentType],
+    );
+    const approverRows = userRows.filter((user) =>
+        hasBit(effectiveRolePermission(user.role_type, user.role_permission), "approveQuotation"),
     );
 
     const levels = levelRows.map((level) => {
@@ -50,7 +53,7 @@ async function findApprovalRules(conn, documentType) {
             .filter((role) => role.alr_level === level.al_level)
             .map((role) => ({ role_id: role.role_id, role_name: role.role_name }));
         const roleIds = new Set(roles.map((role) => role.role_id));
-        const eligibleUsers = userRows
+        const eligibleUsers = approverRows
             .filter((user) => roleIds.has(user.user_role_id))
             .map((user) => ({ user_id: user.user_id, full_name: user.full_name }));
 
@@ -77,7 +80,7 @@ function buildApprovalWarnings(levels) {
     levels.forEach((level, index) => {
         if (level.eligible_users.length === 0) {
             warnings.push(
-                `ชั้น ${level.al_level} ยังไม่มีผู้ใช้ที่อนุมัติได้ (ไม่มีผู้ใช้ที่เปิดใช้งานอยู่ใน role ที่เลือก) — ใบที่ต้องผ่านชั้นนี้จะค้าง`,
+                `ชั้น ${level.al_level} ยังไม่มีผู้ใช้ที่อนุมัติได้ (ไม่มีผู้ใช้ที่เปิดใช้งานใน role ที่เลือก หรือ role นั้นยังไม่ได้ติ๊กสิทธิ์ "อนุมัติใบเสนอราคา") — ใบที่ต้องผ่านชั้นนี้จะค้าง`,
             );
             return;
         }

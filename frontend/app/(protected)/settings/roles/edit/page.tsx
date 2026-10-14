@@ -113,7 +113,7 @@ export default function EditRolePage() {
             <form onSubmit={handleSubmit} className="space-y-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-card sm:p-6">
                 {/* แถบแจ้งอยู่บนสุดของฟอร์ม ให้เห็นก่อนเริ่มแก้ — ไม่ใช่เลื่อนลงไปเจอหลังแก้เสร็จ */}
                 {!canEdit && (
-                    <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-600">
                         <p className="font-medium">คุณแก้ไข role นี้ไม่ได้</p>
                         <p>
                             role นี้มีสิทธิ์บางข้อที่คุณเองไม่มี — กันการแก้ role ที่สูงกว่าตัวเอง
@@ -123,7 +123,7 @@ export default function EditRolePage() {
                 )}
 
                 {canEdit && isOutdatedPage && (
-                    <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-600">
                         <p className="font-medium">หน้านี้เป็นเวอร์ชันเก่า บันทึกไม่ได้</p>
                         <p>
                             ระบบเพิ่งเพิ่มสิทธิ์ใหม่ที่หน้านี้ยังไม่รู้จัก กรุณารีเฟรชหน้า (Ctrl+F5) ก่อนแก้สิทธิ์
@@ -133,7 +133,7 @@ export default function EditRolePage() {
                 )}
 
                 {canEdit && isSystemRole && (
-                    <div role="status" className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                    <div role="status" className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-600">
                         <p className="font-medium">นี่คือ role ระบบ — ได้สิทธิ์ครบทุกข้อเสมอ</p>
                         <p>
                             แก้ได้เฉพาะชื่อและแผนก ส่วนสิทธิ์ล็อกไว้ เพื่อให้มีคนจัดการระบบได้เสมอ

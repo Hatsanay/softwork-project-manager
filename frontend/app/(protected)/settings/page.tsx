@@ -58,7 +58,7 @@ export default function SettingsPage() {
     const visibleLinks = SETTINGS_LINKS.filter((link) => hasBit(BITS[link.permissionKey]));
 
     return (
-        <div className="grid gap-6">
+        <div className="grid grid-cols-1 gap-6">
             <PageHeader
                 eyebrow="ผู้ดูแลระบบ"
                 title="ตั้งค่าระบบ"

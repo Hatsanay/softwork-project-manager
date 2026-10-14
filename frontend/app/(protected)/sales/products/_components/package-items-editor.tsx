@@ -151,7 +151,7 @@ export default function PackageItemsEditor({ items, onChange, products, fieldErr
                                         onChange={(event) =>
                                             updateItem(index, { pki_type: event.target.value as PackageItemType })
                                         }
-                                        className={`${inputClass()} w-32 py-1.5`}
+                                        className={`${inputClass(false, "sm")} w-32`}
                                     >
                                         {(Object.keys(TYPE_LABELS) as PackageItemType[]).map((type) => (
                                             <option key={type} value={type}>
@@ -200,7 +200,7 @@ export default function PackageItemsEditor({ items, onChange, products, fieldErr
                                         error={Boolean(errorOf(index, "pki_product_id"))}
                                     />
                                     {product?.product_status === "inactive" && (
-                                        <p className="text-xs text-amber-700">
+                                        <p className="text-xs text-amber-600">
                                             สินค้านี้ปิดใช้งานแล้ว — ตอนใส่ใบเสนอราคาแถวนี้จะถูกข้าม
                                         </p>
                                     )}
@@ -304,7 +304,7 @@ export default function PackageItemsEditor({ items, onChange, products, fieldErr
                 </button>
             </div>
             {isFull && (
-                <p className="text-xs text-amber-700">
+                <p className="text-xs text-amber-600">
                     ชุดรายการมีได้ไม่เกิน {MAX_PACKAGE_ITEMS} แถว — แบ่งเป็นหลายชุดแทน
                 </p>
             )}

@@ -41,7 +41,7 @@ export default function ProductsPage() {
     const tabs = PRODUCT_MESSAGES.tabs;
 
     return (
-        <div className="grid gap-6">
+        <div className="grid grid-cols-1 gap-6">
             <PageHeader eyebrow="ขาย" title="สินค้า/บริการ" description={PRODUCT_MESSAGES.pageDescription} />
             {!canEdit && <StatusBanner title="ดูอย่างเดียว">{PRODUCT_MESSAGES.readOnly}</StatusBanner>}
 

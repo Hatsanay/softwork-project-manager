@@ -20,6 +20,7 @@
             "role_name": "string",
             "role_permission": "string",
             "user_avatar_url": "null",
+            "user_branch_id": "null",
             "user_email": "string",
             "user_fname": "string",
             "user_fullname": "string",
@@ -702,7 +703,7 @@
         "status": 200,
         "body": {
             "data": {
-                "ISS202610130000001": [
+                ":id": [
                     {
                         "images": [
                             "object"

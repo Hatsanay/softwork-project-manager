@@ -1,0 +1,19 @@
+# บังคับปลายบรรทัดเป็น LF ใน repo (2026-10-13) — เครื่อง dev ตั้ง core.autocrlf=true ทำให้บางไฟล์กลายเป็น CRLF
+# ระหว่างแก้ แล้วเครื่องมือแก้ไฟล์จับข้อความไม่ตรง · production เป็น Linux ใช้ LF
+* text=auto eol=lf
+
+# ไฟล์ของ Windows ต้องเป็น CRLF ไม่งั้นรันไม่ได้
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# ไฟล์ binary ห้ามแตะ
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.avif binary
+*.gif binary
+*.ico binary
+*.ttf binary
+*.woff binary
+*.woff2 binary

@@ -325,6 +325,32 @@ export function convertToBaht(hundredths, exchangeRate) {
 }
 
 /**
+ * แปลงราคาบาทเป็นสกุลของเอกสาร (ราคาสินค้าเก็บเป็นบาท → ใส่ใบสกุลต่างประเทศ) ปัดครึ่งขึ้นตามทศนิยมของสกุลนั้น
+ * @param {bigint} bahtHundredths
+ * @param {string | number} exchangeRate บาทต่อ 1 หน่วยสกุลนั้น
+ * @param {number} currencyDecimals
+ * @returns {bigint} ร้อยส่วนในสกุลของเอกสาร
+ */
+export function convertFromBaht(bahtHundredths, exchangeRate, currencyDecimals) {
+    const rateText = String(exchangeRate ?? "").trim();
+    if (!RATE_TEXT.test(rateText) || Number(rateText) <= 0) {
+        throw new MoneyInputError(
+            `อัตราแลกเปลี่ยนต้องเป็นตัวเลขมากกว่า 0 (ทศนิยมไม่เกิน ${RATE_DECIMALS} ตำแหน่ง)`,
+            "อัตราแลกเปลี่ยน",
+        );
+    }
+    const [wholePart, fractionPart = ""] = rateText.split(".");
+    const scaledRate = BigInt(wholePart + fractionPart.padEnd(RATE_DECIMALS, "0"));
+    if (![0, 1, 2].includes(currencyDecimals)) {
+        throw new Error(`ระบบรองรับสกุลเงินที่มีทศนิยม 0-2 ตำแหน่งเท่านั้น (ได้ ${currencyDecimals})`);
+    }
+    // ปัดรอบเดียวที่หน่วยเล็กสุดของสกุล (ไม่ปัดเป็นร้อยส่วนก่อนแล้วปัดซ้ำ)
+    const smallestUnit = 10n ** BigInt(2 - currencyDecimals);
+    const units = divideRoundHalfUp(bahtHundredths * RATE_SCALE, scaledRate * smallestUnit);
+    return units * smallestUnit;
+}
+
+/**
  * อัตราที่ ธปท. ประกาศต่อหลายหน่วย (เช่น บาทต่อ 100 เยน) → บาทต่อ 1 หน่วย ทศนิยม 10 ตำแหน่ง ปัดครึ่งขึ้น · ไม่ผ่าน float
  * @param {string} announcedRate ข้อความทศนิยมตามที่ ธปท. ส่งมา เช่น "22.6155"
  * @param {number} unitCount ประกาศต่อกี่หน่วย (1, 100, 1000)

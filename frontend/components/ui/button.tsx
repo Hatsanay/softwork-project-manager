@@ -17,9 +17,10 @@ const VARIANTS: Record<ButtonVariant, string> = {
     danger: "bg-red-600 font-medium text-white shadow-xs hover:bg-red-700",
 };
 
+// มือถือ: ปุ่มเล็กสูง 40px (นิ้วกดโดนง่าย ไม่โดนปุ่มข้าง ๆ) · จอ 640px ขึ้นไปค่อยลดเหลือ 32px
 const SIZES: Record<ButtonSize, string> = {
     md: "h-10 rounded-xl px-4 text-sm",
-    sm: "h-8 rounded-lg px-3 text-sm",
+    sm: "h-10 rounded-lg px-3 text-sm sm:h-8",
 };
 
 /** class ของปุ่ม — ใช้กับ <Link> หรือ <label> ที่ต้องหน้าตาเหมือนปุ่มได้ด้วย */

@@ -212,7 +212,7 @@ export default function SidebarClient({ items, initialCollapsed, canSearch, user
                             type="button"
                             onClick={() => setMobileOpen(false)}
                             aria-label="ปิดเมนู"
-                            className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                            className="flex h-10 w-10 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700"
                         >
                             <X size={16} />
                         </button>

@@ -1,10 +1,16 @@
 "use client";
 
+// หน้าที่ลูกค้าเปิดผ่านลิงก์ (ไม่ต้องเข้าระบบ) — หน้าตาใหม่ U4 (2026-10-14) · ข้อมูลเหมือนเดิมทุกอย่าง
+// backend กรองให้แล้ว: เห็นแค่ "สร้างงาน"/"เปลี่ยนสถานะ" และไม่มีชื่อพนักงานจริงในความเคลื่อนไหว · ส่วนใหญ่ลูกค้าเปิดจากมือถือ
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { CalendarDays, CircleCheck, Clock, History, ListChecks, LinkIcon } from "lucide-react";
+import CircularProgress from "@/components/ui/CircularProgress";
+import StatusPill, { type PillTone } from "@/components/ui/status-pill";
+import { CARD_CLASS } from "@/components/ui/card";
+import { PageSkeleton } from "@/components/ui/skeleton";
 import { api } from "@/app/constans";
 import formatDate, { formatDateOnly } from "@/app/function";
-import ProgressBar from "@/components/ui/ProgressBar";
 
 type ProjectStatus = "planning" | "in_progress" | "on_hold" | "completed" | "cancelled";
 type TaskStatus = "todo" | "in_progress" | "review" | "done";
@@ -29,7 +35,6 @@ type SharedTask = {
     task_due_date: string | null;
 };
 
-// หน้า share (ลูกค้าดู) เห็นแค่ "สร้างงาน"/"เปลี่ยนสถานะ" และไม่มีชื่อพนักงานจริงติดมา (backend กรอง/ตัดออกให้แล้ว)
 type TimelineEntry = {
     log_id: string;
     task_title: string;
@@ -40,138 +45,249 @@ type TimelineEntry = {
     log_created_at: string;
 };
 
-const STATUS_LABEL: Record<ProjectStatus, string> = {
-    planning: "วางแผน", in_progress: "กำลังทำ", on_hold: "พักไว้", completed: "เสร็จแล้ว", cancelled: "ยกเลิก",
-};
-const STATUS_COLOR: Record<ProjectStatus, string> = {
-    planning: "text-gray-500", in_progress: "text-blue-600", on_hold: "text-amber-600",
-    completed: "text-green-600", cancelled: "text-red-500",
+const PROJECT_STATUS: Record<ProjectStatus, { label: string; tone: PillTone }> = {
+    planning: { label: "วางแผน", tone: "neutral" },
+    in_progress: { label: "กำลังทำ", tone: "info" },
+    on_hold: { label: "พักไว้", tone: "wait" },
+    completed: { label: "เสร็จแล้ว", tone: "success" },
+    cancelled: { label: "ยกเลิก", tone: "danger" },
 };
 
-const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
-    todo: "รอดำเนินการ", in_progress: "กำลังทำ", review: "ตรวจสอบ", done: "เสร็จแล้ว",
-};
-const TASK_STATUS_COLOR: Record<TaskStatus, string> = {
-    todo: "text-gray-500", in_progress: "text-blue-600", review: "text-amber-600", done: "text-green-600",
+const TASK_STATUS: Record<TaskStatus, { label: string; tone: PillTone }> = {
+    todo: { label: "รอดำเนินการ", tone: "neutral" },
+    in_progress: { label: "กำลังทำ", tone: "info" },
+    review: { label: "ตรวจสอบ", tone: "wait" },
+    done: { label: "เสร็จแล้ว", tone: "success" },
 };
 
 const ACTION_LABEL: Record<TimelineEntry["log_action"], string> = {
-    created: "สร้างงาน", status_changed: "เปลี่ยนสถานะงาน",
+    created: "สร้างงาน",
+    status_changed: "เปลี่ยนสถานะงาน",
 };
+
+function statusLabel(value: string) {
+    return TASK_STATUS[value as TaskStatus]?.label ?? value;
+}
+
+function Shell({ children }: { children: React.ReactNode }) {
+    return (
+        <div className="min-h-screen bg-gray-50">
+            <header className="border-b border-gray-200 bg-white/80 backdrop-blur">
+                <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
+                    <span className="text-sm font-semibold tracking-wide text-gray-700">SOFTWORK</span>
+                    <span className="flex items-center gap-1.5 text-xs text-gray-500">
+                        <LinkIcon size={13} />
+                        หน้าติดตามงานสำหรับลูกค้า
+                    </span>
+                </div>
+            </header>
+            <main className="mx-auto grid max-w-3xl gap-5 px-4 py-6 sm:px-6">{children}</main>
+        </div>
+    );
+}
 
 export default function SharedProjectPage() {
     const params = useParams<{ token: string }>();
     const token = params.token;
-
     const [project, setProject] = useState<SharedProject | null>(null);
     const [tasks, setTasks] = useState<SharedTask[]>([]);
     const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
     const [notFound, setNotFound] = useState(false);
-    const [loading, setLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
         if (!token) return;
-        (async () => {
-            const res = await fetch(`${api}/share/${token}`);
-            if (!res.ok) { setNotFound(true); setLoading(false); return; }
-            const data = await res.json();
-            setProject(data.project);
-            setTasks(data.tasks ?? []);
-            setTimeline(data.timeline ?? []);
-            setLoading(false);
-        })();
+        let isLeftPage = false;
+        fetch(`${api}/share/${token}`)
+            .then(async (response) => {
+                if (isLeftPage) return;
+                if (!response.ok) {
+                    setNotFound(true);
+                    return;
+                }
+                const data = await response.json();
+                setProject(data.project);
+                setTasks(data.tasks ?? []);
+                setTimeline(data.timeline ?? []);
+            })
+            .catch(() => {
+                if (!isLeftPage) setNotFound(true);
+            })
+            .finally(() => {
+                if (!isLeftPage) setIsLoading(false);
+            });
+        return () => {
+            isLeftPage = true;
+        };
     }, [token]);
 
-    if (loading) {
-        return <div className="min-h-screen flex items-center justify-center text-gray-400 text-sm">กำลังโหลด...</div>;
+    if (isLoading) {
+        return (
+            <Shell>
+                <PageSkeleton label="กำลังโหลดความคืบหน้า..." />
+            </Shell>
+        );
     }
 
     if (notFound || !project) {
         return (
-            <div className="min-h-screen flex items-center justify-center">
-                <p className="text-gray-500 text-sm">ไม่พบโปรเจกต์นี้ หรือลิงก์ถูกปิดใช้งานแล้ว</p>
-            </div>
+            <Shell>
+                <div className={`grid justify-items-center gap-2 px-6 py-12 text-center ${CARD_CLASS}`}>
+                    <p className="text-base font-medium text-gray-900">เปิดลิงก์นี้ไม่ได้</p>
+                    <p className="max-w-sm text-sm text-gray-500">
+                        ลิงก์อาจถูกปิดใช้งาน หรือทีมงานสร้างลิงก์ใหม่แทนแล้ว —
+                        ติดต่อผู้ดูแลโปรเจกต์ของคุณเพื่อขอลิงก์ล่าสุด
+                    </p>
+                </div>
+            </Shell>
         );
     }
 
-    return (
-        <div className="min-h-screen bg-gray-50">
-            <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4">
-                <p className="text-sm font-semibold text-blue-600">Softwork Project Manager</p>
-            </header>
+    const status = PROJECT_STATUS[project.project_status];
+    const doneCount = tasks.filter((task) => task.task_status === "done").length;
+    const activeCount = tasks.filter(
+        (task) => task.task_status === "in_progress" || task.task_status === "review",
+    ).length;
+    const waitingCount = tasks.filter((task) => task.task_status === "todo").length;
 
-            <main className="max-w-3xl mx-auto p-4 sm:p-6 space-y-6">
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-4">
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <h1 className="text-xl sm:text-2xl font-bold text-gray-800">{project.project_name}</h1>
-                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full bg-gray-50 ${STATUS_COLOR[project.project_status]}`}>
-                            {STATUS_LABEL[project.project_status]}
+    return (
+        <Shell>
+            <section
+                className="relative overflow-hidden rounded-3xl bg-brand-grid p-5 text-white shadow-brand sm:p-7"
+            >
+                <div className="flex flex-wrap items-center justify-between gap-5">
+                    <div className="grid min-w-0 gap-1.5">
+                        {project.client_name && <p className="text-sm text-blue-100">สำหรับ {project.client_name}</p>}
+                        <h1 className="text-2xl font-medium break-words">{project.project_name}</h1>
+                        <span className="w-fit rounded-full bg-white/90 px-0.5">
+                            <StatusPill tone={status.tone}>{status.label}</StatusPill>
                         </span>
                     </div>
-                    {project.client_name && <p className="text-sm text-gray-500">ลูกค้า: {project.client_name}</p>}
-                    {project.project_description && (
-                        <p className="text-sm text-gray-600 whitespace-pre-wrap">{project.project_description}</p>
-                    )}
-
-                    <ProgressBar percent={Number(project.project_progress_percent)} />
-
-                    <div className="flex flex-wrap gap-x-8 gap-y-1 text-sm text-gray-500">
-                        <span>วันเริ่ม: {formatDateOnly(project.project_start_date)}</span>
-                        <span>ครบกำหนด: {formatDateOnly(project.project_due_date)}</span>
+                    <div className="flex items-center gap-3 rounded-2xl border border-white/20 bg-white/12 p-3 backdrop-blur-sm">
+                        <span className="rounded-full bg-white p-1">
+                            <CircularProgress
+                                percent={Number(project.project_progress_percent)}
+                                size={60}
+                                strokeWidth={6}
+                            />
+                        </span>
+                        <span className="grid">
+                            <span className="text-xs text-blue-100">ความคืบหน้า</span>
+                            <span className="text-2xl font-medium tabular-nums">
+                                {Number(project.project_progress_percent).toFixed(0)}%
+                            </span>
+                        </span>
                     </div>
                 </div>
-
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-4">
-                    <h2 className="text-base font-semibold text-gray-800">รายการงาน</h2>
-                    {tasks.length === 0 ? (
-                        <p className="text-sm text-gray-400">ยังไม่มีงานในโปรเจกต์นี้</p>
-                    ) : (
-                        <ul className="divide-y divide-gray-100">
-                            {tasks.map((t) => (
-                                <li key={t.task_id} className="py-3 flex items-center justify-between gap-3 flex-wrap">
-                                    <div>
-                                        <p className="text-sm font-medium text-gray-800">{t.task_title}</p>
-                                        <p className="text-xs text-gray-400">
-                                            {t.assignee_names ?? "ยังไม่มอบหมาย"}
-                                            {" · "}{formatDateOnly(t.task_start_date)} – {formatDateOnly(t.task_due_date)}
-                                        </p>
-                                    </div>
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full bg-gray-50 shrink-0 ${TASK_STATUS_COLOR[t.task_status]}`}>
-                                        {TASK_STATUS_LABEL[t.task_status]}
-                                    </span>
-                                </li>
-                            ))}
-                        </ul>
-                    )}
+                <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
+                    <div className="rounded-2xl border border-white/20 bg-white/12 p-3 backdrop-blur-sm">
+                        <p className="flex items-center gap-1.5 text-xs text-blue-100">
+                            <CalendarDays size={14} />
+                            วันเริ่ม
+                        </p>
+                        <p>{project.project_start_date ? formatDateOnly(project.project_start_date) : "ยังไม่กำหนด"}</p>
+                    </div>
+                    <div className="rounded-2xl border border-white/20 bg-white/12 p-3 backdrop-blur-sm">
+                        <p className="flex items-center gap-1.5 text-xs text-blue-100">
+                            <CalendarDays size={14} />
+                            กำหนดส่ง
+                        </p>
+                        <p>{project.project_due_date ? formatDateOnly(project.project_due_date) : "ยังไม่กำหนด"}</p>
+                    </div>
                 </div>
+            </section>
 
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-4">
-                    <h2 className="text-base font-semibold text-gray-800">ความเคลื่อนไหวล่าสุด</h2>
-                    {timeline.length === 0 ? (
-                        <p className="text-sm text-gray-400">ยังไม่มีความเคลื่อนไหว</p>
-                    ) : (
-                        <ul className="space-y-3 max-h-96 overflow-y-auto">
-                            {timeline.map((entry) => (
-                                <li key={entry.log_id} className="text-sm border-l-2 border-blue-100 pl-3">
-                                    <p className="text-gray-700">
-                                        <span className="font-medium">ทีมงาน</span>
-                                        {" "}{ACTION_LABEL[entry.log_action]}{" "}
-                                        <span className="font-medium">{entry.task_title}</span>
-                                        {entry.log_action === "status_changed" && entry.log_old_value && entry.log_new_value && (
+            {project.project_description && (
+                <section className={`p-5 text-sm whitespace-pre-wrap text-gray-700 ${CARD_CLASS}`}>
+                    {project.project_description}
+                </section>
+            )}
+
+            <section className="grid grid-cols-3 gap-3">
+                {[
+                    { label: "เสร็จแล้ว", value: doneCount, icon: CircleCheck, tone: "text-green-600 bg-green-50" },
+                    { label: "กำลังทำ", value: activeCount, icon: Clock, tone: "text-blue-600 bg-blue-50" },
+                    { label: "รอดำเนินการ", value: waitingCount, icon: ListChecks, tone: "text-gray-500 bg-gray-100" },
+                ].map((item) => (
+                    <div key={item.label} className={`grid gap-1 p-4 ${CARD_CLASS}`}>
+                        <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${item.tone}`}>
+                            <item.icon size={16} />
+                        </span>
+                        <span className="text-2xl font-medium tabular-nums text-gray-900">{item.value}</span>
+                        <span className="text-xs text-gray-500">{item.label}</span>
+                    </div>
+                ))}
+            </section>
+
+            <section className={`grid gap-3 p-5 sm:p-6 ${CARD_CLASS}`}>
+                <h2 className="text-base font-medium text-gray-900">รายการงาน</h2>
+                {tasks.length === 0 ? (
+                    <p className="rounded-xl bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+                        ยังไม่มีงานในโปรเจกต์นี้
+                    </p>
+                ) : (
+                    <ul className="grid gap-1">
+                        {tasks.map((task) => (
+                            <li
+                                key={task.task_id}
+                                className="flex flex-wrap items-center justify-between gap-2 rounded-xl px-3 py-2.5 odd:bg-gray-50/70"
+                            >
+                                <span className="grid min-w-0">
+                                    <span className="text-sm text-gray-800">{task.task_title}</span>
+                                    <span className="text-xs text-gray-500">
+                                        {task.assignee_names ?? "ยังไม่มอบหมาย"} ·{" "}
+                                        {formatDateOnly(task.task_start_date)} – {formatDateOnly(task.task_due_date)}
+                                    </span>
+                                </span>
+                                <StatusPill tone={TASK_STATUS[task.task_status].tone}>
+                                    {TASK_STATUS[task.task_status].label}
+                                </StatusPill>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </section>
+
+            <section className={`grid gap-3 p-5 sm:p-6 ${CARD_CLASS}`}>
+                <h2 className="flex items-center gap-2 text-base font-medium text-gray-900">
+                    <History size={18} className="text-gray-400" />
+                    ความเคลื่อนไหวล่าสุด
+                </h2>
+                {timeline.length === 0 ? (
+                    <p className="rounded-xl bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+                        ยังไม่มีความเคลื่อนไหว
+                    </p>
+                ) : (
+                    <ol className="relative ml-1 grid max-h-96 gap-1 overflow-y-auto border-l border-gray-200">
+                        {timeline.map((entry) => (
+                            <li key={entry.log_id} className="relative py-1.5 pl-4 text-sm">
+                                <span
+                                    className="absolute top-3 left-[-4.5px] h-2 w-2 rounded-full bg-blue-500 ring-4 ring-white"
+                                    aria-hidden="true"
+                                />
+                                <p className="text-gray-700">
+                                    ทีมงาน{ACTION_LABEL[entry.log_action]}{" "}
+                                    <span className="text-gray-900">{entry.task_title}</span>
+                                    {entry.log_action === "status_changed" &&
+                                        entry.log_old_value &&
+                                        entry.log_new_value && (
                                             <>
-                                                {" "}({TASK_STATUS_LABEL[entry.log_old_value as TaskStatus] ?? entry.log_old_value}
-                                                {" → "}
-                                                {TASK_STATUS_LABEL[entry.log_new_value as TaskStatus] ?? entry.log_new_value})
+                                                {" "}
+                                                ({statusLabel(entry.log_old_value)} → {statusLabel(entry.log_new_value)}
+                                                )
                                             </>
                                         )}
-                                    </p>
-                                    <p className="text-xs text-gray-400">{formatDate(entry.log_created_at)}</p>
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-                </div>
-            </main>
-        </div>
+                                </p>
+                                <p className="text-xs text-gray-400">{formatDate(entry.log_created_at)}</p>
+                            </li>
+                        ))}
+                    </ol>
+                )}
+            </section>
+
+            <p className="pb-4 text-center text-xs text-gray-400">
+                ข้อมูลอัปเดตตามที่ทีมงานบันทึกในระบบ — รีเฟรชหน้าเพื่อดูล่าสุด
+            </p>
+        </Shell>
     );
 }

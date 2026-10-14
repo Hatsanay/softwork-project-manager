@@ -15,7 +15,8 @@ export default function SectionCard({ title, description, icon: Icon, actions, c
     return (
         <section className={`grid gap-5 p-5 sm:p-6 ${CARD_CLASS}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="flex min-w-0 items-start gap-3.5">
+                {/* หัวข้อยืดเต็มที่เหลือ (ขั้นต่ำ 18rem) — ปุ่มจึงอยู่มุมขวาบรรทัดเดียวกัน ตกบรรทัดเฉพาะจอแคบ */}
+                <div className="flex min-w-0 flex-1 basis-72 items-start gap-3.5">
                     {Icon && (
                         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
                             <Icon size={19} />
@@ -26,7 +27,7 @@ export default function SectionCard({ title, description, icon: Icon, actions, c
                         {description && <p className="text-sm text-gray-500">{description}</p>}
                     </div>
                 </div>
-                {actions}
+                {actions && <div className="shrink-0">{actions}</div>}
             </div>
             {children}
         </section>

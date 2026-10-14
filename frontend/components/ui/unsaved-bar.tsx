@@ -49,7 +49,7 @@ export default function UnsavedBar({ isDirty, isSaving, saveLabel = "บัน�
             role="status"
             className="fixed bottom-[calc(1.25rem+env(safe-area-inset-bottom,0px))] left-1/2 z-40 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-2xl bg-gray-900/95 py-2 pl-4 pr-2 text-sm text-white shadow-float backdrop-blur"
         >
-            <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500 ring-4 ring-amber-500/25" aria-hidden="true" />
+            <span className="h-2 w-2 shrink-0 rounded-full bg-amber-600 ring-4 ring-amber-600/25" aria-hidden="true" />
             <span className="truncate">มีการแก้ไขที่ยังไม่บันทึก</span>
             <Button
                 variant="ghost"

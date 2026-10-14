@@ -43,7 +43,7 @@ export default function ErrorLogTab() {
             key: "err_message", header: "ข้อผิดพลาด",
             render: (_, r) => (
                 <div className="max-w-xl">
-                    <button type="button" onClick={() => setOpenId(openId === r.err_id ? null : r.err_id)} className="text-left text-red-700 hover:underline">
+                    <button type="button" onClick={() => setOpenId(openId === r.err_id ? null : r.err_id)} className="text-left text-red-600 hover:underline">
                         {r.err_message}
                     </button>
                     <div className="text-xs text-gray-400">{r.err_method} {r.err_path}</div>

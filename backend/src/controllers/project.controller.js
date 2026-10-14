@@ -3,6 +3,7 @@ const { generateDailyId } = require("../utils/generateDailyId");
 const { generateShareToken } = require("../utils/shareToken");
 const { hasBit } = require("../utils/permissions");
 const { sendProjectMemberAddedEmail, sendClientShareLinkEmail } = require("../utils/mailer");
+const { insertProject } = require("../services/project.service");
 
 async function getAll(req, res, next) {
     try {
@@ -79,37 +80,12 @@ async function create(req, res, next) {
             return res.status(400).json({ message: "รูปแบบโปรเจกต์ไม่ถูกต้อง" });
         }
 
-        const project_id = await generateDailyId("tb_projects", "project_id", "PRO");
-        const project_share_token = generateShareToken();
-
-        await pool.query(
-            `INSERT INTO tb_projects
-                (project_id, client_id, project_name, project_description, project_status, project_type,
-                 project_start_date, project_due_date, project_share_token, project_created_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                project_id, client_id || null, project_name, project_description || null,
-                project_status || "planning", project_type || "waterfall", project_start_date || null, project_due_date || null,
-                project_share_token, req.user.user_id,
-            ]
+        // แยกไปที่ services/project.service.js (2026-10-14) — ใช้ร่วมกับตอนลูกค้าตอบรับใบเสนอราคา
+        const { project_id, project_share_token } = await insertProject(
+            pool,
+            { project_name, client_id, project_description, project_status, project_type, project_start_date, project_due_date },
+            req.user.user_id
         );
-
-        // ผู้สร้างเข้าโปรเจกต์อัตโนมัติ พร้อมตำแหน่ง PM (ถ้ามี) ให้คุมโปรเจกต์ตัวเองได้เต็มที่ทันที
-        const project_member_id = await generateDailyId("tb_project_members", "project_member_id", "MEM");
-        await pool.query(
-            "INSERT INTO tb_project_members (project_member_id, project_id, user_id) VALUES (?, ?, ?)",
-            [project_member_id, project_id, req.user.user_id]
-        );
-
-        const [pmRows] = await pool.query(
-            "SELECT position_id FROM tb_project_positions WHERE position_name = 'PM' LIMIT 1"
-        );
-        if (pmRows[0]?.position_id) {
-            await pool.query(
-                "INSERT INTO tb_project_member_positions (project_member_id, position_id) VALUES (?, ?)",
-                [project_member_id, pmRows[0].position_id]
-            );
-        }
 
         res.status(201).json({ project_id, project_share_token });
     } catch (err) {
@@ -156,6 +132,17 @@ async function update(req, res, next) {
 
 async function remove(req, res, next) {
     try {
+        // โปรเจกต์ที่ผูกกับใบเสนอราคาลบไม่ได้ (FK ไม่ cascade) — บอกเหตุผลแทน error 500 (2026-10-14, sales-cycle หัวข้อ 1)
+        const [[{ quotationCount }]] = await pool.query(
+            "SELECT COUNT(*) AS quotationCount FROM tb_quotations WHERE qt_project_id = ?",
+            [req.params.id]
+        );
+        if (quotationCount > 0) {
+            return res.status(409).json({
+                code: "PROJECT_HAS_QUOTATIONS",
+                message: `ลบโปรเจกต์นี้ไม่ได้ เพราะผูกกับใบเสนอราคา ${quotationCount} ใบ — ถ้าไม่ทำต่อแล้วให้ใช้ "ยกเลิกโปรเจกต์" แทน (กู้คืนได้ ประวัติยังอยู่)`,
+            });
+        }
         await pool.query("DELETE FROM tb_projects WHERE project_id = ?", [req.params.id]);
         res.status(204).end();
     } catch (err) {

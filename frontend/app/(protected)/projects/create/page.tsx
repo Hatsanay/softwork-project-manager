@@ -100,7 +100,7 @@ export default function CreateProjectPage() {
                         <label className="text-sm font-medium text-gray-700">ลูกค้า</label>
                         {hasBit(BITS.createClient) && (
                             <a href="/clients/create" target="_blank" rel="noopener noreferrer"
-                                className="text-xs text-blue-600 hover:underline">
+                                className="-my-3 py-3 text-xs text-blue-600 hover:underline">
                                 + เพิ่มลูกค้าใหม่
                             </a>
                         )}

@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.next/
+backend/uploads/
+backend/src/schema-manifest.json
+backend/test/snapshots/
+database/
+*.md

@@ -178,7 +178,7 @@ prefix ที่ใช้: `ROL` role, `USE` user, `LOG` log, `PRO` project, `ME
 
 | ที่ | ทำอะไร |
 |---|---|
-| `requireAuth` | ตรวจ JWT (HS256 เท่านั้น) แล้ว **ดึง role, role_permission และสถานะของ user จาก DB ใหม่ทุก request** ใน query เดียว (`req.user.role_permission`) เปลี่ยน role หรือระงับบัญชีแล้วมีผลทันที |
+| `requireAuth` | ตรวจ JWT (HS256 เท่านั้น) แล้ว **ดึง role, role_permission และสถานะของ user จาก DB ใหม่ทุก request** ใน query เดียว (`req.user.role_permission`) เปลี่ยน role หรือระงับบัญชีแล้วมีผลทันที · **role ระบบ (S) ได้สิทธิ์ครบทุกข้อเสมอ** ไม่ขึ้นกับค่าในฐานข้อมูล · ผู้ใช้ที่ยังเปลี่ยนรหัสผ่านชั่วคราวหรือยืนยันอีเมลไม่ครบ เรียกได้เฉพาะ endpoint ของขั้นตอนเข้าระบบครั้งแรก (403 `ONBOARDING_REQUIRED`) — เพิ่ม 12 ต.ค. 2026 |
 | `requirePermission(key \| [keys])` | ตรวจบิตสิทธิ์ระบบจาก `req.user.role_permission` ถ้าส่งมาเป็น array ขอแค่ผ่านบิตใดบิตหนึ่ง |
 | `requireProjectMember` | ต้องเป็นสมาชิกโปรเจกต์ **หรือ** มีบิต `viewAllProjects` (กรณีหลังดูได้อย่างเดียว) และคำนวณสิทธิ์รวมของตำแหน่งไว้ที่ `req.projectPermission` ให้ใช้ต่อทั้ง request |
 | `requireProjectPermission(key)` | ตรวจบิตตำแหน่งในโปรเจกต์จาก `req.projectPermission` |
@@ -188,6 +188,8 @@ prefix ที่ใช้: `ROL` role, `USE` user, `LOG` log, `PRO` project, `ME
 | ใน controller | สิทธิ์ที่ขึ้นกับว่าเป็น task หรือ subtask / เป็นของตัวเองหรือไม่ (`canEditTask`, `canAddTask`, `canChangeStatus`, `canDoIssueAction`) |
 
 ฝั่ง frontend ใช้บิตแค่เพื่อซ่อนหรือแสดงเมนูและปุ่ม การบังคับสิทธิ์จริงอยู่ที่ backend ทั้งหมด
+
+**กติกาลำดับชั้นของสิทธิ์ (เพิ่ม 12 ต.ค. 2026):** จัดการได้เฉพาะผู้ใช้และ role ที่มีสิทธิ์ไม่เกินตัวเอง — ใช้กับการสร้าง/แก้/ลบ role, มอบ role, แก้ไข/รีเซ็ตรหัสผ่าน/เปลี่ยนรูป/ลบผู้ใช้ (`utils/role-access.js`) · เปลี่ยน role/สถานะของตัวเองไม่ได้ · role ระบบได้สิทธิ์ครบเสมอจึงทำได้ทุกอย่าง
 
 ## 7. ฟีเจอร์หลัก
 
@@ -338,6 +340,9 @@ endpoint `GET` แบบรายการของ role, แผนก, ตำ�
 - วันที่แสดงผลด้วย timezone `Asia/Bangkok` ผ่าน `app/function.tsx`
 - **การบีบอัดรูป** (`backend/src/utils/imageCompress.js` ที่เดียวของทั้งระบบ): ทุกรูปที่อัปโหลดถูกหมุนตาม EXIF แล้วบีบเป็น **AVIF** — รูปถ่าย q52 / ภาพหน้าจอ-กราฟิก (PNG/GIF/SVG) q47 / effort 3 · วัดเทียบ WebP เดิมด้วย SSIM แล้ว: เล็กลงเหลือ ~64% (รูปถ่าย) และ ~86% (ภาพหน้าจอ) โดยคมชัดเท่าหรือดีกว่าเดิม · เข้ารหัส AVIF ไม่ได้จะถอยไปใช้ WebP · ไฟล์ .avif ต้องส่ง `Content-Type: image/avif` เอง (ตั้งไว้ใน `app.js`) · รูปเก่าที่เป็น .webp ยังใช้ได้ตามเดิม ไม่ได้แปลงซ้ำ (บีบไฟล์ที่ถูกบีบแล้วซ้ำจะเสียความคม)
 - คอมเมนต์ในโค้ดเป็นภาษาไทยและอธิบาย "ทำไม" ไว้ละเอียด ก่อนแก้ logic ไหนควรอ่านคอมเมนต์รอบๆ ก่อน
+- แนวทางการเขียนโค้ดฉบับเต็มอยู่ที่ [CODING_GUIDELINES.md](CODING_GUIDELINES.md)
+- **วันที่/เวลาฝั่ง backend** ใช้ `utils/bangkok-time.js` เท่านั้น (ห้าม getter เวลาเครื่อง — มีเทสต์สแกนกันไว้)
+- **การลบข้อมูล** (12 ต.ค. 2026): ลบผู้ใช้ได้เฉพาะคนที่ยังไม่เคยมีประวัติในระบบ (ที่เหลือให้ "ยกเลิกใช้งาน") · ลบตัวเองไม่ได้ · ลบ role ได้เมื่อไม่มีผู้ใช้ · error foreign key ทุกจุดถูกแปลงเป็นข้อความที่บอกเหตุผล
 
 ## 11. การ deploy
 
@@ -349,6 +354,9 @@ endpoint `GET` แบบรายการของ role, แผนก, ตำ�
 4. บน Plesk ส่วน frontend: NPM install → Run script `build` → Restart App (startup file: `server.js`)
 5. บน Plesk ส่วน backend: NPM install → Restart App
 6. **ฐานข้อมูล:** รัน `database/query/deploy_schema.sql` บน DB ของ production ทุกครั้ง (phpMyAdmin → แท็บ SQL) แล้วดูผลของ query สุดท้าย ถ้าไม่มีแถวผลลัพธ์แปลว่าโครงสร้างครบ ควรรันก่อน restart backend เพื่อให้คอลัมน์ใหม่พร้อมก่อนโค้ดใหม่เริ่มใช้
+
+7. **ตรวจ log หลัง restart backend** (เพิ่ม 12 ต.ค. 2026): บรรทัด `[time]` ต้องแสดงเวลาไทยของโค้ดตรงกับ `NOW()` ของฐานข้อมูล · บรรทัด `[schema]` ต้องเป็น "โครงสร้างฐานข้อมูลครบ" ถ้าขึ้นว่าขาด ให้รัน deploy_schema.sql แล้ว restart
+8. **Node.js:** ใช้ 23.11 ตรงกับเครื่อง dev (`.nvmrc`, `engines` ใน backend/package.json) — ดู [plans/2026-10-12-typescript-migration.md](plans/2026-10-12-typescript-migration.md) T-R9
 
 **ประวัติปัญหาที่เคยเจอ (ก.ค. 2026):**
 
@@ -368,7 +376,7 @@ endpoint `GET` แบบรายการของ role, แผนก, ตำ�
 6. **หน้า share แสดงชื่อผู้รับผิดชอบ** (`assignee_names`) ในรายการ task ให้ลูกค้าเห็น ขณะที่ timeline ตั้งใจตัดชื่อพนักงานออก ควรยืนยันว่าตั้งใจให้ลูกค้าเห็นชื่อในรายการ task หรือไม่
 7. ~~URL ของ API hardcode ไว้~~ แก้แล้ว (7 ต.ค. 2026): อ่านจาก `NEXT_PUBLIC_API_URL` ถ้าไม่ได้ตั้งไว้จะใช้ URL ของ production
 8. **ไฟล์หน้าใหญ่มาก**: `projects/view/page.tsx` (~2,800 บรรทัด) และ `dashboard/page.tsx` (~1,100 บรรทัด) ถ้าจะเพิ่มฟีเจอร์ในหน้าเหล่านี้ ควรพิจารณาแยก component
-9. **ยังไม่มีเทสต์อัตโนมัติ** และไม่มี migration script
+9. ~~ยังไม่มีเทสต์อัตโนมัติ~~ มีแล้ว 12 ต.ค. 2026: `cd backend && npm test` (รัน 2 รอบ: เวลาเครื่อง + UTC) — เทสต์ API สร้างฐานข้อมูลชั่วคราวจาก deploy_schema.sql เอง ไม่แตะฐานจริง
 10. **ฟิลด์ที่เก็บแต่ยังไม่ได้ใช้**: `user_line_uid`, `user_whatsapp_no` (น่าจะเผื่อไว้แจ้งเตือนผ่าน LINE/WhatsApp) และเมนูที่คอมเมนต์ไว้ใน `bit.tsx` (customers, payments, reports)
 
 ## 13. ลำดับเหตุการณ์ (จาก git log)

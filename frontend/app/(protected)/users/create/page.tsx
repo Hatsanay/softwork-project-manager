@@ -172,14 +172,14 @@ export default function CreateUserPage() {
                     <label className="text-sm font-medium text-gray-700">ชื่อ</label>
                     <Input name="user_fname" value={form.user_fname} onChange={handleChange}
                         placeholder="ชื่อ" error={!!errors.user_fname} />
-                    {errors.user_fname && <p className="text-xs text-red-500">{errors.user_fname}</p>}
+                    {errors.user_fname && <p className="text-xs text-red-600">{errors.user_fname}</p>}
                 </div>
 
                 <div className="flex flex-col gap-1">
                     <label className="text-sm font-medium text-gray-700">นามสกุล</label>
                     <Input name="user_lname" value={form.user_lname} onChange={handleChange}
                         placeholder="นามสกุล" error={!!errors.user_lname} />
-                    {errors.user_lname && <p className="text-xs text-red-500">{errors.user_lname}</p>}
+                    {errors.user_lname && <p className="text-xs text-red-600">{errors.user_lname}</p>}
                 </div>
 
                 <div className="flex flex-col gap-1">
@@ -187,7 +187,7 @@ export default function CreateUserPage() {
                     <Input name="user_username" value={form.user_username} onChange={handleChange}
                         placeholder="เช่น somchai.k" autoComplete="off" error={!!errors.user_username} />
                     {errors.user_username
-                        ? <p className="text-xs text-red-500">{errors.user_username}</p>
+                        ? <p className="text-xs text-red-600">{errors.user_username}</p>
                         : <p className="text-xs text-gray-400">ใช้เข้าสู่ระบบ · เว้นว่าง = ใช้รหัสผู้ใช้ที่ระบบสร้างให้</p>}
                 </div>
 
@@ -196,7 +196,7 @@ export default function CreateUserPage() {
                     <Input type="email" name="user_email" value={form.user_email} onChange={handleChange}
                         placeholder="อีเมล" error={!!errors.user_email} />
                     {errors.user_email
-                        ? <p className="text-xs text-red-500">{errors.user_email}</p>
+                        ? <p className="text-xs text-red-600">{errors.user_email}</p>
                         : <p className="text-xs text-gray-400">เว้นว่าง = ผู้ใช้ยืนยันอีเมลเองด้วยรหัส OTP ตอนเข้าระบบครั้งแรก</p>}
                 </div>
 
@@ -204,7 +204,7 @@ export default function CreateUserPage() {
                     <label className="text-sm font-medium text-gray-700">เบอร์โทรศัพท์</label>
                     <Input name="user_phone" value={form.user_phone} onChange={handleChange}
                         placeholder="0812345678" error={!!errors.user_phone} />
-                    {errors.user_phone && <p className="text-xs text-red-500">{errors.user_phone}</p>}
+                    {errors.user_phone && <p className="text-xs text-red-600">{errors.user_phone}</p>}
                 </div>
 
                 <div className="flex flex-col gap-1">
@@ -230,7 +230,7 @@ export default function CreateUserPage() {
                         error={!!errors.user_role_id}
                     />
                     {errors.user_role_id
-                        ? <p className="text-xs text-red-500">{errors.user_role_id}</p>
+                        ? <p className="text-xs text-red-600">{errors.user_role_id}</p>
                         : <p className="text-xs text-gray-400">แสดงเฉพาะสิทธิ์ที่ไม่เกินสิทธิ์ของคุณ</p>}
                 </div>
 

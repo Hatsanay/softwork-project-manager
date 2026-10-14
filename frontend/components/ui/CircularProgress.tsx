@@ -7,12 +7,14 @@ type Props = {
 
 const TRACK_COLOR = "#e5e7eb"; // gray-200
 
+// สีตามความหมายของธีม: ยังไม่เริ่ม = เทา · กำลังทำ = ฟ้า (blue-500) · เสร็จ = เขียว (green-600)
+// (เดิมใช้เหลืองตอนต่ำกว่า 50% — เหลืองในระบบหมายถึง "รอ/ต้องระวัง" ความคืบหน้าปกติจึงไม่ควรเป็นเหลือง)
 function colorFor(percent: number) {
-    if (percent >= 100) return "#22c55e"; // green-500
-    if (percent >= 50) return "#3b82f6"; // blue-500
-    if (percent > 0) return "#f59e0b"; // amber-500
+    if (percent >= 100) return "#16a34a"; // green-600
+    if (percent > 0) return "#3b82f6"; // blue-500
     return "#d1d5db"; // gray-300
 }
+
 
 export default function CircularProgress({ percent, size = 76, strokeWidth = 7, className = "" }: Props) {
     const clamped = Math.max(0, Math.min(100, percent));

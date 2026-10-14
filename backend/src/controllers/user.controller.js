@@ -66,7 +66,7 @@ async function me(req, res, next) {
             `SELECT u.user_id, u.user_username, u.user_fname, u.user_lname,
                     CONCAT(u.user_fname, ' ', u.user_lname) AS user_fullname,
                     u.user_email, u.user_phone, u.user_line_uid, u.user_whatsapp_no,
-                    u.user_avatar_url, u.user_must_change_password, r.role_name
+                    u.user_avatar_url, u.user_must_change_password, u.user_branch_id, r.role_name
              FROM tb_users u
              LEFT JOIN tb_roles r ON r.role_id = u.user_role_id
              WHERE u.user_id = ?`,

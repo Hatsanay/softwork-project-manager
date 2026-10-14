@@ -45,7 +45,7 @@ export default function CompanySettingsPage() {
     const canEdit = settings.can_edit;
 
     return (
-        <div className="grid gap-6">
+        <div className="grid grid-cols-1 gap-6">
             <PageHeader
                 eyebrow="ตั้งค่าระบบ"
                 title={COMPANY_MESSAGES.pageTitle}

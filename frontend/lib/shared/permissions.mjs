@@ -41,6 +41,11 @@ export const PERMISSION_KEYS = [
     // วงจรขาย 1A (2026-10-13)
     "companySettings",
     "productManagement",
+    // ใบเสนอราคา 1A-3 (2026-10-13)
+    "viewQuotations",
+    "createQuotation",
+    "approveQuotation",
+    "cancelQuotation",
 ];
 
 /** ตำแหน่งบิตของแต่ละสิทธิ์ เช่น BIT_INDEX.createUsers = 2 */

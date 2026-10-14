@@ -1,4 +1,5 @@
 import { api } from "@/app/constans";
+import { inputClass } from "@/components/ui/form-field";
 import { PERMISSION_GROUPS } from "@/app/components/bit";
 import { PROJECT_PERMISSION_BITS } from "@/app/components/project-position-bits";
 
@@ -41,13 +42,13 @@ export const FIELD_LABEL: Record<string, string> = {
 };
 
 export const EVENT_META: Record<string, { label: string; className: string }> = {
-    create: { label: "สร้าง", className: "bg-green-50 text-green-700" },
-    update: { label: "แก้ไข", className: "bg-blue-50 text-blue-700" },
-    delete: { label: "ลบ", className: "bg-red-50 text-red-700" },
-    action: { label: "ดำเนินการ", className: "bg-indigo-50 text-indigo-700" },
+    create: { label: "สร้าง", className: "bg-green-50 text-green-600" },
+    update: { label: "แก้ไข", className: "bg-blue-50 text-blue-600" },
+    delete: { label: "ลบ", className: "bg-red-50 text-red-600" },
+    action: { label: "ดำเนินการ", className: "bg-blue-50 text-blue-600" },
     view: { label: "เปิดดู", className: "bg-gray-100 text-gray-700" },
-    denied: { label: "ถูกปฏิเสธ", className: "bg-amber-50 text-amber-700" },
-    error: { label: "ผิดพลาด", className: "bg-red-100 text-red-800" },
+    denied: { label: "ถูกปฏิเสธ", className: "bg-amber-50 text-amber-600" },
+    error: { label: "ผิดพลาด", className: "bg-red-100 text-red-600" },
 };
 
 export const ENTITY_LABEL: Record<string, string> = {
@@ -81,12 +82,13 @@ export function formatValue(v: unknown): string {
 
 export function DateRange({ from, to, onChange }: { from: string; to: string; onChange: (from: string, to: string) => void }) {
     return (
-        <div className="flex items-center gap-2 text-sm">
+        // มือถือ: สองช่องแบ่งครึ่งเต็มแถว (ห้ามล็อกความกว้าง — จอ 360px รวมกันล้นจอ) · จอใหญ่: กว้างคงที่เรียงในแถวตัวกรอง
+        <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 text-sm sm:flex sm:w-auto">
             <input type="date" value={from} max={to || undefined} onChange={(e) => onChange(e.target.value, to)}
-                className="h-9 rounded border border-gray-300 px-2 text-gray-700" aria-label="ตั้งแต่วันที่" />
+                className={`${inputClass(false, "sm")} sm:w-40`} aria-label="ตั้งแต่วันที่" />
             <span className="text-gray-400">ถึง</span>
             <input type="date" value={to} min={from || undefined} onChange={(e) => onChange(from, e.target.value)}
-                className="h-9 rounded border border-gray-300 px-2 text-gray-700" aria-label="ถึงวันที่" />
+                className={`${inputClass(false, "sm")} sm:w-40`} aria-label="ถึงวันที่" />
         </div>
     );
 }
@@ -96,7 +98,7 @@ export function FilterSelect({ value, onChange, options, label }: {
 }) {
     return (
         <select value={value} onChange={(e) => onChange(e.target.value)} aria-label={label}
-            className="h-9 rounded border border-gray-300 bg-white px-2 text-sm text-gray-700">
+            className={`${inputClass(false, "sm")} sm:w-auto`}>
             {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
     );

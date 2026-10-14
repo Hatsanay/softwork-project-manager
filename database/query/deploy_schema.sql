@@ -28,7 +28,7 @@ SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 -- ─── ส่วนที่ 1: สร้างตารางที่ยังไม่มี (เรียงตามลำดับ foreign key) ────────────────────────────
 -- รูปแบบ id ทุกตาราง: PREFIX 3 ตัว + yyyymmdd + เลขรัน 7 หลัก = 18 ตัว (ดู backend/src/utils/generateDailyId.js)
 -- role_permission / position_permission เป็น bitmask string ลำดับบิตต้องตรงกับ
---   backend/src/shared/permissions.mjs + frontend/app/components/bit.tsx (role, 29 บิต, append-only)
+--   backend/src/shared/permissions.mjs + frontend/app/components/bit.tsx (role, 33 บิต, append-only)
 --   backend/src/utils/projectPermissions.js + frontend/app/components/project-position-bits.ts (position, 29 บิต)
 
 CREATE TABLE IF NOT EXISTS `tb_department` (
@@ -1352,10 +1352,10 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CON
 -- ตั้งใจเช็ค "ตารางว่าง" ไม่ใช่ "ไม่มีแถวนี้" — ถ้าแอดมินลบ/เปลี่ยนบัญชีเริ่มต้นไปแล้วบน production
 -- ห้ามสร้างบัญชีที่รู้รหัสผ่านกลับขึ้นมาใหม่เองตอน deploy
 
--- role Admin เปิดทุกบิต (29 บิต) — role ระบบ (S) ได้สิทธิ์ครบเสมออยู่แล้วไม่ว่าสตริงจะยาวเท่าไร (effectiveRolePermission)
+-- role Admin เปิดทุกบิต (33 บิต) — role ระบบ (S) ได้สิทธิ์ครบเสมออยู่แล้วไม่ว่าสตริงจะยาวเท่าไร (effectiveRolePermission)
 -- role อื่นที่สตริงสั้นกว่าจำนวนบิตปัจจุบัน ถือว่าบิตใหม่ = 0 (ไม่ได้สิทธิ์ใหม่เอง ต้องมีคนติ๊กให้)
 INSERT INTO tb_roles (role_id, role_name, role_permission, role_type)
-SELECT 'ROL202601010000001', 'Admin', '11111111111111111111111111111', 'S'
+SELECT 'ROL202601010000001', 'Admin', '111111111111111111111111111111111', 'S'
 FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM tb_roles);
 
 -- ผู้ใช้คนแรก: admin (หรือ admin@softwork.local) / Admin@12345 — ระบบบังคับเปลี่ยนรหัสผ่านตอน login ครั้งแรก

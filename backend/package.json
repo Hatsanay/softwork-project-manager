@@ -9,7 +9,8 @@
     "test": "node scripts/run-tests.js",
     "schema:manifest": "node scripts/schema-manifest.js",
     "format:changed": "node scripts/format-changed.js",
-    "sync-shared": "node scripts/sync-shared.js"
+    "sync-shared": "node scripts/sync-shared.js",
+    "seed:demo": "node scripts/seed-demo.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

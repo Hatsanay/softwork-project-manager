@@ -192,14 +192,14 @@ export default function ProfilePage() {
                         <label className="text-sm font-medium text-gray-700">ชื่อ</label>
                         <Input name="user_fname" value={form.user_fname} onChange={handleChange}
                             placeholder="ชื่อ" error={!!errors.user_fname} />
-                        {errors.user_fname && <p className="text-xs text-red-500">{errors.user_fname}</p>}
+                        {errors.user_fname && <p className="text-xs text-red-600">{errors.user_fname}</p>}
                     </div>
 
                     <div className="flex flex-col gap-1">
                         <label className="text-sm font-medium text-gray-700">นามสกุล</label>
                         <Input name="user_lname" value={form.user_lname} onChange={handleChange}
                             placeholder="นามสกุล" error={!!errors.user_lname} />
-                        {errors.user_lname && <p className="text-xs text-red-500">{errors.user_lname}</p>}
+                        {errors.user_lname && <p className="text-xs text-red-600">{errors.user_lname}</p>}
                     </div>
 
                     <div className="flex flex-col gap-1">
@@ -214,7 +214,7 @@ export default function ProfilePage() {
                             <p className="flex-1 min-w-0 px-3 py-2 bg-gray-50 rounded-lg text-gray-600 text-sm break-all">{email || "-"}</p>
                             {!changingEmail && (
                                 <button type="button" onClick={() => setChangingEmail(true)}
-                                    className="shrink-0 text-sm text-blue-600 hover:text-blue-700">
+                                    className="-my-2 shrink-0 px-2 py-3 text-sm text-blue-600 hover:text-blue-700">
                                     {email ? "เปลี่ยน" : "เพิ่ม"}
                                 </button>
                             )}
@@ -225,7 +225,7 @@ export default function ProfilePage() {
                         <label className="text-sm font-medium text-gray-700">เบอร์โทรศัพท์</label>
                         <Input name="user_phone" value={form.user_phone} onChange={handleChange}
                             placeholder="0812345678" error={!!errors.user_phone} />
-                        {errors.user_phone && <p className="text-xs text-red-500">{errors.user_phone}</p>}
+                        {errors.user_phone && <p className="text-xs text-red-600">{errors.user_phone}</p>}
                     </div>
 
                     <div className="flex flex-col gap-1">

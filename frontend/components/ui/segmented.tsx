@@ -41,7 +41,7 @@ export default function Segmented<Value extends string>({
                             aria-selected={isTabs ? isSelected : undefined}
                             aria-pressed={isTabs ? undefined : isSelected}
                             onClick={() => onChange(option.value)}
-                            className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl px-3.5 py-1.5 text-sm transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-500/20 ${
+                            className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl px-3.5 py-2 text-sm transition sm:py-1.5 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-500/20 ${
                                 isSelected
                                     ? "bg-white font-medium text-gray-900 shadow-sm"
                                     : "text-gray-500 hover:text-gray-800"

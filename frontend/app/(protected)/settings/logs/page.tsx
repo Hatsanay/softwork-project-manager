@@ -22,7 +22,7 @@ export default function LogsPage() {
     const [tab, setTab] = useState<TabKey>("audit");
 
     return (
-        <div className="grid gap-6">
+        <div className="grid grid-cols-1 gap-6">
             <PageHeader
                 eyebrow="ตั้งค่าระบบ"
                 title="Log ข้อมูล"

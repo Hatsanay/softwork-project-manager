@@ -122,7 +122,7 @@ export default function CommandSearch({ open, onClose }: { open: boolean; onClos
 
     return (
         <div
-            className="fixed inset-0 z-[60] flex items-start justify-center bg-gray-900/35 px-4 pt-[12vh] backdrop-blur-sm"
+            className="fixed inset-0 z-[60] flex items-start justify-center bg-gray-900/35 px-4 pt-[12dvh] backdrop-blur-sm"
             onClick={close}
         >
             <div
@@ -152,7 +152,7 @@ export default function CommandSearch({ open, onClose }: { open: boolean; onClos
                     </kbd>
                 </div>
 
-                <div className="max-h-[55vh] overflow-y-auto p-2">
+                <div className="max-h-[55dvh] overflow-y-auto p-2">
                     {!trimmedQuery && (
                         <p className="px-3 py-6 text-center text-sm text-gray-400">
                             พิมพ์ชื่อโปรเจกต์หรืองานที่ต้องการ (เห็นเฉพาะโปรเจกต์ที่คุณมีสิทธิ์ดู)

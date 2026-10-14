@@ -114,7 +114,7 @@ export default function DepartmentSettingsPage() {
     }
 
     return (
-        <div className="grid gap-6">
+        <div className="grid grid-cols-1 gap-6">
             <PageHeader
                 eyebrow="ตั้งค่าระบบ"
                 title="แผนก"

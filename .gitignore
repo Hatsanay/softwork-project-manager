@@ -16,6 +16,9 @@ dist/
 backend/uploads/*
 !backend/uploads/.gitkeep
 
+# ลายเซ็นผู้ใช้ (ไม่เปิดสาธารณะ — ส่งผ่าน API ที่ต้อง login)
+backend/storage/
+
 # logs
 npm-debug.log*
 yarn-debug.log*

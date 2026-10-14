@@ -157,7 +157,7 @@ export default function AvatarCrop({ value, onChange, disabled }: Props) {
 
             {/* Modal crop */}
             {imageSrc && (
-                <div className="fixed inset-0 z-50 flex flex-col bg-black/85">
+                <div className="fixed inset-0 z-50 flex flex-col bg-gray-900/90">
                     {/* Crop area */}
                     <div className="relative flex-1">
                         <Cropper

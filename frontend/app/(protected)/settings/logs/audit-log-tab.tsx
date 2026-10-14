@@ -50,7 +50,7 @@ function DetailModal({ id, onClose }: { id: number; onClose: () => void }) {
     }, [id]);
 
     return (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-8" onClick={onClose}>
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-gray-900/40 p-4 backdrop-blur-sm sm:p-8" onClick={onClose}>
             <div className="w-full max-w-3xl rounded-xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
                     <h2 className="text-lg font-semibold text-gray-800">รายละเอียดการใช้งาน #{id}</h2>
@@ -70,7 +70,7 @@ function DetailModal({ id, onClose }: { id: number; onClose: () => void }) {
                                 ["สิทธิ์ ณ ตอนนั้น", row.aud_role_name ?? "—"],
                                 ["ข้อมูลที่เกี่ยวข้อง", row.aud_entity_type ? `${ENTITY_LABEL[row.aud_entity_type] ?? row.aud_entity_type} ${row.aud_entity_id ?? ""}` : "—"],
                                 ["โปรเจกต์", row.aud_project_id ?? "—"],
-                                ["ผลลัพธ์", <span key="r" className={row.aud_success ? "text-green-700" : "text-red-600"}>{row.aud_success ? "สำเร็จ" : "ไม่สำเร็จ"} (HTTP {row.aud_status})</span>],
+                                ["ผลลัพธ์", <span key="r" className={row.aud_success ? "text-green-600" : "text-red-600"}>{row.aud_success ? "สำเร็จ" : "ไม่สำเร็จ"} (HTTP {row.aud_status})</span>],
                                 ["ข้อความผิดพลาด", row.aud_error ?? "—"],
                                 ["คำขอ", <code key="p" className="break-all text-xs">{row.aud_method} {row.aud_path}</code>],
                                 ["Request ID", <code key="i" className="break-all text-xs">{row.aud_request_id ?? "—"}</code>],
@@ -102,14 +102,14 @@ function DetailModal({ id, onClose }: { id: number; onClose: () => void }) {
                                                     <td className="whitespace-nowrap px-3 py-2 text-gray-600">{FIELD_LABEL[field] ?? field}</td>
                                                     {c.added || c.removed ? (
                                                         <td colSpan={2} className="px-3 py-2">
-                                                            {(c.added ?? []).map((k) => <div key={`+${k}`} className="text-green-700">+ {PERMISSION_LABEL[k] ?? k}</div>)}
+                                                            {(c.added ?? []).map((k) => <div key={`+${k}`} className="text-green-600">+ {PERMISSION_LABEL[k] ?? k}</div>)}
                                                             {(c.removed ?? []).map((k) => <div key={`-${k}`} className="text-red-600">− {PERMISSION_LABEL[k] ?? k}</div>)}
                                                             {!c.added?.length && !c.removed?.length && <span className="text-gray-400">ไม่มีสิทธิ์เปลี่ยน</span>}
                                                         </td>
                                                     ) : (
                                                         <>
                                                             <td className="break-all px-3 py-2 text-red-600/90">{formatValue(c.from)}</td>
-                                                            <td className="break-all px-3 py-2 text-green-700">{formatValue(c.to)}</td>
+                                                            <td className="break-all px-3 py-2 text-green-600">{formatValue(c.to)}</td>
                                                         </>
                                                     )}
                                                 </tr>
@@ -183,7 +183,7 @@ export default function AuditLogTab() {
             render: (_, r) => r.aud_success
                 ? <StatusPill tone="success">สำเร็จ</StatusPill>
                 : (
-                    <div className="grid max-w-xs gap-1">
+                    <div className="grid max-w-xs justify-items-start gap-1">
                         <StatusPill tone="danger">ไม่สำเร็จ ({r.aud_status})</StatusPill>
                         {r.aud_error && <span className="line-clamp-2 text-xs text-red-600">{r.aud_error}</span>}
                     </div>

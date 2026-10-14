@@ -10,6 +10,12 @@ const path = require("path");
 const MAX_DEPTH = 4;
 const SNAPSHOT_PATH = path.join(__dirname, "..", "snapshots", "api-shapes.json");
 
+// object ที่ใช้ id เป็นชื่อฟิลด์ (เช่น { ISS20261013xxxxxxx: [...] }) — id มีวันที่ฝังอยู่ เปลี่ยนทุกวันที่รันเทสต์
+// แทนด้วยชื่อกลาง ":id" ให้ต้นแบบเหมือนเดิมทุกวัน (เดิมเทสต์พังเมื่อรันข้ามวัน)
+function shapeKey(key) {
+    return /^[A-Z]{3}\d{15}$/.test(key) ? ":id" : key;
+}
+
 function describeShape(value, depth = 0) {
     if (value === null) return "null";
     if (Array.isArray(value)) {
@@ -19,7 +25,7 @@ function describeShape(value, depth = 0) {
     if (typeof value === "object") {
         if (depth >= MAX_DEPTH) return "object";
         const shape = {};
-        for (const key of Object.keys(value).sort()) shape[key] = describeShape(value[key], depth + 1);
+        for (const key of Object.keys(value).sort()) shape[shapeKey(key)] = describeShape(value[key], depth + 1);
         return shape;
     }
     return typeof value;

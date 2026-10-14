@@ -75,7 +75,7 @@ export default function DragDropImage({ value, onChange, disabled, maxSizeMB = 5
                             <button
                                 type="button"
                                 onClick={handleRemove}
-                                className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                                className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-1 hover:bg-red-700"
                             >
                                 <X className="w-4 h-4" />
                             </button>

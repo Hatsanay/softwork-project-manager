@@ -35,7 +35,7 @@ export default function PersonCell({ name, subtitle, avatarPath }: PersonCellPro
                     className="h-9 w-9 shrink-0 rounded-xl object-cover"
                 />
             ) : (
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-blue-50 to-blue-100 text-xs font-medium text-blue-700">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-blue-50 to-blue-100 text-xs font-medium text-blue-600">
                     {initialsOf(name)}
                 </span>
             )}

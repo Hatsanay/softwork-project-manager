@@ -116,13 +116,17 @@ async function fetchImage(signatureId, token) {
     return fetch(`${api.baseUrl}/api/V1/signatures/${signatureId}`, { headers });
 }
 
+// id ผู้ใช้ทดสอบเรียงเลข (เดิมสุ่มจาก 90 ค่า สร้างสองคนในเทสต์เดียวชนกันได้ราว 1 ใน 90 — เทสต์ตกแบบสุ่ม)
+let createdUserCount = 0;
+
 async function createUser(username, permissionKeys) {
     const bits = PERMISSION_KEYS.map((key) => (permissionKeys.includes(key) ? "1" : "0")).join("");
     const role = await api.callApi("POST", "/V1/roles", {
         body: { role_name: `role-${username}`, role_permission: bits },
     });
     const passwordHash = await bcrypt.hash("Staff@2026", 10);
-    const userId = `USE2099010100000${String(Math.floor(Math.random() * 90) + 10)}`;
+    createdUserCount += 1;
+    const userId = `USE20990101${String(createdUserCount).padStart(7, "0")}`;
     await api.pool.query(
         `INSERT INTO tb_users (user_id, user_username, user_email, user_password, user_fname, user_lname, user_role_id, user_must_change_password)
          VALUES (?, ?, ?, ?, 'พนักงาน', ?, ?, 0)`,

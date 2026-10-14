@@ -1,0 +1,95 @@
+// ข้อความบนหน้าพิมพ์ใบเสนอราคา ตามภาษาเอกสาร (หัวเอกสารทั้งหมดเปลี่ยนตามภาษาของใบ — sales-cycle หัวข้อ 8)
+
+export const PRINT_LABELS = {
+    th: {
+        documentTitle: "ใบเสนอราคา",
+        number: "เลขที่",
+        date: "วันที่",
+        validUntil: "ยืนราคาถึง",
+        notIssued: "ยังไม่ออก",
+        customer: "ลูกค้า",
+        taxId: "เลขประจำตัวผู้เสียภาษี",
+        headOffice: "สำนักงานใหญ่",
+        branch: "สาขา",
+        contact: "ผู้ติดต่อ",
+        phone: "โทร",
+        email: "อีเมล",
+        subject: "เรื่อง",
+        currency: "สกุลเงิน",
+        index: "ลำดับ",
+        description: "รายการ",
+        quantity: "จำนวน",
+        unitPrice: "ราคาต่อหน่วย",
+        discount: "ส่วนลด",
+        amount: "จำนวนเงิน",
+        headingSubtotal: "รวม",
+        subtotal: "รวมเป็นเงิน",
+        billDiscount: "หักส่วนลด",
+        afterDiscount: "ยอดหลังหักส่วนลด",
+        vat: "ภาษีมูลค่าเพิ่ม",
+        vatZero: "อัตราภาษีมูลค่าเพิ่ม 0%",
+        total: "รวมทั้งสิ้น",
+        milestones: "งวดการชำระเงิน",
+        milestone: "งวดที่",
+        terms: "เงื่อนไข",
+        proposer: "ผู้เสนอราคา",
+        approver: "ผู้อนุมัติ",
+        customerAccept: "ลูกค้ายืนยันการสั่งซื้อ",
+        signDate: "วันที่",
+        draftWatermark: "ร่าง — ไม่ใช่เอกสารทางการ",
+        cancelledStamp: "ยกเลิก",
+        page: "หน้า",
+    },
+    en: {
+        documentTitle: "QUOTATION",
+        number: "No.",
+        date: "Date",
+        validUntil: "Valid until",
+        notIssued: "Not issued",
+        customer: "Customer",
+        taxId: "Tax ID",
+        headOffice: "Head Office",
+        branch: "Branch",
+        contact: "Attn.",
+        phone: "Tel.",
+        email: "Email",
+        subject: "Subject",
+        currency: "Currency",
+        index: "No.",
+        description: "Description",
+        quantity: "Qty",
+        unitPrice: "Unit price",
+        discount: "Discount",
+        amount: "Amount",
+        headingSubtotal: "Subtotal",
+        subtotal: "Subtotal",
+        billDiscount: "Less discount",
+        afterDiscount: "Amount after discount",
+        vat: "VAT",
+        vatZero: "VAT 0%",
+        total: "Grand total",
+        milestones: "Payment schedule",
+        milestone: "Installment",
+        terms: "Terms and conditions",
+        proposer: "Proposed by",
+        approver: "Approved by",
+        customerAccept: "Accepted by customer",
+        signDate: "Date",
+        draftWatermark: "DRAFT — NOT AN OFFICIAL DOCUMENT",
+        cancelledStamp: "CANCELLED",
+        page: "Page",
+    },
+} as const;
+
+export type PrintLabels = (typeof PRINT_LABELS)["th"] | (typeof PRINT_LABELS)["en"];
+
+/** "2026-10-14" → "14 ตุลาคม 2569" (เอกสารไทยใช้ พ.ศ.) / "14 October 2026" */
+export function formatDocumentDate(dateText: string | null, language: "th" | "en") {
+    if (!dateText) return "";
+    const [year, month, day] = dateText.split("-").map(Number);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    const locale = language === "th" ? "th-TH-u-ca-buddhist" : "en-GB";
+    return new Intl.DateTimeFormat(locale, { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(
+        date,
+    );
+}

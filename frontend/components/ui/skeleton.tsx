@@ -10,7 +10,7 @@ export function PageSkeleton({ label = "กำลังโหลด..." }: { lab
             <div className="grid gap-2">
                 <Skeleton className="h-3 w-24" />
                 <Skeleton className="h-8 w-64" />
-                <Skeleton className="h-4 w-96 max-w-full" />
+                <Skeleton className="h-4 w-full max-w-96" />
             </div>
             <Skeleton className="h-40 w-full rounded-2xl" />
             <Skeleton className="h-64 w-full rounded-2xl" />

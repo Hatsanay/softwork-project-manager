@@ -5,7 +5,7 @@ import PageHeader from "@/components/ui/page-header";
 // ยังไม่มีรายงาน — รายงานยอดขาย/ลูกหนี้มาในวงจรขายช่วง 1D (docs/plans/2026-10-08-sales-cycle.md)
 export default function ReportsPage() {
     return (
-        <div className="grid gap-6">
+        <div className="grid grid-cols-1 gap-6">
             <PageHeader title="รายงาน" />
             <EmptyState
                 icon={ChartColumn}

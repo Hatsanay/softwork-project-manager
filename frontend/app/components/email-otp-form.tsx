@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { buttonClass } from "@/components/ui/button";
 import { toast } from "sonner";
 import { ArrowRight, BellRing, Loader2, LogIn, Mail, MailCheck, Pencil } from "lucide-react";
 import { api } from "@/app/constans";
@@ -33,9 +34,7 @@ function PrimaryButton({ pending, children, ...props }: React.ButtonHTMLAttribut
         <button
             {...props}
             disabled={props.disabled || pending}
-            className="w-full h-11 inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 text-white font-medium
-                       shadow-sm shadow-blue-200 transition-colors hover:bg-blue-700
-                       disabled:bg-blue-300 disabled:shadow-none disabled:cursor-not-allowed"
+            className={buttonClass("primary", "md", "h-11 w-full")}
         >
             {pending && <Loader2 className="w-4 h-4 animate-spin" />}
             {children}
