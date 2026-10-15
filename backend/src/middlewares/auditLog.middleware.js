@@ -121,6 +121,12 @@ const ENTITIES = [
     { re: /^\/invoices\/([^/]+)$/, type: "invoice", table: "tb_invoices", pk: "inv_id", id: "1", label: { PUT: "แก้ร่างใบแจ้งหนี้", DELETE: "ลบร่างใบแจ้งหนี้" } },
     { re: /^\/invoices$/, type: "invoice", table: "tb_invoices", pk: "inv_id", id: "response:inv_id", label: { POST: "สร้างร่างใบแจ้งหนี้" } },
 
+    // ใบวางบิล (2026-10-15 ขั้น 1B-4) — รายการใบแจ้งหนี้ที่รวมบันทึกพร้อมหัวเอกสาร diff ดูที่หัวเอกสาร
+    { re: /^\/billing-notes\/([^/]+)\/issue$/, type: "billing_note", table: "tb_billing_notes", pk: "bn_id", id: "1", label: { POST: "ออกใบวางบิล" } },
+    { re: /^\/billing-notes\/([^/]+)\/cancel$/, type: "billing_note", table: "tb_billing_notes", pk: "bn_id", id: "1", label: { POST: "ยกเลิกใบวางบิล" } },
+    { re: /^\/billing-notes\/([^/]+)$/, type: "billing_note", table: "tb_billing_notes", pk: "bn_id", id: "1", label: { PUT: "แก้ร่างใบวางบิล", DELETE: "ลบร่างใบวางบิล" } },
+    { re: /^\/billing-notes$/, type: "billing_note", table: "tb_billing_notes", pk: "bn_id", id: "response:bn_id", label: { POST: "สร้างร่างใบวางบิล" } },
+
     { re: /^\/(logs|audit-logs|error-logs)(\/[^/]+)?$/, type: "log", label: { GET: "เปิดดู log ของระบบ", DELETE: "ลบ log" } },
     { re: /^\/share\/([^/]+)$/, type: "project", table: "tb_projects", pk: "project_share_token", label: { GET: "ลูกค้าเปิดลิงก์ติดตามโปรเจกต์" }, shareView: true },
 ];

@@ -60,6 +60,7 @@ export const MENU_DEFS: MenuItem[] = [
         children: [
             { key: "viewQuotations", label: "ใบเสนอราคา", href: "/sales/quotations" },
             { key: "viewInvoices", label: "ใบแจ้งหนี้", href: "/sales/invoices" },
+            { key: "viewInvoices", label: "ใบวางบิล", href: "/sales/billing-notes" },
             { key: "productManagement", label: "สินค้า/บริการ", href: "/sales/products" },
         ],
     },

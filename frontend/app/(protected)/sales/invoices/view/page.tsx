@@ -831,7 +831,17 @@ function RelatedCard({ detail }: { detail: InvoiceDetail }) {
                     </Link>
                 </p>
             )}
-            {billingNote && <p>อยู่ในใบวางบิล {billingNote.bn_number ?? "(ร่าง)"}</p>}
+            {billingNote && (
+                <p>
+                    อยู่ในใบวางบิล{" "}
+                    <Link
+                        href={`/sales/billing-notes/view?id=${billingNote.bn_id}`}
+                        className="py-2 text-blue-600 hover:underline"
+                    >
+                        {billingNote.bn_number ?? "ร่าง"}
+                    </Link>
+                </p>
+            )}
             {invoice.inv_reissued_from_id && (
                 <p>
                     ออกแทนใบ{" "}
