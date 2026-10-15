@@ -21,7 +21,6 @@ const companyService = require("../services/company.service");
 const companyListsService = require("../services/company-lists.service");
 const approvalRulesService = require("../services/approval-rules.service");
 
-const QUOTATION_DOCUMENT_TYPE = "QT";
 
 async function getSettings(req, res, next) {
     try {
@@ -142,9 +141,10 @@ async function updateCurrency(req, res, next) {
 
 async function saveApprovalLevels(req, res, next) {
     try {
-        const { levels } = validate(approvalLevelsSchema, req.body);
+        // doc_type ไม่ส่งมา = ใบเสนอราคา (หน้าเว็บเวอร์ชันก่อน 1B ส่งแค่ levels)
+        const { doc_type: documentType, levels } = validate(approvalLevelsSchema, req.body);
         const saved = await withTransaction((conn) =>
-            approvalRulesService.saveApprovalRules(conn, QUOTATION_DOCUMENT_TYPE, levels),
+            approvalRulesService.saveApprovalRules(conn, documentType, levels),
         );
         res.json(saved);
     } catch (err) {

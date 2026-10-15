@@ -46,6 +46,10 @@ CREATE TABLE `tb_company_settings` (
   `cs_quotation_terms_th` text COLLATE utf8mb4_unicode_ci COMMENT 'เงื่อนไขท้ายใบเสนอราคาเริ่มต้น (เอกสารภาษาไทย)',
   `cs_quotation_terms_en` text COLLATE utf8mb4_unicode_ci COMMENT 'เงื่อนไขท้ายใบเสนอราคาเริ่มต้น (เอกสารภาษาอังกฤษ)',
   `cs_allow_self_approval` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1 = ผู้สร้างอนุมัติเอกสารของตัวเองได้ (บริษัทที่มีผู้อนุมัติคนเดียว)',
+  `cs_default_credit_days` int NOT NULL DEFAULT '30' COMMENT 'เครดิตเทอมของใบแจ้งหนี้เมื่อลูกค้าไม่ได้ตั้งเอง (วัน) 0-365',
+  `cs_promptpay_id` varchar(15) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เลขพร้อมเพย์รับเงิน (มือถือ 10 หลัก / เลขผู้เสียภาษี 13 หลัก) ว่าง = ไม่พิมพ์ QR',
+  `cs_invoice_notes_th` text COLLATE utf8mb4_unicode_ci COMMENT 'หมายเหตุท้ายใบแจ้งหนี้เริ่มต้น (เอกสารภาษาไทย)',
+  `cs_invoice_notes_en` text COLLATE utf8mb4_unicode_ci COMMENT 'หมายเหตุท้ายใบแจ้งหนี้เริ่มต้น (เอกสารภาษาอังกฤษ)',
   `cs_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`cs_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -349,7 +353,8 @@ CREATE TABLE `tb_quotation_items` (
   CONSTRAINT `fk_qti_package` FOREIGN KEY (`qti_package_id`) REFERENCES `tb_product_packages` (`pkg_id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- งวดชำระ — แบบครั้งเดียวก็มี 1 แถว (100%) ใบแจ้งหนี้ (ช่วง 1B) จะได้อ้างงวดเหมือนกันทุกกรณี
+-- งวดชำระ — ทุกใบมีอย่างน้อย 1 แถว: เก็บเงินครั้งเดียว = แถว "ชำระเต็มจำนวน" 100% (บันทึกโดย backend ไม่แสดงในฟอร์ม)
+-- ใบแจ้งหนี้ (ช่วง 1B) จึงอ้างงวดได้เหมือนกันทุกกรณี · งวดที่ออกบิลแล้วลบไม่ได้ (tb_invoice_milestones)
 CREATE TABLE `tb_quotation_milestones` (
   `qtm_id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `qtm_quotation_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -383,6 +388,210 @@ CREATE TABLE `tb_quotation_approvals` (
   CONSTRAINT `fk_qta_user` FOREIGN KEY (`qta_user_id`) REFERENCES `tb_users` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ════ วงจรขาย ช่วง 1B (2026-10-14) — ใบแจ้งหนี้ + ใบวางบิล · แบบระบบ: docs/plans/2026-10-14-invoices-1b.md ════════
+-- ใบแจ้งหนี้ (ยังไม่ใช่ใบกำกับภาษี — บริษัทยังไม่จด VAT · ใบกำกับภาษีออกแบบก่อนวันจด ตามคำตอบนักบัญชี B1)
+-- flow: draft → (ใบสร้างเอง: pending_approval ชั้น 1..n) → issued (ได้เลขที่ + วันที่ + ครบกำหนด) → cancelled
+--       ใบที่ออกจากงวดของใบเสนอราคาไม่ต้องอนุมัติ (ยอดผ่านการอนุมัติในใบเสนอราคาแล้ว) · ใบสร้างเองอนุมัติตามกติกา 'IV'
+-- "เกินกำหนด" ไม่เก็บ — คำนวณตอนอ่านจาก inv_due_date เทียบวันนี้ (เวลาไทย) · ยอดรับแล้ว (inv_paid_amount) เริ่มใช้ช่วง 1C
+-- วันที่/ครบกำหนด/อัตราแลกเปลี่ยน/VAT คิดตอนกดออกเท่านั้น (ร่างค้างข้ามวันไม่ได้วันที่เก่า)
+-- ผู้สร้าง/ผู้ออก/ผู้ยกเลิก ลบไม่ได้ (FK ไม่ cascade, risk R7) + เก็บชื่อ ณ ตอนนั้นไว้ในเอกสาร
+CREATE TABLE `tb_invoices` (
+  `inv_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `inv_number` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'IV-yyyymmdd-xxxxxx ออกตอนออกใบ — ยกเลิกแล้วเลขยังอยู่',
+  `inv_status` enum('draft','pending_approval','issued','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'draft',
+  `inv_version` int unsigned NOT NULL DEFAULT '0',
+  `inv_source` enum('quotation','manual') COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'quotation = ออกจากงวดของใบเสนอราคา (ยอดล็อก) · manual = สร้างเอง (ต้องอนุมัติ)',
+  `inv_quotation_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inv_project_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inv_client_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `inv_branch_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `inv_reissued_from_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ออกใหม่แทนใบที่ยกเลิกใบไหน',
+  `inv_title` varchar(200) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `inv_language` enum('th','en') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'th',
+  `inv_currency` char(3) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'THB',
+  `inv_exchange_rate` decimal(20,10) NOT NULL DEFAULT '1.0000000000' COMMENT 'บาทต่อ 1 หน่วย ณ วันที่ออก — ใช้คิดยอดบาทภายใน',
+  `inv_rate_source` enum('bot','manual') COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ว่าง = เอกสารบาท',
+  `inv_rate_date` date DEFAULT NULL,
+  `inv_rate_bot` decimal(20,10) DEFAULT NULL,
+  `inv_rate_override_reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inv_vat_treatment` enum('standard','zero') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'standard',
+  `inv_credit_days` int NOT NULL DEFAULT '30' COMMENT 'เครดิตเทอม (วัน) 0-365',
+  `inv_issue_date` date DEFAULT NULL COMMENT 'วันที่ออก (เวลาไทย) ย้อนไม่ได้',
+  `inv_due_date` date DEFAULT NULL COMMENT 'วันที่ออก + เครดิต',
+  `inv_subtotal` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `inv_discount_type` enum('amount','percent') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'amount',
+  `inv_discount_value` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `inv_discount_amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `inv_after_discount` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ยอดก่อน VAT',
+  `inv_vat_rate` decimal(5,2) NOT NULL DEFAULT '0.00',
+  `inv_vat_amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `inv_total` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `inv_after_discount_thb` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ยอดก่อน VAT เป็นบาท — ใช้เทียบเกณฑ์อนุมัติ (ใบสร้างเอง)',
+  `inv_total_thb` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `inv_wht_rate` decimal(5,2) DEFAULT NULL COMMENT 'อัตราหัก ณ ที่จ่ายที่แสดงบนใบ — ว่าง = ไม่แสดง (ยอดหักจริงบันทึกตอนรับเงิน 1C)',
+  `inv_wht_amount` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ประมาณการ = ยอดก่อน VAT × อัตรา',
+  `inv_paid_amount` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ยอดรับชำระแล้ว (ช่วง 1C)',
+  `inv_notes` text COLLATE utf8mb4_unicode_ci COMMENT 'หมายเหตุที่พิมพ์บนเอกสาร',
+  `inv_internal_note` text COLLATE utf8mb4_unicode_ci COMMENT 'บันทึกภายใน — ไม่พิมพ์',
+  `inv_bank_account_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'บัญชีรับเงินที่พิมพ์บนใบ',
+  `inv_client_snapshot` json DEFAULT NULL COMMENT 'ข้อมูลลูกค้า ณ วันออก',
+  `inv_company_snapshot` json DEFAULT NULL COMMENT 'ข้อมูลบริษัท + สาขา ณ วันออก',
+  `inv_bank_snapshot` json DEFAULT NULL COMMENT 'บัญชีรับเงิน + พร้อมเพย์ ณ วันออก',
+  `inv_approval_round` int unsigned NOT NULL DEFAULT '0',
+  `inv_approval_current_level` tinyint unsigned DEFAULT NULL,
+  `inv_approval_plan` json DEFAULT NULL,
+  `inv_returned_reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inv_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inv_created_by_name` varchar(101) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inv_submitted_at` datetime DEFAULT NULL,
+  `inv_issued_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ผู้กดออก (ใบสร้างเอง = ผู้อนุมัติชั้นสุดท้าย)',
+  `inv_issued_by_name` varchar(101) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inv_issued_by_title` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inv_issuer_signature_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ลายเซ็นผู้ออก ฉบับตอนออก',
+  `inv_issued_at` datetime DEFAULT NULL,
+  `inv_sent_at` datetime DEFAULT NULL,
+  `inv_cancelled_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inv_cancelled_at` datetime DEFAULT NULL,
+  `inv_cancel_reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inv_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `inv_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`inv_id`),
+  UNIQUE KEY `uq_inv_number` (`inv_number`),
+  KEY `idx_inv_status_due` (`inv_status`,`inv_due_date`),
+  KEY `idx_inv_issue_date` (`inv_issue_date`),
+  KEY `idx_inv_client_status` (`inv_client_id`,`inv_status`),
+  KEY `idx_inv_created_by_created` (`inv_created_by`,`inv_created_at`),
+  KEY `fk_inv_quotation` (`inv_quotation_id`),
+  KEY `fk_inv_project` (`inv_project_id`),
+  KEY `fk_inv_branch` (`inv_branch_id`),
+  KEY `fk_inv_currency` (`inv_currency`),
+  KEY `fk_inv_reissued_from` (`inv_reissued_from_id`),
+  KEY `fk_inv_bank_account` (`inv_bank_account_id`),
+  KEY `fk_inv_issued_by` (`inv_issued_by`),
+  KEY `fk_inv_issuer_signature` (`inv_issuer_signature_id`),
+  KEY `fk_inv_cancelled_by` (`inv_cancelled_by`),
+  CONSTRAINT `fk_inv_quotation` FOREIGN KEY (`inv_quotation_id`) REFERENCES `tb_quotations` (`qt_id`),
+  CONSTRAINT `fk_inv_project` FOREIGN KEY (`inv_project_id`) REFERENCES `tb_projects` (`project_id`),
+  CONSTRAINT `fk_inv_client` FOREIGN KEY (`inv_client_id`) REFERENCES `tb_clients` (`client_id`),
+  CONSTRAINT `fk_inv_branch` FOREIGN KEY (`inv_branch_id`) REFERENCES `tb_branches` (`branch_id`),
+  CONSTRAINT `fk_inv_currency` FOREIGN KEY (`inv_currency`) REFERENCES `tb_currencies` (`cur_code`),
+  CONSTRAINT `fk_inv_reissued_from` FOREIGN KEY (`inv_reissued_from_id`) REFERENCES `tb_invoices` (`inv_id`),
+  CONSTRAINT `fk_inv_bank_account` FOREIGN KEY (`inv_bank_account_id`) REFERENCES `tb_bank_accounts` (`ba_id`),
+  CONSTRAINT `fk_inv_created_by` FOREIGN KEY (`inv_created_by`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_inv_issued_by` FOREIGN KEY (`inv_issued_by`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_inv_issuer_signature` FOREIGN KEY (`inv_issuer_signature_id`) REFERENCES `tb_user_signatures` (`sig_id`),
+  CONSTRAINT `fk_inv_cancelled_by` FOREIGN KEY (`inv_cancelled_by`) REFERENCES `tb_users` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- รายการในใบแจ้งหนี้ — รูปแบบเดียวกับรายการใบเสนอราคา · ใบจากงวด = บรรทัดละงวด (ราคา = ยอดก่อน VAT ของงวด)
+CREATE TABLE `tb_invoice_items` (
+  `invi_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `invi_invoice_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `invi_order` int NOT NULL DEFAULT '0',
+  `invi_type` enum('item','heading','note') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'item',
+  `invi_product_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `invi_description` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `invi_quantity` decimal(12,2) DEFAULT NULL,
+  `invi_unit` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `invi_unit_price` decimal(15,2) DEFAULT NULL,
+  `invi_list_price` decimal(15,2) DEFAULT NULL,
+  `invi_discount_type` enum('amount','percent') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'amount',
+  `invi_discount_value` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `invi_discount_amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `invi_amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  PRIMARY KEY (`invi_id`),
+  KEY `idx_invi_invoice` (`invi_invoice_id`,`invi_order`),
+  KEY `fk_invi_product` (`invi_product_id`),
+  CONSTRAINT `fk_invi_invoice` FOREIGN KEY (`invi_invoice_id`) REFERENCES `tb_invoices` (`inv_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_invi_product` FOREIGN KEY (`invi_product_id`) REFERENCES `tb_products` (`product_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- งวดของใบเสนอราคาที่ใบแจ้งหนี้นี้เรียกเก็บ — ใช้กันออกงวดซ้ำ (งวดหนึ่งอยู่ในใบที่ไม่ยกเลิกได้ใบเดียว ตรวจใน backend
+-- โดยล็อกแถวใบเสนอราคา) · ยอดก่อน VAT/VAT ของแต่ละงวดคงที่ตั้งแต่ใบเสนอราคา (shared/invoice-totals.mjs) ผลรวมทุกใบตรงพอดี
+CREATE TABLE `tb_invoice_milestones` (
+  `ivm_invoice_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ivm_milestone_id` bigint unsigned NOT NULL,
+  `ivm_amount` decimal(15,2) NOT NULL COMMENT 'ยอดงวดตามใบเสนอราคา (รวม VAT ของใบเสนอราคา)',
+  `ivm_base` decimal(15,2) NOT NULL COMMENT 'ส่วนที่เป็นยอดก่อน VAT',
+  `ivm_vat` decimal(15,2) NOT NULL COMMENT 'ส่วนที่เป็น VAT ตามใบเสนอราคา',
+  PRIMARY KEY (`ivm_invoice_id`,`ivm_milestone_id`),
+  KEY `fk_ivm_milestone` (`ivm_milestone_id`),
+  CONSTRAINT `fk_ivm_invoice` FOREIGN KEY (`ivm_invoice_id`) REFERENCES `tb_invoices` (`inv_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_ivm_milestone` FOREIGN KEY (`ivm_milestone_id`) REFERENCES `tb_quotation_milestones` (`qtm_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ประวัติการอนุมัติ/ตีกลับของใบแจ้งหนี้ที่สร้างเอง — รูปแบบเดียวกับ tb_quotation_approvals
+CREATE TABLE `tb_invoice_approvals` (
+  `inva_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `inva_invoice_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `inva_round` int unsigned NOT NULL,
+  `inva_level` tinyint unsigned NOT NULL,
+  `inva_action` enum('approve','return') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `inva_user_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inva_user_name` varchar(101) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `inva_role_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ไม่มี FK — role อาจถูกลบภายหลัง ประวัติต้องอยู่',
+  `inva_role_name` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inva_reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inva_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`inva_id`),
+  KEY `idx_inva_invoice` (`inva_invoice_id`,`inva_round`,`inva_level`),
+  KEY `fk_inva_user` (`inva_user_id`),
+  CONSTRAINT `fk_inva_invoice` FOREIGN KEY (`inva_invoice_id`) REFERENCES `tb_invoices` (`inv_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_inva_user` FOREIGN KEY (`inva_user_id`) REFERENCES `tb_users` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ใบวางบิล — รวมใบแจ้งหนี้ที่ออกแล้วของลูกค้ารายเดียว สกุลเงินเดียว + วันนัดชำระ · ไม่ต้องอนุมัติ
+-- flow: draft → issued (ได้เลข BN + วันที่) → cancelled (ใบแจ้งหนี้ในใบนี้กลับมาเลือกใหม่ได้)
+CREATE TABLE `tb_billing_notes` (
+  `bn_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `bn_number` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'BN-yyyymmdd-xxxxxx ออกตอนออกใบ',
+  `bn_status` enum('draft','issued','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'draft',
+  `bn_version` int unsigned NOT NULL DEFAULT '0',
+  `bn_client_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `bn_branch_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `bn_currency` char(3) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'THB',
+  `bn_language` enum('th','en') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'th',
+  `bn_issue_date` date DEFAULT NULL,
+  `bn_payment_date` date DEFAULT NULL COMMENT 'วันนัดชำระ (ลูกค้านัด)',
+  `bn_total` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ผลรวมยอดใบแจ้งหนี้ ณ ตอนออก',
+  `bn_notes` text COLLATE utf8mb4_unicode_ci,
+  `bn_client_snapshot` json DEFAULT NULL,
+  `bn_company_snapshot` json DEFAULT NULL,
+  `bn_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `bn_created_by_name` varchar(101) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `bn_issued_at` datetime DEFAULT NULL,
+  `bn_cancelled_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `bn_cancelled_at` datetime DEFAULT NULL,
+  `bn_cancel_reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `bn_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `bn_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`bn_id`),
+  UNIQUE KEY `uq_bn_number` (`bn_number`),
+  KEY `idx_bn_client_status` (`bn_client_id`,`bn_status`),
+  KEY `idx_bn_issue_date` (`bn_issue_date`),
+  KEY `fk_bn_branch` (`bn_branch_id`),
+  KEY `fk_bn_currency` (`bn_currency`),
+  KEY `fk_bn_created_by` (`bn_created_by`),
+  KEY `fk_bn_cancelled_by` (`bn_cancelled_by`),
+  CONSTRAINT `fk_bn_client` FOREIGN KEY (`bn_client_id`) REFERENCES `tb_clients` (`client_id`),
+  CONSTRAINT `fk_bn_branch` FOREIGN KEY (`bn_branch_id`) REFERENCES `tb_branches` (`branch_id`),
+  CONSTRAINT `fk_bn_currency` FOREIGN KEY (`bn_currency`) REFERENCES `tb_currencies` (`cur_code`),
+  CONSTRAINT `fk_bn_created_by` FOREIGN KEY (`bn_created_by`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_bn_cancelled_by` FOREIGN KEY (`bn_cancelled_by`) REFERENCES `tb_users` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ใบแจ้งหนี้ในใบวางบิล — ใบหนึ่งอยู่ในใบวางบิลที่ยังไม่ยกเลิกได้ใบเดียว (ตรวจใน backend) · เก็บยอด ณ ตอนออก
+CREATE TABLE `tb_billing_note_invoices` (
+  `bni_billing_note_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `bni_invoice_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `bni_order` int NOT NULL DEFAULT '0',
+  `bni_amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  PRIMARY KEY (`bni_billing_note_id`,`bni_invoice_id`),
+  KEY `fk_bni_invoice` (`bni_invoice_id`),
+  CONSTRAINT `fk_bni_billing_note` FOREIGN KEY (`bni_billing_note_id`) REFERENCES `tb_billing_notes` (`bn_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_bni_invoice` FOREIGN KEY (`bni_invoice_id`) REFERENCES `tb_invoices` (`inv_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- FK จากตารางเดิมมาตารางกลุ่มนี้ (ตารางเดิมถูกสร้างก่อน จึงเพิ่มทีหลัง)
 INSERT INTO tb_currencies (cur_code, cur_name_th, cur_name_en, cur_symbol, cur_decimals, cur_unit_th, cur_subunit_th, cur_unit_en, cur_subunit_en, cur_bot_unit, cur_sort_order)
 VALUES ('THB', 'บาท', 'Thai Baht', '฿', 2, 'บาท', 'สตางค์', 'Baht', 'Satang', 1, 1),
@@ -401,5 +610,7 @@ INSERT INTO tb_vat_rates (vr_effective_from, vr_rate, vr_note) VALUES ('2000-01-
 INSERT INTO tb_branches (branch_id, branch_code, branch_name_th, branch_name_en) VALUES ('BRA202601010000001', '00000', 'สำนักงานใหญ่', 'Head Office');
 INSERT INTO tb_approval_levels (al_doc_type, al_level, al_min_amount_thb, al_require_distinct) VALUES ('QT', 1, 0.00, 0);
 INSERT INTO tb_approval_level_roles (alr_doc_type, alr_level, alr_role_id) VALUES ('QT', 1, 'ROL202601010000001');
+INSERT INTO tb_approval_levels (al_doc_type, al_level, al_min_amount_thb, al_require_distinct) VALUES ('IV', 1, 0.00, 0);
+INSERT INTO tb_approval_level_roles (alr_doc_type, alr_level, alr_role_id) VALUES ('IV', 1, 'ROL202601010000001');
 
 commit;

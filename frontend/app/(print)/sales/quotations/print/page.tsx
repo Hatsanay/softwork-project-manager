@@ -347,7 +347,7 @@ export default function QuotationPrintPage() {
                     </dl>
                 </section>
 
-                {milestones.length > 0 && (
+                {quotation.qt_payment_mode === "milestones" && milestones.length > 0 && (
                     <section className="print-row mt-4 text-[9.5pt]">
                         <p className="font-medium">{labels.milestones}</p>
                         <table className="mt-1 w-full">

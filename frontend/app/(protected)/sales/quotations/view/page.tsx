@@ -33,6 +33,7 @@ import { apiFetch, type ApiError } from "@/lib/api";
 import { formatAmount } from "@/lib/shared/money.mjs";
 import { amountInWords } from "@/lib/shared/amount-in-words.mjs";
 import ApprovalProgress from "../_components/approval-progress";
+import QuotationBillingCard from "../../invoices/_components/quotation-billing-card";
 import AcceptDialog, { type AcceptChoice } from "../_components/accept-dialog";
 import { STATUS_LABELS } from "../_messages";
 import { displayRate, documentNumberLabel } from "../_format";
@@ -544,7 +545,7 @@ export default function QuotationViewPage() {
                         )}
                     </div>
 
-                    {milestones.length > 0 && (
+                    {quotation.qt_payment_mode === "milestones" && milestones.length > 0 && (
                         <div className="grid gap-1.5 text-sm">
                             <h3 className="font-medium text-gray-900">งวดชำระ</h3>
                             {milestones.map((milestone, index) => (
@@ -574,6 +575,9 @@ export default function QuotationViewPage() {
                 </section>
 
                 <div className="grid gap-5">
+                    {quotation.qt_status === "accepted" && (
+                        <QuotationBillingCard quotationId={quotation.qt_id} currencyDecimals={decimals} />
+                    )}
                     <ApprovalProgress quotation={quotation} history={detail.approval_history} />
                     {(chain.length > 1 || detail.copied_from) && (
                         <section className={`grid gap-2 p-5 text-sm ${CARD_CLASS}`}>

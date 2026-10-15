@@ -20,6 +20,11 @@ const PRODUCTION_SCHEMA_2026_10_12 = fs.readFileSync(
     path.join(__dirname, "fixtures", "deploy-schema-2026-10-12.sql"),
     "utf8",
 );
+// deploy 13 ต.ค. 2026 (commit 8a8680e) — มีตารางวงจรขาย 1A แล้ว แต่ยังไม่มีคอลัมน์/ตารางของช่วง 1B
+const PRODUCTION_SCHEMA_2026_10_13 = fs.readFileSync(
+    path.join(__dirname, "fixtures", "deploy-schema-2026-10-13.sql"),
+    "utf8",
+);
 const SERVER = {
     host: process.env.DB_HOST,
     port: process.env.DB_PORT,
@@ -71,19 +76,29 @@ test("ฐานว่าง: สร้างครบตามที่ตรว
         assert.deepEqual(branches, [{ branch_code: "00000", branch_name_th: "สำนักงานใหญ่" }]);
 
         const [[company]] = await conn.query(
-            "SELECT cs_id, cs_vat_registered_from, cs_quotation_valid_days FROM tb_company_settings",
+            "SELECT cs_id, cs_vat_registered_from, cs_quotation_valid_days, cs_default_credit_days, cs_promptpay_id FROM tb_company_settings",
         );
-        assert.deepEqual(company, { cs_id: 1, cs_vat_registered_from: null, cs_quotation_valid_days: 30 });
+        assert.deepEqual(company, {
+            cs_id: 1,
+            cs_vat_registered_from: null,
+            cs_quotation_valid_days: 30,
+            cs_default_credit_days: 30,
+            cs_promptpay_id: null,
+        });
 
         const [[vatRate]] = await conn.query("SELECT vr_rate FROM tb_vat_rates");
         assert.equal(vatRate.vr_rate, "7.00");
 
-        // กติกาอนุมัติเริ่มต้น: ชั้นเดียว ยอด 0 ผู้อนุมัติ = role ระบบ
+        // กติกาอนุมัติเริ่มต้นของใบเสนอราคา (QT) และใบแจ้งหนี้ที่สร้างเอง (IV): ชั้นเดียว ยอด 0 ผู้อนุมัติ = role ระบบ
         const [levels] = await conn.query(
-            `SELECT l.al_level, l.al_min_amount_thb, r.alr_role_id
-             FROM tb_approval_levels l JOIN tb_approval_level_roles r ON r.alr_doc_type = l.al_doc_type AND r.alr_level = l.al_level`,
+            `SELECT l.al_doc_type, l.al_level, l.al_min_amount_thb, r.alr_role_id
+             FROM tb_approval_levels l JOIN tb_approval_level_roles r ON r.alr_doc_type = l.al_doc_type AND r.alr_level = l.al_level
+             ORDER BY l.al_doc_type`,
         );
-        assert.deepEqual(levels, [{ al_level: 1, al_min_amount_thb: "0.00", alr_role_id: "ROL202601010000001" }]);
+        assert.deepEqual(levels, [
+            { al_doc_type: "IV", al_level: 1, al_min_amount_thb: "0.00", alr_role_id: "ROL202601010000001" },
+            { al_doc_type: "QT", al_level: 1, al_min_amount_thb: "0.00", alr_role_id: "ROL202601010000001" },
+        ]);
     });
 });
 
@@ -103,7 +118,56 @@ test("ข้อมูลเริ่มต้นไม่ทับของท�
         const [[usd]] = await conn.query("SELECT cur_status FROM tb_currencies WHERE cur_code = 'USD'");
         assert.equal(usd.cur_status, "inactive");
         assert.equal(await countRows(conn, "SELECT COUNT(*) AS total FROM tb_branches"), 1);
-        assert.equal(await countRows(conn, "SELECT COUNT(*) AS total FROM tb_approval_level_roles"), 1);
+        assert.equal(await countRows(conn, "SELECT COUNT(*) AS total FROM tb_approval_level_roles"), 2);
+    });
+});
+
+test("อัปเกรดฐานข้อมูลที่ใช้งานอยู่ (โครงสร้าง deploy 13 ต.ค. 2026 มีวงจรขาย 1A แล้ว) ได้ ตั้งค่าและกติกาเดิมไม่หาย", async () => {
+    await withTemporaryDatabase("upgrade1013", async (conn) => {
+        assert.deepEqual(await runSchemaFile(conn, PRODUCTION_SCHEMA_2026_10_13), [], "ฐานตั้งต้นต้องสมบูรณ์ตามเวอร์ชันเก่า");
+
+        // ของที่แอดมินตั้งไว้แล้วบน production: ชื่อบริษัท + กติกาอนุมัติใบเสนอราคา 2 ชั้น
+        await conn.query("UPDATE tb_company_settings SET cs_name_th = 'บริษัท ทดสอบ จำกัด'");
+        await conn.query(
+            "INSERT INTO tb_approval_levels (al_doc_type, al_level, al_min_amount_thb) VALUES ('QT', 2, 100000)",
+        );
+        await conn.query(
+            "INSERT INTO tb_approval_level_roles (alr_doc_type, alr_level, alr_role_id) VALUES ('QT', 2, 'ROL202601010000001')",
+        );
+
+        // ใบเสนอราคาเก็บเงินครั้งเดียวที่บันทึกก่อน 1B ไม่มีแถวงวด
+        await conn.query("INSERT INTO tb_clients (client_id, client_name) VALUES ('CLI202610130000001', 'ลูกค้า')");
+        await conn.query(
+            `INSERT INTO tb_quotations (qt_id, qt_root_id, qt_client_id, qt_branch_id, qt_title, qt_language, qt_payment_mode, qt_total, qt_created_by)
+             VALUES ('QUO202610130000001', 'QUO202610130000001', 'CLI202610130000001', 'BRA202601010000001', 'งานเว็บ', 'en', 'single', 1070, 'USE202601010000001')`,
+        );
+
+        assert.deepEqual(await runSchemaFile(conn, DEPLOY_SCHEMA), [], "หลังอัปเกรด: ส่วนที่ 6 ต้องไม่มีแถว");
+        assert.deepEqual(await runSchemaFile(conn, DEPLOY_SCHEMA), [], "อัปเกรดแล้วรันซ้ำ: ส่วนที่ 6 ต้องไม่มีแถว");
+
+        const [milestones] = await conn.query(
+            "SELECT qtm_order, qtm_name, qtm_percent, qtm_amount FROM tb_quotation_milestones WHERE qtm_quotation_id = 'QUO202610130000001'",
+        );
+        assert.deepEqual(
+            milestones,
+            [{ qtm_order: 1, qtm_name: "Full payment", qtm_percent: "100.00", qtm_amount: "1070.00" }],
+            "ได้งวดเต็มจำนวน 1 แถว (รันซ้ำไม่เพิ่ม)",
+        );
+
+        const [[company]] = await conn.query(
+            "SELECT cs_name_th, cs_default_credit_days, cs_promptpay_id FROM tb_company_settings",
+        );
+        assert.deepEqual(company, { cs_name_th: "บริษัท ทดสอบ จำกัด", cs_default_credit_days: 30, cs_promptpay_id: null });
+        assert.equal(
+            await countRows(conn, "SELECT COUNT(*) AS total FROM tb_approval_levels WHERE al_doc_type = 'QT'"),
+            2,
+            "กติกาใบเสนอราคาที่ตั้งไว้ต้องอยู่ครบ",
+        );
+        assert.equal(
+            await countRows(conn, "SELECT COUNT(*) AS total FROM tb_approval_level_roles WHERE alr_doc_type = 'IV'"),
+            1,
+            "ได้กติกาเริ่มต้นของใบแจ้งหนี้ที่สร้างเอง",
+        );
     });
 });
 
@@ -182,6 +246,36 @@ test("กติกาของ foreign key: ของที่ถูกเอก
         for (const [description, sql] of referencedRows) {
             await assert.rejects(conn.query(sql), { code: "ER_ROW_IS_REFERENCED_2" }, description);
         }
+
+        // ใบแจ้งหนี้อ้างงวดของใบเสนอราคา: ลบใบเสนอราคา/งวดที่ออกบิลแล้วไม่ได้ · ลบใบแจ้งหนี้แล้วรายการ/งวดที่ผูกหายตาม
+        await conn.query(
+            "INSERT INTO tb_quotation_milestones (qtm_quotation_id, qtm_order, qtm_name, qtm_amount) VALUES ('QUO202610010000001', 1, 'งวดเดียว', 50000)",
+        );
+        await conn.query(
+            `INSERT INTO tb_invoices (inv_id, inv_source, inv_quotation_id, inv_client_id, inv_branch_id, inv_title, inv_created_by)
+             VALUES ('INV202610010000001', 'quotation', 'QUO202610010000001', 'CLI202610010000001', 'BRA202601010000001', 'งานเว็บ', 'USE202601010000001')`,
+        );
+        await conn.query(
+            `INSERT INTO tb_invoice_items (invi_invoice_id, invi_order, invi_description, invi_quantity, invi_unit_price, invi_amount)
+             VALUES ('INV202610010000001', 1, 'งวดเดียว', 1, 50000, 50000)`,
+        );
+        await conn.query(
+            `INSERT INTO tb_invoice_milestones (ivm_invoice_id, ivm_milestone_id, ivm_amount, ivm_base, ivm_vat)
+             SELECT 'INV202610010000001', qtm_id, 50000, 50000, 0 FROM tb_quotation_milestones`,
+        );
+        await assert.rejects(
+            conn.query("DELETE FROM tb_quotation_milestones"),
+            { code: "ER_ROW_IS_REFERENCED_2" },
+            "งวดที่ออกบิลแล้ว",
+        );
+        await assert.rejects(
+            conn.query("DELETE FROM tb_quotations WHERE qt_id = 'QUO202610010000001'"),
+            { code: "ER_ROW_IS_REFERENCED_2" },
+            "ใบเสนอราคาที่มีใบแจ้งหนี้",
+        );
+        await conn.query("DELETE FROM tb_invoices WHERE inv_id = 'INV202610010000001'");
+        assert.equal(await countRows(conn, "SELECT COUNT(*) AS total FROM tb_invoice_items"), 0);
+        assert.equal(await countRows(conn, "SELECT COUNT(*) AS total FROM tb_invoice_milestones"), 0);
 
         await conn.query("DELETE FROM tb_quotations WHERE qt_id = 'QUO202610010000001'");
         assert.equal(await countRows(conn, "SELECT COUNT(*) AS total FROM tb_quotation_items"), 0);

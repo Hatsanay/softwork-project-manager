@@ -14,7 +14,7 @@ const RULES = [
 ];
 
 function actor(userId, role, canApprove = true) {
-    return { user_id: userId, role_id: role.role_id, can_approve_quotations: canApprove };
+    return { user_id: userId, role_id: role.role_id, can_approve: canApprove };
 }
 
 function evaluate(plan, currentLevel, user, extra = {}) {

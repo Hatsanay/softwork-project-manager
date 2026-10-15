@@ -1,0 +1,181 @@
+// ใบแจ้งหนี้ (2026-10-14 ขั้น 1B-2) — รับคำขอ → ตรวจข้อมูล (zod) → เรียก service → ตอบ
+// อ่าน/ร่างอยู่ใน services/invoice.service.js · เปลี่ยนสถานะอยู่ใน services/invoice-workflow.service.js
+const pool = require("../config/db");
+const { validate } = require("../utils/validate");
+const { withTransaction } = require("../utils/with-transaction");
+const {
+    invoiceFromQuotationSchema,
+    invoiceManualDraftSchema,
+    invoiceQuotationDraftSchema,
+    invoiceIssueSchema,
+    invoiceActionSchema,
+    invoiceReasonSchema,
+} = require("../shared/schemas/invoice.mjs");
+const invoiceService = require("../services/invoice.service");
+const workflowService = require("../services/invoice-workflow.service");
+
+async function list(req, res, next) {
+    try {
+        const result = await invoiceService.listInvoices(
+            pool,
+            {
+                tab: String(req.query.tab ?? "all"),
+                search: String(req.query.search ?? ""),
+                clientId: req.query.client_id ? String(req.query.client_id) : undefined,
+                quotationId: req.query.quotation_id ? String(req.query.quotation_id) : undefined,
+                limit: req.query.limit,
+                offset: req.query.offset,
+            },
+            req.user,
+        );
+        res.json(result);
+    } catch (err) {
+        next(err);
+    }
+}
+
+async function getOne(req, res, next) {
+    try {
+        res.json(await invoiceService.getInvoiceDetail(pool, req.params.id, req.user));
+    } catch (err) {
+        next(err);
+    }
+}
+
+async function billableMilestones(req, res, next) {
+    try {
+        res.json(await invoiceService.listBillableMilestones(pool, req.params.id));
+    } catch (err) {
+        next(err);
+    }
+}
+
+// มี quotation_id = ร่างจากงวดของใบเสนอราคา · ไม่มี = ใบสร้างเอง
+async function create(req, res, next) {
+    try {
+        const isFromQuotation = Boolean(req.body?.quotation_id);
+        const created = isFromQuotation
+            ? await withTransaction((conn) =>
+                  invoiceService.createFromQuotation(conn, validate(invoiceFromQuotationSchema, req.body), req.user),
+              )
+            : await withTransaction((conn) =>
+                  invoiceService.createManual(conn, validate(invoiceManualDraftSchema, req.body), req.user),
+              );
+        res.status(201).json(created);
+    } catch (err) {
+        next(err);
+    }
+}
+
+// ใบจากงวดแก้ได้แค่ข้อมูลประกอบ (ยอดล็อกตามใบเสนอราคา) — เลือกชุดตรวจตามแหล่งของใบ
+async function update(req, res, next) {
+    try {
+        const source = await invoiceService.findSource(pool, req.params.id);
+        const schema = source === "manual" ? invoiceManualDraftSchema : invoiceQuotationDraftSchema;
+        const draft = validate(schema, req.body);
+        res.json(await withTransaction((conn) => invoiceService.updateDraft(conn, req.params.id, draft)));
+    } catch (err) {
+        next(err);
+    }
+}
+
+async function remove(req, res, next) {
+    try {
+        const { inv_version: version } = validate(invoiceActionSchema, req.body ?? {});
+        await withTransaction((conn) => invoiceService.deleteDraft(conn, req.params.id, version));
+        res.status(204).end();
+    } catch (err) {
+        next(err);
+    }
+}
+
+// อัตรา ณ วันออกดึงก่อนเปิด transaction (อาจรอ ธปท. 5 วินาที ไม่ถือล็อกระหว่างนั้น)
+async function issue(req, res, next) {
+    try {
+        const options = validate(invoiceIssueSchema, req.body ?? {});
+        const freshRate = await workflowService.prepareIssueRate(pool, req.params.id);
+        res.json(
+            await withTransaction((conn) => workflowService.issue(conn, req.params.id, options, freshRate, req.user)),
+        );
+    } catch (err) {
+        next(err);
+    }
+}
+
+async function submit(req, res, next) {
+    try {
+        const { inv_version: version } = validate(invoiceActionSchema, req.body ?? {});
+        res.json(await withTransaction((conn) => workflowService.submitForApproval(conn, req.params.id, version)));
+    } catch (err) {
+        next(err);
+    }
+}
+
+async function approve(req, res, next) {
+    try {
+        const { inv_version: version } = validate(invoiceActionSchema, req.body ?? {});
+        const freshRate = await workflowService.prepareIssueRate(pool, req.params.id);
+        res.json(
+            await withTransaction((conn) => workflowService.approve(conn, req.params.id, version, freshRate, req.user)),
+        );
+    } catch (err) {
+        next(err);
+    }
+}
+
+async function returnToDraft(req, res, next) {
+    try {
+        const { reason, inv_version: version } = validate(invoiceReasonSchema, req.body ?? {});
+        res.json(
+            await withTransaction((conn) => workflowService.returnToDraft(conn, req.params.id, reason, version, req.user)),
+        );
+    } catch (err) {
+        next(err);
+    }
+}
+
+async function send(req, res, next) {
+    try {
+        const { inv_version: version } = validate(invoiceActionSchema, req.body ?? {});
+        res.json(await withTransaction((conn) => workflowService.markSent(conn, req.params.id, version)));
+    } catch (err) {
+        next(err);
+    }
+}
+
+async function cancel(req, res, next) {
+    try {
+        const { reason, inv_version: version } = validate(invoiceReasonSchema, req.body ?? {});
+        res.json(await withTransaction((conn) => workflowService.cancel(conn, req.params.id, reason, version, req.user)));
+    } catch (err) {
+        next(err);
+    }
+}
+
+async function reissue(req, res, next) {
+    try {
+        const { reason, inv_version: version } = validate(invoiceReasonSchema, req.body ?? {});
+        const created = await withTransaction((conn) =>
+            workflowService.reissue(conn, req.params.id, reason, version, req.user),
+        );
+        res.status(201).json(created);
+    } catch (err) {
+        next(err);
+    }
+}
+
+module.exports = {
+    list,
+    getOne,
+    billableMilestones,
+    create,
+    update,
+    remove,
+    issue,
+    submit,
+    approve,
+    returnToDraft,
+    send,
+    cancel,
+    reissue,
+};

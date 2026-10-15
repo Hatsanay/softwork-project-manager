@@ -1680,7 +1680,7 @@ export default function ViewProjectPage() {
                                                                             รับงาน
                                                                         </button>
                                                                     ) : c.assignees.length > 0 ? (
-                                                                        <span className="text-xs text-gray-400 truncate max-w-[100px]">
+                                                                        <span className="text-xs text-gray-400 truncate max-w-25">
                                                                             {c.assignees.map((a) => a.user_fullname).join(", ")}
                                                                         </span>
                                                                     ) : null}

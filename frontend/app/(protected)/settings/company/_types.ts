@@ -16,6 +16,10 @@ export type Company = {
     cs_quotation_terms_th: string | null;
     cs_quotation_terms_en: string | null;
     cs_allow_self_approval: boolean;
+    cs_default_credit_days: number;
+    cs_promptpay_id: string | null;
+    cs_invoice_notes_th: string | null;
+    cs_invoice_notes_en: string | null;
     cs_updated_at: string;
 };
 
@@ -96,6 +100,7 @@ export type CompanySettings = {
     bank_accounts: BankAccount[];
     currencies: Currency[];
     approval: ApprovalRules;
+    invoice_approval: ApprovalRules;
     roles: RoleChoice[];
     can_edit: boolean;
 };
@@ -118,5 +123,9 @@ export function toCompanyPayload(company: Company): CompanyPayload {
         cs_quotation_terms_th: company.cs_quotation_terms_th,
         cs_quotation_terms_en: company.cs_quotation_terms_en,
         cs_allow_self_approval: company.cs_allow_self_approval,
+        cs_default_credit_days: company.cs_default_credit_days,
+        cs_promptpay_id: company.cs_promptpay_id,
+        cs_invoice_notes_th: company.cs_invoice_notes_th,
+        cs_invoice_notes_en: company.cs_invoice_notes_en,
     };
 }

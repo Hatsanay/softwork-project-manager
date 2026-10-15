@@ -26,6 +26,9 @@ const RATE_COLUMN = {
     mid_rate: "er_mid_rate",
 }[DOCUMENT_RATE_TYPE];
 
+// ชื่องวดของใบเสนอราคาที่เก็บเงินครั้งเดียว (ตามภาษาเอกสาร) — ตรงกับที่ deploy_schema.sql เติมให้ใบเก่า
+const FULL_PAYMENT_NAME = { th: "ชำระเต็มจำนวน", en: "Full payment" };
+
 const DATE_COLUMNS = `
     DATE_FORMAT(q.qt_issue_date, '%Y-%m-%d') AS qt_issue_date,
     DATE_FORMAT(q.qt_valid_until, '%Y-%m-%d') AS qt_valid_until,
@@ -272,6 +275,16 @@ async function replaceChildren(conn, quotationId, draft, calculation) {
         );
     }
 
+    // เก็บเงินครั้งเดียว = งวดเดียว 100% เต็มยอด — ใบเสนอราคาทุกใบมีงวดอย่างน้อย 1 แถวเสมอ ใบแจ้งหนี้ (1B) อ้างงวดได้เหมือนกันทุกกรณี
+    if (draft.qt_payment_mode === "single") {
+        await conn.query(
+            `INSERT INTO tb_quotation_milestones (qtm_quotation_id, qtm_order, qtm_name, qtm_condition, qtm_percent, qtm_amount)
+             VALUES (?, 1, ?, NULL, 100, ?)`,
+            [quotationId, FULL_PAYMENT_NAME[draft.qt_language] ?? FULL_PAYMENT_NAME.th, toDecimalText(calculation.total)],
+        );
+        return;
+    }
+
     for (const [index, milestone] of draft.milestones.entries()) {
         // งวดที่ผลรวมยังไม่ตรง (ร่าง) เก็บยอดตามที่กรอก/คิดจาก % แบบยังไม่เกลี่ยเศษ — ส่งขออนุมัติจะบังคับให้ตรง
         const amount = calculation.milestoneAmounts[index] ?? null;
@@ -401,7 +414,7 @@ function evaluateFor(quotation, approvalsThisRound, actor, allowSelfApproval) {
         actor: {
             user_id: actor.user_id,
             role_id: actor.user_role_id,
-            can_approve_quotations: hasBit(actor.role_permission, "approveQuotation"),
+            can_approve: hasBit(actor.role_permission, "approveQuotation"),
         },
         creatorId: quotation.qt_created_by,
         allowSelfApproval,
@@ -663,6 +676,7 @@ module.exports = {
     findCurrency,
     vatRateFor,
     findCachedBotRate,
+    sameDecimal,
     assertVersion,
     wrongStatus,
     notFound,

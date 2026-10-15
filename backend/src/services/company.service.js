@@ -12,7 +12,8 @@ const COMPANY_ROW_ID = 1;
 const COMPANY_COLUMNS = `
     cs_name_th, cs_name_en, cs_tax_id, cs_address_th, cs_address_en, cs_phone, cs_email, cs_website, cs_logo_url,
     DATE_FORMAT(cs_vat_registered_from, '%Y-%m-%d') AS cs_vat_registered_from,
-    cs_quotation_valid_days, cs_quotation_terms_th, cs_quotation_terms_en, cs_allow_self_approval, cs_updated_at`;
+    cs_quotation_valid_days, cs_quotation_terms_th, cs_quotation_terms_en, cs_allow_self_approval,
+    cs_default_credit_days, cs_promptpay_id, cs_invoice_notes_th, cs_invoice_notes_en, cs_updated_at`;
 
 /**
  * ข้อมูลบริษัทแถวเดียว
@@ -76,6 +77,7 @@ async function getCompanySettings(conn, { canEdit }) {
         bank_accounts: await companyListsService.findBankAccounts(conn),
         currencies: await companyListsService.findCurrencies(conn),
         approval: await approvalRulesService.findApprovalRules(conn, "QT"),
+        invoice_approval: await approvalRulesService.findApprovalRules(conn, "IV"),
         roles: await approvalRulesService.findRoleChoices(conn),
         can_edit: canEdit,
     };
@@ -90,7 +92,8 @@ async function updateCompany(conn, company) {
         `UPDATE tb_company_settings SET
             cs_name_th = ?, cs_name_en = ?, cs_tax_id = ?, cs_address_th = ?, cs_address_en = ?,
             cs_phone = ?, cs_email = ?, cs_website = ?, cs_vat_registered_from = ?,
-            cs_quotation_valid_days = ?, cs_quotation_terms_th = ?, cs_quotation_terms_en = ?, cs_allow_self_approval = ?
+            cs_quotation_valid_days = ?, cs_quotation_terms_th = ?, cs_quotation_terms_en = ?, cs_allow_self_approval = ?,
+            cs_default_credit_days = ?, cs_promptpay_id = ?, cs_invoice_notes_th = ?, cs_invoice_notes_en = ?
          WHERE cs_id = ?`,
         [
             company.cs_name_th,
@@ -106,6 +109,10 @@ async function updateCompany(conn, company) {
             company.cs_quotation_terms_th,
             company.cs_quotation_terms_en,
             company.cs_allow_self_approval ? 1 : 0,
+            company.cs_default_credit_days,
+            company.cs_promptpay_id,
+            company.cs_invoice_notes_th,
+            company.cs_invoice_notes_en,
             COMPANY_ROW_ID,
         ],
     );

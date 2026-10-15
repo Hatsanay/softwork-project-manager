@@ -149,7 +149,7 @@ export default function ItemsEditor({
                                 />
                                 {controls}
                             </div>
-                            <div className="grid grid-cols-2 gap-2 @2xl:ml-[4.5rem] @2xl:grid-cols-[5rem_6rem_minmax(7rem,1fr)_minmax(9rem,1fr)_8rem]">
+                            <div className="grid grid-cols-2 gap-2 @2xl:ml-18 @2xl:grid-cols-[5rem_6rem_minmax(7rem,1fr)_minmax(9rem,1fr)_8rem]">
                                 <label className="grid gap-1 text-xs text-gray-600">
                                     จำนวน
                                     <input
@@ -212,14 +212,14 @@ export default function ItemsEditor({
                                 </div>
                             </div>
                             {line && line.belowListBy > 0n && (
-                                <p className="text-xs text-amber-600 sm:ml-[4.5rem]">
+                                <p className="text-xs text-amber-600 @2xl:ml-18">
                                     {QUOTATION_MESSAGES.belowList(formatAmount(line.belowListBy, currencyDecimals))}{" "}
                                     (ราคาตั้งต้น {formatAmount(item.qti_list_price || "0", currencyDecimals)}) —
                                     ผู้อนุมัติจะเห็น
                                 </p>
                             )}
                             {rowErrors.length > 0 && (
-                                <p role="alert" className="text-xs text-red-600 sm:ml-[4.5rem]">
+                                <p role="alert" className="text-xs text-red-600 @2xl:ml-18">
                                     {rowErrors.join(" · ")}
                                 </p>
                             )}

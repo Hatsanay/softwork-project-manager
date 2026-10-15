@@ -9,6 +9,9 @@ const {
 } = require("../utils/permissions");
 const { ACCESS_ERRORS, findRolePermission, canActOn, sendAccessError } = require("../utils/role-access");
 
+// ชื่อประเภทเอกสารในกติกาอนุมัติ (tb_approval_level_roles.alr_doc_type) สำหรับข้อความแจ้งผู้ใช้
+const APPROVAL_DOCUMENT_NAMES = { QT: "ใบเสนอราคา", IV: "ใบแจ้งหนี้ที่สร้างเอง" };
+
 // หน้าแก้/สร้าง role ที่เปิดค้างไว้ตั้งแต่ก่อนระบบเพิ่มสิทธิ์ใหม่ จะส่งสตริงสิทธิ์ที่สั้นกว่า backend มา
 // ปฏิเสธทั้งคำขอแทนการบันทึกบางส่วน ไม่งั้นสิทธิ์ใหม่ของ role นั้นจะหายเงียบๆ (2026-10-12, risk-fixes R1)
 const OUTDATED_PERMISSION_PAGE = {
@@ -191,14 +194,16 @@ async function remove(req, res, next) {
 
         // role ที่เป็นผู้อนุมัติในกติกาอนุมัติ — ลบแล้วชั้นนั้นอาจไม่มีใครอนุมัติได้ ใบค้าง (2026-10-13, risk R6)
         const [approvalLevels] = await pool.query(
-            "SELECT alr_level FROM tb_approval_level_roles WHERE alr_role_id = ? ORDER BY alr_level",
+            "SELECT alr_doc_type, alr_level FROM tb_approval_level_roles WHERE alr_role_id = ? ORDER BY alr_doc_type DESC, alr_level",
             [req.params.id]
         );
         if (approvalLevels.length > 0) {
-            const levelNames = approvalLevels.map((row) => `ชั้น ${row.alr_level}`).join(", ");
+            const levelNames = approvalLevels
+                .map((row) => `${APPROVAL_DOCUMENT_NAMES[row.alr_doc_type] ?? row.alr_doc_type} ชั้น ${row.alr_level}`)
+                .join(", ");
             return res.status(409).json({
                 code: "ROLE_IN_APPROVAL_RULES",
-                message: `ลบสิทธิ์นี้ไม่ได้ เพราะเป็นผู้อนุมัติใบเสนอราคา (${levelNames}) เอาออกจากกติกาก่อนที่ ตั้งค่าระบบ › ข้อมูลบริษัท › การอนุมัติ แล้วค่อยลบ`,
+                message: `ลบสิทธิ์นี้ไม่ได้ เพราะเป็นผู้อนุมัติ${levelNames} เอาออกจากกติกาก่อนที่ ตั้งค่าระบบ › ข้อมูลบริษัท › การอนุมัติ แล้วค่อยลบ`,
             });
         }
 

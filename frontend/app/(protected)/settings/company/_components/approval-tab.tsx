@@ -1,6 +1,7 @@
 "use client";
 
 // แท็บกติกาอนุมัติหลายชั้นตามยอดเงิน — แก้ทั้งชุดแล้วบันทึกทีเดียว (docs/plans/2026-10-08-sales-cycle.md หัวข้อ 3)
+// แต่ละประเภทเอกสารมีกติกาของตัวเอง: QT ใบเสนอราคา · IV ใบแจ้งหนี้ที่สร้างเอง (ช่วง 1B — ใบจากงวดไม่ต้องอนุมัติ)
 import { useState } from "react";
 import { Check, GitBranch, Lightbulb, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -17,6 +18,7 @@ import type { ApprovalRules, RoleChoice } from "../_types";
 import ApprovalExamples from "./approval-examples";
 import SaveErrorBanner from "@/components/ui/save-error-banner";
 import SectionCard, { PRIMARY_BUTTON, SECONDARY_BUTTON } from "@/components/ui/section-card";
+import Segmented from "@/components/ui/segmented";
 
 export type LevelForm = {
     al_min_amount_thb: string;
@@ -24,7 +26,18 @@ export type LevelForm = {
     role_ids: string[];
 };
 
+type DocumentType = "QT" | "IV";
+
 type ApprovalTabProps = {
+    approval: ApprovalRules;
+    invoiceApproval: ApprovalRules;
+    roles: RoleChoice[];
+    canEdit: boolean;
+    onSaved: () => Promise<void>;
+};
+
+type RulesEditorProps = {
+    documentType: DocumentType;
     approval: ApprovalRules;
     roles: RoleChoice[];
     canEdit: boolean;
@@ -43,7 +56,38 @@ function sameRoles(first: string[], second: string[]): boolean {
     return first.length === second.length && first.every((roleId) => second.includes(roleId));
 }
 
-export default function ApprovalTab({ approval, roles, canEdit, onSaved }: ApprovalTabProps) {
+export default function ApprovalTab({ approval, invoiceApproval, roles, canEdit, onSaved }: ApprovalTabProps) {
+    const messages = COMPANY_MESSAGES.approval;
+    const [documentType, setDocumentType] = useState<DocumentType>("QT");
+
+    return (
+        <div className="grid gap-4">
+            <div className="grid gap-1.5">
+                <Segmented
+                    label="กติกาอนุมัติของเอกสาร"
+                    value={documentType}
+                    onChange={setDocumentType}
+                    options={[
+                        { value: "QT", label: messages.documentTypes.QT },
+                        { value: "IV", label: messages.documentTypes.IV },
+                    ]}
+                />
+                <FieldHint>{messages.documentTypeHint}</FieldHint>
+            </div>
+            {/* key = ประเภทเอกสาร: สลับประเภทแล้วฟอร์มเริ่มจากกติกาที่บันทึกไว้ของประเภทนั้น (ไม่เอาค่าที่พิมพ์ค้างข้ามประเภท) */}
+            <ApprovalRulesEditor
+                key={documentType}
+                documentType={documentType}
+                approval={documentType === "QT" ? approval : invoiceApproval}
+                roles={roles}
+                canEdit={canEdit}
+                onSaved={onSaved}
+            />
+        </div>
+    );
+}
+
+function ApprovalRulesEditor({ documentType, approval, roles, canEdit, onSaved }: RulesEditorProps) {
     const messages = COMPANY_MESSAGES.approval;
     const [levels, setLevels] = useState<LevelForm[]>(() => toLevelForms(approval));
     const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -72,7 +116,7 @@ export default function ApprovalTab({ approval, roles, canEdit, onSaved }: Appro
 
     async function handleSave() {
         setSaveError(null);
-        const checked = approvalLevelsSchema.safeParse({ levels });
+        const checked = approvalLevelsSchema.safeParse({ doc_type: documentType, levels });
         if (!checked.success) {
             setFieldErrors(toFieldErrors(checked.error.issues));
             return;
@@ -97,7 +141,11 @@ export default function ApprovalTab({ approval, roles, canEdit, onSaved }: Appro
 
     return (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
-            <SectionCard icon={GitBranch} title="การอนุมัติใบเสนอราคา" description={messages.description}>
+            <SectionCard
+                icon={GitBranch}
+                title={`การอนุมัติ${messages.documentTypes[documentType]}`}
+                description={documentType === "QT" ? messages.description : messages.invoiceDescription}
+            >
                 {approval.warnings.length > 0 && (
                     <StatusBanner tone="warn" title={messages.warningsTitle}>
                         <ul className="list-disc space-y-1 pl-5">
@@ -160,7 +208,7 @@ export default function ApprovalTab({ approval, roles, canEdit, onSaved }: Appro
                                                         aria-pressed={isSelected}
                                                         disabled={!canEdit}
                                                         onClick={() => toggleRole(index, role.role_id)}
-                                                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm ${
+                                                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-sm sm:py-1 ${
                                                             isSelected
                                                                 ? "border-blue-300 bg-blue-50 font-medium text-blue-600"
                                                                 : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"

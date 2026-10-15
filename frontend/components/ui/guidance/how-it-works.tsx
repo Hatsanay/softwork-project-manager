@@ -22,7 +22,7 @@ export default function HowItWorks({ label = "ทำงานอย่างไ�
                 aria-expanded={isOpen}
                 aria-controls={bodyId}
                 onClick={() => setIsOpen((open) => !open)}
-                className="inline-flex w-fit items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700"
+                className="-my-2.5 inline-flex w-fit items-center gap-1 py-2.5 text-sm font-medium text-blue-600 hover:text-blue-700"
             >
                 <ChevronRight size={15} className={`transition-transform ${isOpen ? "rotate-90" : ""}`} />
                 {label}

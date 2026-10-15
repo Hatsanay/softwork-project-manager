@@ -22,7 +22,7 @@ async function findRoleChoices(conn) {
  * กติกาของเอกสารประเภทหนึ่ง พร้อมผู้ใช้ที่อนุมัติได้ในแต่ละชั้น และคำเตือน
  * ผู้อนุมัติได้ = ผู้ใช้ที่เปิดใช้งาน role อยู่ในชั้นนั้น และ role มีสิทธิ์ "อนุมัติใบเสนอราคา" (1A-3)
  * @param {import("mysql2/promise").Pool | import("mysql2/promise").PoolConnection} conn
- * @param {"QT"} documentType
+ * @param {"QT" | "IV"} documentType
  */
 async function findApprovalRules(conn, documentType) {
     const [levelRows] = await conn.query(
@@ -107,7 +107,7 @@ function buildApprovalWarnings(levels) {
 /**
  * บันทึกกติกาทั้งชุด — ชั้นที่ = ลำดับในรายการ (1, 2, 3...)
  * @param {import("mysql2/promise").PoolConnection} conn
- * @param {"QT"} documentType
+ * @param {"QT" | "IV"} documentType
  * @param {Array<{ al_min_amount_thb: string, al_require_distinct: boolean, role_ids: string[] }>} levels ผ่าน approvalLevelsSchema แล้ว
  */
 async function saveApprovalRules(conn, documentType, levels) {

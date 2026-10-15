@@ -86,7 +86,7 @@ const ENTITIES = [
     { re: /^\/company\/bank-accounts$/, type: "bank_account", table: "tb_bank_accounts", pk: "ba_id", id: "response:ba_id", label: { POST: "เพิ่มบัญชีธนาคาร" } },
     { re: /^\/company\/currencies\/([^/]+)$/, type: "currency", table: "tb_currencies", pk: "cur_code", id: "1", label: { PUT: "แก้ไขสกุลเงิน" } },
     { re: /^\/company\/currencies$/, type: "currency", table: "tb_currencies", pk: "cur_code", id: "response:cur_code", label: { POST: "เพิ่มสกุลเงิน" } },
-    { re: /^\/company\/approval-levels$/, type: "approval_rules", label: { PUT: "แก้ไขกติกาอนุมัติใบเสนอราคา" } },
+    { re: /^\/company\/approval-levels$/, type: "approval_rules", label: { PUT: "แก้ไขกติกาอนุมัติเอกสาร" } }, // ประเภทเอกสารอยู่ใน payload (doc_type)
     { re: /^\/company$/, type: "company", table: "tb_company_settings", pk: "cs_id", id: "fixed:1", label: { PUT: "แก้ไขข้อมูลบริษัท" } },
 
     // สินค้า/บริการ หมวดหมู่ ชุดรายการ (2026-10-13)
@@ -109,6 +109,17 @@ const ENTITIES = [
     { re: /^\/quotations\/([^/]+)\/copy$/, type: "quotation", table: "tb_quotations", pk: "qt_id", id: "response:qt_id", label: { POST: "คัดลอกเป็นใบเสนอราคาใหม่" } },
     { re: /^\/quotations\/([^/]+)$/, type: "quotation", table: "tb_quotations", pk: "qt_id", id: "1", label: { PUT: "แก้ร่างใบเสนอราคา", DELETE: "ลบร่างใบเสนอราคา" } },
     { re: /^\/quotations$/, type: "quotation", table: "tb_quotations", pk: "qt_id", id: "response:qt_id", label: { POST: "สร้างร่างใบเสนอราคา" } },
+
+    // ใบแจ้งหนี้ (2026-10-14 ช่วง 1B) — รายการ/งวดที่ผูกบันทึกพร้อมหัวเอกสาร diff ดูที่หัวเอกสาร
+    { re: /^\/invoices\/([^/]+)\/issue$/, type: "invoice", table: "tb_invoices", pk: "inv_id", id: "1", label: { POST: "ออกใบแจ้งหนี้" } },
+    { re: /^\/invoices\/([^/]+)\/submit$/, type: "invoice", table: "tb_invoices", pk: "inv_id", id: "1", label: { POST: "ส่งใบแจ้งหนี้ขออนุมัติ" } },
+    { re: /^\/invoices\/([^/]+)\/approve$/, type: "invoice", table: "tb_invoices", pk: "inv_id", id: "1", label: { POST: "อนุมัติใบแจ้งหนี้" } },
+    { re: /^\/invoices\/([^/]+)\/return$/, type: "invoice", table: "tb_invoices", pk: "inv_id", id: "1", label: { POST: "ตีกลับใบแจ้งหนี้" } },
+    { re: /^\/invoices\/([^/]+)\/send$/, type: "invoice", table: "tb_invoices", pk: "inv_id", id: "1", label: { POST: "บันทึกว่าส่งใบแจ้งหนี้ให้ลูกค้าแล้ว" } },
+    { re: /^\/invoices\/([^/]+)\/cancel$/, type: "invoice", table: "tb_invoices", pk: "inv_id", id: "1", label: { POST: "ยกเลิกใบแจ้งหนี้" } },
+    { re: /^\/invoices\/([^/]+)\/reissue$/, type: "invoice", table: "tb_invoices", pk: "inv_id", id: "response:inv_id", label: { POST: "ยกเลิกแล้วออกใบแจ้งหนี้ใหม่แทน" } },
+    { re: /^\/invoices\/([^/]+)$/, type: "invoice", table: "tb_invoices", pk: "inv_id", id: "1", label: { PUT: "แก้ร่างใบแจ้งหนี้", DELETE: "ลบร่างใบแจ้งหนี้" } },
+    { re: /^\/invoices$/, type: "invoice", table: "tb_invoices", pk: "inv_id", id: "response:inv_id", label: { POST: "สร้างร่างใบแจ้งหนี้" } },
 
     { re: /^\/(logs|audit-logs|error-logs)(\/[^/]+)?$/, type: "log", label: { GET: "เปิดดู log ของระบบ", DELETE: "ลบ log" } },
     { re: /^\/share\/([^/]+)$/, type: "project", table: "tb_projects", pk: "project_share_token", label: { GET: "ลูกค้าเปิดลิงก์ติดตามโปรเจกต์" }, shareView: true },

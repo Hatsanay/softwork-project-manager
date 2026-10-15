@@ -7,6 +7,7 @@
 import { z } from "zod";
 import { parseHundredths } from "../money.mjs";
 import { isValidThaiTaxId, normalizeThaiTaxId } from "../thai-tax-id.mjs";
+import { normalizePromptPayId } from "../promptpay.mjs";
 import {
     activeStatus,
     decimalText,
@@ -40,6 +41,15 @@ export const companySchema = z.object({
     cs_quotation_terms_th: optionalText("เงื่อนไขท้ายใบเสนอราคา (ภาษาไทย)", 5000),
     cs_quotation_terms_en: optionalText("เงื่อนไขท้ายใบเสนอราคา (ภาษาอังกฤษ)", 5000),
     cs_allow_self_approval: z.boolean({ error: "กรุณาเลือกว่าอนุญาตให้อนุมัติเอกสารของตัวเองไหม" }),
+    // ใบแจ้งหนี้ (ช่วง 1B)
+    cs_default_credit_days: integerInRange("เครดิตเทอมเริ่มต้น", 0, 365),
+    cs_promptpay_id: optionalText("เลขพร้อมเพย์", 20)
+        .refine((value) => value === null || normalizePromptPayId(value) !== null, {
+            message: "เลขพร้อมเพย์ต้องเป็นเบอร์มือถือ 10 หลัก หรือเลขประจำตัวผู้เสียภาษี 13 หลัก",
+        })
+        .transform((value) => (value === null ? null : normalizePromptPayId(value).digits)),
+    cs_invoice_notes_th: optionalText("หมายเหตุท้ายใบแจ้งหนี้ (ภาษาไทย)", 5000),
+    cs_invoice_notes_en: optionalText("หมายเหตุท้ายใบแจ้งหนี้ (ภาษาอังกฤษ)", 5000),
 });
 
 // ─── อัตรา VAT ตามวันที่มีผล ──────────────────────────────────────────────────────────────────
@@ -152,8 +162,12 @@ const approvalLevelSchema = z.object({
         .min(1, "ทุกชั้นต้องมี role ผู้อนุมัติอย่างน้อย 1 role"),
 });
 
+// ประเภทเอกสารที่มีกติกาอนุมัติของตัวเอง — QT ใบเสนอราคา · IV ใบแจ้งหนี้ที่สร้างเอง (ใบจากงวดใบเสนอราคาไม่ต้องอนุมัติ)
+export const APPROVAL_DOCUMENT_TYPES = ["QT", "IV"];
+
 export const approvalLevelsSchema = z
     .object({
+        doc_type: z.enum(APPROVAL_DOCUMENT_TYPES, { error: "ประเภทเอกสารของกติกาอนุมัติไม่ถูกต้อง" }).default("QT"),
         levels: z
             .array(approvalLevelSchema)
             .min(1, "ต้องมีอย่างน้อย 1 ชั้น")

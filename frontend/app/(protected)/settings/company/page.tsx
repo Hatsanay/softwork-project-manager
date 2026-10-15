@@ -84,7 +84,13 @@ export default function CompanySettingsPage() {
                 <QuotationDefaultsTab company={settings.company} canEdit={canEdit} onSaved={reload} />
             </TabPanel>
             <TabPanel tabKey="approval" activeTab={activeTab}>
-                <ApprovalTab approval={settings.approval} roles={settings.roles} canEdit={canEdit} onSaved={reload} />
+                <ApprovalTab
+                    approval={settings.approval}
+                    invoiceApproval={settings.invoice_approval}
+                    roles={settings.roles}
+                    canEdit={canEdit}
+                    onSaved={reload}
+                />
             </TabPanel>
             <TabPanel tabKey="currencies" activeTab={activeTab}>
                 <CurrenciesTab currencies={settings.currencies} canEdit={canEdit} onSaved={reload} />

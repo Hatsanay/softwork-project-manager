@@ -46,6 +46,11 @@ export const PERMISSION_KEYS = [
     "createQuotation",
     "approveQuotation",
     "cancelQuotation",
+    // ใบแจ้งหนี้ + ใบวางบิล 1B (2026-10-14)
+    "viewInvoices",
+    "createInvoice",
+    "approveInvoice",
+    "cancelInvoice",
 ];
 
 /** ตำแหน่งบิตของแต่ละสิทธิ์ เช่น BIT_INDEX.createUsers = 2 */

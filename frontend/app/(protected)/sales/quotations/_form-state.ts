@@ -144,7 +144,8 @@ export function formFromDetail(detail: QuotationDetail): QuotationForm {
             qti_discount_value: blankIfZero(item.qti_discount_value),
             baht_price: item.product_price,
         })),
-        milestones: detail.milestones.map((milestone) => ({
+        // เก็บเงินครั้งเดียว: backend เก็บงวด "ชำระเต็มจำนวน 100%" ไว้ให้ใบแจ้งหนี้อ้าง — ไม่ใช่งวดที่ผู้ใช้กรอก จึงไม่โหลดเข้าฟอร์ม
+        milestones: (detail.quotation.qt_payment_mode === "milestones" ? detail.milestones : []).map((milestone) => ({
             rowKey: newRowKey(),
             qtm_name: milestone.qtm_name,
             qtm_condition: milestone.qtm_condition ?? "",

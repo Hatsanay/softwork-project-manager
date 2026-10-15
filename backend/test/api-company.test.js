@@ -28,6 +28,10 @@ const VALID_COMPANY = {
     cs_quotation_terms_th: "ราคานี้ยังไม่รวม VAT",
     cs_quotation_terms_en: null,
     cs_allow_self_approval: false,
+    cs_default_credit_days: 30,
+    cs_promptpay_id: "081-234-5678",
+    cs_invoice_notes_th: "กรุณาชำระภายในวันครบกำหนด",
+    cs_invoice_notes_en: null,
 };
 
 const JPY = {
@@ -91,13 +95,17 @@ test("ข้อมูลบริษัท: ตรวจทุกช่องแ
             cs_tax_id: "0105555000001",
             cs_email: "not-an-email",
             cs_quotation_valid_days: 0,
+            cs_default_credit_days: 366,
+            cs_promptpay_id: "12345",
         },
     });
     assert.equal(invalid.status, 400);
     assert.equal(invalid.body.code, "VALIDATION");
     assert.deepEqual(Object.keys(invalid.body.fields).sort(), [
+        "cs_default_credit_days",
         "cs_email",
         "cs_name_th",
+        "cs_promptpay_id",
         "cs_quotation_valid_days",
         "cs_tax_id",
     ]);
@@ -106,6 +114,17 @@ test("ข้อมูลบริษัท: ตรวจทุกช่องแ
     assert.equal(saved.status, 200);
     assert.equal(saved.body.cs_tax_id, "0105555000005"); // ตัดขีดออกก่อนเก็บ
     assert.equal(saved.body.cs_website, null); // ช่องว่าง = NULL
+    assert.equal(saved.body.cs_promptpay_id, "0812345678"); // ตัดขีดออกก่อนเก็บ
+    assert.equal(saved.body.cs_default_credit_days, 30);
+    assert.equal(saved.body.cs_invoice_notes_th, "กรุณาชำระภายในวันครบกำหนด");
+
+    // เครดิต 0 วัน = ครบกำหนดวันที่ออก (ใช้ได้) · ไม่ใส่พร้อมเพย์ = ไม่พิมพ์ QR
+    const zeroCredit = await api.callApi("PUT", "/V1/company", {
+        body: { ...VALID_COMPANY, cs_default_credit_days: 0, cs_promptpay_id: "" },
+    });
+    assert.equal(zeroCredit.status, 200);
+    assert.equal(zeroCredit.body.cs_default_credit_days, 0);
+    assert.equal(zeroCredit.body.cs_promptpay_id, null);
 });
 
 test("โลโก้: รับรูปจริงเท่านั้น เก็บเป็น PNG", async () => {
@@ -299,6 +318,41 @@ test("กติกาอนุมัติ: ตรวจลำดับยอด
     assert.equal(restored.status, 200);
 });
 
+test("กติกาอนุมัติใบแจ้งหนี้ที่สร้างเอง (IV): บันทึกแยกจากใบเสนอราคา · role ในกติกาลบไม่ได้และบอกว่าเป็นของเอกสารไหน", async () => {
+    const role = await api.callApi("POST", "/V1/roles", {
+        body: { role_name: "ผู้อนุมัติบิลทดสอบ", role_permission: "1" + "0".repeat(PERMISSION_KEYS.length - 1) },
+    });
+    const invoiceRules = await api.callApi("PUT", "/V1/company/approval-levels", {
+        body: {
+            doc_type: "IV",
+            levels: [
+                { al_min_amount_thb: "0", al_require_distinct: false, role_ids: [SEED_ADMIN.roleId] },
+                { al_min_amount_thb: "50000", al_require_distinct: false, role_ids: [role.body.role_id] },
+            ],
+        },
+    });
+    assert.equal(invoiceRules.status, 200);
+    assert.equal(invoiceRules.body.levels.length, 2);
+
+    const settings = await api.callApi("GET", "/V1/company");
+    assert.equal(settings.body.invoice_approval.levels.length, 2);
+    assert.equal(settings.body.approval.levels.length, 1, "กติกาใบเสนอราคาไม่เปลี่ยน");
+
+    const deleteRole = await api.callApi("DELETE", `/V1/roles/${role.body.role_id}`);
+    assert.equal(deleteRole.status, 409);
+    assert.match(deleteRole.body.message, /ใบแจ้งหนี้ที่สร้างเอง ชั้น 2/);
+
+    const unknownType = await api.callApi("PUT", "/V1/company/approval-levels", {
+        body: { doc_type: "XX", levels: [{ al_min_amount_thb: "0", al_require_distinct: false, role_ids: [SEED_ADMIN.roleId] }] },
+    });
+    assert.equal(unknownType.status, 400);
+
+    const restored = await api.callApi("PUT", "/V1/company/approval-levels", {
+        body: { doc_type: "IV", levels: [{ al_min_amount_thb: "0", al_require_distinct: false, role_ids: [SEED_ADMIN.roleId] }] },
+    });
+    assert.equal(restored.status, 200);
+});
+
 test("ผู้ใช้ที่ไม่มีสิทธิ์ตั้งค่าบริษัท: ดูได้ (ฟอร์มเอกสารต้องใช้) แต่แก้ไม่ได้", async () => {
     const dashboardOnly = PERMISSION_KEYS.map((key) => (key === "dashboard" ? "1" : "0")).join("");
     const role = await api.callApi("POST", "/V1/roles", {
@@ -338,7 +392,7 @@ test("ทุกการแก้ไขเข้า audit log ด้วยชื
         "เพิ่มสาขา",
         "เพิ่มบัญชีธนาคาร",
         "เพิ่มสกุลเงิน",
-        "แก้ไขกติกาอนุมัติใบเสนอราคา",
+        "แก้ไขกติกาอนุมัติเอกสาร",
     ]) {
         assert.ok(actions.includes(expected), `ไม่พบ "${expected}" ใน audit log (มี: ${actions.join(", ")})`);
     }

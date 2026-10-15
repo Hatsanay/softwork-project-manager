@@ -24,6 +24,7 @@ const { registerCompanyRoutes } = require("./company.routes");
 const { registerProductRoutes } = require("./product.routes");
 const { registerSalesSupportRoutes } = require("./sales-support.routes");
 const { registerQuotationRoutes } = require("./quotation.routes");
+const { registerInvoiceRoutes } = require("./invoice.routes");
 
 const router = express.Router();
 
@@ -270,6 +271,7 @@ registerSalesSupportRoutes(router);
 
 // ─── ใบเสนอราคา (วงจรขาย 1A-3) ──────────────────────────────────────────────────
 registerQuotationRoutes(router);
+registerInvoiceRoutes(router);
 
 // ─── public share (ลูกค้าดู ไม่ต้อง login) ───────────────────────────────────
 router.get("/V1/share/:token", shareController.getSharedProject);

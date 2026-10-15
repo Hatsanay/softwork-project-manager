@@ -158,7 +158,7 @@ export default function SharedProjectPage() {
                 <div className="flex flex-wrap items-center justify-between gap-5">
                     <div className="grid min-w-0 gap-1.5">
                         {project.client_name && <p className="text-sm text-blue-100">สำหรับ {project.client_name}</p>}
-                        <h1 className="text-2xl font-medium break-words">{project.project_name}</h1>
+                        <h1 className="text-2xl font-medium wrap-break-word">{project.project_name}</h1>
                         <span className="w-fit rounded-full bg-white/90 px-0.5">
                             <StatusPill tone={status.tone}>{status.label}</StatusPill>
                         </span>

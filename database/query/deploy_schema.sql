@@ -28,7 +28,7 @@ SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 -- ─── ส่วนที่ 1: สร้างตารางที่ยังไม่มี (เรียงตามลำดับ foreign key) ────────────────────────────
 -- รูปแบบ id ทุกตาราง: PREFIX 3 ตัว + yyyymmdd + เลขรัน 7 หลัก = 18 ตัว (ดู backend/src/utils/generateDailyId.js)
 -- role_permission / position_permission เป็น bitmask string ลำดับบิตต้องตรงกับ
---   backend/src/shared/permissions.mjs + frontend/app/components/bit.tsx (role, 33 บิต, append-only)
+--   backend/src/shared/permissions.mjs + frontend/app/components/bit.tsx (role, 37 บิต, append-only)
 --   backend/src/utils/projectPermissions.js + frontend/app/components/project-position-bits.ts (position, 29 บิต)
 
 CREATE TABLE IF NOT EXISTS `tb_department` (
@@ -808,7 +808,8 @@ CREATE TABLE IF NOT EXISTS `tb_quotation_items` (
   CONSTRAINT `fk_qti_package` FOREIGN KEY (`qti_package_id`) REFERENCES `tb_product_packages` (`pkg_id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- งวดชำระ — แบบครั้งเดียวก็มี 1 แถว (100%) ใบแจ้งหนี้ (ช่วง 1B) จะได้อ้างงวดเหมือนกันทุกกรณี
+-- งวดชำระ — ทุกใบมีอย่างน้อย 1 แถว: เก็บเงินครั้งเดียว = แถว "ชำระเต็มจำนวน" 100% (บันทึกโดย backend ไม่แสดงในฟอร์ม)
+-- ใบแจ้งหนี้ (ช่วง 1B) จึงอ้างงวดได้เหมือนกันทุกกรณี · งวดที่ออกบิลแล้วลบไม่ได้ (tb_invoice_milestones)
 CREATE TABLE IF NOT EXISTS `tb_quotation_milestones` (
   `qtm_id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `qtm_quotation_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -840,6 +841,210 @@ CREATE TABLE IF NOT EXISTS `tb_quotation_approvals` (
   KEY `fk_qta_user` (`qta_user_id`),
   CONSTRAINT `fk_qta_quotation` FOREIGN KEY (`qta_quotation_id`) REFERENCES `tb_quotations` (`qt_id`) ON DELETE CASCADE,
   CONSTRAINT `fk_qta_user` FOREIGN KEY (`qta_user_id`) REFERENCES `tb_users` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ════ วงจรขาย ช่วง 1B (2026-10-14) — ใบแจ้งหนี้ + ใบวางบิล · แบบระบบ: docs/plans/2026-10-14-invoices-1b.md ════════
+-- ใบแจ้งหนี้ (ยังไม่ใช่ใบกำกับภาษี — บริษัทยังไม่จด VAT · ใบกำกับภาษีออกแบบก่อนวันจด ตามคำตอบนักบัญชี B1)
+-- flow: draft → (ใบสร้างเอง: pending_approval ชั้น 1..n) → issued (ได้เลขที่ + วันที่ + ครบกำหนด) → cancelled
+--       ใบที่ออกจากงวดของใบเสนอราคาไม่ต้องอนุมัติ (ยอดผ่านการอนุมัติในใบเสนอราคาแล้ว) · ใบสร้างเองอนุมัติตามกติกา 'IV'
+-- "เกินกำหนด" ไม่เก็บ — คำนวณตอนอ่านจาก inv_due_date เทียบวันนี้ (เวลาไทย) · ยอดรับแล้ว (inv_paid_amount) เริ่มใช้ช่วง 1C
+-- วันที่/ครบกำหนด/อัตราแลกเปลี่ยน/VAT คิดตอนกดออกเท่านั้น (ร่างค้างข้ามวันไม่ได้วันที่เก่า)
+-- ผู้สร้าง/ผู้ออก/ผู้ยกเลิก ลบไม่ได้ (FK ไม่ cascade, risk R7) + เก็บชื่อ ณ ตอนนั้นไว้ในเอกสาร
+CREATE TABLE IF NOT EXISTS `tb_invoices` (
+  `inv_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `inv_number` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'IV-yyyymmdd-xxxxxx ออกตอนออกใบ — ยกเลิกแล้วเลขยังอยู่',
+  `inv_status` enum('draft','pending_approval','issued','cancelled') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'draft',
+  `inv_version` int unsigned NOT NULL DEFAULT '0',
+  `inv_source` enum('quotation','manual') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'quotation = ออกจากงวดของใบเสนอราคา (ยอดล็อก) · manual = สร้างเอง (ต้องอนุมัติ)',
+  `inv_quotation_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inv_project_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inv_client_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `inv_branch_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `inv_reissued_from_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ออกใหม่แทนใบที่ยกเลิกใบไหน',
+  `inv_title` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `inv_language` enum('th','en') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'th',
+  `inv_currency` char(3) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'THB',
+  `inv_exchange_rate` decimal(20,10) NOT NULL DEFAULT '1.0000000000' COMMENT 'บาทต่อ 1 หน่วย ณ วันที่ออก — ใช้คิดยอดบาทภายใน',
+  `inv_rate_source` enum('bot','manual') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ว่าง = เอกสารบาท',
+  `inv_rate_date` date DEFAULT NULL,
+  `inv_rate_bot` decimal(20,10) DEFAULT NULL,
+  `inv_rate_override_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inv_vat_treatment` enum('standard','zero') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'standard',
+  `inv_credit_days` int NOT NULL DEFAULT '30' COMMENT 'เครดิตเทอม (วัน) 0-365',
+  `inv_issue_date` date DEFAULT NULL COMMENT 'วันที่ออก (เวลาไทย) ย้อนไม่ได้',
+  `inv_due_date` date DEFAULT NULL COMMENT 'วันที่ออก + เครดิต',
+  `inv_subtotal` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `inv_discount_type` enum('amount','percent') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'amount',
+  `inv_discount_value` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `inv_discount_amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `inv_after_discount` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ยอดก่อน VAT',
+  `inv_vat_rate` decimal(5,2) NOT NULL DEFAULT '0.00',
+  `inv_vat_amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `inv_total` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `inv_after_discount_thb` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ยอดก่อน VAT เป็นบาท — ใช้เทียบเกณฑ์อนุมัติ (ใบสร้างเอง)',
+  `inv_total_thb` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `inv_wht_rate` decimal(5,2) DEFAULT NULL COMMENT 'อัตราหัก ณ ที่จ่ายที่แสดงบนใบ — ว่าง = ไม่แสดง (ยอดหักจริงบันทึกตอนรับเงิน 1C)',
+  `inv_wht_amount` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ประมาณการ = ยอดก่อน VAT × อัตรา',
+  `inv_paid_amount` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ยอดรับชำระแล้ว (ช่วง 1C)',
+  `inv_notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT 'หมายเหตุที่พิมพ์บนเอกสาร',
+  `inv_internal_note` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT 'บันทึกภายใน — ไม่พิมพ์',
+  `inv_bank_account_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'บัญชีรับเงินที่พิมพ์บนใบ',
+  `inv_client_snapshot` json DEFAULT NULL COMMENT 'ข้อมูลลูกค้า ณ วันออก',
+  `inv_company_snapshot` json DEFAULT NULL COMMENT 'ข้อมูลบริษัท + สาขา ณ วันออก',
+  `inv_bank_snapshot` json DEFAULT NULL COMMENT 'บัญชีรับเงิน + พร้อมเพย์ ณ วันออก',
+  `inv_approval_round` int unsigned NOT NULL DEFAULT '0',
+  `inv_approval_current_level` tinyint unsigned DEFAULT NULL,
+  `inv_approval_plan` json DEFAULT NULL,
+  `inv_returned_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inv_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inv_created_by_name` varchar(101) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inv_submitted_at` datetime DEFAULT NULL,
+  `inv_issued_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ผู้กดออก (ใบสร้างเอง = ผู้อนุมัติชั้นสุดท้าย)',
+  `inv_issued_by_name` varchar(101) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inv_issued_by_title` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inv_issuer_signature_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ลายเซ็นผู้ออก ฉบับตอนออก',
+  `inv_issued_at` datetime DEFAULT NULL,
+  `inv_sent_at` datetime DEFAULT NULL,
+  `inv_cancelled_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inv_cancelled_at` datetime DEFAULT NULL,
+  `inv_cancel_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inv_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `inv_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`inv_id`),
+  UNIQUE KEY `uq_inv_number` (`inv_number`),
+  KEY `idx_inv_status_due` (`inv_status`,`inv_due_date`),
+  KEY `idx_inv_issue_date` (`inv_issue_date`),
+  KEY `idx_inv_client_status` (`inv_client_id`,`inv_status`),
+  KEY `idx_inv_created_by_created` (`inv_created_by`,`inv_created_at`),
+  KEY `fk_inv_quotation` (`inv_quotation_id`),
+  KEY `fk_inv_project` (`inv_project_id`),
+  KEY `fk_inv_branch` (`inv_branch_id`),
+  KEY `fk_inv_currency` (`inv_currency`),
+  KEY `fk_inv_reissued_from` (`inv_reissued_from_id`),
+  KEY `fk_inv_bank_account` (`inv_bank_account_id`),
+  KEY `fk_inv_issued_by` (`inv_issued_by`),
+  KEY `fk_inv_issuer_signature` (`inv_issuer_signature_id`),
+  KEY `fk_inv_cancelled_by` (`inv_cancelled_by`),
+  CONSTRAINT `fk_inv_bank_account` FOREIGN KEY (`inv_bank_account_id`) REFERENCES `tb_bank_accounts` (`ba_id`),
+  CONSTRAINT `fk_inv_branch` FOREIGN KEY (`inv_branch_id`) REFERENCES `tb_branches` (`branch_id`),
+  CONSTRAINT `fk_inv_cancelled_by` FOREIGN KEY (`inv_cancelled_by`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_inv_client` FOREIGN KEY (`inv_client_id`) REFERENCES `tb_clients` (`client_id`),
+  CONSTRAINT `fk_inv_created_by` FOREIGN KEY (`inv_created_by`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_inv_currency` FOREIGN KEY (`inv_currency`) REFERENCES `tb_currencies` (`cur_code`),
+  CONSTRAINT `fk_inv_issued_by` FOREIGN KEY (`inv_issued_by`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_inv_issuer_signature` FOREIGN KEY (`inv_issuer_signature_id`) REFERENCES `tb_user_signatures` (`sig_id`),
+  CONSTRAINT `fk_inv_project` FOREIGN KEY (`inv_project_id`) REFERENCES `tb_projects` (`project_id`),
+  CONSTRAINT `fk_inv_quotation` FOREIGN KEY (`inv_quotation_id`) REFERENCES `tb_quotations` (`qt_id`),
+  CONSTRAINT `fk_inv_reissued_from` FOREIGN KEY (`inv_reissued_from_id`) REFERENCES `tb_invoices` (`inv_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- รายการในใบแจ้งหนี้ — รูปแบบเดียวกับรายการใบเสนอราคา · ใบจากงวด = บรรทัดละงวด (ราคา = ยอดก่อน VAT ของงวด)
+CREATE TABLE IF NOT EXISTS `tb_invoice_items` (
+  `invi_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `invi_invoice_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `invi_order` int NOT NULL DEFAULT '0',
+  `invi_type` enum('item','heading','note') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'item',
+  `invi_product_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `invi_description` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `invi_quantity` decimal(12,2) DEFAULT NULL,
+  `invi_unit` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `invi_unit_price` decimal(15,2) DEFAULT NULL,
+  `invi_list_price` decimal(15,2) DEFAULT NULL,
+  `invi_discount_type` enum('amount','percent') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'amount',
+  `invi_discount_value` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `invi_discount_amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `invi_amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  PRIMARY KEY (`invi_id`),
+  KEY `idx_invi_invoice` (`invi_invoice_id`,`invi_order`),
+  KEY `fk_invi_product` (`invi_product_id`),
+  CONSTRAINT `fk_invi_invoice` FOREIGN KEY (`invi_invoice_id`) REFERENCES `tb_invoices` (`inv_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_invi_product` FOREIGN KEY (`invi_product_id`) REFERENCES `tb_products` (`product_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- งวดของใบเสนอราคาที่ใบแจ้งหนี้นี้เรียกเก็บ — ใช้กันออกงวดซ้ำ (งวดหนึ่งอยู่ในใบที่ไม่ยกเลิกได้ใบเดียว ตรวจใน backend
+-- โดยล็อกแถวใบเสนอราคา) · ยอดก่อน VAT/VAT ของแต่ละงวดคงที่ตั้งแต่ใบเสนอราคา (shared/invoice-totals.mjs) ผลรวมทุกใบตรงพอดี
+CREATE TABLE IF NOT EXISTS `tb_invoice_milestones` (
+  `ivm_invoice_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ivm_milestone_id` bigint unsigned NOT NULL,
+  `ivm_amount` decimal(15,2) NOT NULL COMMENT 'ยอดงวดตามใบเสนอราคา (รวม VAT ของใบเสนอราคา)',
+  `ivm_base` decimal(15,2) NOT NULL COMMENT 'ส่วนที่เป็นยอดก่อน VAT',
+  `ivm_vat` decimal(15,2) NOT NULL COMMENT 'ส่วนที่เป็น VAT ตามใบเสนอราคา',
+  PRIMARY KEY (`ivm_invoice_id`,`ivm_milestone_id`),
+  KEY `fk_ivm_milestone` (`ivm_milestone_id`),
+  CONSTRAINT `fk_ivm_invoice` FOREIGN KEY (`ivm_invoice_id`) REFERENCES `tb_invoices` (`inv_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_ivm_milestone` FOREIGN KEY (`ivm_milestone_id`) REFERENCES `tb_quotation_milestones` (`qtm_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ประวัติการอนุมัติ/ตีกลับของใบแจ้งหนี้ที่สร้างเอง — รูปแบบเดียวกับ tb_quotation_approvals
+CREATE TABLE IF NOT EXISTS `tb_invoice_approvals` (
+  `inva_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `inva_invoice_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `inva_round` int unsigned NOT NULL,
+  `inva_level` tinyint unsigned NOT NULL,
+  `inva_action` enum('approve','return') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `inva_user_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inva_user_name` varchar(101) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `inva_role_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ไม่มี FK — role อาจถูกลบภายหลัง ประวัติต้องอยู่',
+  `inva_role_name` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inva_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `inva_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`inva_id`),
+  KEY `idx_inva_invoice` (`inva_invoice_id`,`inva_round`,`inva_level`),
+  KEY `fk_inva_user` (`inva_user_id`),
+  CONSTRAINT `fk_inva_invoice` FOREIGN KEY (`inva_invoice_id`) REFERENCES `tb_invoices` (`inv_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_inva_user` FOREIGN KEY (`inva_user_id`) REFERENCES `tb_users` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ใบวางบิล — รวมใบแจ้งหนี้ที่ออกแล้วของลูกค้ารายเดียว สกุลเงินเดียว + วันนัดชำระ · ไม่ต้องอนุมัติ
+-- flow: draft → issued (ได้เลข BN + วันที่) → cancelled (ใบแจ้งหนี้ในใบนี้กลับมาเลือกใหม่ได้)
+CREATE TABLE IF NOT EXISTS `tb_billing_notes` (
+  `bn_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `bn_number` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'BN-yyyymmdd-xxxxxx ออกตอนออกใบ',
+  `bn_status` enum('draft','issued','cancelled') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'draft',
+  `bn_version` int unsigned NOT NULL DEFAULT '0',
+  `bn_client_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `bn_branch_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `bn_currency` char(3) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'THB',
+  `bn_language` enum('th','en') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'th',
+  `bn_issue_date` date DEFAULT NULL,
+  `bn_payment_date` date DEFAULT NULL COMMENT 'วันนัดชำระ (ลูกค้านัด)',
+  `bn_total` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ผลรวมยอดใบแจ้งหนี้ ณ ตอนออก',
+  `bn_notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `bn_client_snapshot` json DEFAULT NULL,
+  `bn_company_snapshot` json DEFAULT NULL,
+  `bn_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `bn_created_by_name` varchar(101) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `bn_issued_at` datetime DEFAULT NULL,
+  `bn_cancelled_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `bn_cancelled_at` datetime DEFAULT NULL,
+  `bn_cancel_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `bn_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `bn_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`bn_id`),
+  UNIQUE KEY `uq_bn_number` (`bn_number`),
+  KEY `idx_bn_client_status` (`bn_client_id`,`bn_status`),
+  KEY `idx_bn_issue_date` (`bn_issue_date`),
+  KEY `fk_bn_branch` (`bn_branch_id`),
+  KEY `fk_bn_currency` (`bn_currency`),
+  KEY `fk_bn_created_by` (`bn_created_by`),
+  KEY `fk_bn_cancelled_by` (`bn_cancelled_by`),
+  CONSTRAINT `fk_bn_branch` FOREIGN KEY (`bn_branch_id`) REFERENCES `tb_branches` (`branch_id`),
+  CONSTRAINT `fk_bn_cancelled_by` FOREIGN KEY (`bn_cancelled_by`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_bn_client` FOREIGN KEY (`bn_client_id`) REFERENCES `tb_clients` (`client_id`),
+  CONSTRAINT `fk_bn_created_by` FOREIGN KEY (`bn_created_by`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_bn_currency` FOREIGN KEY (`bn_currency`) REFERENCES `tb_currencies` (`cur_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ใบแจ้งหนี้ในใบวางบิล — ใบหนึ่งอยู่ในใบวางบิลที่ยังไม่ยกเลิกได้ใบเดียว (ตรวจใน backend) · เก็บยอด ณ ตอนออก
+CREATE TABLE IF NOT EXISTS `tb_billing_note_invoices` (
+  `bni_billing_note_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `bni_invoice_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `bni_order` int NOT NULL DEFAULT '0',
+  `bni_amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  PRIMARY KEY (`bni_billing_note_id`,`bni_invoice_id`),
+  KEY `fk_bni_invoice` (`bni_invoice_id`),
+  CONSTRAINT `fk_bni_billing_note` FOREIGN KEY (`bni_billing_note_id`) REFERENCES `tb_billing_notes` (`bn_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_bni_invoice` FOREIGN KEY (`bni_invoice_id`) REFERENCES `tb_invoices` (`inv_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ─── ส่วนที่ 2: เติมคอลัมน์ที่ยังขาด (สำหรับฐานข้อมูลที่สร้างจากโครงสร้างเวอร์ชันเก่า) ──────────────
@@ -1109,6 +1314,139 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA 
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_task_activity_log' AND COLUMN_NAME = 'log_message') = 0, 'ALTER TABLE `tb_task_activity_log` ADD COLUMN `log_message` text COLLATE utf8mb4_unicode_ci AFTER `log_new_value`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_task_activity_log' AND COLUMN_NAME = 'log_created_at') = 0, 'ALTER TABLE `tb_task_activity_log` ADD COLUMN `log_created_at` datetime DEFAULT CURRENT_TIMESTAMP AFTER `log_message`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- tb_company_settings — ค่าเริ่มต้นใบแจ้งหนี้ (2026-10-14 ช่วง 1B)
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_company_settings' AND COLUMN_NAME = 'cs_default_credit_days') = 0, 'ALTER TABLE `tb_company_settings` ADD COLUMN `cs_default_credit_days` int NOT NULL DEFAULT ''30'' COMMENT ''เครดิตเทอมของใบแจ้งหนี้เมื่อลูกค้าไม่ได้ตั้งเอง (วัน) 0-365'' AFTER `cs_allow_self_approval`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_company_settings' AND COLUMN_NAME = 'cs_promptpay_id') = 0, 'ALTER TABLE `tb_company_settings` ADD COLUMN `cs_promptpay_id` varchar(15) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''เลขพร้อมเพย์รับเงิน (มือถือ 10 หลัก / เลขผู้เสียภาษี 13 หลัก) ว่าง = ไม่พิมพ์ QR'' AFTER `cs_default_credit_days`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_company_settings' AND COLUMN_NAME = 'cs_invoice_notes_th') = 0, 'ALTER TABLE `tb_company_settings` ADD COLUMN `cs_invoice_notes_th` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT ''หมายเหตุท้ายใบแจ้งหนี้เริ่มต้น (เอกสารภาษาไทย)'' AFTER `cs_promptpay_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_company_settings' AND COLUMN_NAME = 'cs_invoice_notes_en') = 0, 'ALTER TABLE `tb_company_settings` ADD COLUMN `cs_invoice_notes_en` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT ''หมายเหตุท้ายใบแจ้งหนี้เริ่มต้น (เอกสารภาษาอังกฤษ)'' AFTER `cs_invoice_notes_th`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_invoices
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_id') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_number') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_number` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''IV-yyyymmdd-xxxxxx ออกตอนออกใบ — ยกเลิกแล้วเลขยังอยู่'' AFTER `inv_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_status') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_status` enum(''draft'',''pending_approval'',''issued'',''cancelled'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''draft'' AFTER `inv_number`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_version') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_version` int unsigned NOT NULL DEFAULT ''0'' AFTER `inv_status`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_source') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_source` enum(''quotation'',''manual'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT ''quotation = ออกจากงวดของใบเสนอราคา (ยอดล็อก) · manual = สร้างเอง (ต้องอนุมัติ)'' AFTER `inv_version`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_quotation_id') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_quotation_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `inv_source`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_project_id') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_project_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `inv_quotation_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_client_id') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_client_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `inv_project_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_branch_id') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_branch_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `inv_client_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_reissued_from_id') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_reissued_from_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''ออกใหม่แทนใบที่ยกเลิกใบไหน'' AFTER `inv_branch_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_title') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_title` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `inv_reissued_from_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_language') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_language` enum(''th'',''en'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''th'' AFTER `inv_title`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_currency') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_currency` char(3) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''THB'' AFTER `inv_language`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_exchange_rate') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_exchange_rate` decimal(20,10) NOT NULL DEFAULT ''1.0000000000'' COMMENT ''บาทต่อ 1 หน่วย ณ วันที่ออก — ใช้คิดยอดบาทภายใน'' AFTER `inv_currency`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_rate_source') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_rate_source` enum(''bot'',''manual'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''ว่าง = เอกสารบาท'' AFTER `inv_exchange_rate`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_rate_date') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_rate_date` date DEFAULT NULL AFTER `inv_rate_source`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_rate_bot') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_rate_bot` decimal(20,10) DEFAULT NULL AFTER `inv_rate_date`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_rate_override_reason') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_rate_override_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `inv_rate_bot`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_vat_treatment') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_vat_treatment` enum(''standard'',''zero'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''standard'' AFTER `inv_rate_override_reason`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_credit_days') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_credit_days` int NOT NULL DEFAULT ''30'' COMMENT ''เครดิตเทอม (วัน) 0-365'' AFTER `inv_vat_treatment`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_issue_date') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_issue_date` date DEFAULT NULL COMMENT ''วันที่ออก (เวลาไทย) ย้อนไม่ได้'' AFTER `inv_credit_days`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_due_date') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_due_date` date DEFAULT NULL COMMENT ''วันที่ออก + เครดิต'' AFTER `inv_issue_date`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_subtotal') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_subtotal` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `inv_due_date`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_discount_type') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_discount_type` enum(''amount'',''percent'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''amount'' AFTER `inv_subtotal`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_discount_value') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_discount_value` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `inv_discount_type`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_discount_amount') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_discount_amount` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `inv_discount_value`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_after_discount') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_after_discount` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''ยอดก่อน VAT'' AFTER `inv_discount_amount`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_vat_rate') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_vat_rate` decimal(5,2) NOT NULL DEFAULT ''0.00'' AFTER `inv_after_discount`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_vat_amount') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_vat_amount` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `inv_vat_rate`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_total') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_total` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `inv_vat_amount`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_after_discount_thb') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_after_discount_thb` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''ยอดก่อน VAT เป็นบาท — ใช้เทียบเกณฑ์อนุมัติ (ใบสร้างเอง)'' AFTER `inv_total`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_total_thb') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_total_thb` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `inv_after_discount_thb`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_wht_rate') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_wht_rate` decimal(5,2) DEFAULT NULL COMMENT ''อัตราหัก ณ ที่จ่ายที่แสดงบนใบ — ว่าง = ไม่แสดง (ยอดหักจริงบันทึกตอนรับเงิน 1C)'' AFTER `inv_total_thb`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_wht_amount') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_wht_amount` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''ประมาณการ = ยอดก่อน VAT × อัตรา'' AFTER `inv_wht_rate`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_paid_amount') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_paid_amount` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''ยอดรับชำระแล้ว (ช่วง 1C)'' AFTER `inv_wht_amount`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_notes') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT ''หมายเหตุที่พิมพ์บนเอกสาร'' AFTER `inv_paid_amount`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_internal_note') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_internal_note` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT ''บันทึกภายใน — ไม่พิมพ์'' AFTER `inv_notes`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_bank_account_id') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_bank_account_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''บัญชีรับเงินที่พิมพ์บนใบ'' AFTER `inv_internal_note`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_client_snapshot') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_client_snapshot` json DEFAULT NULL COMMENT ''ข้อมูลลูกค้า ณ วันออก'' AFTER `inv_bank_account_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_company_snapshot') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_company_snapshot` json DEFAULT NULL COMMENT ''ข้อมูลบริษัท + สาขา ณ วันออก'' AFTER `inv_client_snapshot`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_bank_snapshot') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_bank_snapshot` json DEFAULT NULL COMMENT ''บัญชีรับเงิน + พร้อมเพย์ ณ วันออก'' AFTER `inv_company_snapshot`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_approval_round') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_approval_round` int unsigned NOT NULL DEFAULT ''0'' AFTER `inv_bank_snapshot`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_approval_current_level') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_approval_current_level` tinyint unsigned DEFAULT NULL AFTER `inv_approval_round`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_approval_plan') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_approval_plan` json DEFAULT NULL AFTER `inv_approval_current_level`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_returned_reason') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_returned_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `inv_approval_plan`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_created_by') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `inv_returned_reason`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_created_by_name') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_created_by_name` varchar(101) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `inv_created_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_submitted_at') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_submitted_at` datetime DEFAULT NULL AFTER `inv_created_by_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_issued_by') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_issued_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''ผู้กดออก (ใบสร้างเอง = ผู้อนุมัติชั้นสุดท้าย)'' AFTER `inv_submitted_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_issued_by_name') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_issued_by_name` varchar(101) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `inv_issued_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_issued_by_title') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_issued_by_title` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `inv_issued_by_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_issuer_signature_id') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_issuer_signature_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''ลายเซ็นผู้ออก ฉบับตอนออก'' AFTER `inv_issued_by_title`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_issued_at') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_issued_at` datetime DEFAULT NULL AFTER `inv_issuer_signature_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_sent_at') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_sent_at` datetime DEFAULT NULL AFTER `inv_issued_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_cancelled_by') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_cancelled_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `inv_sent_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_cancelled_at') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_cancelled_at` datetime DEFAULT NULL AFTER `inv_cancelled_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_cancel_reason') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_cancel_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `inv_cancelled_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_created_at') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_created_at` datetime DEFAULT CURRENT_TIMESTAMP AFTER `inv_cancel_reason`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_updated_at') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `inv_created_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_invoice_items
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_items' AND COLUMN_NAME = 'invi_id') = 0, 'ALTER TABLE `tb_invoice_items` ADD COLUMN `invi_id` bigint unsigned NOT NULL AUTO_INCREMENT FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_items' AND COLUMN_NAME = 'invi_invoice_id') = 0, 'ALTER TABLE `tb_invoice_items` ADD COLUMN `invi_invoice_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `invi_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_items' AND COLUMN_NAME = 'invi_order') = 0, 'ALTER TABLE `tb_invoice_items` ADD COLUMN `invi_order` int NOT NULL DEFAULT ''0'' AFTER `invi_invoice_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_items' AND COLUMN_NAME = 'invi_type') = 0, 'ALTER TABLE `tb_invoice_items` ADD COLUMN `invi_type` enum(''item'',''heading'',''note'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''item'' AFTER `invi_order`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_items' AND COLUMN_NAME = 'invi_product_id') = 0, 'ALTER TABLE `tb_invoice_items` ADD COLUMN `invi_product_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `invi_type`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_items' AND COLUMN_NAME = 'invi_description') = 0, 'ALTER TABLE `tb_invoice_items` ADD COLUMN `invi_description` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `invi_product_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_items' AND COLUMN_NAME = 'invi_quantity') = 0, 'ALTER TABLE `tb_invoice_items` ADD COLUMN `invi_quantity` decimal(12,2) DEFAULT NULL AFTER `invi_description`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_items' AND COLUMN_NAME = 'invi_unit') = 0, 'ALTER TABLE `tb_invoice_items` ADD COLUMN `invi_unit` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `invi_quantity`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_items' AND COLUMN_NAME = 'invi_unit_price') = 0, 'ALTER TABLE `tb_invoice_items` ADD COLUMN `invi_unit_price` decimal(15,2) DEFAULT NULL AFTER `invi_unit`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_items' AND COLUMN_NAME = 'invi_list_price') = 0, 'ALTER TABLE `tb_invoice_items` ADD COLUMN `invi_list_price` decimal(15,2) DEFAULT NULL AFTER `invi_unit_price`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_items' AND COLUMN_NAME = 'invi_discount_type') = 0, 'ALTER TABLE `tb_invoice_items` ADD COLUMN `invi_discount_type` enum(''amount'',''percent'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''amount'' AFTER `invi_list_price`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_items' AND COLUMN_NAME = 'invi_discount_value') = 0, 'ALTER TABLE `tb_invoice_items` ADD COLUMN `invi_discount_value` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `invi_discount_type`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_items' AND COLUMN_NAME = 'invi_discount_amount') = 0, 'ALTER TABLE `tb_invoice_items` ADD COLUMN `invi_discount_amount` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `invi_discount_value`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_items' AND COLUMN_NAME = 'invi_amount') = 0, 'ALTER TABLE `tb_invoice_items` ADD COLUMN `invi_amount` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `invi_discount_amount`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_invoice_milestones
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_milestones' AND COLUMN_NAME = 'ivm_invoice_id') = 0, 'ALTER TABLE `tb_invoice_milestones` ADD COLUMN `ivm_invoice_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_milestones' AND COLUMN_NAME = 'ivm_milestone_id') = 0, 'ALTER TABLE `tb_invoice_milestones` ADD COLUMN `ivm_milestone_id` bigint unsigned NOT NULL AFTER `ivm_invoice_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_milestones' AND COLUMN_NAME = 'ivm_amount') = 0, 'ALTER TABLE `tb_invoice_milestones` ADD COLUMN `ivm_amount` decimal(15,2) NOT NULL COMMENT ''ยอดงวดตามใบเสนอราคา (รวม VAT ของใบเสนอราคา)'' AFTER `ivm_milestone_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_milestones' AND COLUMN_NAME = 'ivm_base') = 0, 'ALTER TABLE `tb_invoice_milestones` ADD COLUMN `ivm_base` decimal(15,2) NOT NULL COMMENT ''ส่วนที่เป็นยอดก่อน VAT'' AFTER `ivm_amount`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_milestones' AND COLUMN_NAME = 'ivm_vat') = 0, 'ALTER TABLE `tb_invoice_milestones` ADD COLUMN `ivm_vat` decimal(15,2) NOT NULL COMMENT ''ส่วนที่เป็น VAT ตามใบเสนอราคา'' AFTER `ivm_base`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_invoice_approvals
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_approvals' AND COLUMN_NAME = 'inva_id') = 0, 'ALTER TABLE `tb_invoice_approvals` ADD COLUMN `inva_id` bigint unsigned NOT NULL AUTO_INCREMENT FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_approvals' AND COLUMN_NAME = 'inva_invoice_id') = 0, 'ALTER TABLE `tb_invoice_approvals` ADD COLUMN `inva_invoice_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `inva_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_approvals' AND COLUMN_NAME = 'inva_round') = 0, 'ALTER TABLE `tb_invoice_approvals` ADD COLUMN `inva_round` int unsigned NOT NULL AFTER `inva_invoice_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_approvals' AND COLUMN_NAME = 'inva_level') = 0, 'ALTER TABLE `tb_invoice_approvals` ADD COLUMN `inva_level` tinyint unsigned NOT NULL AFTER `inva_round`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_approvals' AND COLUMN_NAME = 'inva_action') = 0, 'ALTER TABLE `tb_invoice_approvals` ADD COLUMN `inva_action` enum(''approve'',''return'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `inva_level`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_approvals' AND COLUMN_NAME = 'inva_user_id') = 0, 'ALTER TABLE `tb_invoice_approvals` ADD COLUMN `inva_user_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `inva_action`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_approvals' AND COLUMN_NAME = 'inva_user_name') = 0, 'ALTER TABLE `tb_invoice_approvals` ADD COLUMN `inva_user_name` varchar(101) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `inva_user_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_approvals' AND COLUMN_NAME = 'inva_role_id') = 0, 'ALTER TABLE `tb_invoice_approvals` ADD COLUMN `inva_role_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''ไม่มี FK — role อาจถูกลบภายหลัง ประวัติต้องอยู่'' AFTER `inva_user_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_approvals' AND COLUMN_NAME = 'inva_role_name') = 0, 'ALTER TABLE `tb_invoice_approvals` ADD COLUMN `inva_role_name` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `inva_role_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_approvals' AND COLUMN_NAME = 'inva_reason') = 0, 'ALTER TABLE `tb_invoice_approvals` ADD COLUMN `inva_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `inva_role_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_approvals' AND COLUMN_NAME = 'inva_created_at') = 0, 'ALTER TABLE `tb_invoice_approvals` ADD COLUMN `inva_created_at` datetime DEFAULT CURRENT_TIMESTAMP AFTER `inva_reason`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_billing_notes
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND COLUMN_NAME = 'bn_id') = 0, 'ALTER TABLE `tb_billing_notes` ADD COLUMN `bn_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND COLUMN_NAME = 'bn_number') = 0, 'ALTER TABLE `tb_billing_notes` ADD COLUMN `bn_number` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''BN-yyyymmdd-xxxxxx ออกตอนออกใบ'' AFTER `bn_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND COLUMN_NAME = 'bn_status') = 0, 'ALTER TABLE `tb_billing_notes` ADD COLUMN `bn_status` enum(''draft'',''issued'',''cancelled'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''draft'' AFTER `bn_number`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND COLUMN_NAME = 'bn_version') = 0, 'ALTER TABLE `tb_billing_notes` ADD COLUMN `bn_version` int unsigned NOT NULL DEFAULT ''0'' AFTER `bn_status`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND COLUMN_NAME = 'bn_client_id') = 0, 'ALTER TABLE `tb_billing_notes` ADD COLUMN `bn_client_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `bn_version`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND COLUMN_NAME = 'bn_branch_id') = 0, 'ALTER TABLE `tb_billing_notes` ADD COLUMN `bn_branch_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `bn_client_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND COLUMN_NAME = 'bn_currency') = 0, 'ALTER TABLE `tb_billing_notes` ADD COLUMN `bn_currency` char(3) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''THB'' AFTER `bn_branch_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND COLUMN_NAME = 'bn_language') = 0, 'ALTER TABLE `tb_billing_notes` ADD COLUMN `bn_language` enum(''th'',''en'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''th'' AFTER `bn_currency`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND COLUMN_NAME = 'bn_issue_date') = 0, 'ALTER TABLE `tb_billing_notes` ADD COLUMN `bn_issue_date` date DEFAULT NULL AFTER `bn_language`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND COLUMN_NAME = 'bn_payment_date') = 0, 'ALTER TABLE `tb_billing_notes` ADD COLUMN `bn_payment_date` date DEFAULT NULL COMMENT ''วันนัดชำระ (ลูกค้านัด)'' AFTER `bn_issue_date`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND COLUMN_NAME = 'bn_total') = 0, 'ALTER TABLE `tb_billing_notes` ADD COLUMN `bn_total` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''ผลรวมยอดใบแจ้งหนี้ ณ ตอนออก'' AFTER `bn_payment_date`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND COLUMN_NAME = 'bn_notes') = 0, 'ALTER TABLE `tb_billing_notes` ADD COLUMN `bn_notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci AFTER `bn_total`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND COLUMN_NAME = 'bn_client_snapshot') = 0, 'ALTER TABLE `tb_billing_notes` ADD COLUMN `bn_client_snapshot` json DEFAULT NULL AFTER `bn_notes`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND COLUMN_NAME = 'bn_company_snapshot') = 0, 'ALTER TABLE `tb_billing_notes` ADD COLUMN `bn_company_snapshot` json DEFAULT NULL AFTER `bn_client_snapshot`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND COLUMN_NAME = 'bn_created_by') = 0, 'ALTER TABLE `tb_billing_notes` ADD COLUMN `bn_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `bn_company_snapshot`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND COLUMN_NAME = 'bn_created_by_name') = 0, 'ALTER TABLE `tb_billing_notes` ADD COLUMN `bn_created_by_name` varchar(101) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `bn_created_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND COLUMN_NAME = 'bn_issued_at') = 0, 'ALTER TABLE `tb_billing_notes` ADD COLUMN `bn_issued_at` datetime DEFAULT NULL AFTER `bn_created_by_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND COLUMN_NAME = 'bn_cancelled_by') = 0, 'ALTER TABLE `tb_billing_notes` ADD COLUMN `bn_cancelled_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `bn_issued_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND COLUMN_NAME = 'bn_cancelled_at') = 0, 'ALTER TABLE `tb_billing_notes` ADD COLUMN `bn_cancelled_at` datetime DEFAULT NULL AFTER `bn_cancelled_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND COLUMN_NAME = 'bn_cancel_reason') = 0, 'ALTER TABLE `tb_billing_notes` ADD COLUMN `bn_cancel_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `bn_cancelled_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND COLUMN_NAME = 'bn_created_at') = 0, 'ALTER TABLE `tb_billing_notes` ADD COLUMN `bn_created_at` datetime DEFAULT CURRENT_TIMESTAMP AFTER `bn_cancel_reason`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND COLUMN_NAME = 'bn_updated_at') = 0, 'ALTER TABLE `tb_billing_notes` ADD COLUMN `bn_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `bn_created_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_billing_note_invoices
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_note_invoices' AND COLUMN_NAME = 'bni_billing_note_id') = 0, 'ALTER TABLE `tb_billing_note_invoices` ADD COLUMN `bni_billing_note_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_note_invoices' AND COLUMN_NAME = 'bni_invoice_id') = 0, 'ALTER TABLE `tb_billing_note_invoices` ADD COLUMN `bni_invoice_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `bni_billing_note_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_note_invoices' AND COLUMN_NAME = 'bni_order') = 0, 'ALTER TABLE `tb_billing_note_invoices` ADD COLUMN `bni_order` int NOT NULL DEFAULT ''0'' AFTER `bni_invoice_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_note_invoices' AND COLUMN_NAME = 'bni_amount') = 0, 'ALTER TABLE `tb_billing_note_invoices` ADD COLUMN `bni_amount` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `bni_order`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
 -- ── การเปลี่ยนชนิด/เงื่อนไขของคอลัมน์ที่มีอยู่แล้ว (เรียงตามเวลา) ──────────────────────────────────
 -- 2026-10-07 onboarding: ผู้ใช้เดิมได้ชื่อผู้ใช้ = user_id (ยัง login ด้วยอีเมลได้เหมือนเดิม) — UPDATE นี้รันซ้ำได้ แตะเฉพาะแถวที่ยังว่าง
 UPDATE tb_users SET user_username = user_id WHERE user_username IS NULL OR user_username = '';
@@ -1270,6 +1608,55 @@ SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM informa
 SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_task_activity_log' AND INDEX_NAME = 'idx_tal_status_start') = 0, 'ALTER TABLE `tb_task_activity_log` ADD KEY `idx_tal_status_start` (`log_action`,`log_new_value`,`task_id`,`log_created_at`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_task_activity_log' AND INDEX_NAME = 'fk_tal_user') = 0, 'ALTER TABLE `tb_task_activity_log` ADD KEY `fk_tal_user` (`user_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- tb_invoices
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND INDEX_NAME = 'uq_inv_number') <> 'inv_number', 'ALTER TABLE `tb_invoices` DROP INDEX `uq_inv_number`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND INDEX_NAME = 'uq_inv_number') = 0, 'ALTER TABLE `tb_invoices` ADD UNIQUE KEY `uq_inv_number` (`inv_number`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND INDEX_NAME = 'idx_inv_status_due') <> 'inv_status,inv_due_date', 'ALTER TABLE `tb_invoices` DROP INDEX `idx_inv_status_due`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND INDEX_NAME = 'idx_inv_status_due') = 0, 'ALTER TABLE `tb_invoices` ADD KEY `idx_inv_status_due` (`inv_status`,`inv_due_date`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND INDEX_NAME = 'idx_inv_issue_date') <> 'inv_issue_date', 'ALTER TABLE `tb_invoices` DROP INDEX `idx_inv_issue_date`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND INDEX_NAME = 'idx_inv_issue_date') = 0, 'ALTER TABLE `tb_invoices` ADD KEY `idx_inv_issue_date` (`inv_issue_date`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND INDEX_NAME = 'idx_inv_client_status') <> 'inv_client_id,inv_status', 'ALTER TABLE `tb_invoices` DROP INDEX `idx_inv_client_status`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND INDEX_NAME = 'idx_inv_client_status') = 0, 'ALTER TABLE `tb_invoices` ADD KEY `idx_inv_client_status` (`inv_client_id`,`inv_status`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND INDEX_NAME = 'idx_inv_created_by_created') <> 'inv_created_by,inv_created_at', 'ALTER TABLE `tb_invoices` DROP INDEX `idx_inv_created_by_created`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND INDEX_NAME = 'idx_inv_created_by_created') = 0, 'ALTER TABLE `tb_invoices` ADD KEY `idx_inv_created_by_created` (`inv_created_by`,`inv_created_at`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND INDEX_NAME = 'fk_inv_quotation') = 0, 'ALTER TABLE `tb_invoices` ADD KEY `fk_inv_quotation` (`inv_quotation_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND INDEX_NAME = 'fk_inv_project') = 0, 'ALTER TABLE `tb_invoices` ADD KEY `fk_inv_project` (`inv_project_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND INDEX_NAME = 'fk_inv_branch') = 0, 'ALTER TABLE `tb_invoices` ADD KEY `fk_inv_branch` (`inv_branch_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND INDEX_NAME = 'fk_inv_currency') = 0, 'ALTER TABLE `tb_invoices` ADD KEY `fk_inv_currency` (`inv_currency`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND INDEX_NAME = 'fk_inv_reissued_from') = 0, 'ALTER TABLE `tb_invoices` ADD KEY `fk_inv_reissued_from` (`inv_reissued_from_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND INDEX_NAME = 'fk_inv_bank_account') = 0, 'ALTER TABLE `tb_invoices` ADD KEY `fk_inv_bank_account` (`inv_bank_account_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND INDEX_NAME = 'fk_inv_issued_by') = 0, 'ALTER TABLE `tb_invoices` ADD KEY `fk_inv_issued_by` (`inv_issued_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND INDEX_NAME = 'fk_inv_issuer_signature') = 0, 'ALTER TABLE `tb_invoices` ADD KEY `fk_inv_issuer_signature` (`inv_issuer_signature_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND INDEX_NAME = 'fk_inv_cancelled_by') = 0, 'ALTER TABLE `tb_invoices` ADD KEY `fk_inv_cancelled_by` (`inv_cancelled_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_invoice_items
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_items' AND INDEX_NAME = 'idx_invi_invoice') <> 'invi_invoice_id,invi_order', 'ALTER TABLE `tb_invoice_items` DROP INDEX `idx_invi_invoice`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_items' AND INDEX_NAME = 'idx_invi_invoice') = 0, 'ALTER TABLE `tb_invoice_items` ADD KEY `idx_invi_invoice` (`invi_invoice_id`,`invi_order`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_items' AND INDEX_NAME = 'fk_invi_product') = 0, 'ALTER TABLE `tb_invoice_items` ADD KEY `fk_invi_product` (`invi_product_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_invoice_milestones
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_milestones' AND INDEX_NAME = 'fk_ivm_milestone') = 0, 'ALTER TABLE `tb_invoice_milestones` ADD KEY `fk_ivm_milestone` (`ivm_milestone_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_invoice_approvals
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_approvals' AND INDEX_NAME = 'idx_inva_invoice') <> 'inva_invoice_id,inva_round,inva_level', 'ALTER TABLE `tb_invoice_approvals` DROP INDEX `idx_inva_invoice`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_approvals' AND INDEX_NAME = 'idx_inva_invoice') = 0, 'ALTER TABLE `tb_invoice_approvals` ADD KEY `idx_inva_invoice` (`inva_invoice_id`,`inva_round`,`inva_level`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_approvals' AND INDEX_NAME = 'fk_inva_user') = 0, 'ALTER TABLE `tb_invoice_approvals` ADD KEY `fk_inva_user` (`inva_user_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_billing_notes
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND INDEX_NAME = 'uq_bn_number') <> 'bn_number', 'ALTER TABLE `tb_billing_notes` DROP INDEX `uq_bn_number`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND INDEX_NAME = 'uq_bn_number') = 0, 'ALTER TABLE `tb_billing_notes` ADD UNIQUE KEY `uq_bn_number` (`bn_number`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND INDEX_NAME = 'idx_bn_client_status') <> 'bn_client_id,bn_status', 'ALTER TABLE `tb_billing_notes` DROP INDEX `idx_bn_client_status`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND INDEX_NAME = 'idx_bn_client_status') = 0, 'ALTER TABLE `tb_billing_notes` ADD KEY `idx_bn_client_status` (`bn_client_id`,`bn_status`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND INDEX_NAME = 'idx_bn_issue_date') <> 'bn_issue_date', 'ALTER TABLE `tb_billing_notes` DROP INDEX `idx_bn_issue_date`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND INDEX_NAME = 'idx_bn_issue_date') = 0, 'ALTER TABLE `tb_billing_notes` ADD KEY `idx_bn_issue_date` (`bn_issue_date`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND INDEX_NAME = 'fk_bn_branch') = 0, 'ALTER TABLE `tb_billing_notes` ADD KEY `fk_bn_branch` (`bn_branch_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND INDEX_NAME = 'fk_bn_currency') = 0, 'ALTER TABLE `tb_billing_notes` ADD KEY `fk_bn_currency` (`bn_currency`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND INDEX_NAME = 'fk_bn_created_by') = 0, 'ALTER TABLE `tb_billing_notes` ADD KEY `fk_bn_created_by` (`bn_created_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND INDEX_NAME = 'fk_bn_cancelled_by') = 0, 'ALTER TABLE `tb_billing_notes` ADD KEY `fk_bn_cancelled_by` (`bn_cancelled_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_billing_note_invoices
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_note_invoices' AND INDEX_NAME = 'fk_bni_invoice') = 0, 'ALTER TABLE `tb_billing_note_invoices` ADD KEY `fk_bni_invoice` (`bni_invoice_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
 -- ─── ส่วนที่ 4: เติม foreign key ที่ยังขาด (รวม FK ย้อนกลับ tb_roles -> tb_users ที่สร้างพร้อมตารางไม่ได้) ──
 -- สกุลเงินเริ่มต้น THB + USD (2026-10-13) — ต้องมีก่อนเพิ่ม FK สกุลเงินของลูกค้า (ลูกค้าเดิมทุกรายได้ค่าเริ่มต้น THB)
 -- ใส่เฉพาะตอนตารางยังว่าง · ข้อมูลเริ่มต้นอื่นอยู่ส่วนที่ 5
@@ -1348,14 +1735,50 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CON
 SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_task_activity_log' AND CONSTRAINT_NAME = 'fk_tal_task' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_task_activity_log` ADD CONSTRAINT `fk_tal_task` FOREIGN KEY (`task_id`) REFERENCES `tb_tasks` (`task_id`) ON DELETE CASCADE', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_task_activity_log' AND CONSTRAINT_NAME = 'fk_tal_user' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_task_activity_log` ADD CONSTRAINT `fk_tal_user` FOREIGN KEY (`user_id`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- tb_invoices
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND CONSTRAINT_NAME = 'fk_inv_bank_account' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_invoices` ADD CONSTRAINT `fk_inv_bank_account` FOREIGN KEY (`inv_bank_account_id`) REFERENCES `tb_bank_accounts` (`ba_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND CONSTRAINT_NAME = 'fk_inv_branch' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_invoices` ADD CONSTRAINT `fk_inv_branch` FOREIGN KEY (`inv_branch_id`) REFERENCES `tb_branches` (`branch_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND CONSTRAINT_NAME = 'fk_inv_cancelled_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_invoices` ADD CONSTRAINT `fk_inv_cancelled_by` FOREIGN KEY (`inv_cancelled_by`) REFERENCES `tb_users` (`user_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND CONSTRAINT_NAME = 'fk_inv_client' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_invoices` ADD CONSTRAINT `fk_inv_client` FOREIGN KEY (`inv_client_id`) REFERENCES `tb_clients` (`client_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND CONSTRAINT_NAME = 'fk_inv_created_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_invoices` ADD CONSTRAINT `fk_inv_created_by` FOREIGN KEY (`inv_created_by`) REFERENCES `tb_users` (`user_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND CONSTRAINT_NAME = 'fk_inv_currency' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_invoices` ADD CONSTRAINT `fk_inv_currency` FOREIGN KEY (`inv_currency`) REFERENCES `tb_currencies` (`cur_code`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND CONSTRAINT_NAME = 'fk_inv_issued_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_invoices` ADD CONSTRAINT `fk_inv_issued_by` FOREIGN KEY (`inv_issued_by`) REFERENCES `tb_users` (`user_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND CONSTRAINT_NAME = 'fk_inv_issuer_signature' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_invoices` ADD CONSTRAINT `fk_inv_issuer_signature` FOREIGN KEY (`inv_issuer_signature_id`) REFERENCES `tb_user_signatures` (`sig_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND CONSTRAINT_NAME = 'fk_inv_project' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_invoices` ADD CONSTRAINT `fk_inv_project` FOREIGN KEY (`inv_project_id`) REFERENCES `tb_projects` (`project_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND CONSTRAINT_NAME = 'fk_inv_quotation' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_invoices` ADD CONSTRAINT `fk_inv_quotation` FOREIGN KEY (`inv_quotation_id`) REFERENCES `tb_quotations` (`qt_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND CONSTRAINT_NAME = 'fk_inv_reissued_from' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_invoices` ADD CONSTRAINT `fk_inv_reissued_from` FOREIGN KEY (`inv_reissued_from_id`) REFERENCES `tb_invoices` (`inv_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_invoice_items
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_items' AND CONSTRAINT_NAME = 'fk_invi_invoice' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_invoice_items` ADD CONSTRAINT `fk_invi_invoice` FOREIGN KEY (`invi_invoice_id`) REFERENCES `tb_invoices` (`inv_id`) ON DELETE CASCADE', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_items' AND CONSTRAINT_NAME = 'fk_invi_product' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_invoice_items` ADD CONSTRAINT `fk_invi_product` FOREIGN KEY (`invi_product_id`) REFERENCES `tb_products` (`product_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_invoice_milestones
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_milestones' AND CONSTRAINT_NAME = 'fk_ivm_invoice' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_invoice_milestones` ADD CONSTRAINT `fk_ivm_invoice` FOREIGN KEY (`ivm_invoice_id`) REFERENCES `tb_invoices` (`inv_id`) ON DELETE CASCADE', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_milestones' AND CONSTRAINT_NAME = 'fk_ivm_milestone' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_invoice_milestones` ADD CONSTRAINT `fk_ivm_milestone` FOREIGN KEY (`ivm_milestone_id`) REFERENCES `tb_quotation_milestones` (`qtm_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_invoice_approvals
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_approvals' AND CONSTRAINT_NAME = 'fk_inva_invoice' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_invoice_approvals` ADD CONSTRAINT `fk_inva_invoice` FOREIGN KEY (`inva_invoice_id`) REFERENCES `tb_invoices` (`inv_id`) ON DELETE CASCADE', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoice_approvals' AND CONSTRAINT_NAME = 'fk_inva_user' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_invoice_approvals` ADD CONSTRAINT `fk_inva_user` FOREIGN KEY (`inva_user_id`) REFERENCES `tb_users` (`user_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_billing_notes
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND CONSTRAINT_NAME = 'fk_bn_branch' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_billing_notes` ADD CONSTRAINT `fk_bn_branch` FOREIGN KEY (`bn_branch_id`) REFERENCES `tb_branches` (`branch_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND CONSTRAINT_NAME = 'fk_bn_cancelled_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_billing_notes` ADD CONSTRAINT `fk_bn_cancelled_by` FOREIGN KEY (`bn_cancelled_by`) REFERENCES `tb_users` (`user_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND CONSTRAINT_NAME = 'fk_bn_client' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_billing_notes` ADD CONSTRAINT `fk_bn_client` FOREIGN KEY (`bn_client_id`) REFERENCES `tb_clients` (`client_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND CONSTRAINT_NAME = 'fk_bn_created_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_billing_notes` ADD CONSTRAINT `fk_bn_created_by` FOREIGN KEY (`bn_created_by`) REFERENCES `tb_users` (`user_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_notes' AND CONSTRAINT_NAME = 'fk_bn_currency' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_billing_notes` ADD CONSTRAINT `fk_bn_currency` FOREIGN KEY (`bn_currency`) REFERENCES `tb_currencies` (`cur_code`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_billing_note_invoices
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_note_invoices' AND CONSTRAINT_NAME = 'fk_bni_billing_note' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_billing_note_invoices` ADD CONSTRAINT `fk_bni_billing_note` FOREIGN KEY (`bni_billing_note_id`) REFERENCES `tb_billing_notes` (`bn_id`) ON DELETE CASCADE', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_note_invoices' AND CONSTRAINT_NAME = 'fk_bni_invoice' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_billing_note_invoices` ADD CONSTRAINT `fk_bni_invoice` FOREIGN KEY (`bni_invoice_id`) REFERENCES `tb_invoices` (`inv_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
 -- ─── ส่วนที่ 5: ข้อมูลเริ่มต้น (ใส่เฉพาะตอนตารางยังว่างเท่านั้น) ─────────────────────────────────
 -- ตั้งใจเช็ค "ตารางว่าง" ไม่ใช่ "ไม่มีแถวนี้" — ถ้าแอดมินลบ/เปลี่ยนบัญชีเริ่มต้นไปแล้วบน production
 -- ห้ามสร้างบัญชีที่รู้รหัสผ่านกลับขึ้นมาใหม่เองตอน deploy
 
--- role Admin เปิดทุกบิต (33 บิต) — role ระบบ (S) ได้สิทธิ์ครบเสมออยู่แล้วไม่ว่าสตริงจะยาวเท่าไร (effectiveRolePermission)
+-- role Admin เปิดทุกบิต (37 บิต) — role ระบบ (S) ได้สิทธิ์ครบเสมออยู่แล้วไม่ว่าสตริงจะยาวเท่าไร (effectiveRolePermission)
 -- role อื่นที่สตริงสั้นกว่าจำนวนบิตปัจจุบัน ถือว่าบิตใหม่ = 0 (ไม่ได้สิทธิ์ใหม่เอง ต้องมีคนติ๊กให้)
 INSERT INTO tb_roles (role_id, role_name, role_permission, role_type)
-SELECT 'ROL202601010000001', 'Admin', '111111111111111111111111111111111', 'S'
+SELECT 'ROL202601010000001', 'Admin', '1111111111111111111111111111111111111', 'S'
 FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM tb_roles);
 
 -- ผู้ใช้คนแรก: admin (หรือ admin@softwork.local) / Admin@12345 — ระบบบังคับเปลี่ยนรหัสผ่านตอน login ครั้งแรก
@@ -1401,6 +1824,26 @@ FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM tb_approval_level_roles WHERE alr_doc_type = 'QT')
   AND EXISTS (SELECT 1 FROM tb_roles WHERE role_type = 'S');
 
+-- ใบเสนอราคาแบบเก็บเงินครั้งเดียวที่บันทึกก่อน 14 ต.ค. 2026 ยังไม่มีแถวงวด — เติมงวด "ชำระเต็มจำนวน" 100% ให้
+-- (ใบแจ้งหนี้ช่วง 1B อ้างงวดเสมอ) · ใส่เฉพาะใบที่ยังไม่มีงวดเลย รันซ้ำไม่เพิ่มซ้ำ
+INSERT INTO tb_quotation_milestones (qtm_quotation_id, qtm_order, qtm_name, qtm_condition, qtm_percent, qtm_amount)
+SELECT q.qt_id, 1, IF(q.qt_language = 'en', 'Full payment', 'ชำระเต็มจำนวน'), NULL, 100, q.qt_total
+FROM tb_quotations q
+WHERE q.qt_payment_mode = 'single'
+  AND NOT EXISTS (SELECT 1 FROM tb_quotation_milestones m WHERE m.qtm_quotation_id = q.qt_id);
+
+-- กติกาอนุมัติเริ่มต้นของใบแจ้งหนี้ที่สร้างเอง (ช่วง 1B): ชั้นเดียว ยอดตั้งแต่ 0 บาท ผู้อนุมัติ = role ระบบ
+-- (ใบที่ออกจากงวดของใบเสนอราคาไม่ต้องอนุมัติ) · ตั้งแยกจากใบเสนอราคาได้ที่ ตั้งค่าบริษัท > การอนุมัติ
+INSERT INTO tb_approval_levels (al_doc_type, al_level, al_min_amount_thb, al_require_distinct)
+SELECT 'IV', 1, 0.00, 0
+FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM tb_approval_levels WHERE al_doc_type = 'IV');
+
+INSERT INTO tb_approval_level_roles (alr_doc_type, alr_level, alr_role_id)
+SELECT 'IV', 1, (SELECT role_id FROM tb_roles WHERE role_type = 'S' ORDER BY role_id LIMIT 1)
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM tb_approval_level_roles WHERE alr_doc_type = 'IV')
+  AND EXISTS (SELECT 1 FROM tb_roles WHERE role_type = 'S');
+
 -- ─── ส่วนที่ 6: ตรวจสอบ — ไม่มีแถวผลลัพธ์ = โครงสร้างครบถ้วนตามไฟล์นี้ ─────────────────────────────
 -- มีแถว = ตารางนั้นมีคอลัมน์/index ไม่ตรงกับที่คาด (missing_* คือที่ขาด, extra_* คือที่เกินมาจากของเก่า)
 SELECT e.table_name,
@@ -1437,7 +1880,7 @@ FROM (
     UNION ALL SELECT 'tb_project_chat_reads' AS table_name, 'last_read_at,project_id,user_id' AS expected_columns, 'fk_project_chat_read_user(user_id),primary(project_id+user_id)' AS expected_indexes
     UNION ALL SELECT 'tb_task_activity_log' AS table_name, 'log_action,log_created_at,log_fullname,log_id,log_message,log_new_value,log_old_value,task_id,user_id' AS expected_columns, 'fk_tal_user(user_id),idx_tal_created(log_created_at),idx_tal_status_start(log_action+log_new_value+task_id+log_created_at),idx_tal_task(task_id),primary(log_id)' AS expected_indexes
     UNION ALL SELECT 'tb_currencies' AS table_name, 'cur_bot_unit,cur_code,cur_created_at,cur_decimals,cur_name_en,cur_name_th,cur_sort_order,cur_status,cur_subunit_en,cur_subunit_th,cur_symbol,cur_unit_en,cur_unit_th,cur_updated_at' AS expected_columns, 'primary(cur_code)' AS expected_indexes
-    UNION ALL SELECT 'tb_company_settings' AS table_name, 'cs_address_en,cs_address_th,cs_allow_self_approval,cs_email,cs_id,cs_logo_url,cs_name_en,cs_name_th,cs_phone,cs_quotation_terms_en,cs_quotation_terms_th,cs_quotation_valid_days,cs_tax_id,cs_updated_at,cs_vat_registered_from,cs_website' AS expected_columns, 'primary(cs_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_company_settings' AS table_name, 'cs_address_en,cs_address_th,cs_allow_self_approval,cs_default_credit_days,cs_email,cs_id,cs_invoice_notes_en,cs_invoice_notes_th,cs_logo_url,cs_name_en,cs_name_th,cs_phone,cs_promptpay_id,cs_quotation_terms_en,cs_quotation_terms_th,cs_quotation_valid_days,cs_tax_id,cs_updated_at,cs_vat_registered_from,cs_website' AS expected_columns, 'primary(cs_id)' AS expected_indexes
     UNION ALL SELECT 'tb_vat_rates' AS table_name, 'vr_created_at,vr_created_by,vr_effective_from,vr_note,vr_rate' AS expected_columns, 'fk_vr_created_by(vr_created_by),primary(vr_effective_from)' AS expected_indexes
     UNION ALL SELECT 'tb_branches' AS table_name, 'branch_address_en,branch_address_th,branch_code,branch_created_at,branch_id,branch_name_en,branch_name_th,branch_phone,branch_status,branch_updated_at' AS expected_columns, 'primary(branch_id),uq_branch_code(branch_code)' AS expected_indexes
     UNION ALL SELECT 'tb_bank_accounts' AS table_name, 'ba_account_name,ba_account_no,ba_bank_branch,ba_bank_name,ba_created_at,ba_currency,ba_id,ba_is_default,ba_status,ba_swift_code,ba_updated_at' AS expected_columns, 'fk_ba_currency(ba_currency),primary(ba_id)' AS expected_indexes
@@ -1454,6 +1897,12 @@ FROM (
     UNION ALL SELECT 'tb_quotation_items' AS table_name, 'qti_amount,qti_description,qti_discount_amount,qti_discount_type,qti_discount_value,qti_id,qti_list_price,qti_order,qti_package_id,qti_product_id,qti_quantity,qti_quotation_id,qti_type,qti_unit,qti_unit_price' AS expected_columns, 'fk_qti_package(qti_package_id),fk_qti_product(qti_product_id),idx_qti_quotation(qti_quotation_id+qti_order),primary(qti_id)' AS expected_indexes
     UNION ALL SELECT 'tb_quotation_milestones' AS table_name, 'qtm_amount,qtm_condition,qtm_id,qtm_name,qtm_order,qtm_percent,qtm_quotation_id' AS expected_columns, 'idx_qtm_quotation(qtm_quotation_id+qtm_order),primary(qtm_id)' AS expected_indexes
     UNION ALL SELECT 'tb_quotation_approvals' AS table_name, 'qta_action,qta_created_at,qta_id,qta_level,qta_quotation_id,qta_reason,qta_role_id,qta_role_name,qta_round,qta_user_id,qta_user_name' AS expected_columns, 'fk_qta_user(qta_user_id),idx_qta_quotation(qta_quotation_id+qta_round+qta_level),primary(qta_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_invoices' AS table_name, 'inv_after_discount,inv_after_discount_thb,inv_approval_current_level,inv_approval_plan,inv_approval_round,inv_bank_account_id,inv_bank_snapshot,inv_branch_id,inv_cancel_reason,inv_cancelled_at,inv_cancelled_by,inv_client_id,inv_client_snapshot,inv_company_snapshot,inv_created_at,inv_created_by,inv_created_by_name,inv_credit_days,inv_currency,inv_discount_amount,inv_discount_type,inv_discount_value,inv_due_date,inv_exchange_rate,inv_id,inv_internal_note,inv_issue_date,inv_issued_at,inv_issued_by,inv_issued_by_name,inv_issued_by_title,inv_issuer_signature_id,inv_language,inv_notes,inv_number,inv_paid_amount,inv_project_id,inv_quotation_id,inv_rate_bot,inv_rate_date,inv_rate_override_reason,inv_rate_source,inv_reissued_from_id,inv_returned_reason,inv_sent_at,inv_source,inv_status,inv_submitted_at,inv_subtotal,inv_title,inv_total,inv_total_thb,inv_updated_at,inv_vat_amount,inv_vat_rate,inv_vat_treatment,inv_version,inv_wht_amount,inv_wht_rate' AS expected_columns, 'fk_inv_bank_account(inv_bank_account_id),fk_inv_branch(inv_branch_id),fk_inv_cancelled_by(inv_cancelled_by),fk_inv_currency(inv_currency),fk_inv_issued_by(inv_issued_by),fk_inv_issuer_signature(inv_issuer_signature_id),fk_inv_project(inv_project_id),fk_inv_quotation(inv_quotation_id),fk_inv_reissued_from(inv_reissued_from_id),idx_inv_client_status(inv_client_id+inv_status),idx_inv_created_by_created(inv_created_by+inv_created_at),idx_inv_issue_date(inv_issue_date),idx_inv_status_due(inv_status+inv_due_date),primary(inv_id),uq_inv_number(inv_number)' AS expected_indexes
+    UNION ALL SELECT 'tb_invoice_items' AS table_name, 'invi_amount,invi_description,invi_discount_amount,invi_discount_type,invi_discount_value,invi_id,invi_invoice_id,invi_list_price,invi_order,invi_product_id,invi_quantity,invi_type,invi_unit,invi_unit_price' AS expected_columns, 'fk_invi_product(invi_product_id),idx_invi_invoice(invi_invoice_id+invi_order),primary(invi_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_invoice_milestones' AS table_name, 'ivm_amount,ivm_base,ivm_invoice_id,ivm_milestone_id,ivm_vat' AS expected_columns, 'fk_ivm_milestone(ivm_milestone_id),primary(ivm_invoice_id+ivm_milestone_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_invoice_approvals' AS table_name, 'inva_action,inva_created_at,inva_id,inva_invoice_id,inva_level,inva_reason,inva_role_id,inva_role_name,inva_round,inva_user_id,inva_user_name' AS expected_columns, 'fk_inva_user(inva_user_id),idx_inva_invoice(inva_invoice_id+inva_round+inva_level),primary(inva_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_billing_notes' AS table_name, 'bn_branch_id,bn_cancel_reason,bn_cancelled_at,bn_cancelled_by,bn_client_id,bn_client_snapshot,bn_company_snapshot,bn_created_at,bn_created_by,bn_created_by_name,bn_currency,bn_id,bn_issue_date,bn_issued_at,bn_language,bn_notes,bn_number,bn_payment_date,bn_status,bn_total,bn_updated_at,bn_version' AS expected_columns, 'fk_bn_branch(bn_branch_id),fk_bn_cancelled_by(bn_cancelled_by),fk_bn_created_by(bn_created_by),fk_bn_currency(bn_currency),idx_bn_client_status(bn_client_id+bn_status),idx_bn_issue_date(bn_issue_date),primary(bn_id),uq_bn_number(bn_number)' AS expected_indexes
+    UNION ALL SELECT 'tb_billing_note_invoices' AS table_name, 'bni_amount,bni_billing_note_id,bni_invoice_id,bni_order' AS expected_columns, 'fk_bni_invoice(bni_invoice_id),primary(bni_billing_note_id+bni_invoice_id)' AS expected_indexes
 ) e
 LEFT JOIN (
     SELECT LOWER(c.TABLE_NAME) AS table_name,

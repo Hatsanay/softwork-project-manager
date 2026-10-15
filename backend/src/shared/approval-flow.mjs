@@ -1,4 +1,5 @@
-// ─── การอนุมัติหลายชั้นของใบเสนอราคา (ฟังก์ชันล้วน ไม่แตะฐานข้อมูล) — backend ตัดสิน · หน้าเว็บใช้แสดงล่วงหน้า ────
+// ─── การอนุมัติหลายชั้นของเอกสารขาย (ฟังก์ชันล้วน ไม่แตะฐานข้อมูล) — backend ตัดสิน · หน้าเว็บใช้แสดงล่วงหน้า ────
+// ใช้กับใบเสนอราคา (QT) และใบแจ้งหนี้ที่สร้างเอง (IV, ช่วง 1B) — กติกาแยกตามประเภทเอกสาร
 //
 // ต้นฉบับอยู่ที่ backend/src/shared/ — สำเนาใน frontend/lib/shared/ สร้างด้วย `npm run sync-shared` ห้ามแก้ที่สำเนา
 // แบบระบบ: docs/plans/2026-10-08-sales-cycle.md หัวข้อ 2–3 · เทสต์: backend/test/approval-flow.test.js
@@ -46,12 +47,21 @@ function roleNames(level) {
  * @param {PlanLevel[]} input.plan
  * @param {number} input.currentLevel ชั้นที่รออยู่
  * @param {Array<{ level: number, user_id: string }>} input.approvalsThisRound การอนุมัติที่บันทึกแล้วในรอบนี้
- * @param {{ user_id: string, role_id: string | null, can_approve_quotations: boolean }} input.actor
+ * @param {{ user_id: string, role_id: string | null, can_approve: boolean }} input.actor can_approve = มีสิทธิ์อนุมัติเอกสารประเภทนี้
+ * @param {string} [input.documentName] ชื่อเอกสารในข้อความ เช่น "ใบแจ้งหนี้"
  * @param {string | null} input.creatorId
  * @param {boolean} input.allowSelfApproval
  * @returns {{ canApprove: boolean, reason: string | null, levels: number[], isFinal: boolean, nextLevel: PlanLevel | null, stopReason: string | null }}
  */
-export function evaluateApproval({ plan, currentLevel, approvalsThisRound, actor, creatorId, allowSelfApproval }) {
+export function evaluateApproval({
+    plan,
+    currentLevel,
+    approvalsThisRound,
+    actor,
+    creatorId,
+    allowSelfApproval,
+    documentName = "ใบเสนอราคา",
+}) {
     const blocked = (reason) => ({
         canApprove: false,
         reason,
@@ -63,7 +73,7 @@ export function evaluateApproval({ plan, currentLevel, approvalsThisRound, actor
 
     const startIndex = plan.findIndex((level) => level.level === currentLevel);
     if (startIndex === -1) return blocked("ใบนี้ไม่ได้รออนุมัติ");
-    if (!actor.can_approve_quotations) return blocked("คุณไม่มีสิทธิ์อนุมัติใบเสนอราคา");
+    if (!actor.can_approve) return blocked(`คุณไม่มีสิทธิ์อนุมัติ${documentName}`);
     if (actor.user_id === creatorId && !allowSelfApproval) {
         return blocked("คุณอนุมัติใบนี้ไม่ได้ เพราะคุณเป็นผู้สร้าง (หลักควบคุมภายใน) — ต้องให้ผู้อนุมัติคนอื่น");
     }

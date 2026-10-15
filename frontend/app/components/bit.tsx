@@ -59,6 +59,7 @@ export const MENU_DEFS: MenuItem[] = [
         href: "/sales",
         children: [
             { key: "viewQuotations", label: "ใบเสนอราคา", href: "/sales/quotations" },
+            { key: "viewInvoices", label: "ใบแจ้งหนี้", href: "/sales/invoices" },
             { key: "productManagement", label: "สินค้า/บริการ", href: "/sales/products" },
         ],
     },
@@ -155,6 +156,10 @@ export const PERMISSION_GROUPS: PermGroup[] = [
             { key: "createQuotation",  label: "สร้าง/แก้ใบเสนอราคา (ร่าง คัดลอก ส่งขออนุมัติ ส่งลูกค้า revision)",       href: "/sales/quotations/new" },
             { key: "approveQuotation", label: "อนุมัติ/ตีกลับใบเสนอราคา (ต้องมี role อยู่ในชั้นที่รออยู่ด้วย)",            href: "/sales/quotations/approve" },
             { key: "cancelQuotation",  label: "ยกเลิกใบเสนอราคา",                                                    href: "/sales/quotations/cancel" },
+            { key: "viewInvoices",     label: "ดูใบแจ้งหนี้และใบวางบิล (ทุกใบ ทุกสาขา)",                                href: "/sales/invoices" },
+            { key: "createInvoice",    label: "สร้าง/ออกใบแจ้งหนี้และใบวางบิล (ร่าง ออกจากงวดใบเสนอราคา ส่งลูกค้า)",       href: "/sales/invoices/new" },
+            { key: "approveInvoice",   label: "อนุมัติ/ตีกลับใบแจ้งหนี้ที่สร้างเอง (ต้องมี role อยู่ในชั้นที่รออยู่ด้วย)",       href: "/sales/invoices/approve" },
+            { key: "cancelInvoice",    label: "ยกเลิกใบแจ้งหนี้และใบวางบิล",                                           href: "/sales/invoices/cancel" },
         ],
     },
 ];

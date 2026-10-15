@@ -283,7 +283,7 @@ export function MemberKpiCard({ period }: { period: KpiPeriod }) {
                         ))}
                     </ul>
                     <div className="hidden overflow-x-auto sm:block">
-                        <table className="w-full min-w-[44rem] text-sm">
+                        <table className="w-full min-w-176 text-sm">
                             <thead>
                                 <tr className="border-b border-gray-100 text-left text-xs text-gray-500">
                                     <th className="py-2 pr-3 font-normal">ชื่อ</th>
