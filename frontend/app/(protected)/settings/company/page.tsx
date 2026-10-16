@@ -87,6 +87,8 @@ export default function CompanySettingsPage() {
                 <ApprovalTab
                     approval={settings.approval}
                     invoiceApproval={settings.invoice_approval}
+                    expenseApproval={settings.expense_approval}
+                    claimApproval={settings.claim_approval}
                     roles={settings.roles}
                     canEdit={canEdit}
                     onSaved={reload}

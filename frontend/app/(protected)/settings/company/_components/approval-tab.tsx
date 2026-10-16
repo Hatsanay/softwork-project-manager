@@ -2,6 +2,7 @@
 
 // แท็บกติกาอนุมัติหลายชั้นตามยอดเงิน — แก้ทั้งชุดแล้วบันทึกทีเดียว (docs/plans/2026-10-08-sales-cycle.md หัวข้อ 3)
 // แต่ละประเภทเอกสารมีกติกาของตัวเอง: QT ใบเสนอราคา · IV ใบแจ้งหนี้ที่สร้างเอง (ช่วง 1B — ใบจากงวดไม่ต้องอนุมัติ)
+// EX ค่าใช้จ่าย · EC ใบเบิกเงิน (เฟส 2): ชั้น 1 เริ่มเกิน 0 ได้ — ยอดต่ำกว่านั้นผ่านอัตโนมัติ (P2)
 import { useState } from "react";
 import { Check, GitBranch, Lightbulb, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -12,7 +13,7 @@ import StatusBanner from "@/components/ui/guidance/status-banner";
 import Switch from "@/components/ui/switch";
 import { apiFetch, type ApiError } from "@/lib/api";
 import { toFieldErrors, type FieldErrors } from "@/lib/form-errors";
-import { approvalLevelsSchema, MAX_APPROVAL_LEVELS } from "@/lib/shared/schemas/company.mjs";
+import { APPROVAL_DOCUMENTS, approvalLevelsSchema, MAX_APPROVAL_LEVELS } from "@/lib/shared/schemas/company.mjs";
 import { COMPANY_MESSAGES } from "../_messages";
 import type { ApprovalRules, RoleChoice } from "../_types";
 import ApprovalExamples from "./approval-examples";
@@ -26,11 +27,13 @@ export type LevelForm = {
     role_ids: string[];
 };
 
-type DocumentType = "QT" | "IV";
+type DocumentType = "QT" | "IV" | "EX" | "EC";
 
 type ApprovalTabProps = {
     approval: ApprovalRules;
     invoiceApproval: ApprovalRules;
+    expenseApproval: ApprovalRules;
+    claimApproval: ApprovalRules;
     roles: RoleChoice[];
     canEdit: boolean;
     onSaved: () => Promise<void>;
@@ -56,9 +59,23 @@ function sameRoles(first: string[], second: string[]): boolean {
     return first.length === second.length && first.every((roleId) => second.includes(roleId));
 }
 
-export default function ApprovalTab({ approval, invoiceApproval, roles, canEdit, onSaved }: ApprovalTabProps) {
+export default function ApprovalTab({
+    approval,
+    invoiceApproval,
+    expenseApproval,
+    claimApproval,
+    roles,
+    canEdit,
+    onSaved,
+}: ApprovalTabProps) {
     const messages = COMPANY_MESSAGES.approval;
     const [documentType, setDocumentType] = useState<DocumentType>("QT");
+    const rulesByType: Record<DocumentType, ApprovalRules> = {
+        QT: approval,
+        IV: invoiceApproval,
+        EX: expenseApproval,
+        EC: claimApproval,
+    };
 
     return (
         <div className="grid gap-4">
@@ -70,6 +87,8 @@ export default function ApprovalTab({ approval, invoiceApproval, roles, canEdit,
                     options={[
                         { value: "QT", label: messages.documentTypes.QT },
                         { value: "IV", label: messages.documentTypes.IV },
+                        { value: "EX", label: messages.documentTypes.EX },
+                        { value: "EC", label: messages.documentTypes.EC },
                     ]}
                 />
                 <FieldHint>{messages.documentTypeHint}</FieldHint>
@@ -78,7 +97,7 @@ export default function ApprovalTab({ approval, invoiceApproval, roles, canEdit,
             <ApprovalRulesEditor
                 key={documentType}
                 documentType={documentType}
-                approval={documentType === "QT" ? approval : invoiceApproval}
+                approval={rulesByType[documentType]}
                 roles={roles}
                 canEdit={canEdit}
                 onSaved={onSaved}
@@ -89,6 +108,13 @@ export default function ApprovalTab({ approval, invoiceApproval, roles, canEdit,
 
 function ApprovalRulesEditor({ documentType, approval, roles, canEdit, onSaved }: RulesEditorProps) {
     const messages = COMPANY_MESSAGES.approval;
+    const allowsThreshold = APPROVAL_DOCUMENTS[documentType].allowsThreshold;
+    const descriptions: Record<DocumentType, string> = {
+        QT: messages.description,
+        IV: messages.invoiceDescription,
+        EX: messages.expenseDescription,
+        EC: messages.claimDescription,
+    };
     const [levels, setLevels] = useState<LevelForm[]>(() => toLevelForms(approval));
     const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
     const [saveError, setSaveError] = useState<ApiError | null>(null);
@@ -144,7 +170,7 @@ function ApprovalRulesEditor({ documentType, approval, roles, canEdit, onSaved }
             <SectionCard
                 icon={GitBranch}
                 title={`การอนุมัติ${messages.documentTypes[documentType]}`}
-                description={documentType === "QT" ? messages.description : messages.invoiceDescription}
+                description={descriptions[documentType]}
             >
                 {approval.warnings.length > 0 && (
                     <StatusBanner tone="warn" title={messages.warningsTitle}>
@@ -178,7 +204,13 @@ function ApprovalRulesEditor({ documentType, approval, roles, canEdit, onSaved }
                                     <FormField
                                         label={`ยอดขั้นต่ำของชั้น ${levelNumber} (บาท ก่อน VAT)`}
                                         htmlFor={`level-${index}-amount`}
-                                        hint={index === 0 ? messages.firstLevelAmount : messages.minAmount}
+                                        hint={
+                                            index > 0
+                                                ? messages.minAmount
+                                                : allowsThreshold
+                                                  ? messages.firstLevelThreshold
+                                                  : messages.firstLevelAmount
+                                        }
                                         error={fieldErrors[amountField]}
                                         className="max-w-xs"
                                     >
@@ -189,7 +221,7 @@ function ApprovalRulesEditor({ documentType, approval, roles, canEdit, onSaved }
                                             onChange={(event) =>
                                                 updateLevel(index, { al_min_amount_thb: event.target.value })
                                             }
-                                            disabled={!canEdit || index === 0}
+                                            disabled={!canEdit || (index === 0 && !allowsThreshold)}
                                             className={`${inputClass(Boolean(fieldErrors[amountField]))} text-right`}
                                         />
                                     </FormField>
@@ -281,7 +313,7 @@ function ApprovalRulesEditor({ documentType, approval, roles, canEdit, onSaved }
             <aside className="grid gap-4 lg:sticky lg:top-4">
                 <SectionCard icon={Lightbulb} title={messages.howTitle}>
                     <HowItWorks defaultOpen>
-                        <ApprovalExamples levels={levels} roles={roles} />
+                        <ApprovalExamples levels={levels} roles={roles} allowsThreshold={allowsThreshold} />
                     </HowItWorks>
                 </SectionCard>
                 <SaveErrorBanner error={saveError} />

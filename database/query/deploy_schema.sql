@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS `tb_department` (
 CREATE TABLE IF NOT EXISTS `tb_roles` (
   `role_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
   `role_name` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `role_permission` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `role_permission` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
   `role_department` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `role_type` varchar(1) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'R' COMMENT 'R = role ปกติ, S = system role (แก้/ลบไม่ได้)',
   `role_granted_by_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'user ที่สร้าง role นี้ (FK เพิ่มทีหลังเพราะอ้างกลับไป tb_users)',
@@ -1127,6 +1127,224 @@ CREATE TABLE IF NOT EXISTS `tb_receipt_allocations` (
   CONSTRAINT `fk_rca_receipt` FOREIGN KEY (`rca_receipt_id`) REFERENCES `tb_receipts` (`rc_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ประเภทเงินได้ที่บริษัทหัก ณ ที่จ่ายผู้อื่น — แถวบนหนังสือรับรอง 50 ทวิ (1–6 ตามแบบกรมสรรพากร)
+-- อัตราแยกไว้ใน tb_wht_rates ตามวันที่มีผล (แผนแม่บทหลักการข้อ 4 — อัตราเปลี่ยนได้ เอกสารเก่าต้องใช้อัตรา ณ วันนั้น)
+CREATE TABLE IF NOT EXISTS `tb_wht_income_types` (
+  `wit_code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'เช่น SERVICE, ADVERTISING — ใช้อ้างในโค้ด เปลี่ยนไม่ได้',
+  `wit_name_th` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `wit_name_en` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `wit_form_row` tinyint unsigned NOT NULL DEFAULT '5' COMMENT 'แถวบน 50 ทวิ: 1 เงินเดือน 2 ค่าธรรมเนียม/นายหน้า 3 ค่าลิขสิทธิ์ 4 ดอกเบี้ย/ปันผล 5 ตามมาตรา 3 เตรส 6 อื่นๆ',
+  `wit_form_label` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ข้อความประเภทเงินได้ที่พิมพ์บน 50 ทวิ',
+  `wit_status` enum('active','inactive') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `wit_sort_order` int NOT NULL DEFAULT '0',
+  `wit_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `wit_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`wit_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- อัตราหัก ณ ที่จ่ายตามวันที่มีผล — อัตราที่มีผลแล้ว (วันนี้หรือก่อน) แก้/ลบไม่ได้ (แบบ tb_vat_rates)
+CREATE TABLE IF NOT EXISTS `tb_wht_rates` (
+  `wr_income_type` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `wr_effective_from` date NOT NULL,
+  `wr_rate` decimal(5,2) NOT NULL COMMENT 'เช่น 3.00',
+  `wr_min_payment` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'จ่ายต่อครั้ง (ก่อน VAT) ต่ำกว่านี้ไม่ต้องหัก — 0 = หักทุกยอด',
+  `wr_note` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ที่มา เช่น เลขคำสั่งกรมสรรพากร',
+  `wr_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `wr_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`wr_income_type`,`wr_effective_from`),
+  KEY `fk_wr_created_by` (`wr_created_by`),
+  CONSTRAINT `fk_wr_created_by` FOREIGN KEY (`wr_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_wr_income_type` FOREIGN KEY (`wr_income_type`) REFERENCES `tb_wht_income_types` (`wit_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- หมวดค่าใช้จ่าย — รหัสบัญชีว่างได้ (ผูกผังบัญชีในเฟส 3) · ประเภทเงินได้เริ่มต้น = เสนอหัก ณ ที่จ่ายอัตโนมัติ (ว่าง = ไม่หัก)
+CREATE TABLE IF NOT EXISTS `tb_expense_categories` (
+  `ec_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `ec_name_th` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ec_name_en` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ec_account_code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'รหัสบัญชี (เฟส 3) — ตามผังบัญชีของนักบัญชี (คำถาม X6)',
+  `ec_default_income_type` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ec_is_asset` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1 = ของชิ้นใหญ่ ไว้ย้ายไปทะเบียนทรัพย์สิน (เฟส 6)',
+  `ec_status` enum('active','inactive') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `ec_sort_order` int NOT NULL DEFAULT '0',
+  `ec_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `ec_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`ec_id`),
+  UNIQUE KEY `uq_ec_name_th` (`ec_name_th`),
+  KEY `fk_ec_income_type` (`ec_default_income_type`),
+  CONSTRAINT `fk_ec_income_type` FOREIGN KEY (`ec_default_income_type`) REFERENCES `tb_wht_income_types` (`wit_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ผู้ขาย / ผู้รับเงิน — บุคคลธรรมดาในไทย → ภ.ง.ด.3 · นิติบุคคลในไทย → ภ.ง.ด.53 · ต่างประเทศ → ไม่ออก 50 ทวิ (คำถาม X2)
+-- บัญชีธนาคารของผู้ขาย: แก้ได้เฉพาะสิทธิ์จัดการผู้ขาย · audit log เก็บค่าก่อน/หลัง (กันโกงเปลี่ยนบัญชีรับเงิน R-P6)
+-- ลบได้เฉพาะที่ยังไม่มีเอกสาร — ที่ใช้แล้วให้ปิดใช้งาน
+CREATE TABLE IF NOT EXISTS `tb_vendors` (
+  `vd_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `vd_code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'รหัสสั้นตั้งเอง (ไม่บังคับ)',
+  `vd_type` enum('juristic','individual') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'juristic',
+  `vd_country` char(2) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'TH',
+  `vd_name` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ชื่อตามเอกสารภาษี (บริษัท / ชื่อ-นามสกุล)',
+  `vd_tax_id` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `vd_branch_code` varchar(5) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '00000 = สำนักงานใหญ่',
+  `vd_address` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT 'ที่อยู่สำหรับ 50 ทวิ',
+  `vd_contact_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `vd_email` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `vd_phone` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `vd_bank_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `vd_bank_account_no` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `vd_bank_account_name` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `vd_promptpay_id` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `vd_credit_days` int DEFAULT NULL COMMENT 'ว่าง = ครบกำหนดวันที่เอกสาร',
+  `vd_currency` char(3) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'THB',
+  `vd_default_income_type` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ว่าง = ใช้ของหมวดค่าใช้จ่าย',
+  `vd_default_category_id` int unsigned DEFAULT NULL,
+  `vd_notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `vd_status` enum('active','inactive') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `vd_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `vd_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `vd_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`vd_id`),
+  UNIQUE KEY `uq_vd_code` (`vd_code`),
+  KEY `idx_vd_name` (`vd_name`),
+  KEY `idx_vd_tax_id` (`vd_tax_id`),
+  KEY `fk_vd_currency` (`vd_currency`),
+  KEY `fk_vd_income_type` (`vd_default_income_type`),
+  KEY `fk_vd_category` (`vd_default_category_id`),
+  KEY `fk_vd_created_by` (`vd_created_by`),
+  CONSTRAINT `fk_vd_category` FOREIGN KEY (`vd_default_category_id`) REFERENCES `tb_expense_categories` (`ec_id`),
+  CONSTRAINT `fk_vd_created_by` FOREIGN KEY (`vd_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_vd_currency` FOREIGN KEY (`vd_currency`) REFERENCES `tb_currencies` (`cur_code`),
+  CONSTRAINT `fk_vd_income_type` FOREIGN KEY (`vd_default_income_type`) REFERENCES `tb_wht_income_types` (`wit_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ── ขั้น 2-2 (2026-10-16): บันทึกค่าใช้จ่าย / บิลผู้ขาย (EX) และใบเบิกเงินพนักงาน (EC) — ตารางเดียว แยกด้วย ex_kind ──
+-- flow: draft → (ส่ง) → ยอดก่อน VAT เป็นบาทต่ำกว่าชั้น 1 ของกติกา EX/EC = อนุมัติอัตโนมัติ · ไม่งั้น pending_approval ตามชั้น → approved (ได้เลขตอนนี้)
+--       approved = "รอจ่าย" (เจ้าหนี้) · จ่ายแล้ว/บางส่วน/เกินกำหนด คำนวณตอนอ่านจาก ex_paid_amount (แบบใบแจ้งหนี้) · ยกเลิกพร้อมเหตุผล
+-- VAT ซื้อบันทึกตามเอกสารของผู้ขาย (ไม่คำนวณใหม่) · ex_vat_claimable = จด VAT ณ วันที่เอกสาร + ใบกำกับเต็มรูป (คำถามนักบัญชี X3)
+-- หัก ณ ที่จ่ายในใบนี้เป็นยอดประมาณ — หักจริงตอนทำจ่าย (ขั้น 2-4)
+CREATE TABLE IF NOT EXISTS `tb_expenses` (
+  `ex_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ex_number` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'EX-/EC-yyyymmdd-xxxxxx ได้ตอนอนุมัติครบ (หรือผ่านอัตโนมัติ) — ร่างไม่มีเลข ลบได้โดยเลขไม่ข้าม',
+  `ex_kind` enum('bill','claim') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'bill',
+  `ex_status` enum('draft','pending_approval','approved','cancelled') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'draft',
+  `ex_version` int unsigned NOT NULL DEFAULT '0',
+  `ex_vendor_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'บิลผู้ขาย',
+  `ex_employee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ใบเบิก — ผู้เบิก (ผู้รับเงิน)',
+  `ex_branch_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ex_title` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ex_vendor_doc_no` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เลขที่เอกสารของผู้ขาย — ผู้ขายเดียวกันซ้ำในใบที่ไม่ยกเลิกไม่ได้ (R-P2)',
+  `ex_vendor_doc_date` date DEFAULT NULL,
+  `ex_doc_type` enum('tax_invoice','abbreviated_tax_invoice','receipt','invoice','substitute_receipt','none') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'receipt',
+  `ex_expense_date` date NOT NULL COMMENT 'วันที่ค่าใช้จ่ายเกิด (วันที่ในเอกสาร/วันที่จ่ายไปก่อน)',
+  `ex_credit_days` int NOT NULL DEFAULT '0',
+  `ex_due_date` date NOT NULL COMMENT 'วันที่ค่าใช้จ่าย + เครดิต',
+  `ex_currency` char(3) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'THB',
+  `ex_exchange_rate` decimal(20,10) NOT NULL DEFAULT '1.0000000000',
+  `ex_rate_source` enum('bot','manual') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ex_rate_date` date DEFAULT NULL,
+  `ex_rate_override_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ex_subtotal` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ยอดก่อน VAT',
+  `ex_vat_rate` decimal(5,2) NOT NULL DEFAULT '0.00',
+  `ex_vat_amount` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ตามเอกสารผู้ขาย',
+  `ex_vat_claimable` tinyint(1) NOT NULL DEFAULT '0',
+  `ex_total` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `ex_subtotal_thb` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `ex_total_thb` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `ex_wht_income_type` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ex_wht_rate` decimal(5,2) DEFAULT NULL,
+  `ex_wht_amount` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ประมาณการ — หักจริงตอนทำจ่าย',
+  `ex_paid_amount` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ผลรวมตัดหนี้ของใบสำคัญจ่ายที่ไม่ยกเลิก (ขั้น 2-4)',
+  `ex_notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `ex_approval_plan` json DEFAULT NULL,
+  `ex_approval_round` int unsigned NOT NULL DEFAULT '0',
+  `ex_approval_current_level` tinyint unsigned DEFAULT NULL,
+  `ex_auto_approved` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1 = ยอดต่ำกว่าวงเงินชั้น 1 ผ่านอัตโนมัติ (P2)',
+  `ex_submitted_at` datetime DEFAULT NULL,
+  `ex_returned_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ex_approved_at` datetime DEFAULT NULL,
+  `ex_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ex_created_by_name` varchar(101) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ex_cancelled_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ex_cancelled_at` datetime DEFAULT NULL,
+  `ex_cancel_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ex_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `ex_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`ex_id`),
+  UNIQUE KEY `uq_ex_number` (`ex_number`),
+  KEY `idx_ex_status_due` (`ex_status`,`ex_due_date`),
+  KEY `idx_ex_vendor_doc` (`ex_vendor_id`,`ex_vendor_doc_no`),
+  KEY `idx_ex_employee` (`ex_employee_id`,`ex_status`),
+  KEY `idx_ex_expense_date` (`ex_expense_date`),
+  KEY `fk_ex_branch` (`ex_branch_id`),
+  KEY `fk_ex_currency` (`ex_currency`),
+  KEY `fk_ex_income_type` (`ex_wht_income_type`),
+  KEY `fk_ex_created_by` (`ex_created_by`),
+  KEY `fk_ex_cancelled_by` (`ex_cancelled_by`),
+  CONSTRAINT `fk_ex_branch` FOREIGN KEY (`ex_branch_id`) REFERENCES `tb_branches` (`branch_id`),
+  CONSTRAINT `fk_ex_cancelled_by` FOREIGN KEY (`ex_cancelled_by`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_ex_created_by` FOREIGN KEY (`ex_created_by`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_ex_currency` FOREIGN KEY (`ex_currency`) REFERENCES `tb_currencies` (`cur_code`),
+  CONSTRAINT `fk_ex_employee` FOREIGN KEY (`ex_employee_id`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_ex_income_type` FOREIGN KEY (`ex_wht_income_type`) REFERENCES `tb_wht_income_types` (`wit_code`),
+  CONSTRAINT `fk_ex_vendor` FOREIGN KEY (`ex_vendor_id`) REFERENCES `tb_vendors` (`vd_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- บรรทัดค่าใช้จ่าย — หมวด + โปรเจกต์ (ว่าง = ส่วนกลาง P4) · ยอดไม่รวม VAT
+CREATE TABLE IF NOT EXISTS `tb_expense_lines` (
+  `exl_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `exl_expense_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `exl_order` int NOT NULL DEFAULT '0',
+  `exl_category_id` int unsigned NOT NULL,
+  `exl_project_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `exl_description` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `exl_quantity` decimal(12,2) NOT NULL DEFAULT '1.00',
+  `exl_unit_price` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `exl_amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  PRIMARY KEY (`exl_id`),
+  KEY `idx_exl_expense` (`exl_expense_id`,`exl_order`),
+  KEY `idx_exl_project` (`exl_project_id`),
+  KEY `fk_exl_category` (`exl_category_id`),
+  CONSTRAINT `fk_exl_category` FOREIGN KEY (`exl_category_id`) REFERENCES `tb_expense_categories` (`ec_id`),
+  CONSTRAINT `fk_exl_expense` FOREIGN KEY (`exl_expense_id`) REFERENCES `tb_expenses` (`ex_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_exl_project` FOREIGN KEY (`exl_project_id`) REFERENCES `tb_projects` (`project_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ไฟล์แนบ (ใบเสร็จ/ใบกำกับของผู้ขาย) — เก็บ backend/storage/expense-documents/ เปิดผ่าน API ตรวจสิทธิ์ (R-P7)
+CREATE TABLE IF NOT EXISTS `tb_expense_attachments` (
+  `exf_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `exf_expense_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `exf_file_path` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `exf_file_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `exf_file_size` int unsigned NOT NULL DEFAULT '0',
+  `exf_uploaded_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `exf_uploaded_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`exf_id`),
+  KEY `idx_exf_expense` (`exf_expense_id`),
+  KEY `fk_exf_uploaded_by` (`exf_uploaded_by`),
+  CONSTRAINT `fk_exf_expense` FOREIGN KEY (`exf_expense_id`) REFERENCES `tb_expenses` (`ex_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_exf_uploaded_by` FOREIGN KEY (`exf_uploaded_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ประวัติอนุมัติ/ตีกลับ — รูปแบบเดียวกับ tb_invoice_approvals
+CREATE TABLE IF NOT EXISTS `tb_expense_approvals` (
+  `expa_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `expa_expense_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `expa_round` int unsigned NOT NULL,
+  `expa_level` tinyint unsigned NOT NULL,
+  `expa_action` enum('approve','return') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `expa_user_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `expa_user_name` varchar(101) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `expa_role_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `expa_role_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `expa_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `expa_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`expa_id`),
+  KEY `idx_expa_expense` (`expa_expense_id`,`expa_round`,`expa_level`),
+  KEY `fk_expa_user` (`expa_user_id`),
+  CONSTRAINT `fk_expa_expense` FOREIGN KEY (`expa_expense_id`) REFERENCES `tb_expenses` (`ex_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_expa_user` FOREIGN KEY (`expa_user_id`) REFERENCES `tb_users` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ─── ส่วนที่ 2: เติมคอลัมน์ที่ยังขาด (สำหรับฐานข้อมูลที่สร้างจากโครงสร้างเวอร์ชันเก่า) ──────────────
 -- แต่ละบรรทัด: ถ้าคอลัมน์ยังไม่มี → ADD COLUMN, มีแล้ว → ไม่ทำอะไร
 
@@ -1140,7 +1358,7 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA 
 -- tb_roles
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_roles' AND COLUMN_NAME = 'role_id') = 0, 'ALTER TABLE `tb_roles` ADD COLUMN `role_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_roles' AND COLUMN_NAME = 'role_name') = 0, 'ALTER TABLE `tb_roles` ADD COLUMN `role_name` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL AFTER `role_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
-SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_roles' AND COLUMN_NAME = 'role_permission') = 0, 'ALTER TABLE `tb_roles` ADD COLUMN `role_permission` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '''' AFTER `role_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_roles' AND COLUMN_NAME = 'role_permission') = 0, 'ALTER TABLE `tb_roles` ADD COLUMN `role_permission` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '''' AFTER `role_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_roles' AND COLUMN_NAME = 'role_department') = 0, 'ALTER TABLE `tb_roles` ADD COLUMN `role_department` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `role_permission`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_roles' AND COLUMN_NAME = 'role_type') = 0, 'ALTER TABLE `tb_roles` ADD COLUMN `role_type` varchar(1) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''R'' COMMENT ''R = role ปกติ, S = system role (แก้/ลบไม่ได้)'' AFTER `role_department`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_roles' AND COLUMN_NAME = 'role_granted_by_id') = 0, 'ALTER TABLE `tb_roles` ADD COLUMN `role_granted_by_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''user ที่สร้าง role นี้ (FK เพิ่มทีหลังเพราะอ้างกลับไป tb_users)'' AFTER `role_type`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
@@ -1580,6 +1798,149 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA 
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipt_allocations' AND COLUMN_NAME = 'rca_vat_amount') = 0, 'ALTER TABLE `tb_receipt_allocations` ADD COLUMN `rca_vat_amount` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''VAT ส่วนที่รับครั้งนี้'' AFTER `rca_amount`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipt_allocations' AND COLUMN_NAME = 'rca_amount_thb') = 0, 'ALTER TABLE `tb_receipt_allocations` ADD COLUMN `rca_amount_thb` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''ยอดตัดเป็นบาทตามอัตราของใบแจ้งหนี้'' AFTER `rca_vat_amount`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- ════ เฟส 2 (2026-10-16) — ผู้ขาย / หมวดค่าใช้จ่าย / ประเภทเงินได้
+
+-- tb_wht_income_types
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_wht_income_types' AND COLUMN_NAME = 'wit_code') = 0, 'ALTER TABLE `tb_wht_income_types` ADD COLUMN `wit_code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT ''เช่น SERVICE, ADVERTISING — ใช้อ้างในโค้ด เปลี่ยนไม่ได้'' FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_wht_income_types' AND COLUMN_NAME = 'wit_name_th') = 0, 'ALTER TABLE `tb_wht_income_types` ADD COLUMN `wit_name_th` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `wit_code`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_wht_income_types' AND COLUMN_NAME = 'wit_name_en') = 0, 'ALTER TABLE `tb_wht_income_types` ADD COLUMN `wit_name_en` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `wit_name_th`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_wht_income_types' AND COLUMN_NAME = 'wit_form_row') = 0, 'ALTER TABLE `tb_wht_income_types` ADD COLUMN `wit_form_row` tinyint unsigned NOT NULL DEFAULT ''5'' COMMENT ''แถวบน 50 ทวิ: 1 เงินเดือน 2 ค่าธรรมเนียม/นายหน้า 3 ค่าลิขสิทธิ์ 4 ดอกเบี้ย/ปันผล 5 ตามมาตรา 3 เตรส 6 อื่นๆ'' AFTER `wit_name_en`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_wht_income_types' AND COLUMN_NAME = 'wit_form_label') = 0, 'ALTER TABLE `tb_wht_income_types` ADD COLUMN `wit_form_label` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT ''ข้อความประเภทเงินได้ที่พิมพ์บน 50 ทวิ'' AFTER `wit_form_row`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_wht_income_types' AND COLUMN_NAME = 'wit_status') = 0, 'ALTER TABLE `tb_wht_income_types` ADD COLUMN `wit_status` enum(''active'',''inactive'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''active'' AFTER `wit_form_label`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_wht_income_types' AND COLUMN_NAME = 'wit_sort_order') = 0, 'ALTER TABLE `tb_wht_income_types` ADD COLUMN `wit_sort_order` int NOT NULL DEFAULT ''0'' AFTER `wit_status`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_wht_income_types' AND COLUMN_NAME = 'wit_created_at') = 0, 'ALTER TABLE `tb_wht_income_types` ADD COLUMN `wit_created_at` datetime DEFAULT CURRENT_TIMESTAMP AFTER `wit_sort_order`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_wht_income_types' AND COLUMN_NAME = 'wit_updated_at') = 0, 'ALTER TABLE `tb_wht_income_types` ADD COLUMN `wit_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `wit_created_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_wht_rates
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_wht_rates' AND COLUMN_NAME = 'wr_income_type') = 0, 'ALTER TABLE `tb_wht_rates` ADD COLUMN `wr_income_type` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_wht_rates' AND COLUMN_NAME = 'wr_effective_from') = 0, 'ALTER TABLE `tb_wht_rates` ADD COLUMN `wr_effective_from` date NOT NULL AFTER `wr_income_type`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_wht_rates' AND COLUMN_NAME = 'wr_rate') = 0, 'ALTER TABLE `tb_wht_rates` ADD COLUMN `wr_rate` decimal(5,2) NOT NULL COMMENT ''เช่น 3.00'' AFTER `wr_effective_from`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_wht_rates' AND COLUMN_NAME = 'wr_min_payment') = 0, 'ALTER TABLE `tb_wht_rates` ADD COLUMN `wr_min_payment` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''จ่ายต่อครั้ง (ก่อน VAT) ต่ำกว่านี้ไม่ต้องหัก — 0 = หักทุกยอด'' AFTER `wr_rate`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_wht_rates' AND COLUMN_NAME = 'wr_note') = 0, 'ALTER TABLE `tb_wht_rates` ADD COLUMN `wr_note` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''ที่มา เช่น เลขคำสั่งกรมสรรพากร'' AFTER `wr_min_payment`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_wht_rates' AND COLUMN_NAME = 'wr_created_by') = 0, 'ALTER TABLE `tb_wht_rates` ADD COLUMN `wr_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `wr_note`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_wht_rates' AND COLUMN_NAME = 'wr_created_at') = 0, 'ALTER TABLE `tb_wht_rates` ADD COLUMN `wr_created_at` datetime DEFAULT CURRENT_TIMESTAMP AFTER `wr_created_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_expense_categories
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_categories' AND COLUMN_NAME = 'ec_id') = 0, 'ALTER TABLE `tb_expense_categories` ADD COLUMN `ec_id` int unsigned NOT NULL AUTO_INCREMENT FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_categories' AND COLUMN_NAME = 'ec_name_th') = 0, 'ALTER TABLE `tb_expense_categories` ADD COLUMN `ec_name_th` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `ec_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_categories' AND COLUMN_NAME = 'ec_name_en') = 0, 'ALTER TABLE `tb_expense_categories` ADD COLUMN `ec_name_en` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ec_name_th`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_categories' AND COLUMN_NAME = 'ec_account_code') = 0, 'ALTER TABLE `tb_expense_categories` ADD COLUMN `ec_account_code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''รหัสบัญชี (เฟส 3) — ตามผังบัญชีของนักบัญชี (คำถาม X6)'' AFTER `ec_name_en`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_categories' AND COLUMN_NAME = 'ec_default_income_type') = 0, 'ALTER TABLE `tb_expense_categories` ADD COLUMN `ec_default_income_type` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ec_account_code`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_categories' AND COLUMN_NAME = 'ec_is_asset') = 0, 'ALTER TABLE `tb_expense_categories` ADD COLUMN `ec_is_asset` tinyint(1) NOT NULL DEFAULT ''0'' COMMENT ''1 = ของชิ้นใหญ่ ไว้ย้ายไปทะเบียนทรัพย์สิน (เฟส 6)'' AFTER `ec_default_income_type`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_categories' AND COLUMN_NAME = 'ec_status') = 0, 'ALTER TABLE `tb_expense_categories` ADD COLUMN `ec_status` enum(''active'',''inactive'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''active'' AFTER `ec_is_asset`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_categories' AND COLUMN_NAME = 'ec_sort_order') = 0, 'ALTER TABLE `tb_expense_categories` ADD COLUMN `ec_sort_order` int NOT NULL DEFAULT ''0'' AFTER `ec_status`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_categories' AND COLUMN_NAME = 'ec_created_at') = 0, 'ALTER TABLE `tb_expense_categories` ADD COLUMN `ec_created_at` datetime DEFAULT CURRENT_TIMESTAMP AFTER `ec_sort_order`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_categories' AND COLUMN_NAME = 'ec_updated_at') = 0, 'ALTER TABLE `tb_expense_categories` ADD COLUMN `ec_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `ec_created_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_vendors
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND COLUMN_NAME = 'vd_id') = 0, 'ALTER TABLE `tb_vendors` ADD COLUMN `vd_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND COLUMN_NAME = 'vd_code') = 0, 'ALTER TABLE `tb_vendors` ADD COLUMN `vd_code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''รหัสสั้นตั้งเอง (ไม่บังคับ)'' AFTER `vd_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND COLUMN_NAME = 'vd_type') = 0, 'ALTER TABLE `tb_vendors` ADD COLUMN `vd_type` enum(''juristic'',''individual'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''juristic'' AFTER `vd_code`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND COLUMN_NAME = 'vd_country') = 0, 'ALTER TABLE `tb_vendors` ADD COLUMN `vd_country` char(2) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''TH'' AFTER `vd_type`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND COLUMN_NAME = 'vd_name') = 0, 'ALTER TABLE `tb_vendors` ADD COLUMN `vd_name` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT ''ชื่อตามเอกสารภาษี (บริษัท / ชื่อ-นามสกุล)'' AFTER `vd_country`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND COLUMN_NAME = 'vd_tax_id') = 0, 'ALTER TABLE `tb_vendors` ADD COLUMN `vd_tax_id` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `vd_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND COLUMN_NAME = 'vd_branch_code') = 0, 'ALTER TABLE `tb_vendors` ADD COLUMN `vd_branch_code` varchar(5) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''00000 = สำนักงานใหญ่'' AFTER `vd_tax_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND COLUMN_NAME = 'vd_address') = 0, 'ALTER TABLE `tb_vendors` ADD COLUMN `vd_address` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT ''ที่อยู่สำหรับ 50 ทวิ'' AFTER `vd_branch_code`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND COLUMN_NAME = 'vd_contact_name') = 0, 'ALTER TABLE `tb_vendors` ADD COLUMN `vd_contact_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `vd_address`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND COLUMN_NAME = 'vd_email') = 0, 'ALTER TABLE `tb_vendors` ADD COLUMN `vd_email` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `vd_contact_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND COLUMN_NAME = 'vd_phone') = 0, 'ALTER TABLE `tb_vendors` ADD COLUMN `vd_phone` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `vd_email`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND COLUMN_NAME = 'vd_bank_name') = 0, 'ALTER TABLE `tb_vendors` ADD COLUMN `vd_bank_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `vd_phone`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND COLUMN_NAME = 'vd_bank_account_no') = 0, 'ALTER TABLE `tb_vendors` ADD COLUMN `vd_bank_account_no` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `vd_bank_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND COLUMN_NAME = 'vd_bank_account_name') = 0, 'ALTER TABLE `tb_vendors` ADD COLUMN `vd_bank_account_name` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `vd_bank_account_no`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND COLUMN_NAME = 'vd_promptpay_id') = 0, 'ALTER TABLE `tb_vendors` ADD COLUMN `vd_promptpay_id` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `vd_bank_account_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND COLUMN_NAME = 'vd_credit_days') = 0, 'ALTER TABLE `tb_vendors` ADD COLUMN `vd_credit_days` int DEFAULT NULL COMMENT ''ว่าง = ครบกำหนดวันที่เอกสาร'' AFTER `vd_promptpay_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND COLUMN_NAME = 'vd_currency') = 0, 'ALTER TABLE `tb_vendors` ADD COLUMN `vd_currency` char(3) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''THB'' AFTER `vd_credit_days`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND COLUMN_NAME = 'vd_default_income_type') = 0, 'ALTER TABLE `tb_vendors` ADD COLUMN `vd_default_income_type` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''ว่าง = ใช้ของหมวดค่าใช้จ่าย'' AFTER `vd_currency`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND COLUMN_NAME = 'vd_default_category_id') = 0, 'ALTER TABLE `tb_vendors` ADD COLUMN `vd_default_category_id` int unsigned DEFAULT NULL AFTER `vd_default_income_type`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND COLUMN_NAME = 'vd_notes') = 0, 'ALTER TABLE `tb_vendors` ADD COLUMN `vd_notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci AFTER `vd_default_category_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND COLUMN_NAME = 'vd_status') = 0, 'ALTER TABLE `tb_vendors` ADD COLUMN `vd_status` enum(''active'',''inactive'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''active'' AFTER `vd_notes`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND COLUMN_NAME = 'vd_created_by') = 0, 'ALTER TABLE `tb_vendors` ADD COLUMN `vd_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `vd_status`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND COLUMN_NAME = 'vd_created_at') = 0, 'ALTER TABLE `tb_vendors` ADD COLUMN `vd_created_at` datetime DEFAULT CURRENT_TIMESTAMP AFTER `vd_created_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND COLUMN_NAME = 'vd_updated_at') = 0, 'ALTER TABLE `tb_vendors` ADD COLUMN `vd_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `vd_created_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- ════ เฟส 2 ขั้น 2-2 (2026-10-16) — ค่าใช้จ่าย / บิลผู้ขาย
+
+-- tb_expenses
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_id') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_number') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_number` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''EX-/EC-yyyymmdd-xxxxxx ได้ตอนอนุมัติครบ (หรือผ่านอัตโนมัติ) — ร่างไม่มีเลข ลบได้โดยเลขไม่ข้าม'' AFTER `ex_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_kind') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_kind` enum(''bill'',''claim'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''bill'' AFTER `ex_number`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_status') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_status` enum(''draft'',''pending_approval'',''approved'',''cancelled'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''draft'' AFTER `ex_kind`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_version') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_version` int unsigned NOT NULL DEFAULT ''0'' AFTER `ex_status`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_vendor_id') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_vendor_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''บิลผู้ขาย'' AFTER `ex_version`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_employee_id') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_employee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''ใบเบิก — ผู้เบิก (ผู้รับเงิน)'' AFTER `ex_vendor_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_branch_id') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_branch_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `ex_employee_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_title') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_title` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `ex_branch_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_vendor_doc_no') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_vendor_doc_no` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''เลขที่เอกสารของผู้ขาย — ผู้ขายเดียวกันซ้ำในใบที่ไม่ยกเลิกไม่ได้ (R-P2)'' AFTER `ex_title`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_vendor_doc_date') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_vendor_doc_date` date DEFAULT NULL AFTER `ex_vendor_doc_no`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_doc_type') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_doc_type` enum(''tax_invoice'',''abbreviated_tax_invoice'',''receipt'',''invoice'',''substitute_receipt'',''none'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''receipt'' AFTER `ex_vendor_doc_date`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_expense_date') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_expense_date` date NOT NULL COMMENT ''วันที่ค่าใช้จ่ายเกิด (วันที่ในเอกสาร/วันที่จ่ายไปก่อน)'' AFTER `ex_doc_type`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_credit_days') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_credit_days` int NOT NULL DEFAULT ''0'' AFTER `ex_expense_date`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_due_date') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_due_date` date NOT NULL COMMENT ''วันที่ค่าใช้จ่าย + เครดิต'' AFTER `ex_credit_days`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_currency') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_currency` char(3) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''THB'' AFTER `ex_due_date`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_exchange_rate') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_exchange_rate` decimal(20,10) NOT NULL DEFAULT ''1.0000000000'' AFTER `ex_currency`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_rate_source') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_rate_source` enum(''bot'',''manual'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ex_exchange_rate`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_rate_date') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_rate_date` date DEFAULT NULL AFTER `ex_rate_source`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_rate_override_reason') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_rate_override_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ex_rate_date`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_subtotal') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_subtotal` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''ยอดก่อน VAT'' AFTER `ex_rate_override_reason`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_vat_rate') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_vat_rate` decimal(5,2) NOT NULL DEFAULT ''0.00'' AFTER `ex_subtotal`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_vat_amount') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_vat_amount` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''ตามเอกสารผู้ขาย'' AFTER `ex_vat_rate`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_vat_claimable') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_vat_claimable` tinyint(1) NOT NULL DEFAULT ''0'' AFTER `ex_vat_amount`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_total') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_total` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `ex_vat_claimable`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_subtotal_thb') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_subtotal_thb` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `ex_total`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_total_thb') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_total_thb` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `ex_subtotal_thb`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_wht_income_type') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_wht_income_type` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ex_total_thb`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_wht_rate') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_wht_rate` decimal(5,2) DEFAULT NULL AFTER `ex_wht_income_type`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_wht_amount') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_wht_amount` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''ประมาณการ — หักจริงตอนทำจ่าย'' AFTER `ex_wht_rate`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_paid_amount') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_paid_amount` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''ผลรวมตัดหนี้ของใบสำคัญจ่ายที่ไม่ยกเลิก (ขั้น 2-4)'' AFTER `ex_wht_amount`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_notes') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci AFTER `ex_paid_amount`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_approval_plan') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_approval_plan` json DEFAULT NULL AFTER `ex_notes`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_approval_round') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_approval_round` int unsigned NOT NULL DEFAULT ''0'' AFTER `ex_approval_plan`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_approval_current_level') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_approval_current_level` tinyint unsigned DEFAULT NULL AFTER `ex_approval_round`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_auto_approved') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_auto_approved` tinyint(1) NOT NULL DEFAULT ''0'' COMMENT ''1 = ยอดต่ำกว่าวงเงินชั้น 1 ผ่านอัตโนมัติ (P2)'' AFTER `ex_approval_current_level`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_submitted_at') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_submitted_at` datetime DEFAULT NULL AFTER `ex_auto_approved`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_returned_reason') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_returned_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ex_submitted_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_approved_at') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_approved_at` datetime DEFAULT NULL AFTER `ex_returned_reason`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_created_by') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ex_approved_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_created_by_name') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_created_by_name` varchar(101) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ex_created_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_cancelled_by') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_cancelled_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ex_created_by_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_cancelled_at') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_cancelled_at` datetime DEFAULT NULL AFTER `ex_cancelled_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_cancel_reason') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_cancel_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ex_cancelled_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_created_at') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_created_at` datetime DEFAULT CURRENT_TIMESTAMP AFTER `ex_cancel_reason`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND COLUMN_NAME = 'ex_updated_at') = 0, 'ALTER TABLE `tb_expenses` ADD COLUMN `ex_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `ex_created_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_expense_lines
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_lines' AND COLUMN_NAME = 'exl_id') = 0, 'ALTER TABLE `tb_expense_lines` ADD COLUMN `exl_id` bigint unsigned NOT NULL AUTO_INCREMENT FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_lines' AND COLUMN_NAME = 'exl_expense_id') = 0, 'ALTER TABLE `tb_expense_lines` ADD COLUMN `exl_expense_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `exl_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_lines' AND COLUMN_NAME = 'exl_order') = 0, 'ALTER TABLE `tb_expense_lines` ADD COLUMN `exl_order` int NOT NULL DEFAULT ''0'' AFTER `exl_expense_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_lines' AND COLUMN_NAME = 'exl_category_id') = 0, 'ALTER TABLE `tb_expense_lines` ADD COLUMN `exl_category_id` int unsigned NOT NULL AFTER `exl_order`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_lines' AND COLUMN_NAME = 'exl_project_id') = 0, 'ALTER TABLE `tb_expense_lines` ADD COLUMN `exl_project_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `exl_category_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_lines' AND COLUMN_NAME = 'exl_description') = 0, 'ALTER TABLE `tb_expense_lines` ADD COLUMN `exl_description` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `exl_project_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_lines' AND COLUMN_NAME = 'exl_quantity') = 0, 'ALTER TABLE `tb_expense_lines` ADD COLUMN `exl_quantity` decimal(12,2) NOT NULL DEFAULT ''1.00'' AFTER `exl_description`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_lines' AND COLUMN_NAME = 'exl_unit_price') = 0, 'ALTER TABLE `tb_expense_lines` ADD COLUMN `exl_unit_price` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `exl_quantity`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_lines' AND COLUMN_NAME = 'exl_amount') = 0, 'ALTER TABLE `tb_expense_lines` ADD COLUMN `exl_amount` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `exl_unit_price`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_expense_attachments
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_attachments' AND COLUMN_NAME = 'exf_id') = 0, 'ALTER TABLE `tb_expense_attachments` ADD COLUMN `exf_id` bigint unsigned NOT NULL AUTO_INCREMENT FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_attachments' AND COLUMN_NAME = 'exf_expense_id') = 0, 'ALTER TABLE `tb_expense_attachments` ADD COLUMN `exf_expense_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `exf_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_attachments' AND COLUMN_NAME = 'exf_file_path') = 0, 'ALTER TABLE `tb_expense_attachments` ADD COLUMN `exf_file_path` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `exf_expense_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_attachments' AND COLUMN_NAME = 'exf_file_name') = 0, 'ALTER TABLE `tb_expense_attachments` ADD COLUMN `exf_file_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `exf_file_path`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_attachments' AND COLUMN_NAME = 'exf_file_size') = 0, 'ALTER TABLE `tb_expense_attachments` ADD COLUMN `exf_file_size` int unsigned NOT NULL DEFAULT ''0'' AFTER `exf_file_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_attachments' AND COLUMN_NAME = 'exf_uploaded_by') = 0, 'ALTER TABLE `tb_expense_attachments` ADD COLUMN `exf_uploaded_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `exf_file_size`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_attachments' AND COLUMN_NAME = 'exf_uploaded_at') = 0, 'ALTER TABLE `tb_expense_attachments` ADD COLUMN `exf_uploaded_at` datetime DEFAULT CURRENT_TIMESTAMP AFTER `exf_uploaded_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_expense_approvals
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_approvals' AND COLUMN_NAME = 'expa_id') = 0, 'ALTER TABLE `tb_expense_approvals` ADD COLUMN `expa_id` bigint unsigned NOT NULL AUTO_INCREMENT FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_approvals' AND COLUMN_NAME = 'expa_expense_id') = 0, 'ALTER TABLE `tb_expense_approvals` ADD COLUMN `expa_expense_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `expa_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_approvals' AND COLUMN_NAME = 'expa_round') = 0, 'ALTER TABLE `tb_expense_approvals` ADD COLUMN `expa_round` int unsigned NOT NULL AFTER `expa_expense_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_approvals' AND COLUMN_NAME = 'expa_level') = 0, 'ALTER TABLE `tb_expense_approvals` ADD COLUMN `expa_level` tinyint unsigned NOT NULL AFTER `expa_round`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_approvals' AND COLUMN_NAME = 'expa_action') = 0, 'ALTER TABLE `tb_expense_approvals` ADD COLUMN `expa_action` enum(''approve'',''return'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `expa_level`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_approvals' AND COLUMN_NAME = 'expa_user_id') = 0, 'ALTER TABLE `tb_expense_approvals` ADD COLUMN `expa_user_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `expa_action`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_approvals' AND COLUMN_NAME = 'expa_user_name') = 0, 'ALTER TABLE `tb_expense_approvals` ADD COLUMN `expa_user_name` varchar(101) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `expa_user_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_approvals' AND COLUMN_NAME = 'expa_role_id') = 0, 'ALTER TABLE `tb_expense_approvals` ADD COLUMN `expa_role_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `expa_user_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_approvals' AND COLUMN_NAME = 'expa_role_name') = 0, 'ALTER TABLE `tb_expense_approvals` ADD COLUMN `expa_role_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `expa_role_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_approvals' AND COLUMN_NAME = 'expa_reason') = 0, 'ALTER TABLE `tb_expense_approvals` ADD COLUMN `expa_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `expa_role_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_approvals' AND COLUMN_NAME = 'expa_created_at') = 0, 'ALTER TABLE `tb_expense_approvals` ADD COLUMN `expa_created_at` datetime DEFAULT CURRENT_TIMESTAMP AFTER `expa_reason`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
 -- ── การเปลี่ยนชนิด/เงื่อนไขของคอลัมน์ที่มีอยู่แล้ว (เรียงตามเวลา) ──────────────────────────────────
 -- 2026-10-07 onboarding: ผู้ใช้เดิมได้ชื่อผู้ใช้ = user_id (ยัง login ด้วยอีเมลได้เหมือนเดิม) — UPDATE นี้รันซ้ำได้ แตะเฉพาะแถวที่ยังว่าง
 UPDATE tb_users SET user_username = user_id WHERE user_username IS NULL OR user_username = '';
@@ -1595,6 +1956,9 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA 
 
 -- 2026-10-13 ลูกค้าต่างประเทศ: เลขผู้เสียภาษียาวได้ถึง 30 ตัว (ฐานข้อมูล dev ที่เคยรันร่าง 8 ต.ค. เป็น varchar(13))
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_clients' AND COLUMN_NAME = 'client_tax_id' AND CHARACTER_MAXIMUM_LENGTH < 30) > 0, 'ALTER TABLE `tb_clients` MODIFY COLUMN `client_tax_id` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- 2026-10-16 เฟส 2: สิทธิ์ใกล้เต็ม 64 บิต → ขยายเป็น 255 (ข้อมูลเดิมไม่เปลี่ยน)
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_roles' AND COLUMN_NAME = 'role_permission' AND CHARACTER_MAXIMUM_LENGTH < 255) > 0, 'ALTER TABLE `tb_roles` MODIFY COLUMN `role_permission` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''''', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
 -- ─── ส่วนที่ 3: เติม index ที่ยังขาด ──────────────────────────────────────────────────────────
 -- index ทั่วไป: ถ้ามีชื่อนี้อยู่แต่คอลัมน์ไม่ตรง (เช่น index ของเวอร์ชันเก่า) → ลบแล้วสร้างใหม่ให้ถูก
@@ -1807,6 +2171,60 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHE
 -- tb_receipt_allocations
 SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipt_allocations' AND INDEX_NAME = 'fk_rca_invoice') = 0, 'ALTER TABLE `tb_receipt_allocations` ADD KEY `fk_rca_invoice` (`rca_invoice_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- tb_wht_rates
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_wht_rates' AND INDEX_NAME = 'fk_wr_created_by') = 0, 'ALTER TABLE `tb_wht_rates` ADD KEY `fk_wr_created_by` (`wr_created_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_expense_categories
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_categories' AND INDEX_NAME = 'uq_ec_name_th') <> 'ec_name_th', 'ALTER TABLE `tb_expense_categories` DROP INDEX `uq_ec_name_th`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_categories' AND INDEX_NAME = 'uq_ec_name_th') = 0, 'ALTER TABLE `tb_expense_categories` ADD UNIQUE KEY `uq_ec_name_th` (`ec_name_th`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_categories' AND INDEX_NAME = 'fk_ec_income_type') = 0, 'ALTER TABLE `tb_expense_categories` ADD KEY `fk_ec_income_type` (`ec_default_income_type`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_vendors
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND INDEX_NAME = 'uq_vd_code') <> 'vd_code', 'ALTER TABLE `tb_vendors` DROP INDEX `uq_vd_code`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND INDEX_NAME = 'uq_vd_code') = 0, 'ALTER TABLE `tb_vendors` ADD UNIQUE KEY `uq_vd_code` (`vd_code`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND INDEX_NAME = 'idx_vd_name') <> 'vd_name', 'ALTER TABLE `tb_vendors` DROP INDEX `idx_vd_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND INDEX_NAME = 'idx_vd_name') = 0, 'ALTER TABLE `tb_vendors` ADD KEY `idx_vd_name` (`vd_name`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND INDEX_NAME = 'idx_vd_tax_id') <> 'vd_tax_id', 'ALTER TABLE `tb_vendors` DROP INDEX `idx_vd_tax_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND INDEX_NAME = 'idx_vd_tax_id') = 0, 'ALTER TABLE `tb_vendors` ADD KEY `idx_vd_tax_id` (`vd_tax_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND INDEX_NAME = 'fk_vd_currency') = 0, 'ALTER TABLE `tb_vendors` ADD KEY `fk_vd_currency` (`vd_currency`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND INDEX_NAME = 'fk_vd_income_type') = 0, 'ALTER TABLE `tb_vendors` ADD KEY `fk_vd_income_type` (`vd_default_income_type`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND INDEX_NAME = 'fk_vd_category') = 0, 'ALTER TABLE `tb_vendors` ADD KEY `fk_vd_category` (`vd_default_category_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND INDEX_NAME = 'fk_vd_created_by') = 0, 'ALTER TABLE `tb_vendors` ADD KEY `fk_vd_created_by` (`vd_created_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_expenses
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND INDEX_NAME = 'uq_ex_number') <> 'ex_number', 'ALTER TABLE `tb_expenses` DROP INDEX `uq_ex_number`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND INDEX_NAME = 'uq_ex_number') = 0, 'ALTER TABLE `tb_expenses` ADD UNIQUE KEY `uq_ex_number` (`ex_number`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND INDEX_NAME = 'idx_ex_status_due') <> 'ex_status,ex_due_date', 'ALTER TABLE `tb_expenses` DROP INDEX `idx_ex_status_due`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND INDEX_NAME = 'idx_ex_status_due') = 0, 'ALTER TABLE `tb_expenses` ADD KEY `idx_ex_status_due` (`ex_status`,`ex_due_date`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND INDEX_NAME = 'idx_ex_vendor_doc') <> 'ex_vendor_id,ex_vendor_doc_no', 'ALTER TABLE `tb_expenses` DROP INDEX `idx_ex_vendor_doc`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND INDEX_NAME = 'idx_ex_vendor_doc') = 0, 'ALTER TABLE `tb_expenses` ADD KEY `idx_ex_vendor_doc` (`ex_vendor_id`,`ex_vendor_doc_no`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND INDEX_NAME = 'idx_ex_employee') <> 'ex_employee_id,ex_status', 'ALTER TABLE `tb_expenses` DROP INDEX `idx_ex_employee`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND INDEX_NAME = 'idx_ex_employee') = 0, 'ALTER TABLE `tb_expenses` ADD KEY `idx_ex_employee` (`ex_employee_id`,`ex_status`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND INDEX_NAME = 'idx_ex_expense_date') <> 'ex_expense_date', 'ALTER TABLE `tb_expenses` DROP INDEX `idx_ex_expense_date`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND INDEX_NAME = 'idx_ex_expense_date') = 0, 'ALTER TABLE `tb_expenses` ADD KEY `idx_ex_expense_date` (`ex_expense_date`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND INDEX_NAME = 'fk_ex_branch') = 0, 'ALTER TABLE `tb_expenses` ADD KEY `fk_ex_branch` (`ex_branch_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND INDEX_NAME = 'fk_ex_currency') = 0, 'ALTER TABLE `tb_expenses` ADD KEY `fk_ex_currency` (`ex_currency`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND INDEX_NAME = 'fk_ex_income_type') = 0, 'ALTER TABLE `tb_expenses` ADD KEY `fk_ex_income_type` (`ex_wht_income_type`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND INDEX_NAME = 'fk_ex_created_by') = 0, 'ALTER TABLE `tb_expenses` ADD KEY `fk_ex_created_by` (`ex_created_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND INDEX_NAME = 'fk_ex_cancelled_by') = 0, 'ALTER TABLE `tb_expenses` ADD KEY `fk_ex_cancelled_by` (`ex_cancelled_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_expense_lines
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_lines' AND INDEX_NAME = 'idx_exl_expense') <> 'exl_expense_id,exl_order', 'ALTER TABLE `tb_expense_lines` DROP INDEX `idx_exl_expense`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_lines' AND INDEX_NAME = 'idx_exl_expense') = 0, 'ALTER TABLE `tb_expense_lines` ADD KEY `idx_exl_expense` (`exl_expense_id`,`exl_order`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_lines' AND INDEX_NAME = 'idx_exl_project') <> 'exl_project_id', 'ALTER TABLE `tb_expense_lines` DROP INDEX `idx_exl_project`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_lines' AND INDEX_NAME = 'idx_exl_project') = 0, 'ALTER TABLE `tb_expense_lines` ADD KEY `idx_exl_project` (`exl_project_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_lines' AND INDEX_NAME = 'fk_exl_category') = 0, 'ALTER TABLE `tb_expense_lines` ADD KEY `fk_exl_category` (`exl_category_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_expense_attachments
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_attachments' AND INDEX_NAME = 'idx_exf_expense') <> 'exf_expense_id', 'ALTER TABLE `tb_expense_attachments` DROP INDEX `idx_exf_expense`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_attachments' AND INDEX_NAME = 'idx_exf_expense') = 0, 'ALTER TABLE `tb_expense_attachments` ADD KEY `idx_exf_expense` (`exf_expense_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_attachments' AND INDEX_NAME = 'fk_exf_uploaded_by') = 0, 'ALTER TABLE `tb_expense_attachments` ADD KEY `fk_exf_uploaded_by` (`exf_uploaded_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_expense_approvals
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_approvals' AND INDEX_NAME = 'idx_expa_expense') <> 'expa_expense_id,expa_round,expa_level', 'ALTER TABLE `tb_expense_approvals` DROP INDEX `idx_expa_expense`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_approvals' AND INDEX_NAME = 'idx_expa_expense') = 0, 'ALTER TABLE `tb_expense_approvals` ADD KEY `idx_expa_expense` (`expa_expense_id`,`expa_round`,`expa_level`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_approvals' AND INDEX_NAME = 'fk_expa_user') = 0, 'ALTER TABLE `tb_expense_approvals` ADD KEY `fk_expa_user` (`expa_user_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
 -- ─── ส่วนที่ 4: เติม foreign key ที่ยังขาด (รวม FK ย้อนกลับ tb_roles -> tb_users ที่สร้างพร้อมตารางไม่ได้) ──
 -- สกุลเงินเริ่มต้น THB + USD (2026-10-13) — ต้องมีก่อนเพิ่ม FK สกุลเงินของลูกค้า (ลูกค้าเดิมทุกรายได้ค่าเริ่มต้น THB)
 -- ใส่เฉพาะตอนตารางยังว่าง · ข้อมูลเริ่มต้นอื่นอยู่ส่วนที่ 5
@@ -1934,14 +2352,49 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CON
 SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipt_allocations' AND CONSTRAINT_NAME = 'fk_rca_invoice' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_receipt_allocations` ADD CONSTRAINT `fk_rca_invoice` FOREIGN KEY (`rca_invoice_id`) REFERENCES `tb_invoices` (`inv_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipt_allocations' AND CONSTRAINT_NAME = 'fk_rca_receipt' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_receipt_allocations` ADD CONSTRAINT `fk_rca_receipt` FOREIGN KEY (`rca_receipt_id`) REFERENCES `tb_receipts` (`rc_id`) ON DELETE CASCADE', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- tb_wht_rates
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_wht_rates' AND CONSTRAINT_NAME = 'fk_wr_created_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_wht_rates` ADD CONSTRAINT `fk_wr_created_by` FOREIGN KEY (`wr_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_wht_rates' AND CONSTRAINT_NAME = 'fk_wr_income_type' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_wht_rates` ADD CONSTRAINT `fk_wr_income_type` FOREIGN KEY (`wr_income_type`) REFERENCES `tb_wht_income_types` (`wit_code`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_expense_categories
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_categories' AND CONSTRAINT_NAME = 'fk_ec_income_type' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_expense_categories` ADD CONSTRAINT `fk_ec_income_type` FOREIGN KEY (`ec_default_income_type`) REFERENCES `tb_wht_income_types` (`wit_code`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_vendors
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND CONSTRAINT_NAME = 'fk_vd_category' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_vendors` ADD CONSTRAINT `fk_vd_category` FOREIGN KEY (`vd_default_category_id`) REFERENCES `tb_expense_categories` (`ec_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND CONSTRAINT_NAME = 'fk_vd_created_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_vendors` ADD CONSTRAINT `fk_vd_created_by` FOREIGN KEY (`vd_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND CONSTRAINT_NAME = 'fk_vd_currency' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_vendors` ADD CONSTRAINT `fk_vd_currency` FOREIGN KEY (`vd_currency`) REFERENCES `tb_currencies` (`cur_code`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_vendors' AND CONSTRAINT_NAME = 'fk_vd_income_type' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_vendors` ADD CONSTRAINT `fk_vd_income_type` FOREIGN KEY (`vd_default_income_type`) REFERENCES `tb_wht_income_types` (`wit_code`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_expenses
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND CONSTRAINT_NAME = 'fk_ex_branch' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_expenses` ADD CONSTRAINT `fk_ex_branch` FOREIGN KEY (`ex_branch_id`) REFERENCES `tb_branches` (`branch_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND CONSTRAINT_NAME = 'fk_ex_cancelled_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_expenses` ADD CONSTRAINT `fk_ex_cancelled_by` FOREIGN KEY (`ex_cancelled_by`) REFERENCES `tb_users` (`user_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND CONSTRAINT_NAME = 'fk_ex_created_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_expenses` ADD CONSTRAINT `fk_ex_created_by` FOREIGN KEY (`ex_created_by`) REFERENCES `tb_users` (`user_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND CONSTRAINT_NAME = 'fk_ex_currency' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_expenses` ADD CONSTRAINT `fk_ex_currency` FOREIGN KEY (`ex_currency`) REFERENCES `tb_currencies` (`cur_code`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND CONSTRAINT_NAME = 'fk_ex_employee' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_expenses` ADD CONSTRAINT `fk_ex_employee` FOREIGN KEY (`ex_employee_id`) REFERENCES `tb_users` (`user_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND CONSTRAINT_NAME = 'fk_ex_income_type' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_expenses` ADD CONSTRAINT `fk_ex_income_type` FOREIGN KEY (`ex_wht_income_type`) REFERENCES `tb_wht_income_types` (`wit_code`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expenses' AND CONSTRAINT_NAME = 'fk_ex_vendor' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_expenses` ADD CONSTRAINT `fk_ex_vendor` FOREIGN KEY (`ex_vendor_id`) REFERENCES `tb_vendors` (`vd_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_expense_lines
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_lines' AND CONSTRAINT_NAME = 'fk_exl_category' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_expense_lines` ADD CONSTRAINT `fk_exl_category` FOREIGN KEY (`exl_category_id`) REFERENCES `tb_expense_categories` (`ec_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_lines' AND CONSTRAINT_NAME = 'fk_exl_expense' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_expense_lines` ADD CONSTRAINT `fk_exl_expense` FOREIGN KEY (`exl_expense_id`) REFERENCES `tb_expenses` (`ex_id`) ON DELETE CASCADE', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_lines' AND CONSTRAINT_NAME = 'fk_exl_project' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_expense_lines` ADD CONSTRAINT `fk_exl_project` FOREIGN KEY (`exl_project_id`) REFERENCES `tb_projects` (`project_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_expense_attachments
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_attachments' AND CONSTRAINT_NAME = 'fk_exf_expense' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_expense_attachments` ADD CONSTRAINT `fk_exf_expense` FOREIGN KEY (`exf_expense_id`) REFERENCES `tb_expenses` (`ex_id`) ON DELETE CASCADE', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_attachments' AND CONSTRAINT_NAME = 'fk_exf_uploaded_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_expense_attachments` ADD CONSTRAINT `fk_exf_uploaded_by` FOREIGN KEY (`exf_uploaded_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_expense_approvals
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_approvals' AND CONSTRAINT_NAME = 'fk_expa_expense' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_expense_approvals` ADD CONSTRAINT `fk_expa_expense` FOREIGN KEY (`expa_expense_id`) REFERENCES `tb_expenses` (`ex_id`) ON DELETE CASCADE', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_expense_approvals' AND CONSTRAINT_NAME = 'fk_expa_user' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_expense_approvals` ADD CONSTRAINT `fk_expa_user` FOREIGN KEY (`expa_user_id`) REFERENCES `tb_users` (`user_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
 -- ─── ส่วนที่ 5: ข้อมูลเริ่มต้น (ใส่เฉพาะตอนตารางยังว่างเท่านั้น) ─────────────────────────────────
 -- ตั้งใจเช็ค "ตารางว่าง" ไม่ใช่ "ไม่มีแถวนี้" — ถ้าแอดมินลบ/เปลี่ยนบัญชีเริ่มต้นไปแล้วบน production
 -- ห้ามสร้างบัญชีที่รู้รหัสผ่านกลับขึ้นมาใหม่เองตอน deploy
 
--- role Admin เปิดทุกบิต (41 บิต) — role ระบบ (S) ได้สิทธิ์ครบเสมออยู่แล้วไม่ว่าสตริงจะยาวเท่าไร (effectiveRolePermission)
+-- role Admin เปิดทุกบิต (47 บิต) — role ระบบ (S) ได้สิทธิ์ครบเสมออยู่แล้วไม่ว่าสตริงจะยาวเท่าไร (effectiveRolePermission)
 -- role อื่นที่สตริงสั้นกว่าจำนวนบิตปัจจุบัน ถือว่าบิตใหม่ = 0 (ไม่ได้สิทธิ์ใหม่เอง ต้องมีคนติ๊กให้)
 INSERT INTO tb_roles (role_id, role_name, role_permission, role_type)
-SELECT 'ROL202601010000001', 'Admin', '11111111111111111111111111111111111111111', 'S'
+SELECT 'ROL202601010000001', 'Admin', '11111111111111111111111111111111111111111111111', 'S'
 FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM tb_roles);
 
 -- ผู้ใช้คนแรก: admin (หรือ admin@softwork.local) / Admin@12345 — ระบบบังคับเปลี่ยนรหัสผ่านตอน login ครั้งแรก
@@ -2007,6 +2460,72 @@ FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM tb_approval_level_roles WHERE alr_doc_type = 'IV')
   AND EXISTS (SELECT 1 FROM tb_roles WHERE role_type = 'S');
 
+-- เฟส 2 (2026-10-16): ประเภทเงินได้ + อัตราหัก ณ ที่จ่าย + หมวดค่าใช้จ่ายเริ่มต้น — อัตราต้องยืนยันกับนักบัญชี (X1)
+INSERT INTO tb_wht_income_types (wit_code, wit_name_th, wit_name_en, wit_form_row, wit_form_label, wit_sort_order)
+SELECT * FROM (
+  SELECT 'SERVICE', 'ค่าบริการ / ค่าจ้างทำของ', 'Service fee', 5, 'ค่าบริการ', 1
+  UNION ALL SELECT 'PROFESSIONAL', 'ค่าวิชาชีพอิสระ (บัญชี กฎหมาย สถาปัตย์ ฯลฯ)', 'Professional fee', 5, 'ค่าวิชาชีพอิสระ', 2
+  UNION ALL SELECT 'ADVERTISING', 'ค่าโฆษณา', 'Advertising', 5, 'ค่าโฆษณา', 3
+  UNION ALL SELECT 'TRANSPORT', 'ค่าขนส่ง', 'Transport', 5, 'ค่าขนส่ง', 4
+  UNION ALL SELECT 'RENT', 'ค่าเช่า', 'Rent', 5, 'ค่าเช่า', 5
+  UNION ALL SELECT 'PRIZE', 'รางวัล / ส่วนลด / ประโยชน์จากการชิงโชค', 'Prize', 5, 'รางวัล', 6
+) seed
+WHERE NOT EXISTS (SELECT 1 FROM tb_wht_income_types);
+
+INSERT INTO tb_wht_rates (wr_income_type, wr_effective_from, wr_rate, wr_min_payment, wr_note)
+SELECT * FROM (
+  SELECT 'SERVICE', '2000-01-01', 3.00, 1000.00, 'ค่าเริ่มต้นของระบบ — ตรวจกับนักบัญชี'
+  UNION ALL SELECT 'PROFESSIONAL', '2000-01-01', 3.00, 1000.00, 'ค่าเริ่มต้นของระบบ — ตรวจกับนักบัญชี'
+  UNION ALL SELECT 'ADVERTISING', '2000-01-01', 2.00, 1000.00, 'ค่าเริ่มต้นของระบบ — ตรวจกับนักบัญชี'
+  UNION ALL SELECT 'TRANSPORT', '2000-01-01', 1.00, 1000.00, 'ค่าเริ่มต้นของระบบ — ตรวจกับนักบัญชี'
+  UNION ALL SELECT 'RENT', '2000-01-01', 5.00, 1000.00, 'ค่าเริ่มต้นของระบบ — ตรวจกับนักบัญชี'
+  UNION ALL SELECT 'PRIZE', '2000-01-01', 5.00, 1000.00, 'ค่าเริ่มต้นของระบบ — ตรวจกับนักบัญชี'
+) seed
+WHERE NOT EXISTS (SELECT 1 FROM tb_wht_rates);
+
+INSERT INTO tb_expense_categories (ec_name_th, ec_name_en, ec_default_income_type, ec_is_asset, ec_sort_order)
+SELECT * FROM (
+  SELECT 'ค่าจ้างฟรีแลนซ์ / ผู้รับเหมาช่วง', 'Freelance / subcontract', 'SERVICE', 0, 1
+  UNION ALL SELECT 'เซิร์ฟเวอร์ / คลาวด์', 'Server / cloud', NULL, 0, 2
+  UNION ALL SELECT 'ซอฟต์แวร์ / subscription', 'Software / subscription', NULL, 0, 3
+  UNION ALL SELECT 'โดเมน / โฮสติ้ง', 'Domain / hosting', NULL, 0, 4
+  UNION ALL SELECT 'ค่าโฆษณา / การตลาด', 'Advertising / marketing', 'ADVERTISING', 0, 5
+  UNION ALL SELECT 'ค่าเช่าสำนักงาน', 'Office rent', 'RENT', 0, 6
+  UNION ALL SELECT 'ค่าน้ำ ค่าไฟ อินเทอร์เน็ต โทรศัพท์', 'Utilities / internet / phone', NULL, 0, 7
+  UNION ALL SELECT 'ค่าเดินทาง', 'Travel', NULL, 0, 8
+  UNION ALL SELECT 'ค่ารับรอง', 'Entertainment', NULL, 0, 9
+  UNION ALL SELECT 'วัสดุ / อุปกรณ์สำนักงาน', 'Office supplies', NULL, 0, 10
+  UNION ALL SELECT 'อุปกรณ์คอมพิวเตอร์ (ทรัพย์สิน)', 'Computer equipment (asset)', NULL, 1, 11
+  UNION ALL SELECT 'ค่าวิชาชีพ (บัญชี / กฎหมาย)', 'Professional fees', 'PROFESSIONAL', 0, 12
+  UNION ALL SELECT 'ค่าธรรมเนียมธนาคาร', 'Bank charges', NULL, 0, 13
+  UNION ALL SELECT 'ค่าขนส่ง / ไปรษณีย์', 'Delivery / postage', 'TRANSPORT', 0, 14
+  UNION ALL SELECT 'อื่นๆ', 'Other', NULL, 0, 99
+) seed
+WHERE NOT EXISTS (SELECT 1 FROM tb_expense_categories);
+
+-- เฟส 2 ขั้น 2-2: กติกาอนุมัติเริ่มต้นของค่าใช้จ่าย/บิลผู้ขาย (EX) — ยอดก่อน VAT ต่ำกว่า 3,000 บาทผ่านอัตโนมัติ (P2)
+-- ตั้งแต่ 3,000 ขึ้นไป role ระบบอนุมัติ · แก้ได้ที่ ตั้งค่าบริษัท › การอนุมัติ
+INSERT INTO tb_approval_levels (al_doc_type, al_level, al_min_amount_thb, al_require_distinct)
+SELECT 'EX', 1, 3000.00, 0
+FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM tb_approval_levels WHERE al_doc_type = 'EX');
+
+INSERT INTO tb_approval_level_roles (alr_doc_type, alr_level, alr_role_id)
+SELECT 'EX', 1, (SELECT role_id FROM tb_roles WHERE role_type = 'S' ORDER BY role_id LIMIT 1)
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM tb_approval_level_roles WHERE alr_doc_type = 'EX')
+  AND EXISTS (SELECT 1 FROM tb_roles WHERE role_type = 'S');
+
+-- ใบเบิกเงินพนักงาน (EC): ทุกใบต้องอนุมัติ ผู้อนุมัติ = role ระบบ
+INSERT INTO tb_approval_levels (al_doc_type, al_level, al_min_amount_thb, al_require_distinct)
+SELECT 'EC', 1, 0.00, 0
+FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM tb_approval_levels WHERE al_doc_type = 'EC');
+
+INSERT INTO tb_approval_level_roles (alr_doc_type, alr_level, alr_role_id)
+SELECT 'EC', 1, (SELECT role_id FROM tb_roles WHERE role_type = 'S' ORDER BY role_id LIMIT 1)
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM tb_approval_level_roles WHERE alr_doc_type = 'EC')
+  AND EXISTS (SELECT 1 FROM tb_roles WHERE role_type = 'S');
+
 -- ─── ส่วนที่ 6: ตรวจสอบ — ไม่มีแถวผลลัพธ์ = โครงสร้างครบถ้วนตามไฟล์นี้ ─────────────────────────────
 -- มีแถว = ตารางนั้นมีคอลัมน์/index ไม่ตรงกับที่คาด (missing_* คือที่ขาด, extra_* คือที่เกินมาจากของเก่า)
 SELECT e.table_name,
@@ -2068,6 +2587,14 @@ FROM (
     UNION ALL SELECT 'tb_billing_note_invoices' AS table_name, 'bni_amount,bni_billing_note_id,bni_invoice_id,bni_order' AS expected_columns, 'fk_bni_invoice(bni_invoice_id),primary(bni_billing_note_id+bni_invoice_id)' AS expected_indexes
     UNION ALL SELECT 'tb_receipts' AS table_name, 'rc_actual_rate,rc_allocated_thb,rc_allocated_total,rc_bank_account_id,rc_bank_snapshot,rc_billing_note_id,rc_branch_id,rc_cancel_reason,rc_cancelled_at,rc_cancelled_by,rc_cheque_bank,rc_cheque_date,rc_cheque_no,rc_client_id,rc_client_snapshot,rc_company_snapshot,rc_created_at,rc_created_by,rc_created_by_name,rc_currency,rc_fee_amount,rc_fx_diff_thb,rc_id,rc_internal_note,rc_language,rc_method,rc_notes,rc_number,rc_receipt_date,rc_received_amount,rc_received_thb,rc_reference,rc_status,rc_updated_at,rc_version,rc_wht_amount,rc_wht_certificate_date,rc_wht_certificate_no,rc_wht_file_name,rc_wht_file_path,rc_wht_file_uploaded_at' AS expected_columns, 'fk_rc_bank_account(rc_bank_account_id),fk_rc_billing_note(rc_billing_note_id),fk_rc_branch(rc_branch_id),fk_rc_cancelled_by(rc_cancelled_by),fk_rc_created_by(rc_created_by),fk_rc_currency(rc_currency),idx_rc_client_status(rc_client_id+rc_status),idx_rc_receipt_date(rc_receipt_date),primary(rc_id),uq_rc_number(rc_number)' AS expected_indexes
     UNION ALL SELECT 'tb_receipt_allocations' AS table_name, 'rca_amount,rca_amount_thb,rca_invoice_id,rca_order,rca_receipt_id,rca_vat_amount' AS expected_columns, 'fk_rca_invoice(rca_invoice_id),primary(rca_receipt_id+rca_invoice_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_wht_income_types' AS table_name, 'wit_code,wit_created_at,wit_form_label,wit_form_row,wit_name_en,wit_name_th,wit_sort_order,wit_status,wit_updated_at' AS expected_columns, 'primary(wit_code)' AS expected_indexes
+    UNION ALL SELECT 'tb_wht_rates' AS table_name, 'wr_created_at,wr_created_by,wr_effective_from,wr_income_type,wr_min_payment,wr_note,wr_rate' AS expected_columns, 'fk_wr_created_by(wr_created_by),primary(wr_income_type+wr_effective_from)' AS expected_indexes
+    UNION ALL SELECT 'tb_expense_categories' AS table_name, 'ec_account_code,ec_created_at,ec_default_income_type,ec_id,ec_is_asset,ec_name_en,ec_name_th,ec_sort_order,ec_status,ec_updated_at' AS expected_columns, 'fk_ec_income_type(ec_default_income_type),primary(ec_id),uq_ec_name_th(ec_name_th)' AS expected_indexes
+    UNION ALL SELECT 'tb_vendors' AS table_name, 'vd_address,vd_bank_account_name,vd_bank_account_no,vd_bank_name,vd_branch_code,vd_code,vd_contact_name,vd_country,vd_created_at,vd_created_by,vd_credit_days,vd_currency,vd_default_category_id,vd_default_income_type,vd_email,vd_id,vd_name,vd_notes,vd_phone,vd_promptpay_id,vd_status,vd_tax_id,vd_type,vd_updated_at' AS expected_columns, 'fk_vd_category(vd_default_category_id),fk_vd_created_by(vd_created_by),fk_vd_currency(vd_currency),fk_vd_income_type(vd_default_income_type),idx_vd_name(vd_name),idx_vd_tax_id(vd_tax_id),primary(vd_id),uq_vd_code(vd_code)' AS expected_indexes
+    UNION ALL SELECT 'tb_expenses' AS table_name, 'ex_approval_current_level,ex_approval_plan,ex_approval_round,ex_approved_at,ex_auto_approved,ex_branch_id,ex_cancel_reason,ex_cancelled_at,ex_cancelled_by,ex_created_at,ex_created_by,ex_created_by_name,ex_credit_days,ex_currency,ex_doc_type,ex_due_date,ex_employee_id,ex_exchange_rate,ex_expense_date,ex_id,ex_kind,ex_notes,ex_number,ex_paid_amount,ex_rate_date,ex_rate_override_reason,ex_rate_source,ex_returned_reason,ex_status,ex_submitted_at,ex_subtotal,ex_subtotal_thb,ex_title,ex_total,ex_total_thb,ex_updated_at,ex_vat_amount,ex_vat_claimable,ex_vat_rate,ex_vendor_doc_date,ex_vendor_doc_no,ex_vendor_id,ex_version,ex_wht_amount,ex_wht_income_type,ex_wht_rate' AS expected_columns, 'fk_ex_branch(ex_branch_id),fk_ex_cancelled_by(ex_cancelled_by),fk_ex_created_by(ex_created_by),fk_ex_currency(ex_currency),fk_ex_income_type(ex_wht_income_type),idx_ex_employee(ex_employee_id+ex_status),idx_ex_expense_date(ex_expense_date),idx_ex_status_due(ex_status+ex_due_date),idx_ex_vendor_doc(ex_vendor_id+ex_vendor_doc_no),primary(ex_id),uq_ex_number(ex_number)' AS expected_indexes
+    UNION ALL SELECT 'tb_expense_lines' AS table_name, 'exl_amount,exl_category_id,exl_description,exl_expense_id,exl_id,exl_order,exl_project_id,exl_quantity,exl_unit_price' AS expected_columns, 'fk_exl_category(exl_category_id),idx_exl_expense(exl_expense_id+exl_order),idx_exl_project(exl_project_id),primary(exl_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_expense_attachments' AS table_name, 'exf_expense_id,exf_file_name,exf_file_path,exf_file_size,exf_id,exf_uploaded_at,exf_uploaded_by' AS expected_columns, 'fk_exf_uploaded_by(exf_uploaded_by),idx_exf_expense(exf_expense_id),primary(exf_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_expense_approvals' AS table_name, 'expa_action,expa_created_at,expa_expense_id,expa_id,expa_level,expa_reason,expa_role_id,expa_role_name,expa_round,expa_user_id,expa_user_name' AS expected_columns, 'fk_expa_user(expa_user_id),idx_expa_expense(expa_expense_id+expa_round+expa_level),primary(expa_id)' AS expected_indexes
 ) e
 LEFT JOIN (
     SELECT LOWER(c.TABLE_NAME) AS table_name,

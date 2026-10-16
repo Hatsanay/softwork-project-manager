@@ -26,9 +26,11 @@ export default function RootLayout({
 }: Readonly<{
     children: React.ReactNode;
 }>) {
+    // overflow-x-clip (ไม่ใช่ hidden): hidden ที่ html + body ทำให้ body กลายเป็นกล่องเลื่อนของตัวเอง (overflow-y: auto)
+    // แล้ว position: sticky ของ sidebar / แถบด้านบน / แถบปุ่มล่างจอ เกาะกับ body ที่ไม่เคยเลื่อน → เลื่อนหน้าแล้วหลุดหายไป (แก้ 16 ต.ค. 2026)
     return (
-        <html lang="th" className={`${kanit.variable} h-full antialiased overflow-x-hidden`}>
-            <body className={`${kanit.className} min-h-full flex flex-col overflow-x-hidden`}>
+        <html lang="th" className={`${kanit.variable} h-full antialiased overflow-x-clip`}>
+            <body className={`${kanit.className} min-h-full flex flex-col overflow-x-clip`}>
                 {children}
                 <Toaster position="top-right" richColors />
             </body>

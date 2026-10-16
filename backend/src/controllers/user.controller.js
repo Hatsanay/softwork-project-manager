@@ -420,6 +420,13 @@ const USER_HISTORY_CHECKS = [
     },
     { label: "ประวัติการอนุมัติ", unit: "ครั้ง", sql: "SELECT COUNT(*) AS n FROM tb_quotation_approvals WHERE qta_user_id = ?" },
     { label: "ลายเซ็น", unit: "ฉบับ", sql: "SELECT COUNT(*) AS n FROM tb_user_signatures WHERE sig_user_id = ?" },
+    // เฟส 2 (2026-10-16) — ค่าใช้จ่าย/ใบเบิกต้องรู้เสมอว่าใครบันทึก/เบิก/ยกเลิก/อนุมัติ
+    {
+        label: "บันทึก เบิก หรือยกเลิกค่าใช้จ่าย",
+        unit: "รายการ",
+        sql: "SELECT COUNT(*) AS n FROM tb_expenses WHERE ? IN (ex_created_by, ex_employee_id, ex_cancelled_by)",
+    },
+    { label: "อนุมัติค่าใช้จ่าย", unit: "ครั้ง", sql: "SELECT COUNT(*) AS n FROM tb_expense_approvals WHERE expa_user_id = ?" },
 ];
 
 async function findUserHistory(userId) {

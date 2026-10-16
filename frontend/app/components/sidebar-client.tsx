@@ -24,6 +24,7 @@ import {
     Settings2,
     ShoppingBag,
     UsersRound,
+    Wallet,
     X,
     type LucideIcon,
 } from "lucide-react";
@@ -36,6 +37,7 @@ const ICONS: Record<string, LucideIcon> = {
     "/clients": Building2,
     "/sales": ShoppingBag,
     "/reports": ChartColumn,
+    "/purchasing": Wallet,
 };
 
 // เมนูของผู้ดูแลระบบ (จัดกลุ่มบนหน้าจอเท่านั้น — ใครเห็นเมนูไหนยังขึ้นกับสิทธิ์เหมือนเดิม)

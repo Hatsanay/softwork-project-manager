@@ -4,6 +4,7 @@
 // คำเตือน (warnings) ไม่บล็อกการบันทึก แต่บอกล่วงหน้าว่าชั้นไหน "ใบจะค้าง" เพราะไม่มีคนอนุมัติได้
 const { AppError } = require("../utils/app-error");
 const { effectiveRolePermission, hasBit } = require("../utils/permissions");
+const { APPROVAL_DOCUMENTS } = require("../shared/schemas/company.mjs");
 
 /**
  * role ทั้งหมดสำหรับให้เลือกเป็นผู้อนุมัติ
@@ -20,11 +21,12 @@ async function findRoleChoices(conn) {
 
 /**
  * กติกาของเอกสารประเภทหนึ่ง พร้อมผู้ใช้ที่อนุมัติได้ในแต่ละชั้น และคำเตือน
- * ผู้อนุมัติได้ = ผู้ใช้ที่เปิดใช้งาน role อยู่ในชั้นนั้น และ role มีสิทธิ์ "อนุมัติใบเสนอราคา" (1A-3)
+ * ผู้อนุมัติได้ = ผู้ใช้ที่เปิดใช้งาน role อยู่ในชั้นนั้น และ role มีสิทธิ์อนุมัติของเอกสารประเภทนั้น (APPROVAL_DOCUMENTS)
  * @param {import("mysql2/promise").Pool | import("mysql2/promise").PoolConnection} conn
- * @param {"QT" | "IV"} documentType
+ * @param {"QT" | "IV" | "EX" | "EC"} documentType
  */
 async function findApprovalRules(conn, documentType) {
+    const document = APPROVAL_DOCUMENTS[documentType];
     const [levelRows] = await conn.query(
         `SELECT al_level, al_min_amount_thb, al_require_distinct
          FROM tb_approval_levels WHERE al_doc_type = ? ORDER BY al_level`,
@@ -45,7 +47,7 @@ async function findApprovalRules(conn, documentType) {
         [documentType],
     );
     const approverRows = userRows.filter((user) =>
-        hasBit(effectiveRolePermission(user.role_type, user.role_permission), "approveQuotation"),
+        hasBit(effectiveRolePermission(user.role_type, user.role_permission), document.permission),
     );
 
     const levels = levelRows.map((level) => {
@@ -66,21 +68,29 @@ async function findApprovalRules(conn, documentType) {
         };
     });
 
-    return { levels, warnings: buildApprovalWarnings(levels) };
+    return { levels, warnings: buildApprovalWarnings(levels, PERMISSION_LABELS[document.permission]) };
 }
+
+// ชื่อสิทธิ์ตามที่แสดงในหน้าตั้งค่า role (frontend/app/components/bit.tsx) — ใช้ในคำเตือน
+const PERMISSION_LABELS = {
+    approveQuotation: "อนุมัติใบเสนอราคา",
+    approveInvoice: "อนุมัติใบแจ้งหนี้",
+    approveExpense: "อนุมัติค่าใช้จ่าย",
+};
 
 /**
  * คำเตือนกรณีที่ใบจะค้างอนุมัติ — แยกเป็นฟังก์ชันล้วน (ไม่แตะฐานข้อมูล) เพื่อเทสต์ได้ตรงๆ
  * @param {Array<{ al_level: number, al_require_distinct: boolean, eligible_users: Array<{ user_id: string, full_name: string }> }>} levels
+ * @param {string} [permissionLabel] ชื่อสิทธิ์อนุมัติของเอกสารประเภทนี้
  * @returns {string[]}
  */
-function buildApprovalWarnings(levels) {
+function buildApprovalWarnings(levels, permissionLabel = "อนุมัติใบเสนอราคา") {
     const warnings = [];
 
     levels.forEach((level, index) => {
         if (level.eligible_users.length === 0) {
             warnings.push(
-                `ชั้น ${level.al_level} ยังไม่มีผู้ใช้ที่อนุมัติได้ (ไม่มีผู้ใช้ที่เปิดใช้งานใน role ที่เลือก หรือ role นั้นยังไม่ได้ติ๊กสิทธิ์ "อนุมัติใบเสนอราคา") — ใบที่ต้องผ่านชั้นนี้จะค้าง`,
+                `ชั้น ${level.al_level} ยังไม่มีผู้ใช้ที่อนุมัติได้ (ไม่มีผู้ใช้ที่เปิดใช้งานใน role ที่เลือก หรือ role นั้นยังไม่ได้ติ๊กสิทธิ์ "${permissionLabel}") — ใบที่ต้องผ่านชั้นนี้จะค้าง`,
             );
             return;
         }

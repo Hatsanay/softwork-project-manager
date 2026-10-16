@@ -143,6 +143,17 @@ async function remove(req, res, next) {
                 message: `ลบโปรเจกต์นี้ไม่ได้ เพราะผูกกับใบเสนอราคา ${quotationCount} ใบ — ถ้าไม่ทำต่อแล้วให้ใช้ "ยกเลิกโปรเจกต์" แทน (กู้คืนได้ ประวัติยังอยู่)`,
             });
         }
+        // ค่าใช้จ่ายที่ผูกโปรเจกต์ (ต้นทุนโปรเจกต์ — เฟส 2 P4) ก็ลบไม่ได้เหมือนกัน
+        const [[{ expenseCount }]] = await pool.query(
+            "SELECT COUNT(DISTINCT exl_expense_id) AS expenseCount FROM tb_expense_lines WHERE exl_project_id = ?",
+            [req.params.id]
+        );
+        if (expenseCount > 0) {
+            return res.status(409).json({
+                code: "PROJECT_HAS_EXPENSES",
+                message: `ลบโปรเจกต์นี้ไม่ได้ เพราะมีค่าใช้จ่าย ${expenseCount} รายการผูกอยู่ (เป็นต้นทุนโปรเจกต์) — ถ้าไม่ทำต่อแล้วให้ใช้ "ยกเลิกโปรเจกต์" แทน`,
+            });
+        }
         await pool.query("DELETE FROM tb_projects WHERE project_id = ?", [req.params.id]);
         res.status(204).end();
     } catch (err) {

@@ -136,12 +136,31 @@ const ENTITIES = [
     // ไฟล์ส่งนักบัญชี (2026-10-15 ขั้น 1D-3) — มีเลขผู้เสียภาษีของลูกค้า บันทึกทุกครั้งที่ส่งออก (R-D9)
     { re: /^\/reports\/accounting-export$/, type: "report", label: { GET: "ส่งออกไฟล์นักบัญชี" } },
 
+    // จัดซื้อ เฟส 2 (2026-10-16) — ผู้ขาย: diff ก่อน/หลังรวมเลขบัญชีธนาคาร (กันโกงเปลี่ยนบัญชีรับเงิน R-P6)
+    { re: /^\/vendors\/([^/]+)$/, type: "vendor", table: "tb_vendors", pk: "vd_id", id: "1", label: { PUT: "แก้ไขผู้ขาย", DELETE: "ลบผู้ขาย" } },
+    { re: /^\/vendors$/, type: "vendor", table: "tb_vendors", pk: "vd_id", id: "response:vd_id", label: { POST: "เพิ่มผู้ขาย" } },
+    { re: /^\/purchasing\/categories\/([^/]+)$/, type: "expense_category", table: "tb_expense_categories", pk: "ec_id", id: "1", label: { PUT: "แก้ไขหมวดค่าใช้จ่าย" } },
+    { re: /^\/purchasing\/categories$/, type: "expense_category", table: "tb_expense_categories", pk: "ec_id", id: "response:ec_id", label: { POST: "เพิ่มหมวดค่าใช้จ่าย" } },
+    { re: /^\/purchasing\/income-types\/([^/]+)$/, type: "wht_income_type", table: "tb_wht_income_types", pk: "wit_code", id: "1", label: { PUT: "แก้ไขประเภทเงินได้" } },
+    { re: /^\/purchasing\/income-types$/, type: "wht_income_type", table: "tb_wht_income_types", pk: "wit_code", id: "response:wit_code", label: { POST: "เพิ่มประเภทเงินได้" } },
+    { re: /^\/purchasing\/wht-rates(\/[^/]+\/[^/]+)?$/, type: "wht_rate", label: { POST: "เพิ่มอัตราหัก ณ ที่จ่าย", DELETE: "ลบอัตราหัก ณ ที่จ่ายที่ยังไม่มีผล" } },
+    // ค่าใช้จ่าย / บิลผู้ขาย (2026-10-16 เฟส 2 ขั้น 2-2) — ไฟล์แนบมีเลขผู้เสียภาษี บันทึกการเปิดดูด้วย (R-P7)
+    { re: /^\/expenses\/([^/]+)\/attachments\/([^/]+)$/, type: "expense", table: "tb_expenses", pk: "ex_id", id: "1", label: { GET: "เปิดไฟล์แนบค่าใช้จ่าย", DELETE: "ลบไฟล์แนบค่าใช้จ่าย" } },
+    { re: /^\/expenses\/([^/]+)\/attachments$/, type: "expense", table: "tb_expenses", pk: "ex_id", id: "1", label: { POST: "แนบไฟล์ค่าใช้จ่าย" } },
+    { re: /^\/expenses\/([^/]+)\/submit$/, type: "expense", table: "tb_expenses", pk: "ex_id", id: "1", label: { POST: "ส่งค่าใช้จ่าย (ขออนุมัติ / ผ่านอัตโนมัติเมื่อต่ำกว่าวงเงิน)" } },
+    { re: /^\/expenses\/([^/]+)\/approve$/, type: "expense", table: "tb_expenses", pk: "ex_id", id: "1", label: { POST: "อนุมัติค่าใช้จ่าย" } },
+    { re: /^\/expenses\/([^/]+)\/return$/, type: "expense", table: "tb_expenses", pk: "ex_id", id: "1", label: { POST: "ตีกลับค่าใช้จ่าย" } },
+    { re: /^\/expenses\/([^/]+)\/cancel$/, type: "expense", table: "tb_expenses", pk: "ex_id", id: "1", label: { POST: "ยกเลิกค่าใช้จ่าย" } },
+    { re: /^\/expenses\/([^/]+)\/copy$/, type: "expense", table: "tb_expenses", pk: "ex_id", id: "response:ex_id", label: { POST: "คัดลอกเป็นค่าใช้จ่ายใหม่" } },
+    { re: /^\/expenses\/([^/]+)$/, type: "expense", table: "tb_expenses", pk: "ex_id", id: "1", label: { PUT: "แก้ร่างค่าใช้จ่าย", DELETE: "ลบร่างค่าใช้จ่าย" } },
+    { re: /^\/expenses$/, type: "expense", table: "tb_expenses", pk: "ex_id", id: "response:ex_id", label: { POST: "บันทึกร่างค่าใช้จ่าย" } },
+
     { re: /^\/(logs|audit-logs|error-logs)(\/[^/]+)?$/, type: "log", label: { GET: "เปิดดู log ของระบบ", DELETE: "ลบ log" } },
     { re: /^\/share\/([^/]+)$/, type: "project", table: "tb_projects", pk: "project_share_token", label: { GET: "ลูกค้าเปิดลิงก์ติดตามโปรเจกต์" }, shareView: true },
 ];
 
 // GET ที่บันทึกด้วย (เปิดดูข้อมูลสำคัญ) — นอกนั้น GET ไม่บันทึก ยกเว้นถูกปฏิเสธ/error (ปริมาณมหาศาลและไม่เปลี่ยนข้อมูล)
-const SENSITIVE_READS = [/^\/reports\/accounting-export$/, /^\/receipts\/[^/]+\/wht-certificate\/file$/, /^\/users$/, /^\/users\/(?!me$|for-select$)[^/]+$/, /^\/(logs|audit-logs|error-logs)(\/[^/]+)?$/, /^\/share\/[^/]+$/];
+const SENSITIVE_READS = [/^\/reports\/accounting-export$/, /^\/receipts\/[^/]+\/wht-certificate\/file$/, /^\/expenses\/[^/]+\/attachments\/[^/]+$/, /^\/users$/, /^\/users\/(?!me$|for-select$)[^/]+$/, /^\/(logs|audit-logs|error-logs)(\/[^/]+)?$/, /^\/share\/[^/]+$/];
 // ไม่บันทึกใน audit: login/logout มีตาราง tb_login_logs ของตัวเอง (และ body login มีรหัสผ่าน)
 const SKIP = [/^\/auth\/(login|logout)$/, /^\/auth\/verifyPermission$/];
 

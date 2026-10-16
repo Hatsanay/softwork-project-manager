@@ -12,7 +12,7 @@ SET NAMES utf8mb4 collate utf8mb4_unicode_ci;
 CREATE TABLE tb_roles (
   role_id            VARCHAR(18) NOT NULL,
   role_name          VARCHAR(50)        NOT NULL,
-  role_permission    VARCHAR(64)        NOT NULL DEFAULT '',
+  role_permission    VARCHAR(255)       NOT NULL DEFAULT '',
   role_department    VARCHAR(18)        NULL,
   role_type          VARCHAR(1)         NOT NULL DEFAULT 'R' COMMENT 'R = role ปกติ, S = system role (แก้/ลบไม่ได้)',
   role_granted_by_id VARCHAR(18)        NULL COMMENT 'user ที่สร้าง role นี้ (FK เพิ่มทีหลังเพราะอ้างกลับไป tb_users)',
@@ -176,10 +176,10 @@ CREATE TABLE tb_error_logs (
 commit;
 
 -- ─── ข้อมูลเริ่มต้น ───────────────────────────────────────────────────────────
--- role admin: เปิดสิทธิ์ทุกบิต (41 บิต ตาม TOTAL_BITS ปัจจุบันใน frontend/app/components/bit.tsx) — ปรับความยาวถ้า bit.tsx เพิ่มบิต
+-- role admin: เปิดสิทธิ์ทุกบิต (47 บิต ตาม TOTAL_BITS ปัจจุบันใน frontend/app/components/bit.tsx) — ปรับความยาวถ้า bit.tsx เพิ่มบิต
 -- id ใส่ตรงๆ เพราะ seed ครั้งเดียวตอนตั้งระบบ ไม่ได้ผ่าน generateDailyId()
 INSERT INTO tb_roles (role_id, role_name, role_permission, role_type)
-VALUES ('ROL202601010000001', 'Admin', '11111111111111111111111111111111111111111', 'S');
+VALUES ('ROL202601010000001', 'Admin', '11111111111111111111111111111111111111111111111', 'S');
 
 -- user แรกของระบบ ผูกกับ role Admin — ต้องมีอย่างน้อยคนเดียวถึงจะ login ผ่าน Postman ได้
 -- (createUser endpoint ต้องมี token ก่อน แต่จะ login ได้ต้องมี user อยู่แล้ว เลย seed ตรงนี้ครั้งเดียว)

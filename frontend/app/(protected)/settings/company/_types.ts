@@ -101,6 +101,8 @@ export type CompanySettings = {
     currencies: Currency[];
     approval: ApprovalRules;
     invoice_approval: ApprovalRules;
+    expense_approval: ApprovalRules;
+    claim_approval: ApprovalRules;
     roles: RoleChoice[];
     can_edit: boolean;
 };

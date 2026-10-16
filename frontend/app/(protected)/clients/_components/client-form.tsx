@@ -22,7 +22,7 @@ const THAILAND = "TH";
 const HEAD_OFFICE_CODE = "00000";
 
 // ประเทศที่พบบ่อย — ค่าที่ไม่อยู่ในรายการ (ลูกค้าเดิม) จะถูกเพิ่มเข้าตัวเลือกให้เอง
-const COUNTRIES: { code: string; name: string }[] = [
+export const COUNTRIES: { code: string; name: string }[] = [
     { code: "TH", name: "ไทย" },
     { code: "US", name: "สหรัฐอเมริกา" },
     { code: "GB", name: "สหราชอาณาจักร" },

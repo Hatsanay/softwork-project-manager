@@ -48,7 +48,7 @@ export default async function ProtectedLayout({ children }: { children: React.Re
                     <Sidebar permission={permission} fullname={fullname} roleName={roleName} avatarUrl={avatarUrl} />
                     <div className="flex min-w-0 flex-1 flex-col">
                         <Navbar fullname={fullname} avatarUrl={avatarUrl} roleName={roleName} />
-                        <main className="min-w-0 flex-1 overflow-x-hidden px-4 py-5 sm:px-6 lg:px-8">{children}</main>
+                        <main className="min-w-0 flex-1 overflow-x-clip px-4 py-5 sm:px-6 lg:px-8">{children}</main>
                         <Footer />
                     </div>
                 </div>

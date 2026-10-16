@@ -10,7 +10,7 @@ const {
 const { ACCESS_ERRORS, findRolePermission, canActOn, sendAccessError } = require("../utils/role-access");
 
 // ชื่อประเภทเอกสารในกติกาอนุมัติ (tb_approval_level_roles.alr_doc_type) สำหรับข้อความแจ้งผู้ใช้
-const APPROVAL_DOCUMENT_NAMES = { QT: "ใบเสนอราคา", IV: "ใบแจ้งหนี้ที่สร้างเอง" };
+const { APPROVAL_DOCUMENTS } = require("../shared/schemas/company.mjs");
 
 // หน้าแก้/สร้าง role ที่เปิดค้างไว้ตั้งแต่ก่อนระบบเพิ่มสิทธิ์ใหม่ จะส่งสตริงสิทธิ์ที่สั้นกว่า backend มา
 // ปฏิเสธทั้งคำขอแทนการบันทึกบางส่วน ไม่งั้นสิทธิ์ใหม่ของ role นั้นจะหายเงียบๆ (2026-10-12, risk-fixes R1)
@@ -199,7 +199,7 @@ async function remove(req, res, next) {
         );
         if (approvalLevels.length > 0) {
             const levelNames = approvalLevels
-                .map((row) => `${APPROVAL_DOCUMENT_NAMES[row.alr_doc_type] ?? row.alr_doc_type} ชั้น ${row.alr_level}`)
+                .map((row) => `${APPROVAL_DOCUMENTS[row.alr_doc_type]?.name ?? row.alr_doc_type} ชั้น ${row.alr_level}`)
                 .join(", ");
             return res.status(409).json({
                 code: "ROLE_IN_APPROVAL_RULES",

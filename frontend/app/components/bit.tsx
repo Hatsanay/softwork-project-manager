@@ -65,6 +65,19 @@ export const MENU_DEFS: MenuItem[] = [
             { key: "productManagement", label: "สินค้า/บริการ", href: "/sales/products" },
         ],
     },
+    {
+        key: "purchasing",
+        label: "จัดซื้อ",
+        href: "/purchasing",
+        children: [
+            // ค่าใช้จ่าย: เห็นเมนูได้ทั้งผู้ดู ผู้บันทึก และผู้อนุมัติ (เมนูซ่อนที่ href เดียวกันทำให้ลิงก์แสดง)
+            { key: "viewExpenses", label: "ค่าใช้จ่าย", href: "/purchasing/expenses" },
+            { key: "createExpense", label: "ค่าใช้จ่าย", href: "/purchasing/expenses", hidden: true },
+            { key: "approveExpense", label: "ค่าใช้จ่าย", href: "/purchasing/expenses", hidden: true },
+            { key: "manageVendors", label: "ผู้ขาย", href: "/purchasing/vendors" },
+            { key: "companySettings", label: "ตั้งค่าจัดซื้อ", href: "/purchasing/settings" },
+        ],
+    },
     { key: "salesReports", label: "รายงาน", href: "/reports" },
     {
         key: "clientManagement", label: "จัดการลูกค้า", href: "/clients",
@@ -167,6 +180,18 @@ export const PERMISSION_GROUPS: PermGroup[] = [
             { key: "createReceipt",    label: "บันทึกรับเงิน/ออกใบเสร็จ และแนบ/แก้ข้อมูล 50 ทวิ",                             href: "/sales/receipts/new" },
             { key: "cancelReceipt",    label: "ยกเลิกใบเสร็จรับเงิน (ยอดรับแล้วของใบแจ้งหนี้ลดกลับ)",                          href: "/sales/receipts/cancel" },
             { key: "salesReports",     label: "ดูรายงานขาย และดาวน์โหลดไฟล์ส่งนักบัญชี (มีเลขผู้เสียภาษีของลูกค้า)",              href: "/reports" },
+        ],
+    },
+    // จัดซื้อ / ค่าใช้จ่าย เฟส 2 — ลำดับบิตต้องตรงกับ PERMISSION_KEYS (append-only)
+    {
+        groupLabel: "จัดซื้อ / ค่าใช้จ่าย",
+        bits: [
+            { key: "manageVendors",  label: "จัดการผู้ขาย (เพิ่ม/แก้/ปิดใช้งาน รวมเลขบัญชีธนาคารของผู้ขาย)",                  href: "/purchasing/vendors" },
+            { key: "viewExpenses",   label: "ดูค่าใช้จ่าย ใบเบิกเงิน ใบสำคัญจ่าย 50 ทวิ และเจ้าหนี้คงค้าง (ทุกใบ)",                href: "/purchasing/expenses" },
+            { key: "createExpense",  label: "บันทึกค่าใช้จ่าย/บิลผู้ขาย และแนบไฟล์ (เบิกเงินของตัวเองทำได้ทุกคนไม่ต้องมีสิทธิ์นี้)", href: "/purchasing/expenses/new" },
+            { key: "approveExpense", label: "อนุมัติ/ตีกลับค่าใช้จ่ายและใบเบิกเงิน (ต้องมี role อยู่ในชั้นที่รออยู่ด้วย)",            href: "/purchasing/expenses/approve" },
+            { key: "makePayment",    label: "ทำจ่ายเงิน และออกหนังสือรับรองหัก ณ ที่จ่าย (50 ทวิ)",                              href: "/purchasing/payments/new" },
+            { key: "cancelPayment",  label: "ยกเลิกใบสำคัญจ่าย (50 ทวิ ของใบนั้นยกเลิกด้วย)",                                   href: "/purchasing/payments/cancel" },
         ],
     },
 ];

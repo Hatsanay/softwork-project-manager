@@ -57,6 +57,13 @@ export const PERMISSION_KEYS = [
     "cancelReceipt",
     // รายงานขาย + ไฟล์ส่งนักบัญชี 1D (2026-10-15) — ไฟล์มีเลขผู้เสียภาษีและยอดทั้งบริษัท (D3)
     "salesReports",
+    // จัดซื้อ / ค่าใช้จ่าย / ทำจ่าย เฟส 2 (2026-10-16) — อนุมัติกับทำจ่ายแยกสิทธิ์ (P3)
+    "manageVendors",
+    "viewExpenses",
+    "createExpense",
+    "approveExpense",
+    "makePayment",
+    "cancelPayment",
 ];
 
 /** ตำแหน่งบิตของแต่ละสิทธิ์ เช่น BIT_INDEX.createUsers = 2 */

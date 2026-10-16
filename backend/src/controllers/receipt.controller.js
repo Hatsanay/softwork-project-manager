@@ -3,26 +3,18 @@ const pool = require("../config/db");
 const { AppError } = require("../utils/app-error");
 const { validate } = require("../utils/validate");
 const { withTransaction } = require("../utils/with-transaction");
-const { savePrivateFile, resolvePrivateFile, deletePrivateFile, contentTypeOf } = require("../utils/private-file");
+const {
+    savePrivateFile,
+    resolvePrivateFile,
+    deletePrivateFile,
+    contentTypeOf,
+    cleanUploadedFileName,
+} = require("../utils/private-file");
 const { receiptCreateSchema, receiptDetailsSchema, receiptReasonSchema } = require("../shared/schemas/receipt.mjs");
 const receiptService = require("../services/receipt.service");
 const receivableService = require("../services/receivable.service");
 
 const WHT_FOLDER = "wht-certificates";
-const MAX_FILE_NAME_LENGTH = 200;
-
-/**
- * ชื่อไฟล์เดิมที่ผู้ใช้อัปโหลด — multer อ่านชื่อเป็น latin1 (ชื่อไทยเพี้ยน) จึงแปลงกลับเป็น UTF-8 ถ้าแปลงได้สะอาด
- * ตัดตัวอักษรควบคุม/ตัวคั่น path ออก (ใช้แค่แสดงผลและตั้งชื่อตอนดาวน์โหลด)
- * @param {string} rawName
- */
-function cleanFileName(rawName) {
-    const decoded = Buffer.from(rawName ?? "", "latin1").toString("utf8");
-    const name = decoded.includes("�") ? (rawName ?? "") : decoded;
-    const safe = name.replace(/[\u0000-\u001f\u007f/\\]/g, "").trim();
-    return (safe || "50-tawi").slice(0, MAX_FILE_NAME_LENGTH);
-}
-
 async function list(req, res, next) {
     try {
         const result = await receiptService.listReceipts(pool, {
@@ -103,7 +95,7 @@ async function uploadWhtFile(req, res, next) {
                 .replace(/[^A-Za-z0-9]/g, "")
                 .slice(0, 18) || "receipt";
         newPath = await savePrivateFile(WHT_FOLDER, filePrefix, req.file.buffer, "file");
-        const fileName = cleanFileName(req.file.originalname);
+        const fileName = cleanUploadedFileName(req.file.originalname, "50-tawi");
         const { oldPath } = await withTransaction((conn) =>
             receiptService.setWhtFile(conn, req.params.id, newPath, fileName),
         );

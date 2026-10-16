@@ -84,6 +84,21 @@ function contentTypeOf(storedPath) {
     return FILE_TYPES.find((type) => type.extension === extension)?.contentType ?? "application/octet-stream";
 }
 
+const MAX_FILE_NAME_LENGTH = 200;
+
+/**
+ * ชื่อไฟล์เดิมที่ผู้ใช้อัปโหลด — multer อ่านชื่อเป็น latin1 (ชื่อไทยเพี้ยน) จึงแปลงกลับเป็น UTF-8 ถ้าแปลงได้สะอาด
+ * ตัดตัวอักษรควบคุม/ตัวคั่น path ออก (ใช้แค่แสดงผลและตั้งชื่อตอนดาวน์โหลด)
+ * @param {string} rawName
+ * @param {string} fallback ชื่อที่ใช้เมื่อไม่เหลืออะไร
+ */
+function cleanUploadedFileName(rawName, fallback) {
+    const decoded = Buffer.from(rawName ?? "", "latin1").toString("utf8");
+    const name = decoded.includes("�") ? (rawName ?? "") : decoded;
+    const safe = name.replace(/[\u0000-\u001f\u007f/\\]/g, "").trim();
+    return (safe || fallback).slice(0, MAX_FILE_NAME_LENGTH);
+}
+
 /** ลบไฟล์ (ไม่มีอยู่แล้วก็ไม่เป็นไร) — เรียกหลัง DB บันทึกสำเร็จเท่านั้น */
 async function deletePrivateFile(storedPath) {
     const fullPath = resolvePrivateFile(storedPath);
@@ -91,4 +106,11 @@ async function deletePrivateFile(storedPath) {
     await fs.rm(fullPath, { force: true });
 }
 
-module.exports = { savePrivateFile, resolvePrivateFile, deletePrivateFile, contentTypeOf, detectFileType };
+module.exports = {
+    savePrivateFile,
+    resolvePrivateFile,
+    deletePrivateFile,
+    contentTypeOf,
+    detectFileType,
+    cleanUploadedFileName,
+};

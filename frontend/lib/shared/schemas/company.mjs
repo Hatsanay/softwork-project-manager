@@ -162,8 +162,16 @@ const approvalLevelSchema = z.object({
         .min(1, "ทุกชั้นต้องมี role ผู้อนุมัติอย่างน้อย 1 role"),
 });
 
-// ประเภทเอกสารที่มีกติกาอนุมัติของตัวเอง — QT ใบเสนอราคา · IV ใบแจ้งหนี้ที่สร้างเอง (ใบจากงวดใบเสนอราคาไม่ต้องอนุมัติ)
-export const APPROVAL_DOCUMENT_TYPES = ["QT", "IV"];
+// ประเภทเอกสารที่มีกติกาอนุมัติของตัวเอง + สิทธิ์ที่ผู้อนุมัติต้องมี
+// QT ใบเสนอราคา · IV ใบแจ้งหนี้ที่สร้างเอง (ใบจากงวดใบเสนอราคาไม่ต้องอนุมัติ) · EX ค่าใช้จ่าย/บิลผู้ขาย · EC ใบเบิกเงิน (เฟส 2)
+// allowsThreshold = ชั้น 1 เริ่มเกิน 0 ได้ → ยอดต่ำกว่าชั้น 1 ผ่านอัตโนมัติ (เฟส 2 ข้อ P2) · เอกสารขายต้องผ่านอย่างน้อย 1 ชั้นเสมอ
+export const APPROVAL_DOCUMENTS = {
+    QT: { name: "ใบเสนอราคา", permission: "approveQuotation", allowsThreshold: false },
+    IV: { name: "ใบแจ้งหนี้ที่สร้างเอง", permission: "approveInvoice", allowsThreshold: false },
+    EX: { name: "ค่าใช้จ่าย / บิลผู้ขาย", permission: "approveExpense", allowsThreshold: true },
+    EC: { name: "ใบเบิกเงินพนักงาน", permission: "approveExpense", allowsThreshold: true },
+};
+export const APPROVAL_DOCUMENT_TYPES = Object.keys(APPROVAL_DOCUMENTS);
 
 export const approvalLevelsSchema = z
     .object({
@@ -173,14 +181,15 @@ export const approvalLevelsSchema = z
             .min(1, "ต้องมีอย่างน้อย 1 ชั้น")
             .max(MAX_APPROVAL_LEVELS, `ตั้งได้สูงสุด ${MAX_APPROVAL_LEVELS} ชั้น`),
     })
-    .superRefine(({ levels }, context) => {
+    .superRefine(({ doc_type: documentType, levels }, context) => {
+        const allowsThreshold = APPROVAL_DOCUMENTS[documentType]?.allowsThreshold === true;
         levels.forEach((level, index) => {
             const levelNumber = index + 1;
 
             const minimumAmount = parseHundredths(level.al_min_amount_thb, "ยอดขั้นต่ำ");
 
-            // ชั้น 1 ต้องเริ่มที่ 0 — ทุกใบต้องผ่านอย่างน้อยชั้น 1
-            if (index === 0 && minimumAmount !== 0n) {
+            // เอกสารขาย: ชั้น 1 ต้องเริ่มที่ 0 — ทุกใบต้องผ่านอย่างน้อยชั้น 1
+            if (index === 0 && minimumAmount !== 0n && !allowsThreshold) {
                 context.addIssue({
                     code: "custom",
                     path: ["levels", index, "al_min_amount_thb"],

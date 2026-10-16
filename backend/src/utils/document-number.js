@@ -8,7 +8,8 @@
 //   - บันทึกเอกสารไม่สำเร็จแล้ว rollback → ลำดับเลขถอยกลับด้วย → ไม่มีเลขข้าม (ข้อกำหนดของเอกสารทางภาษี)
 // LAST_INSERT_ID(ค่า) จำค่าไว้เฉพาะ connection นี้ ไม่ปนกับคำขออื่นที่ทำพร้อมกัน
 
-const DOCUMENT_TYPES = ["QT", "IV", "BN", "RE"];
+// EX ค่าใช้จ่าย/บิลผู้ขาย · EC ใบเบิกเงินพนักงาน (เฟส 2 — ได้เลขตอนอนุมัติครบ)
+const DOCUMENT_TYPES = ["QT", "IV", "BN", "RE", "EX", "EC"];
 const MAX_NUMBERS_PER_DAY = 999_999;
 const DATE_TEXT = /^(\d{4})-(\d{2})-(\d{2})$/;
 
@@ -36,7 +37,7 @@ function toCompactDate(dateText) {
 /**
  * ออกเลขที่เอกสารถัดไปของวันนั้น
  * @param {import("mysql2/promise").PoolConnection} conn connection ที่ beginTransaction แล้ว
- * @param {"QT" | "IV" | "BN" | "RE"} documentType
+ * @param {"QT" | "IV" | "BN" | "RE" | "EX" | "EC"} documentType
  * @param {string} documentDate วันที่เอกสาร "YYYY-MM-DD" ตามเวลาไทย (ใช้ todayBangkok())
  * @returns {Promise<string>} เช่น "QT-20261231-000001"
  */

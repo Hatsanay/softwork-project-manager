@@ -28,6 +28,8 @@ const { registerInvoiceRoutes } = require("./invoice.routes");
 const { registerBillingNoteRoutes } = require("./billing-note.routes");
 const { registerReceiptRoutes } = require("./receipt.routes");
 const { registerFinanceRoutes } = require("./finance.routes");
+const { registerPurchasingRoutes } = require("./purchasing.routes");
+const { registerExpenseRoutes } = require("./expense.routes");
 
 const router = express.Router();
 
@@ -278,6 +280,8 @@ registerInvoiceRoutes(router);
 registerBillingNoteRoutes(router);
 registerReceiptRoutes(router);
 registerFinanceRoutes(router);
+registerPurchasingRoutes(router);
+registerExpenseRoutes(router);
 
 // ─── public share (ลูกค้าดู ไม่ต้อง login) ───────────────────────────────────
 router.get("/V1/share/:token", shareController.getSharedProject);

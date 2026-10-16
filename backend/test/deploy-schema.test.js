@@ -30,6 +30,11 @@ const PRODUCTION_SCHEMA_2026_10_15 = fs.readFileSync(
     path.join(__dirname, "fixtures", "deploy-schema-2026-10-15.sql"),
     "utf8",
 );
+// deploy 16 ต.ค. 2026 (commit 266e56a) — วงจรขายครบ (1A–1D) ยังไม่มีตารางเฟส 2 จัดซื้อ · role_permission ยังเป็น varchar(64)
+const PRODUCTION_SCHEMA_2026_10_16 = fs.readFileSync(
+    path.join(__dirname, "fixtures", "deploy-schema-2026-10-16.sql"),
+    "utf8",
+);
 const SERVER = {
     host: process.env.DB_HOST,
     port: process.env.DB_PORT,
@@ -94,13 +99,16 @@ test("ฐานว่าง: สร้างครบตามที่ตรว
         const [[vatRate]] = await conn.query("SELECT vr_rate FROM tb_vat_rates");
         assert.equal(vatRate.vr_rate, "7.00");
 
-        // กติกาอนุมัติเริ่มต้นของใบเสนอราคา (QT) และใบแจ้งหนี้ที่สร้างเอง (IV): ชั้นเดียว ยอด 0 ผู้อนุมัติ = role ระบบ
+        // กติกาอนุมัติเริ่มต้น: ชั้นเดียว ผู้อนุมัติ = role ระบบ · ใบเสนอราคา (QT) / ใบแจ้งหนี้ที่สร้างเอง (IV) / ใบเบิก (EC) ยอดตั้งแต่ 0
+        // ค่าใช้จ่าย/บิลผู้ขาย (EX) ตั้งแต่ 3,000 บาท — ต่ำกว่านั้นผ่านอัตโนมัติ (เฟส 2 ข้อ P2)
         const [levels] = await conn.query(
             `SELECT l.al_doc_type, l.al_level, l.al_min_amount_thb, r.alr_role_id
              FROM tb_approval_levels l JOIN tb_approval_level_roles r ON r.alr_doc_type = l.al_doc_type AND r.alr_level = l.al_level
              ORDER BY l.al_doc_type`,
         );
         assert.deepEqual(levels, [
+            { al_doc_type: "EC", al_level: 1, al_min_amount_thb: "0.00", alr_role_id: "ROL202601010000001" },
+            { al_doc_type: "EX", al_level: 1, al_min_amount_thb: "3000.00", alr_role_id: "ROL202601010000001" },
             { al_doc_type: "IV", al_level: 1, al_min_amount_thb: "0.00", alr_role_id: "ROL202601010000001" },
             { al_doc_type: "QT", al_level: 1, al_min_amount_thb: "0.00", alr_role_id: "ROL202601010000001" },
         ]);
@@ -123,7 +131,55 @@ test("ข้อมูลเริ่มต้นไม่ทับของท�
         const [[usd]] = await conn.query("SELECT cur_status FROM tb_currencies WHERE cur_code = 'USD'");
         assert.equal(usd.cur_status, "inactive");
         assert.equal(await countRows(conn, "SELECT COUNT(*) AS total FROM tb_branches"), 1);
-        assert.equal(await countRows(conn, "SELECT COUNT(*) AS total FROM tb_approval_level_roles"), 2);
+        assert.equal(await countRows(conn, "SELECT COUNT(*) AS total FROM tb_approval_level_roles"), 4);
+    });
+});
+
+test("อัปเกรดจากโครงสร้าง deploy 16 ต.ค. 2026: ได้ตารางเฟส 2 + ข้อมูลเริ่มต้น + กติกาอนุมัติค่าใช้จ่าย · ช่องสิทธิ์ขยายเป็น 255 สิทธิ์เดิมไม่หาย · รันซ้ำไม่ทับที่แก้", async () => {
+    await withTemporaryDatabase("upgrade1016", async (conn) => {
+        assert.deepEqual(
+            await runSchemaFile(conn, PRODUCTION_SCHEMA_2026_10_16),
+            [],
+            "ฐานตั้งต้นต้องสมบูรณ์ตามเวอร์ชันเก่า",
+        );
+        await conn.query(
+            "INSERT INTO tb_roles (role_id, role_name, role_permission, role_type) VALUES ('ROL202610160000001', 'บัญชี', ?, 'R')",
+            ["10".repeat(20) + "1"],
+        );
+
+        assert.deepEqual(await runSchemaFile(conn, DEPLOY_SCHEMA), [], "หลังอัปเกรด: ส่วนที่ 6 ต้องไม่มีแถว");
+        const [[column]] = await conn.query(
+            "SELECT CHARACTER_MAXIMUM_LENGTH AS length FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_roles' AND COLUMN_NAME = 'role_permission'",
+        );
+        assert.equal(Number(column.length), 255);
+        const [[role]] = await conn.query("SELECT role_permission FROM tb_roles WHERE role_id = 'ROL202610160000001'");
+        assert.equal(role.role_permission, "10".repeat(20) + "1", "สิทธิ์เดิมไม่เปลี่ยน");
+
+        assert.equal(await countRows(conn, "SELECT COUNT(*) AS total FROM tb_wht_income_types"), 6);
+        assert.equal(await countRows(conn, "SELECT COUNT(*) AS total FROM tb_wht_rates"), 6);
+        assert.equal(await countRows(conn, "SELECT COUNT(*) AS total FROM tb_expense_categories"), 15);
+        assert.equal(await countRows(conn, "SELECT COUNT(*) AS total FROM tb_expenses"), 0);
+        const [[expenseRule]] = await conn.query(
+            "SELECT al_min_amount_thb FROM tb_approval_levels WHERE al_doc_type = 'EX' AND al_level = 1",
+        );
+        assert.equal(expenseRule.al_min_amount_thb, "3000.00", "ได้กติกาเริ่มต้นของค่าใช้จ่าย (ต่ำกว่า 3,000 ผ่านอัตโนมัติ)");
+        const [[service]] = await conn.query(
+            "SELECT wr_rate, wr_min_payment FROM tb_wht_rates WHERE wr_income_type = 'SERVICE'",
+        );
+        assert.deepEqual(service, { wr_rate: "3.00", wr_min_payment: "1000.00" });
+
+        // ผู้ดูแลแก้ข้อมูลเริ่มต้นแล้ว deploy รอบถัดไปไม่ทับ/ไม่เพิ่มซ้ำ
+        await conn.query("UPDATE tb_expense_categories SET ec_name_th = 'ค่าจ้างภายนอก' WHERE ec_sort_order = 1");
+        await conn.query("DELETE FROM tb_expense_categories WHERE ec_sort_order = 99");
+        assert.deepEqual(await runSchemaFile(conn, DEPLOY_SCHEMA), [], "รันซ้ำ: ส่วนที่ 6 ต้องไม่มีแถว");
+        assert.equal(await countRows(conn, "SELECT COUNT(*) AS total FROM tb_expense_categories"), 14);
+        assert.equal(
+            await countRows(
+                conn,
+                "SELECT COUNT(*) AS total FROM tb_expense_categories WHERE ec_name_th = 'ค่าจ้างภายนอก'",
+            ),
+            1,
+        );
     });
 });
 

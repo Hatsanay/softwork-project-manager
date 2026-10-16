@@ -7,6 +7,8 @@ import type { LevelForm } from "./approval-tab";
 type ApprovalExamplesProps = {
     levels: LevelForm[];
     roles: RoleChoice[];
+    // ค่าใช้จ่าย/ใบเบิก: ชั้น 1 เริ่มเกิน 0 ได้ — ยอดต่ำกว่านั้นผ่านอัตโนมัติ
+    allowsThreshold?: boolean;
 };
 
 // ยอดขั้นต่ำของทุกชั้นเป็นร้อยส่วน — ถ้าช่องไหนยังกรอกไม่ถูก คืน null (ยังแสดงตัวอย่างไม่ได้)
@@ -23,7 +25,7 @@ function readMinimumAmounts(levels: LevelForm[]): bigint[] | null {
     return isIncreasing ? amounts : null;
 }
 
-export default function ApprovalExamples({ levels, roles }: ApprovalExamplesProps) {
+export default function ApprovalExamples({ levels, roles, allowsThreshold = false }: ApprovalExamplesProps) {
     const minimumAmounts = readMinimumAmounts(levels);
     if (!minimumAmounts) {
         return <p>แก้ยอดขั้นต่ำให้ถูกต้อง (เป็นตัวเลข และเพิ่มขึ้นทุกชั้น) แล้วตัวอย่างจะแสดงที่นี่</p>;
@@ -33,6 +35,14 @@ export default function ApprovalExamples({ levels, roles }: ApprovalExamplesProp
 
     return (
         <div className="grid gap-3">
+            {allowsThreshold && minimumAmounts[0] > 0n && (
+                <div className="grid gap-1">
+                    <p className="font-medium text-gray-800">ต่ำกว่า {formatAmount(minimumAmounts[0])} บาท</p>
+                    <span className="justify-self-start rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                        ผ่านอัตโนมัติ ไม่ต้องรออนุมัติ
+                    </span>
+                </div>
+            )}
             {levels.map((level, index) => {
                 const nextMinimum = minimumAmounts[index + 1];
                 const rangeText =
