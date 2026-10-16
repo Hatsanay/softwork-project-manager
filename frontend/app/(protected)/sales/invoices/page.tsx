@@ -18,12 +18,13 @@ import { INVOICE_MESSAGES, STATUS_LABELS } from "./_messages";
 import type { InvoiceListRow } from "./_types";
 import { dueLabel, invoiceNumberLabel } from "./_format";
 
-type TabKey = "all" | "waiting_me" | "draft" | "pending_approval" | "outstanding" | "overdue" | "cancelled";
+type TabKey = "all" | "waiting_me" | "draft" | "pending_approval" | "outstanding" | "overdue" | "paid" | "cancelled";
 
 const TABS: { value: TabKey; label: string }[] = [
     { value: "all", label: "ทั้งหมด" },
     { value: "outstanding", label: "ค้างชำระ" },
     { value: "overdue", label: "เกินกำหนด" },
+    { value: "paid", label: "ชำระครบ" },
     { value: "waiting_me", label: "รอคุณอนุมัติ" },
     { value: "draft", label: "ร่าง" },
     { value: "pending_approval", label: "รออนุมัติ" },
@@ -34,6 +35,7 @@ const EMPTY_MESSAGES: Partial<Record<TabKey, string>> = {
     waiting_me: "ไม่มีใบที่รอคุณอนุมัติ",
     overdue: "ไม่มีใบที่เกินกำหนดชำระ",
     outstanding: "ไม่มีใบที่ค้างชำระ",
+    paid: "ยังไม่มีใบที่ชำระครบ",
 };
 
 export default function InvoicesPage() {
@@ -122,6 +124,8 @@ export default function InvoicesPage() {
                                 ? ` ชั้น ${row.inv_approval_current_level}/${row.approval_level_count}`
                                 : ""}
                         </StatusPill>
+                        {row.payment_state === "paid" && <StatusPill tone="success">ชำระครบ</StatusPill>}
+                        {row.payment_state === "partial" && <StatusPill tone="wait">ชำระบางส่วน</StatusPill>}
                         {due && <StatusPill tone={row.is_overdue ? "danger" : "neutral"}>{due}</StatusPill>}
                         {row.waiting_for_me && <StatusPill tone="wait">รอคุณอนุมัติ</StatusPill>}
                     </div>

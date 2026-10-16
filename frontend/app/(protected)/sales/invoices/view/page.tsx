@@ -10,6 +10,7 @@ import {
     CheckCircle2,
     Circle,
     Clock,
+    Banknote,
     FileCheck2,
     Pencil,
     Printer,
@@ -38,6 +39,7 @@ import { displayRate } from "../../quotations/_format";
 import { INVOICE_MESSAGES, STATUS_LABELS } from "../_messages";
 import { dueLabel, invoiceNumberLabel, percentLabel } from "../_format";
 import type { InvoiceDetail } from "../_types";
+import { METHOD_LABELS } from "../../receipts/_messages";
 
 type ReasonAction = "return" | "cancel" | "reissue";
 type ConfirmAction = "issue" | "issueWithNewVat" | "submit" | "approve" | "send" | "delete";
@@ -167,10 +169,32 @@ export default function InvoiceViewPage() {
         : [];
 
     const hasDecisionBar =
-        actions.can_issue || actions.can_submit || actions.can_approve || actions.can_return || actions.can_send;
+        actions.can_issue ||
+        actions.can_submit ||
+        actions.can_approve ||
+        actions.can_return ||
+        actions.can_send ||
+        actions.can_receive;
+    // แถบปุ่มลอยบนมือถือ: ปุ่มเกิน 1 ปุ่มขึ้นสองแถว (ข้อความไม่ถูกตัด) — เว้นที่ท้ายหน้ามากขึ้นตาม
+    const decisionCount = [
+        actions.can_issue,
+        actions.can_submit,
+        actions.can_approve,
+        actions.can_return,
+        actions.can_send,
+        actions.can_receive,
+    ].filter(Boolean).length;
+    const paymentPill =
+        invoice.payment_state === "paid"
+            ? { tone: "success" as const, label: "ชำระครบ" }
+            : invoice.payment_state === "partial"
+              ? { tone: "wait" as const, label: "ชำระบางส่วน" }
+              : null;
 
     return (
-        <div className={`mx-auto grid max-w-6xl grid-cols-1 gap-6 ${hasDecisionBar ? "max-sm:pb-32" : ""}`}>
+        <div
+            className={`mx-auto grid max-w-6xl grid-cols-1 gap-6 ${decisionCount > 1 ? "max-sm:pb-48" : hasDecisionBar ? "max-sm:pb-32" : ""}`}
+        >
             <PageHeader
                 eyebrow={`ขาย · ใบแจ้งหนี้ · ${invoiceNumberLabel(invoice)}`}
                 title={invoice.inv_title}
@@ -178,6 +202,7 @@ export default function InvoiceViewPage() {
                 actions={
                     <div className="flex flex-wrap items-center gap-1.5">
                         <StatusPill tone={status.tone}>{status.label}</StatusPill>
+                        {paymentPill && <StatusPill tone={paymentPill.tone}>{paymentPill.label}</StatusPill>}
                         {due && <StatusPill tone={invoice.is_overdue ? "danger" : "neutral"}>{due}</StatusPill>}
                     </div>
                 }
@@ -270,6 +295,15 @@ export default function InvoiceViewPage() {
                         บันทึกว่าส่งลูกค้าแล้ว
                     </button>
                 )}
+                {actions.can_receive && (
+                    <Link
+                        href={`/sales/receipts/new?invoice=${invoice.inv_id}`}
+                        className={`${buttonClass("primary", "md")} max-sm:hidden`}
+                    >
+                        <Banknote size={16} />
+                        บันทึกรับเงิน
+                    </Link>
+                )}
                 {actions.can_reissue && (
                     <button
                         type="button"
@@ -309,7 +343,10 @@ export default function InvoiceViewPage() {
             )}
 
             {hasDecisionBar && (
-                <DecisionBar total={`${formatAmount(invoice.inv_total, decimals)} ${code}`}>
+                <DecisionBar
+                    label={invoice.inv_status === "issued" ? "ค้างชำระ" : "รวมทั้งสิ้น"}
+                    total={`${formatAmount(invoice.inv_status === "issued" ? invoice.outstanding_amount : invoice.inv_total, decimals)} ${code}`}
+                >
                     {actions.can_issue && (
                         <button
                             type="button"
@@ -360,6 +397,15 @@ export default function InvoiceViewPage() {
                             <Send size={16} />
                             บันทึกว่าส่งลูกค้าแล้ว
                         </button>
+                    )}
+                    {actions.can_receive && (
+                        <Link
+                            href={`/sales/receipts/new?invoice=${invoice.inv_id}`}
+                            className={`${buttonClass("primary", "md")} flex-1`}
+                        >
+                            <Banknote size={16} />
+                            บันทึกรับเงิน
+                        </Link>
                     )}
                 </DecisionBar>
             )}
@@ -668,11 +714,51 @@ function ItemsList({ detail }: { detail: InvoiceDetail }) {
 
 // บัญชีรับเงิน + QR พร้อมเพย์ (ใบที่ออกแล้วใช้ข้อมูล ณ วันออก · ร่างใช้ค่าปัจจุบัน)
 function PaymentCard({ detail }: { detail: InvoiceDetail }) {
-    const { payment, invoice, currency } = detail;
+    const { payment, invoice, currency, receipts } = detail;
     const account = payment.bank_account;
+    const decimals = currency.cur_decimals;
     return (
         <section className={`grid gap-3 p-5 text-sm ${CARD_CLASS}`}>
             <h2 className="text-base font-medium text-gray-900">การชำระเงิน</h2>
+            {invoice.inv_status === "issued" && (
+                <div className="grid gap-1.5 rounded-xl bg-gray-50 p-3">
+                    <TotalRow label="รับแล้ว" value={formatAmount(invoice.inv_paid_amount, decimals)} />
+                    <div className="flex justify-between gap-3 font-medium text-gray-900">
+                        <span>ค้างชำระ</span>
+                        <span className="tabular-nums">
+                            {formatAmount(invoice.outstanding_amount, decimals)} {currency.cur_code}
+                        </span>
+                    </div>
+                    {receipts.length > 0 && (
+                        <ul className="grid gap-1 border-t border-gray-200 pt-1.5 text-xs">
+                            {receipts.map((row) => (
+                                <li key={row.rc_id} className="grid grid-cols-[1fr_auto] items-center gap-x-2">
+                                    <Link
+                                        href={`/sales/receipts/view?id=${row.rc_id}`}
+                                        className={`-my-2.5 justify-self-start py-2.5 tabular-nums hover:underline ${row.rc_status === "cancelled" ? "text-gray-400 line-through" : "text-blue-600"}`}
+                                    >
+                                        {row.rc_number}
+                                    </Link>
+                                    <span className="tabular-nums">{formatAmount(row.rca_amount, decimals)}</span>
+                                    <span className="col-span-2 text-gray-500">
+                                        {formatDateOnly(row.rc_receipt_date)} · {METHOD_LABELS[row.rc_method]}
+                                        {row.rc_status === "cancelled" ? " · ยกเลิกแล้ว" : ""}
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                    {detail.actions.can_receive && (
+                        <Link
+                            href={`/sales/receipts/new?invoice=${invoice.inv_id}`}
+                            className={`${buttonClass("secondary", "sm")} justify-self-start`}
+                        >
+                            <Banknote size={14} />
+                            บันทึกรับเงิน
+                        </Link>
+                    )}
+                </div>
+            )}
             {account ? (
                 <dl className="grid gap-0.5">
                     <dt className="text-xs text-gray-500">โอนเข้าบัญชี</dt>
@@ -692,8 +778,7 @@ function PaymentCard({ detail }: { detail: InvoiceDetail }) {
                 <div className="grid justify-items-center gap-1.5 rounded-xl bg-gray-50 p-3">
                     <PromptPayQr payload={payment.qr_payload} size={150} />
                     <p className="text-center text-xs text-gray-600">
-                        พร้อมเพย์ {payment.promptpay_id} · {formatAmount(payment.net_payable, currency.cur_decimals)}{" "}
-                        บาท
+                        พร้อมเพย์ {payment.promptpay_id} · {formatAmount(payment.qr_amount, currency.cur_decimals)} บาท
                     </p>
                     <FieldHint>
                         {INVOICE_MESSAGES.qrHint(parseHundredths(invoice.inv_wht_amount, "หัก ณ ที่จ่าย") > 0n)}
@@ -870,14 +955,14 @@ function RelatedCard({ detail }: { detail: InvoiceDetail }) {
 }
 
 // มือถือ: ปุ่มตัดสินใจหลักลอยติดล่างจอพร้อมยอดรวม (แบบเดียวกับหน้าใบเสนอราคา)
-function DecisionBar({ total, children }: { total: string; children: React.ReactNode }) {
+function DecisionBar({ label, total, children }: { label: string; total: string; children: React.ReactNode }) {
     return (
         <div className="fixed inset-x-4 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-30 grid gap-2 rounded-2xl border border-gray-200 bg-white/95 p-3 shadow-float backdrop-blur sm:hidden">
             <div className="flex items-baseline justify-between gap-3 text-sm">
-                <span className="text-gray-500">รวมทั้งสิ้น</span>
+                <span className="text-gray-500">{label}</span>
                 <span className="font-medium text-gray-900 tabular-nums">{total}</span>
             </div>
-            <div className="flex gap-2">{children}</div>
+            <div className="flex flex-wrap gap-2 *:basis-44">{children}</div>
         </div>
     );
 }
@@ -922,11 +1007,18 @@ function StatusGuide({ detail }: { detail: InvoiceDetail }) {
                 </StatusBanner>
             );
         case "issued":
+            if (invoice.payment_state === "paid") {
+                return (
+                    <StatusBanner tone="done" title="ชำระครบแล้ว">
+                        รับเงินครบตามใบเสร็จในส่วน &quot;การชำระเงิน&quot; · ยกเลิกใบนี้ไม่ได้จนกว่าจะยกเลิกใบเสร็จ
+                    </StatusBanner>
+                );
+            }
             if (invoice.is_overdue) {
                 return (
                     <StatusBanner tone="error" title={`เกินกำหนดชำระ ${invoice.days_overdue} วัน`}>
-                        ครบกำหนดวันที่ {formatDateOnly(invoice.inv_due_date)} · ติดตามกับลูกค้า
-                        (บันทึกรับเงินมาในระบบใบเสร็จ ช่วงถัดไป)
+                        ครบกำหนดวันที่ {formatDateOnly(invoice.inv_due_date)} · ติดตามกับลูกค้า · ค้างอยู่{" "}
+                        {formatAmount(invoice.outstanding_amount, detail.currency.cur_decimals)} {invoice.inv_currency}
                     </StatusBanner>
                 );
             }

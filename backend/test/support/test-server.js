@@ -35,6 +35,8 @@ function prepareEnvironment(databaseName) {
     process.env.BOT_API_URL = "";
     // ลายเซ็นเขียนลงโฟลเดอร์ชั่วคราวของเทสต์นี้ ลบทิ้งตอนจบ
     process.env.SIGNATURE_STORAGE_DIR = path.join(os.tmpdir(), `softwork-test-signatures-${databaseName}`);
+    // ไฟล์เอกสารส่วนตัว (50 ทวิ) ก็เช่นกัน
+    process.env.DOCUMENT_STORAGE_DIR = path.join(os.tmpdir(), `softwork-test-documents-${databaseName}`);
 }
 
 function listUploadedFiles() {
@@ -125,6 +127,7 @@ async function startTestServer(name) {
             if (!uploadsBefore.has(file)) fs.rmSync(file, { force: true });
         }
         fs.rmSync(process.env.SIGNATURE_STORAGE_DIR, { recursive: true, force: true });
+        fs.rmSync(process.env.DOCUMENT_STORAGE_DIR, { recursive: true, force: true });
     }
 
     return { baseUrl, pool, setupConnection, callApi, login, loginAsAdmin, stop };

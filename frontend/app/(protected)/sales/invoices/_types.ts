@@ -13,6 +13,9 @@ import type {
 export type InvoiceStatus = "draft" | "pending_approval" | "issued" | "cancelled";
 export type InvoiceSource = "quotation" | "manual";
 
+// สถานะการชำระของใบที่ออกแล้ว (ช่วง 1C — คำนวณตอนอ่าน) · null = ยังไม่ออก/ยกเลิก
+export type PaymentState = "unpaid" | "partial" | "paid" | null;
+
 // สถานะการชำระที่คำนวณตอนอ่าน (ไม่เก็บในฐานข้อมูล)
 export type DueStatus = {
     is_outstanding: boolean;
@@ -22,6 +25,8 @@ export type DueStatus = {
 };
 
 export type InvoiceListRow = DueStatus & {
+    payment_state: PaymentState;
+    outstanding_amount: string;
     inv_id: string;
     inv_number: string | null;
     inv_status: InvoiceStatus;
@@ -56,6 +61,8 @@ export type BankAccountSnapshot = {
 };
 
 export type Invoice = DueStatus & {
+    payment_state: PaymentState;
+    outstanding_amount: string;
     inv_id: string;
     inv_number: string | null;
     inv_status: InvoiceStatus;
@@ -168,12 +175,25 @@ export type InvoiceActions = {
     can_cancel: boolean;
     can_reissue: boolean;
     cancel_blocked_reason: string | null;
+    can_receive: boolean;
+};
+
+/** ใบเสร็จที่ตัดใบแจ้งหนี้นี้ (รวมที่ยกเลิก) */
+export type InvoiceReceiptRow = {
+    rc_id: string;
+    rc_number: string;
+    rc_status: "issued" | "cancelled";
+    rc_receipt_date: string;
+    rc_method: "transfer" | "cheque" | "cash" | "other";
+    rca_amount: string;
 };
 
 export type InvoicePayment = {
     bank_account: BankAccountSnapshot | null;
     promptpay_id: string | null;
     net_payable: string;
+    // ยอดที่ฝังใน QR = ยอดค้างหลังหัก ณ ที่จ่าย (รับเงินบางส่วนแล้วจะน้อยกว่า net_payable)
+    qr_amount: string;
     qr_payload: string | null;
 };
 
@@ -185,6 +205,7 @@ export type InvoiceDetail = {
     approval_history: InvoiceApprovalRow[];
     approval: ApprovalEvaluation | null;
     billing_note: { bn_id: string; bn_number: string | null; bn_status: string } | null;
+    receipts: InvoiceReceiptRow[];
     reissued_to: { inv_id: string; inv_number: string | null; inv_status: InvoiceStatus } | null;
     payment: InvoicePayment;
     actions: InvoiceActions;

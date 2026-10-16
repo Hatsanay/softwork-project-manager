@@ -386,7 +386,7 @@ export default function InvoicePrintPage() {
                                 <PromptPayQr payload={qrPayload} size={96} />
                                 <p className="text-[8.5pt] text-gray-600">{labels.promptPay}</p>
                                 <p className="text-[8.5pt] text-gray-600 tabular-nums">
-                                    {labels.promptPayAmount} {formatAmount(payment.net_payable, decimals)}{" "}
+                                    {labels.promptPayAmount} {formatAmount(payment.qr_amount, decimals)}{" "}
                                     {currency.cur_code}
                                 </p>
                             </div>

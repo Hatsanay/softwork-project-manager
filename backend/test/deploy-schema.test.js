@@ -1,7 +1,7 @@
 // deploy_schema.sql ต้องรันได้ทุกสภาพฐานข้อมูล และรันซ้ำกี่ครั้งก็ได้ (กติกาหัวไฟล์ deploy_schema.sql)
 //
 // - ฐานว่าง → สร้างครบ + ข้อมูลเริ่มต้น · รันซ้ำไม่เปลี่ยนอะไร
-// - ฐานที่ใช้งานอยู่บน production (โครงสร้าง ณ deploy 12 ต.ค. 2026 เก็บไว้ที่ test/fixtures/) → อัปเกรดได้ ข้อมูลเดิมไม่หาย
+// - ฐานที่ใช้งานอยู่บน production (โครงสร้าง ณ deploy 12 / 13 / 15 ต.ค. 2026 เก็บไว้ที่ test/fixtures/) → อัปเกรดได้ ข้อมูลเดิมไม่หาย
 // - ทุกกรณี query ตรวจสอบท้ายไฟล์ (ส่วนที่ 6) ต้องไม่มีแถว
 // ใช้ฐานข้อมูลชั่วคราว ลบทิ้งตอนจบ ไม่แตะฐานข้อมูลที่ใช้งานอยู่
 const test = require("node:test");
@@ -23,6 +23,11 @@ const PRODUCTION_SCHEMA_2026_10_12 = fs.readFileSync(
 // deploy 13 ต.ค. 2026 (commit 8a8680e) — มีตารางวงจรขาย 1A แล้ว แต่ยังไม่มีคอลัมน์/ตารางของช่วง 1B
 const PRODUCTION_SCHEMA_2026_10_13 = fs.readFileSync(
     path.join(__dirname, "fixtures", "deploy-schema-2026-10-13.sql"),
+    "utf8",
+);
+// deploy 15 ต.ค. 2026 (commit 9063c4f) — มีใบแจ้งหนี้/ใบวางบิล (1B) แล้ว แต่ยังไม่มีตารางใบเสร็จ (1C)
+const PRODUCTION_SCHEMA_2026_10_15 = fs.readFileSync(
+    path.join(__dirname, "fixtures", "deploy-schema-2026-10-15.sql"),
     "utf8",
 );
 const SERVER = {
@@ -122,9 +127,36 @@ test("ข้อมูลเริ่มต้นไม่ทับของท�
     });
 });
 
+test("อัปเกรดฐานข้อมูลที่ใช้งานอยู่ (โครงสร้าง deploy 15 ต.ค. 2026 มีใบแจ้งหนี้แล้ว) ได้ · ได้ตารางใบเสร็จ · ยอดรับแล้วเดิมไม่หาย", async () => {
+    await withTemporaryDatabase("upgrade1015", async (conn) => {
+        assert.deepEqual(
+            await runSchemaFile(conn, PRODUCTION_SCHEMA_2026_10_15),
+            [],
+            "ฐานตั้งต้นต้องสมบูรณ์ตามเวอร์ชันเก่า",
+        );
+
+        await conn.query("INSERT INTO tb_clients (client_id, client_name) VALUES ('CLI202610150000001', 'ลูกค้า')");
+        await conn.query(
+            `INSERT INTO tb_invoices (inv_id, inv_number, inv_status, inv_source, inv_client_id, inv_branch_id, inv_title, inv_total, inv_created_by)
+             VALUES ('INV202610150000001', 'IV-20261015-000001', 'issued', 'manual', 'CLI202610150000001', 'BRA202601010000001', 'งานเว็บ', 1070, 'USE202601010000001')`,
+        );
+
+        assert.deepEqual(await runSchemaFile(conn, DEPLOY_SCHEMA), [], "หลังอัปเกรด: ส่วนที่ 6 ต้องไม่มีแถว");
+        assert.deepEqual(await runSchemaFile(conn, DEPLOY_SCHEMA), [], "อัปเกรดแล้วรันซ้ำ: ส่วนที่ 6 ต้องไม่มีแถว");
+
+        const [[invoice]] = await conn.query("SELECT inv_status, inv_total, inv_paid_amount FROM tb_invoices");
+        assert.deepEqual(invoice, { inv_status: "issued", inv_total: "1070.00", inv_paid_amount: "0.00" });
+        assert.equal(await countRows(conn, "SELECT COUNT(*) AS total FROM tb_receipts"), 0);
+    });
+});
+
 test("อัปเกรดฐานข้อมูลที่ใช้งานอยู่ (โครงสร้าง deploy 13 ต.ค. 2026 มีวงจรขาย 1A แล้ว) ได้ ตั้งค่าและกติกาเดิมไม่หาย", async () => {
     await withTemporaryDatabase("upgrade1013", async (conn) => {
-        assert.deepEqual(await runSchemaFile(conn, PRODUCTION_SCHEMA_2026_10_13), [], "ฐานตั้งต้นต้องสมบูรณ์ตามเวอร์ชันเก่า");
+        assert.deepEqual(
+            await runSchemaFile(conn, PRODUCTION_SCHEMA_2026_10_13),
+            [],
+            "ฐานตั้งต้นต้องสมบูรณ์ตามเวอร์ชันเก่า",
+        );
 
         // ของที่แอดมินตั้งไว้แล้วบน production: ชื่อบริษัท + กติกาอนุมัติใบเสนอราคา 2 ชั้น
         await conn.query("UPDATE tb_company_settings SET cs_name_th = 'บริษัท ทดสอบ จำกัด'");
@@ -157,7 +189,11 @@ test("อัปเกรดฐานข้อมูลที่ใช้งา�
         const [[company]] = await conn.query(
             "SELECT cs_name_th, cs_default_credit_days, cs_promptpay_id FROM tb_company_settings",
         );
-        assert.deepEqual(company, { cs_name_th: "บริษัท ทดสอบ จำกัด", cs_default_credit_days: 30, cs_promptpay_id: null });
+        assert.deepEqual(company, {
+            cs_name_th: "บริษัท ทดสอบ จำกัด",
+            cs_default_credit_days: 30,
+            cs_promptpay_id: null,
+        });
         assert.equal(
             await countRows(conn, "SELECT COUNT(*) AS total FROM tb_approval_levels WHERE al_doc_type = 'QT'"),
             2,
@@ -279,5 +315,33 @@ test("กติกาของ foreign key: ของที่ถูกเอก
 
         await conn.query("DELETE FROM tb_quotations WHERE qt_id = 'QUO202610010000001'");
         assert.equal(await countRows(conn, "SELECT COUNT(*) AS total FROM tb_quotation_items"), 0);
+
+        // ใบเสร็จอ้างใบแจ้งหนี้: ลบใบแจ้งหนี้ที่มีใบเสร็จไม่ได้ · ลบใบเสร็จ (ไม่มีในระบบจริง) แล้วรายการตัดหนี้หายตาม
+        await conn.query(
+            `INSERT INTO tb_invoices (inv_id, inv_number, inv_status, inv_source, inv_client_id, inv_branch_id, inv_title, inv_total, inv_created_by)
+             VALUES ('INV202610010000002', 'IV-20261001-000002', 'issued', 'manual', 'CLI202610010000001', 'BRA202601010000001', 'งานแอป', 1000, 'USE202601010000001')`,
+        );
+        await conn.query(
+            `INSERT INTO tb_receipts (rc_id, rc_number, rc_client_id, rc_branch_id, rc_receipt_date, rc_method, rc_allocated_total, rc_received_amount, rc_created_by)
+             VALUES ('RCP202610010000001', 'RE-20261001-000001', 'CLI202610010000001', 'BRA202601010000001', '2026-10-01', 'cash', 1000, 1000, 'USE202601010000001')`,
+        );
+        await conn.query(
+            "INSERT INTO tb_receipt_allocations (rca_receipt_id, rca_invoice_id, rca_amount) VALUES ('RCP202610010000001', 'INV202610010000002', 1000)",
+        );
+        await assert.rejects(
+            conn.query("DELETE FROM tb_invoices WHERE inv_id = 'INV202610010000002'"),
+            { code: "ER_ROW_IS_REFERENCED_2" },
+            "ใบแจ้งหนี้ที่มีใบเสร็จ",
+        );
+        await assert.rejects(
+            conn.query(
+                `INSERT INTO tb_receipts (rc_id, rc_number, rc_client_id, rc_branch_id, rc_receipt_date, rc_method)
+                 VALUES ('RCP202610010000002', 'RE-20261001-000001', 'CLI202610010000001', 'BRA202601010000001', '2026-10-01', 'cash')`,
+            ),
+            { code: "ER_DUP_ENTRY" },
+            "เลขใบเสร็จซ้ำไม่ได้",
+        );
+        await conn.query("DELETE FROM tb_receipts WHERE rc_id = 'RCP202610010000001'");
+        assert.equal(await countRows(conn, "SELECT COUNT(*) AS total FROM tb_receipt_allocations"), 0);
     });
 });

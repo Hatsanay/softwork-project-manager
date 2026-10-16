@@ -127,12 +127,21 @@ const ENTITIES = [
     { re: /^\/billing-notes\/([^/]+)$/, type: "billing_note", table: "tb_billing_notes", pk: "bn_id", id: "1", label: { PUT: "แก้ร่างใบวางบิล", DELETE: "ลบร่างใบวางบิล" } },
     { re: /^\/billing-notes$/, type: "billing_note", table: "tb_billing_notes", pk: "bn_id", id: "response:bn_id", label: { POST: "สร้างร่างใบวางบิล" } },
 
+    // ใบเสร็จรับเงิน (2026-10-15 ขั้น 1C) — รายการตัดหนี้บันทึกพร้อมหัวเอกสาร · เปิดไฟล์ 50 ทวิ บันทึกด้วย (มีเลขผู้เสียภาษี)
+    { re: /^\/receipts\/([^/]+)\/wht-certificate\/file$/, type: "receipt", table: "tb_receipts", pk: "rc_id", id: "1", label: { GET: "เปิดไฟล์ 50 ทวิ", POST: "แนบไฟล์ 50 ทวิ", DELETE: "ลบไฟล์ 50 ทวิ" } },
+    { re: /^\/receipts\/([^/]+)\/cancel$/, type: "receipt", table: "tb_receipts", pk: "rc_id", id: "1", label: { POST: "ยกเลิกใบเสร็จรับเงิน" } },
+    { re: /^\/receipts\/([^/]+)$/, type: "receipt", table: "tb_receipts", pk: "rc_id", id: "1", label: { PUT: "แก้ข้อมูล 50 ทวิ/บันทึกภายในของใบเสร็จ" } },
+    { re: /^\/receipts$/, type: "receipt", table: "tb_receipts", pk: "rc_id", id: "response:rc_id", label: { POST: "บันทึกรับเงิน (ออกใบเสร็จ)" } },
+
+    // ไฟล์ส่งนักบัญชี (2026-10-15 ขั้น 1D-3) — มีเลขผู้เสียภาษีของลูกค้า บันทึกทุกครั้งที่ส่งออก (R-D9)
+    { re: /^\/reports\/accounting-export$/, type: "report", label: { GET: "ส่งออกไฟล์นักบัญชี" } },
+
     { re: /^\/(logs|audit-logs|error-logs)(\/[^/]+)?$/, type: "log", label: { GET: "เปิดดู log ของระบบ", DELETE: "ลบ log" } },
     { re: /^\/share\/([^/]+)$/, type: "project", table: "tb_projects", pk: "project_share_token", label: { GET: "ลูกค้าเปิดลิงก์ติดตามโปรเจกต์" }, shareView: true },
 ];
 
 // GET ที่บันทึกด้วย (เปิดดูข้อมูลสำคัญ) — นอกนั้น GET ไม่บันทึก ยกเว้นถูกปฏิเสธ/error (ปริมาณมหาศาลและไม่เปลี่ยนข้อมูล)
-const SENSITIVE_READS = [/^\/users$/, /^\/users\/(?!me$|for-select$)[^/]+$/, /^\/(logs|audit-logs|error-logs)(\/[^/]+)?$/, /^\/share\/[^/]+$/];
+const SENSITIVE_READS = [/^\/reports\/accounting-export$/, /^\/receipts\/[^/]+\/wht-certificate\/file$/, /^\/users$/, /^\/users\/(?!me$|for-select$)[^/]+$/, /^\/(logs|audit-logs|error-logs)(\/[^/]+)?$/, /^\/share\/[^/]+$/];
 // ไม่บันทึกใน audit: login/logout มีตาราง tb_login_logs ของตัวเอง (และ body login มีรหัสผ่าน)
 const SKIP = [/^\/auth\/(login|logout)$/, /^\/auth\/verifyPermission$/];
 

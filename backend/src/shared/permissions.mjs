@@ -51,6 +51,12 @@ export const PERMISSION_KEYS = [
     "createInvoice",
     "approveInvoice",
     "cancelInvoice",
+    // ใบเสร็จรับเงิน 1C (2026-10-15) — แยกจากสิทธิ์ใบแจ้งหนี้ (คนขายออกบิล คนการเงินรับเงิน)
+    "viewReceipts",
+    "createReceipt",
+    "cancelReceipt",
+    // รายงานขาย + ไฟล์ส่งนักบัญชี 1D (2026-10-15) — ไฟล์มีเลขผู้เสียภาษีและยอดทั้งบริษัท (D3)
+    "salesReports",
 ];
 
 /** ตำแหน่งบิตของแต่ละสิทธิ์ เช่น BIT_INDEX.createUsers = 2 */

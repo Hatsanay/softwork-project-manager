@@ -10,7 +10,7 @@ const { todayBangkok } = require("../utils/bangkok-time");
 const { hasBit } = require("../utils/permissions");
 const { calculateQuotation, toDecimalText } = require("../shared/quotation-totals.mjs");
 const { calculateMilestoneInvoice, calculateWithholding } = require("../shared/invoice-totals.mjs");
-const { parseHundredths } = require("../shared/money.mjs");
+const { divideRoundHalfUp, parseHundredths } = require("../shared/money.mjs");
 const { evaluateApproval } = require("../shared/approval-flow.mjs");
 const { buildPromptPayPayload, normalizePromptPayId } = require("../shared/promptpay.mjs");
 const { BASE_CURRENCY } = require("../shared/schemas/quotation.mjs");
@@ -174,7 +174,10 @@ async function assertMilestonesAvailable(conn, quotationId, milestoneIds, exclud
     );
     if (conflicts.length > 0) {
         const detail = conflicts
-            .map((milestone) => `งวดที่ ${milestone.qtm_order} อยู่ใน${describeBilledBy(billed.get(Number(milestone.qtm_id)))}`)
+            .map(
+                (milestone) =>
+                    `งวดที่ ${milestone.qtm_order} อยู่ใน${describeBilledBy(billed.get(Number(milestone.qtm_id)))}`,
+            )
             .join(" · ");
         throw new AppError(
             409,
@@ -425,7 +428,13 @@ async function replaceChildren(conn, invoiceId, calculation) {
         await conn.query(
             `INSERT INTO tb_invoice_milestones (ivm_invoice_id, ivm_milestone_id, ivm_amount, ivm_base, ivm_vat)
              VALUES (?, ?, ?, ?, ?)`,
-            [invoiceId, link.milestoneId, toDecimalText(link.amount), toDecimalText(link.base), toDecimalText(link.vat)],
+            [
+                invoiceId,
+                link.milestoneId,
+                toDecimalText(link.amount),
+                toDecimalText(link.base),
+                toDecimalText(link.vat),
+            ],
         );
     }
 }
@@ -477,7 +486,11 @@ async function createFromQuotation(conn, input, actor, options = {}) {
     const milestoneIds = [...new Set(input.milestone_ids.map(Number))];
     const milestones = await assertMilestonesAvailable(conn, quotation.qt_id, milestoneIds);
     if (quotation.qt_payment_mode === "single" && milestones.length !== 1) {
-        throw new AppError(409, "QUOTATION_MILESTONES_INVALID", "ใบเสนอราคาแบบเก็บครั้งเดียวต้องมีงวดเดียว — แจ้งผู้ดูแลระบบ");
+        throw new AppError(
+            409,
+            "QUOTATION_MILESTONES_INVALID",
+            "ใบเสนอราคาแบบเก็บครั้งเดียวต้องมีงวดเดียว — แจ้งผู้ดูแลระบบ",
+        );
     }
 
     const currency = await quotationService.findCurrency(conn, quotation.qt_currency);
@@ -784,6 +797,24 @@ function dueStatus(invoice, today) {
     };
 }
 
+/**
+ * สถานะการชำระของใบที่ออกแล้ว (คำนวณตอนอ่าน ไม่เก็บ — ช่วง 1C): ยังไม่ชำระ / ชำระบางส่วน / ชำระครบ
+ * @returns {"unpaid" | "partial" | "paid" | null} null = ใบยังไม่ออกหรือยกเลิกแล้ว
+ */
+function paymentStateOf(invoice) {
+    if (invoice.inv_status !== "issued") return null;
+    const paid = parseHundredths(invoice.inv_paid_amount, "ยอดรับแล้ว");
+    if (paid <= 0n) return "unpaid";
+    return paid >= parseHundredths(invoice.inv_total, "ยอดรวม") ? "paid" : "partial";
+}
+
+function outstandingAmountOf(invoice) {
+    if (invoice.inv_status !== "issued") return "0.00";
+    return toDecimalText(
+        parseHundredths(invoice.inv_total, "ยอดรวม") - parseHundredths(invoice.inv_paid_amount, "ยอดรับแล้ว"),
+    );
+}
+
 // ─── อ่านรายการ ───────────────────────────────────────────────────────────────────────────────
 
 const LIST_TABS = {
@@ -793,6 +824,7 @@ const LIST_TABS = {
     waiting_me: "i.inv_status = 'pending_approval'",
     outstanding: "i.inv_status = 'issued' AND i.inv_paid_amount < i.inv_total",
     overdue: "i.inv_status = 'issued' AND i.inv_paid_amount < i.inv_total AND i.inv_due_date < ?",
+    paid: "i.inv_status = 'issued' AND i.inv_paid_amount >= i.inv_total",
     cancelled: "i.inv_status = 'cancelled'",
 };
 
@@ -811,7 +843,9 @@ async function listInvoices(conn, { tab = "all", search = "", clientId, quotatio
     const params = tabCondition.includes("?") ? [today] : [];
     if (search) {
         const like = `%${search}%`;
-        conditions.push("(i.inv_number LIKE ? OR i.inv_title LIKE ? OR c.client_name LIKE ? OR c.client_company LIKE ?)");
+        conditions.push(
+            "(i.inv_number LIKE ? OR i.inv_title LIKE ? OR c.client_name LIKE ? OR c.client_company LIKE ?)",
+        );
         params.push(like, like, like, like);
     }
     if (clientId) {
@@ -847,7 +881,14 @@ async function listInvoices(conn, { tab = "all", search = "", clientId, quotatio
             evaluateFor(row, approvals.get(row.inv_id) ?? [], actor, company.cs_allow_self_approval).canApprove;
         const plan = quotationService.parseJson(row.inv_approval_plan) ?? [];
         const { inv_approval_plan: _plan, ...rest } = row;
-        return { ...rest, ...dueStatus(row, today), waiting_for_me: waitingForMe, approval_level_count: plan.length };
+        return {
+            ...rest,
+            ...dueStatus(row, today),
+            payment_state: paymentStateOf(row),
+            outstanding_amount: outstandingAmountOf(row),
+            waiting_for_me: waitingForMe,
+            approval_level_count: plan.length,
+        };
     });
 
     const filtered = tab === "waiting_me" ? withFlags.filter((row) => row.waiting_for_me) : withFlags;
@@ -957,18 +998,27 @@ async function buildPayment(conn, invoice) {
         promptPayId = (await companyService.findCompany(conn)).cs_promptpay_id;
     }
 
-    const netPayable = parseHundredths(invoice.inv_total, "ยอดรวม") - parseHundredths(invoice.inv_wht_amount, "หัก ณ ที่จ่าย");
-    // ใบที่ยกเลิกไม่มี QR (กันลูกค้าโอนเข้าใบที่ไม่ใช้แล้ว) · หน้าพิมพ์แสดง QR เฉพาะใบที่ออกแล้ว
+    const total = parseHundredths(invoice.inv_total, "ยอดรวม");
+    const withholding = parseHundredths(invoice.inv_wht_amount, "หัก ณ ที่จ่าย");
+    const netPayable = total - withholding;
+    // ยอดใน QR = ส่วนที่ยังค้างหลังหัก ณ ที่จ่ายตามสัดส่วน (ช่วง 1C: รับเงินบางส่วนแล้ว ลูกค้าสแกนต้องไม่จ่ายซ้ำส่วนที่รับไปแล้ว)
+    const outstanding = total - parseHundredths(invoice.inv_paid_amount, "ยอดรับแล้ว");
+    const qrAmount =
+        outstanding >= total
+            ? netPayable
+            : outstanding - (total > 0n ? divideRoundHalfUp(withholding * outstanding, total) : 0n);
+    // ใบที่ยกเลิก/ชำระครบไม่มี QR (กันลูกค้าโอนเข้าใบที่ไม่ต้องจ่ายแล้ว) · หน้าพิมพ์แสดง QR เฉพาะใบที่ออกแล้ว
     const canUseQr =
         invoice.inv_status !== "cancelled" &&
         invoice.inv_currency === BASE_CURRENCY &&
         normalizePromptPayId(promptPayId) !== null &&
-        netPayable > 0n;
+        qrAmount > 0n;
     return {
         bank_account: bankAccount,
         promptpay_id: promptPayId,
         net_payable: toDecimalText(netPayable),
-        qr_payload: canUseQr ? buildPromptPayPayload({ promptPayId, amount: netPayable }) : null,
+        qr_amount: toDecimalText(qrAmount > 0n ? qrAmount : 0n),
+        qr_payload: canUseQr ? buildPromptPayPayload({ promptPayId, amount: qrAmount }) : null,
     };
 }
 
@@ -1012,6 +1062,15 @@ async function getInvoiceDetail(conn, invoiceId, actor) {
         "SELECT * FROM tb_invoice_approvals WHERE inva_invoice_id = ? ORDER BY inva_id",
         [invoiceId],
     );
+    // ใบเสร็จที่ตัดใบนี้ (รวมที่ยกเลิก — หน้าเว็บแสดงสถานะ) เรียงตามวันที่รับเงิน
+    const [receipts] = await conn.query(
+        `SELECT r.rc_id, r.rc_number, r.rc_status, DATE_FORMAT(r.rc_receipt_date, '%Y-%m-%d') AS rc_receipt_date, r.rc_method,
+                a.rca_amount
+         FROM tb_receipt_allocations a JOIN tb_receipts r ON r.rc_id = a.rca_receipt_id
+         WHERE a.rca_invoice_id = ?
+         ORDER BY r.rc_receipt_date, r.rc_number`,
+        [invoiceId],
+    );
     const [[reissuedTo]] = await conn.query(
         "SELECT inv_id, inv_number, inv_status FROM tb_invoices WHERE inv_reissued_from_id = ? ORDER BY inv_created_at DESC LIMIT 1",
         [invoiceId],
@@ -1037,6 +1096,8 @@ async function getInvoiceDetail(conn, invoiceId, actor) {
             inv_company_snapshot: quotationService.parseJson(invoice.inv_company_snapshot),
             inv_bank_snapshot: quotationService.parseJson(invoice.inv_bank_snapshot),
             ...dueStatus(invoice, today),
+            payment_state: paymentStateOf(invoice),
+            outstanding_amount: outstandingAmountOf(invoice),
         },
         currency,
         items,
@@ -1044,6 +1105,7 @@ async function getInvoiceDetail(conn, invoiceId, actor) {
         approval_history: approvalHistory,
         approval,
         billing_note: billingNote,
+        receipts,
         reissued_to: reissuedTo ?? null,
         payment: await buildPayment(conn, invoice),
         actions,
@@ -1087,6 +1149,11 @@ function buildActions(invoice, actor, approval, billingNote) {
         can_cancel: canCancelNow,
         can_reissue: canCancelNow && canCreate,
         cancel_blocked_reason: canCancelPermission ? cancelBlockedReason : null,
+        // บันทึกรับเงิน (ช่วง 1C — สิทธิ์ของใบเสร็จ ไม่ใช่ของใบแจ้งหนี้)
+        can_receive:
+            hasBit(actor.role_permission, "createReceipt") &&
+            status === "issued" &&
+            parseHundredths(invoice.inv_paid_amount, "ยอดรับแล้ว") < parseHundredths(invoice.inv_total, "ยอดรวม"),
     };
 }
 
@@ -1133,5 +1200,6 @@ module.exports = {
     replaceChildren,
     evaluateFor,
     daysBetween,
+    paymentStateOf,
     DOCUMENT_NAME,
 };

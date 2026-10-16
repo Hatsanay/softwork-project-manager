@@ -92,6 +92,7 @@ export type BillingNoteActions = {
     can_delete: boolean;
     can_issue: boolean;
     can_cancel: boolean;
+    can_receive: boolean;
 };
 
 export type BillingNoteDetail = {

@@ -504,7 +504,7 @@ async function getBillingNoteDetail(conn, billingNoteId, actor) {
         invoices,
         withholding_total: toDecimalText(withholdingTotal),
         currency,
-        actions: buildActions(note, actor),
+        actions: buildActions(note, actor, invoices),
         readiness: isDraft ? buildReadiness(note, invoices, today) : [],
         today,
     };
@@ -533,7 +533,7 @@ function describeInvoiceProblem(invoice, note, otherNote) {
 }
 
 /** ปุ่มที่ผู้ใช้คนนี้กดได้ตอนนี้ (หน้าเว็บซ่อนปุ่มที่กดไม่ได้ — ห้าม tooltip) */
-function buildActions(note, actor) {
+function buildActions(note, actor, invoices) {
     const canCreate = hasBit(actor.role_permission, "createInvoice");
     const isDraft = note.bn_status === "draft";
     return {
@@ -541,6 +541,11 @@ function buildActions(note, actor) {
         can_delete: canCreate && isDraft,
         can_issue: canCreate && isDraft,
         can_cancel: hasBit(actor.role_permission, "cancelInvoice") && note.bn_status === "issued",
+        // บันทึกรับเงินตามใบวางบิล (ช่วง 1C) — ต้องยังมีใบที่ค้างชำระอยู่ในใบนี้
+        can_receive:
+            hasBit(actor.role_permission, "createReceipt") &&
+            note.bn_status === "issued" &&
+            invoices.some((invoice) => invoice.inv_status === "issued" && outstandingOf(invoice) > 0n),
     };
 }
 

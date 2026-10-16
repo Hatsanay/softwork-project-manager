@@ -14,7 +14,7 @@ function notFound(req, res) {
 }
 
 const MULTER_MESSAGES = {
-    LIMIT_FILE_SIZE: "ไฟล์รูปใหญ่เกินไป (สูงสุด 10 MB)",
+    LIMIT_FILE_SIZE: "ไฟล์ใหญ่เกินไป (สูงสุด 10 MB)",
     LIMIT_FILE_COUNT: "แนบรูปได้สูงสุด 5 รูป",
     LIMIT_UNEXPECTED_FILE: "แนบรูปได้สูงสุด 5 รูป",
 };

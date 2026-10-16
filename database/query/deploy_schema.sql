@@ -1047,6 +1047,86 @@ CREATE TABLE IF NOT EXISTS `tb_billing_note_invoices` (
   CONSTRAINT `fk_bni_invoice` FOREIGN KEY (`bni_invoice_id`) REFERENCES `tb_invoices` (`inv_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ════ ช่วง 1C (2026-10-15) — ใบเสร็จรับเงิน · แบบระบบ: docs/plans/2026-10-15-receipts-1c.md ════
+-- ใบเสร็จ = รับเงินจากลูกค้ารายเดียว สกุลเดียว ตัดได้หลายใบแจ้งหนี้ / รับบางส่วนได้ · ไม่มีร่าง (บันทึก = ออกทันที)
+-- สมการ (สกุลของใบ): ยอดตัดหนี้รวม = เงินเข้าจริง + หัก ณ ที่จ่าย + ค่าธรรมเนียม — backend คำนวณเงินเข้าเอง
+-- ออกแล้วแก้ได้เฉพาะข้อมูล 50 ทวิ + บันทึกภายใน · ยกเลิกแล้วยอดรับแล้วของใบแจ้งหนี้ลดกลับ (เลขยังอยู่)
+CREATE TABLE IF NOT EXISTS `tb_receipts` (
+  `rc_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rc_number` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'RE-yyyymmdd-xxxxxx วันที่ในเลข = วันที่ใบเสร็จ',
+  `rc_status` enum('issued','cancelled') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'issued',
+  `rc_version` int unsigned NOT NULL DEFAULT '0',
+  `rc_client_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rc_branch_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rc_currency` char(3) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'THB',
+  `rc_language` enum('th','en') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'th',
+  `rc_receipt_date` date NOT NULL COMMENT 'วันที่ได้รับเงิน (ย้อนหลังได้ไม่เกิน 30 วัน)',
+  `rc_method` enum('transfer','cheque','cash','other') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rc_bank_account_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'บัญชีที่เงินเข้า (บังคับเมื่อโอน)',
+  `rc_reference` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เลขอ้างอิงการโอน / รายละเอียดวิธีอื่น',
+  `rc_cheque_no` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `rc_cheque_bank` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `rc_cheque_date` date DEFAULT NULL,
+  `rc_allocated_total` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ผลรวมยอดตัดหนี้',
+  `rc_wht_amount` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'หัก ณ ที่จ่ายที่ลูกค้าหักจริง',
+  `rc_fee_amount` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ค่าธรรมเนียมที่ถูกหักก่อนเงินเข้า',
+  `rc_received_amount` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'เงินเข้าจริง (สกุลของใบ) = ตัดหนี้ - หัก - ค่าธรรมเนียม',
+  `rc_received_thb` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ยอดบาทที่เข้าบัญชีจริง (บาท = เท่า received)',
+  `rc_actual_rate` decimal(20,10) DEFAULT NULL COMMENT 'อัตราจริง = received_thb / received (สกุลต่างประเทศ)',
+  `rc_allocated_thb` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ยอดตัดหนี้เป็นบาทตามอัตราของใบแจ้งหนี้',
+  `rc_fx_diff_thb` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ส่วนต่างอัตรา บวก = กำไร',
+  `rc_wht_certificate_no` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เลขที่ใน 50 ทวิ',
+  `rc_wht_certificate_date` date DEFAULT NULL,
+  `rc_wht_file_path` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ไฟล์ 50 ทวิ ใต้ backend/storage (ไม่ใช่ /uploads สาธารณะ)',
+  `rc_wht_file_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ชื่อไฟล์เดิมที่ผู้ใช้อัปโหลด',
+  `rc_wht_file_uploaded_at` datetime DEFAULT NULL,
+  `rc_notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `rc_internal_note` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `rc_billing_note_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'บันทึกจากใบวางบิลไหน (อ้างอิงเท่านั้น)',
+  `rc_client_snapshot` json DEFAULT NULL,
+  `rc_company_snapshot` json DEFAULT NULL,
+  `rc_bank_snapshot` json DEFAULT NULL,
+  `rc_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ผู้รับเงิน',
+  `rc_created_by_name` varchar(101) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `rc_cancelled_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `rc_cancelled_at` datetime DEFAULT NULL,
+  `rc_cancel_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `rc_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `rc_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`rc_id`),
+  UNIQUE KEY `uq_rc_number` (`rc_number`),
+  KEY `idx_rc_client_status` (`rc_client_id`,`rc_status`),
+  KEY `idx_rc_receipt_date` (`rc_receipt_date`),
+  KEY `fk_rc_branch` (`rc_branch_id`),
+  KEY `fk_rc_currency` (`rc_currency`),
+  KEY `fk_rc_bank_account` (`rc_bank_account_id`),
+  KEY `fk_rc_billing_note` (`rc_billing_note_id`),
+  KEY `fk_rc_created_by` (`rc_created_by`),
+  KEY `fk_rc_cancelled_by` (`rc_cancelled_by`),
+  CONSTRAINT `fk_rc_bank_account` FOREIGN KEY (`rc_bank_account_id`) REFERENCES `tb_bank_accounts` (`ba_id`),
+  CONSTRAINT `fk_rc_billing_note` FOREIGN KEY (`rc_billing_note_id`) REFERENCES `tb_billing_notes` (`bn_id`),
+  CONSTRAINT `fk_rc_branch` FOREIGN KEY (`rc_branch_id`) REFERENCES `tb_branches` (`branch_id`),
+  CONSTRAINT `fk_rc_cancelled_by` FOREIGN KEY (`rc_cancelled_by`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_rc_client` FOREIGN KEY (`rc_client_id`) REFERENCES `tb_clients` (`client_id`),
+  CONSTRAINT `fk_rc_created_by` FOREIGN KEY (`rc_created_by`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_rc_currency` FOREIGN KEY (`rc_currency`) REFERENCES `tb_currencies` (`cur_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ใบแจ้งหนี้ที่ใบเสร็จตัด · inv_paid_amount = ผลรวม rca_amount ของใบเสร็จที่ไม่ยกเลิก (ปรับใน transaction เดียวกัน)
+-- rca_vat_amount / rca_amount_thb: ครั้งที่ทำให้ใบชำระครบรับเศษ → ผลรวมทุกครั้ง = VAT / ยอดบาทของใบพอดี (เตรียมใบกำกับภาษี B1)
+CREATE TABLE IF NOT EXISTS `tb_receipt_allocations` (
+  `rca_receipt_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rca_invoice_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rca_order` int NOT NULL DEFAULT '0',
+  `rca_amount` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ยอดตัดหนี้ใบนี้ (สกุลของใบ)',
+  `rca_vat_amount` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'VAT ส่วนที่รับครั้งนี้',
+  `rca_amount_thb` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ยอดตัดเป็นบาทตามอัตราของใบแจ้งหนี้',
+  PRIMARY KEY (`rca_receipt_id`,`rca_invoice_id`),
+  KEY `fk_rca_invoice` (`rca_invoice_id`),
+  CONSTRAINT `fk_rca_invoice` FOREIGN KEY (`rca_invoice_id`) REFERENCES `tb_invoices` (`inv_id`),
+  CONSTRAINT `fk_rca_receipt` FOREIGN KEY (`rca_receipt_id`) REFERENCES `tb_receipts` (`rc_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ─── ส่วนที่ 2: เติมคอลัมน์ที่ยังขาด (สำหรับฐานข้อมูลที่สร้างจากโครงสร้างเวอร์ชันเก่า) ──────────────
 -- แต่ละบรรทัด: ถ้าคอลัมน์ยังไม่มี → ADD COLUMN, มีแล้ว → ไม่ทำอะไร
 
@@ -1447,6 +1527,59 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA 
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_note_invoices' AND COLUMN_NAME = 'bni_order') = 0, 'ALTER TABLE `tb_billing_note_invoices` ADD COLUMN `bni_order` int NOT NULL DEFAULT ''0'' AFTER `bni_invoice_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_note_invoices' AND COLUMN_NAME = 'bni_amount') = 0, 'ALTER TABLE `tb_billing_note_invoices` ADD COLUMN `bni_amount` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `bni_order`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- ════ ช่วง 1C (2026-10-15) — ใบเสร็จรับเงิน
+
+-- tb_receipts
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_id') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_number') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_number` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT ''RE-yyyymmdd-xxxxxx วันที่ในเลข = วันที่ใบเสร็จ'' AFTER `rc_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_status') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_status` enum(''issued'',''cancelled'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''issued'' AFTER `rc_number`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_version') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_version` int unsigned NOT NULL DEFAULT ''0'' AFTER `rc_status`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_client_id') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_client_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `rc_version`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_branch_id') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_branch_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `rc_client_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_currency') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_currency` char(3) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''THB'' AFTER `rc_branch_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_language') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_language` enum(''th'',''en'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''th'' AFTER `rc_currency`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_receipt_date') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_receipt_date` date NOT NULL COMMENT ''วันที่ได้รับเงิน (ย้อนหลังได้ไม่เกิน 30 วัน)'' AFTER `rc_language`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_method') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_method` enum(''transfer'',''cheque'',''cash'',''other'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `rc_receipt_date`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_bank_account_id') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_bank_account_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''บัญชีที่เงินเข้า (บังคับเมื่อโอน)'' AFTER `rc_method`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_reference') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_reference` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''เลขอ้างอิงการโอน / รายละเอียดวิธีอื่น'' AFTER `rc_bank_account_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_cheque_no') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_cheque_no` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `rc_reference`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_cheque_bank') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_cheque_bank` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `rc_cheque_no`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_cheque_date') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_cheque_date` date DEFAULT NULL AFTER `rc_cheque_bank`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_allocated_total') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_allocated_total` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''ผลรวมยอดตัดหนี้'' AFTER `rc_cheque_date`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_wht_amount') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_wht_amount` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''หัก ณ ที่จ่ายที่ลูกค้าหักจริง'' AFTER `rc_allocated_total`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_fee_amount') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_fee_amount` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''ค่าธรรมเนียมที่ถูกหักก่อนเงินเข้า'' AFTER `rc_wht_amount`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_received_amount') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_received_amount` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''เงินเข้าจริง (สกุลของใบ) = ตัดหนี้ - หัก - ค่าธรรมเนียม'' AFTER `rc_fee_amount`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_received_thb') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_received_thb` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''ยอดบาทที่เข้าบัญชีจริง (บาท = เท่า received)'' AFTER `rc_received_amount`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_actual_rate') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_actual_rate` decimal(20,10) DEFAULT NULL COMMENT ''อัตราจริง = received_thb / received (สกุลต่างประเทศ)'' AFTER `rc_received_thb`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_allocated_thb') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_allocated_thb` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''ยอดตัดหนี้เป็นบาทตามอัตราของใบแจ้งหนี้'' AFTER `rc_actual_rate`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_fx_diff_thb') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_fx_diff_thb` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''ส่วนต่างอัตรา บวก = กำไร'' AFTER `rc_allocated_thb`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_wht_certificate_no') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_wht_certificate_no` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''เลขที่ใน 50 ทวิ'' AFTER `rc_fx_diff_thb`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_wht_certificate_date') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_wht_certificate_date` date DEFAULT NULL AFTER `rc_wht_certificate_no`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_wht_file_path') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_wht_file_path` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''ไฟล์ 50 ทวิ ใต้ backend/storage (ไม่ใช่ /uploads สาธารณะ)'' AFTER `rc_wht_certificate_date`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_wht_file_name') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_wht_file_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''ชื่อไฟล์เดิมที่ผู้ใช้อัปโหลด'' AFTER `rc_wht_file_path`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_wht_file_uploaded_at') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_wht_file_uploaded_at` datetime DEFAULT NULL AFTER `rc_wht_file_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_notes') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci AFTER `rc_wht_file_uploaded_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_internal_note') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_internal_note` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci AFTER `rc_notes`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_billing_note_id') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_billing_note_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''บันทึกจากใบวางบิลไหน (อ้างอิงเท่านั้น)'' AFTER `rc_internal_note`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_client_snapshot') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_client_snapshot` json DEFAULT NULL AFTER `rc_billing_note_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_company_snapshot') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_company_snapshot` json DEFAULT NULL AFTER `rc_client_snapshot`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_bank_snapshot') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_bank_snapshot` json DEFAULT NULL AFTER `rc_company_snapshot`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_created_by') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''ผู้รับเงิน'' AFTER `rc_bank_snapshot`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_created_by_name') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_created_by_name` varchar(101) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `rc_created_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_cancelled_by') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_cancelled_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `rc_created_by_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_cancelled_at') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_cancelled_at` datetime DEFAULT NULL AFTER `rc_cancelled_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_cancel_reason') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_cancel_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `rc_cancelled_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_created_at') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_created_at` datetime DEFAULT CURRENT_TIMESTAMP AFTER `rc_cancel_reason`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND COLUMN_NAME = 'rc_updated_at') = 0, 'ALTER TABLE `tb_receipts` ADD COLUMN `rc_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `rc_created_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_receipt_allocations
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipt_allocations' AND COLUMN_NAME = 'rca_receipt_id') = 0, 'ALTER TABLE `tb_receipt_allocations` ADD COLUMN `rca_receipt_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipt_allocations' AND COLUMN_NAME = 'rca_invoice_id') = 0, 'ALTER TABLE `tb_receipt_allocations` ADD COLUMN `rca_invoice_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `rca_receipt_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipt_allocations' AND COLUMN_NAME = 'rca_order') = 0, 'ALTER TABLE `tb_receipt_allocations` ADD COLUMN `rca_order` int NOT NULL DEFAULT ''0'' AFTER `rca_invoice_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipt_allocations' AND COLUMN_NAME = 'rca_amount') = 0, 'ALTER TABLE `tb_receipt_allocations` ADD COLUMN `rca_amount` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''ยอดตัดหนี้ใบนี้ (สกุลของใบ)'' AFTER `rca_order`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipt_allocations' AND COLUMN_NAME = 'rca_vat_amount') = 0, 'ALTER TABLE `tb_receipt_allocations` ADD COLUMN `rca_vat_amount` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''VAT ส่วนที่รับครั้งนี้'' AFTER `rca_amount`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipt_allocations' AND COLUMN_NAME = 'rca_amount_thb') = 0, 'ALTER TABLE `tb_receipt_allocations` ADD COLUMN `rca_amount_thb` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''ยอดตัดเป็นบาทตามอัตราของใบแจ้งหนี้'' AFTER `rca_vat_amount`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
 -- ── การเปลี่ยนชนิด/เงื่อนไขของคอลัมน์ที่มีอยู่แล้ว (เรียงตามเวลา) ──────────────────────────────────
 -- 2026-10-07 onboarding: ผู้ใช้เดิมได้ชื่อผู้ใช้ = user_id (ยัง login ด้วยอีเมลได้เหมือนเดิม) — UPDATE นี้รันซ้ำได้ แตะเฉพาะแถวที่ยังว่าง
 UPDATE tb_users SET user_username = user_id WHERE user_username IS NULL OR user_username = '';
@@ -1657,6 +1790,23 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHE
 -- tb_billing_note_invoices
 SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_note_invoices' AND INDEX_NAME = 'fk_bni_invoice') = 0, 'ALTER TABLE `tb_billing_note_invoices` ADD KEY `fk_bni_invoice` (`bni_invoice_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- tb_receipts
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND INDEX_NAME = 'uq_rc_number') <> 'rc_number', 'ALTER TABLE `tb_receipts` DROP INDEX `uq_rc_number`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND INDEX_NAME = 'uq_rc_number') = 0, 'ALTER TABLE `tb_receipts` ADD UNIQUE KEY `uq_rc_number` (`rc_number`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND INDEX_NAME = 'idx_rc_client_status') <> 'rc_client_id,rc_status', 'ALTER TABLE `tb_receipts` DROP INDEX `idx_rc_client_status`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND INDEX_NAME = 'idx_rc_client_status') = 0, 'ALTER TABLE `tb_receipts` ADD KEY `idx_rc_client_status` (`rc_client_id`,`rc_status`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND INDEX_NAME = 'idx_rc_receipt_date') <> 'rc_receipt_date', 'ALTER TABLE `tb_receipts` DROP INDEX `idx_rc_receipt_date`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND INDEX_NAME = 'idx_rc_receipt_date') = 0, 'ALTER TABLE `tb_receipts` ADD KEY `idx_rc_receipt_date` (`rc_receipt_date`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND INDEX_NAME = 'fk_rc_branch') = 0, 'ALTER TABLE `tb_receipts` ADD KEY `fk_rc_branch` (`rc_branch_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND INDEX_NAME = 'fk_rc_currency') = 0, 'ALTER TABLE `tb_receipts` ADD KEY `fk_rc_currency` (`rc_currency`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND INDEX_NAME = 'fk_rc_bank_account') = 0, 'ALTER TABLE `tb_receipts` ADD KEY `fk_rc_bank_account` (`rc_bank_account_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND INDEX_NAME = 'fk_rc_billing_note') = 0, 'ALTER TABLE `tb_receipts` ADD KEY `fk_rc_billing_note` (`rc_billing_note_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND INDEX_NAME = 'fk_rc_created_by') = 0, 'ALTER TABLE `tb_receipts` ADD KEY `fk_rc_created_by` (`rc_created_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND INDEX_NAME = 'fk_rc_cancelled_by') = 0, 'ALTER TABLE `tb_receipts` ADD KEY `fk_rc_cancelled_by` (`rc_cancelled_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_receipt_allocations
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipt_allocations' AND INDEX_NAME = 'fk_rca_invoice') = 0, 'ALTER TABLE `tb_receipt_allocations` ADD KEY `fk_rca_invoice` (`rca_invoice_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
 -- ─── ส่วนที่ 4: เติม foreign key ที่ยังขาด (รวม FK ย้อนกลับ tb_roles -> tb_users ที่สร้างพร้อมตารางไม่ได้) ──
 -- สกุลเงินเริ่มต้น THB + USD (2026-10-13) — ต้องมีก่อนเพิ่ม FK สกุลเงินของลูกค้า (ลูกค้าเดิมทุกรายได้ค่าเริ่มต้น THB)
 -- ใส่เฉพาะตอนตารางยังว่าง · ข้อมูลเริ่มต้นอื่นอยู่ส่วนที่ 5
@@ -1771,14 +1921,27 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CON
 SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_note_invoices' AND CONSTRAINT_NAME = 'fk_bni_billing_note' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_billing_note_invoices` ADD CONSTRAINT `fk_bni_billing_note` FOREIGN KEY (`bni_billing_note_id`) REFERENCES `tb_billing_notes` (`bn_id`) ON DELETE CASCADE', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_billing_note_invoices' AND CONSTRAINT_NAME = 'fk_bni_invoice' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_billing_note_invoices` ADD CONSTRAINT `fk_bni_invoice` FOREIGN KEY (`bni_invoice_id`) REFERENCES `tb_invoices` (`inv_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- tb_receipts
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND CONSTRAINT_NAME = 'fk_rc_bank_account' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_receipts` ADD CONSTRAINT `fk_rc_bank_account` FOREIGN KEY (`rc_bank_account_id`) REFERENCES `tb_bank_accounts` (`ba_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND CONSTRAINT_NAME = 'fk_rc_billing_note' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_receipts` ADD CONSTRAINT `fk_rc_billing_note` FOREIGN KEY (`rc_billing_note_id`) REFERENCES `tb_billing_notes` (`bn_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND CONSTRAINT_NAME = 'fk_rc_branch' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_receipts` ADD CONSTRAINT `fk_rc_branch` FOREIGN KEY (`rc_branch_id`) REFERENCES `tb_branches` (`branch_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND CONSTRAINT_NAME = 'fk_rc_cancelled_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_receipts` ADD CONSTRAINT `fk_rc_cancelled_by` FOREIGN KEY (`rc_cancelled_by`) REFERENCES `tb_users` (`user_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND CONSTRAINT_NAME = 'fk_rc_client' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_receipts` ADD CONSTRAINT `fk_rc_client` FOREIGN KEY (`rc_client_id`) REFERENCES `tb_clients` (`client_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND CONSTRAINT_NAME = 'fk_rc_created_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_receipts` ADD CONSTRAINT `fk_rc_created_by` FOREIGN KEY (`rc_created_by`) REFERENCES `tb_users` (`user_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipts' AND CONSTRAINT_NAME = 'fk_rc_currency' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_receipts` ADD CONSTRAINT `fk_rc_currency` FOREIGN KEY (`rc_currency`) REFERENCES `tb_currencies` (`cur_code`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_receipt_allocations
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipt_allocations' AND CONSTRAINT_NAME = 'fk_rca_invoice' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_receipt_allocations` ADD CONSTRAINT `fk_rca_invoice` FOREIGN KEY (`rca_invoice_id`) REFERENCES `tb_invoices` (`inv_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_receipt_allocations' AND CONSTRAINT_NAME = 'fk_rca_receipt' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_receipt_allocations` ADD CONSTRAINT `fk_rca_receipt` FOREIGN KEY (`rca_receipt_id`) REFERENCES `tb_receipts` (`rc_id`) ON DELETE CASCADE', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
 -- ─── ส่วนที่ 5: ข้อมูลเริ่มต้น (ใส่เฉพาะตอนตารางยังว่างเท่านั้น) ─────────────────────────────────
 -- ตั้งใจเช็ค "ตารางว่าง" ไม่ใช่ "ไม่มีแถวนี้" — ถ้าแอดมินลบ/เปลี่ยนบัญชีเริ่มต้นไปแล้วบน production
 -- ห้ามสร้างบัญชีที่รู้รหัสผ่านกลับขึ้นมาใหม่เองตอน deploy
 
--- role Admin เปิดทุกบิต (37 บิต) — role ระบบ (S) ได้สิทธิ์ครบเสมออยู่แล้วไม่ว่าสตริงจะยาวเท่าไร (effectiveRolePermission)
+-- role Admin เปิดทุกบิต (41 บิต) — role ระบบ (S) ได้สิทธิ์ครบเสมออยู่แล้วไม่ว่าสตริงจะยาวเท่าไร (effectiveRolePermission)
 -- role อื่นที่สตริงสั้นกว่าจำนวนบิตปัจจุบัน ถือว่าบิตใหม่ = 0 (ไม่ได้สิทธิ์ใหม่เอง ต้องมีคนติ๊กให้)
 INSERT INTO tb_roles (role_id, role_name, role_permission, role_type)
-SELECT 'ROL202601010000001', 'Admin', '1111111111111111111111111111111111111', 'S'
+SELECT 'ROL202601010000001', 'Admin', '11111111111111111111111111111111111111111', 'S'
 FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM tb_roles);
 
 -- ผู้ใช้คนแรก: admin (หรือ admin@softwork.local) / Admin@12345 — ระบบบังคับเปลี่ยนรหัสผ่านตอน login ครั้งแรก
@@ -1903,6 +2066,8 @@ FROM (
     UNION ALL SELECT 'tb_invoice_approvals' AS table_name, 'inva_action,inva_created_at,inva_id,inva_invoice_id,inva_level,inva_reason,inva_role_id,inva_role_name,inva_round,inva_user_id,inva_user_name' AS expected_columns, 'fk_inva_user(inva_user_id),idx_inva_invoice(inva_invoice_id+inva_round+inva_level),primary(inva_id)' AS expected_indexes
     UNION ALL SELECT 'tb_billing_notes' AS table_name, 'bn_branch_id,bn_cancel_reason,bn_cancelled_at,bn_cancelled_by,bn_client_id,bn_client_snapshot,bn_company_snapshot,bn_created_at,bn_created_by,bn_created_by_name,bn_currency,bn_id,bn_issue_date,bn_issued_at,bn_language,bn_notes,bn_number,bn_payment_date,bn_status,bn_total,bn_updated_at,bn_version' AS expected_columns, 'fk_bn_branch(bn_branch_id),fk_bn_cancelled_by(bn_cancelled_by),fk_bn_created_by(bn_created_by),fk_bn_currency(bn_currency),idx_bn_client_status(bn_client_id+bn_status),idx_bn_issue_date(bn_issue_date),primary(bn_id),uq_bn_number(bn_number)' AS expected_indexes
     UNION ALL SELECT 'tb_billing_note_invoices' AS table_name, 'bni_amount,bni_billing_note_id,bni_invoice_id,bni_order' AS expected_columns, 'fk_bni_invoice(bni_invoice_id),primary(bni_billing_note_id+bni_invoice_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_receipts' AS table_name, 'rc_actual_rate,rc_allocated_thb,rc_allocated_total,rc_bank_account_id,rc_bank_snapshot,rc_billing_note_id,rc_branch_id,rc_cancel_reason,rc_cancelled_at,rc_cancelled_by,rc_cheque_bank,rc_cheque_date,rc_cheque_no,rc_client_id,rc_client_snapshot,rc_company_snapshot,rc_created_at,rc_created_by,rc_created_by_name,rc_currency,rc_fee_amount,rc_fx_diff_thb,rc_id,rc_internal_note,rc_language,rc_method,rc_notes,rc_number,rc_receipt_date,rc_received_amount,rc_received_thb,rc_reference,rc_status,rc_updated_at,rc_version,rc_wht_amount,rc_wht_certificate_date,rc_wht_certificate_no,rc_wht_file_name,rc_wht_file_path,rc_wht_file_uploaded_at' AS expected_columns, 'fk_rc_bank_account(rc_bank_account_id),fk_rc_billing_note(rc_billing_note_id),fk_rc_branch(rc_branch_id),fk_rc_cancelled_by(rc_cancelled_by),fk_rc_created_by(rc_created_by),fk_rc_currency(rc_currency),idx_rc_client_status(rc_client_id+rc_status),idx_rc_receipt_date(rc_receipt_date),primary(rc_id),uq_rc_number(rc_number)' AS expected_indexes
+    UNION ALL SELECT 'tb_receipt_allocations' AS table_name, 'rca_amount,rca_amount_thb,rca_invoice_id,rca_order,rca_receipt_id,rca_vat_amount' AS expected_columns, 'fk_rca_invoice(rca_invoice_id),primary(rca_receipt_id+rca_invoice_id)' AS expected_indexes
 ) e
 LEFT JOIN (
     SELECT LOWER(c.TABLE_NAME) AS table_name,

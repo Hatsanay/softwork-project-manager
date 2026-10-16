@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { CheckCircle2, Circle, FileCheck2, Pencil, Printer, Trash2, XCircle } from "lucide-react";
+import { Banknote, CheckCircle2, Circle, FileCheck2, Pencil, Printer, Trash2, XCircle } from "lucide-react";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import PageHeader from "@/components/ui/page-header";
 import ReasonDialog from "@/components/ui/reason-dialog";
@@ -170,6 +170,15 @@ export default function BillingNoteViewPage() {
                         <FileCheck2 size={16} />
                         ออกใบวางบิล
                     </button>
+                )}
+                {actions.can_receive && (
+                    <Link
+                        href={`/sales/receipts/new?billing_note=${note.bn_id}`}
+                        className={buttonClass("primary", "md")}
+                    >
+                        <Banknote size={16} />
+                        บันทึกรับเงินตามใบวางบิลนี้
+                    </Link>
                 )}
                 {actions.can_cancel && (
                     <button type="button" className={buttonClass("ghost", "md")} onClick={() => setIsCancelOpen(true)}>

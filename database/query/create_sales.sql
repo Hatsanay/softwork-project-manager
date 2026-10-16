@@ -592,6 +592,86 @@ CREATE TABLE `tb_billing_note_invoices` (
   CONSTRAINT `fk_bni_invoice` FOREIGN KEY (`bni_invoice_id`) REFERENCES `tb_invoices` (`inv_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ════ ช่วง 1C (2026-10-15) — ใบเสร็จรับเงิน · แบบระบบ: docs/plans/2026-10-15-receipts-1c.md ════
+-- ใบเสร็จ = รับเงินจากลูกค้ารายเดียว สกุลเดียว ตัดได้หลายใบแจ้งหนี้ / รับบางส่วนได้ · ไม่มีร่าง (บันทึก = ออกทันที)
+-- สมการ (สกุลของใบ): ยอดตัดหนี้รวม = เงินเข้าจริง + หัก ณ ที่จ่าย + ค่าธรรมเนียม — backend คำนวณเงินเข้าเอง
+-- ออกแล้วแก้ได้เฉพาะข้อมูล 50 ทวิ + บันทึกภายใน · ยกเลิกแล้วยอดรับแล้วของใบแจ้งหนี้ลดกลับ (เลขยังอยู่)
+CREATE TABLE `tb_receipts` (
+  `rc_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rc_number` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'RE-yyyymmdd-xxxxxx วันที่ในเลข = วันที่ใบเสร็จ',
+  `rc_status` enum('issued','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'issued',
+  `rc_version` int unsigned NOT NULL DEFAULT '0',
+  `rc_client_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rc_branch_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rc_currency` char(3) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'THB',
+  `rc_language` enum('th','en') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'th',
+  `rc_receipt_date` date NOT NULL COMMENT 'วันที่ได้รับเงิน (ย้อนหลังได้ไม่เกิน 30 วัน)',
+  `rc_method` enum('transfer','cheque','cash','other') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rc_bank_account_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'บัญชีที่เงินเข้า (บังคับเมื่อโอน)',
+  `rc_reference` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เลขอ้างอิงการโอน / รายละเอียดวิธีอื่น',
+  `rc_cheque_no` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `rc_cheque_bank` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `rc_cheque_date` date DEFAULT NULL,
+  `rc_allocated_total` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ผลรวมยอดตัดหนี้',
+  `rc_wht_amount` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'หัก ณ ที่จ่ายที่ลูกค้าหักจริง',
+  `rc_fee_amount` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ค่าธรรมเนียมที่ถูกหักก่อนเงินเข้า',
+  `rc_received_amount` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'เงินเข้าจริง (สกุลของใบ) = ตัดหนี้ - หัก - ค่าธรรมเนียม',
+  `rc_received_thb` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ยอดบาทที่เข้าบัญชีจริง (บาท = เท่า received)',
+  `rc_actual_rate` decimal(20,10) DEFAULT NULL COMMENT 'อัตราจริง = received_thb / received (สกุลต่างประเทศ)',
+  `rc_allocated_thb` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ยอดตัดหนี้เป็นบาทตามอัตราของใบแจ้งหนี้',
+  `rc_fx_diff_thb` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ส่วนต่างอัตรา บวก = กำไร',
+  `rc_wht_certificate_no` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เลขที่ใน 50 ทวิ',
+  `rc_wht_certificate_date` date DEFAULT NULL,
+  `rc_wht_file_path` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ไฟล์ 50 ทวิ ใต้ backend/storage (ไม่ใช่ /uploads สาธารณะ)',
+  `rc_wht_file_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ชื่อไฟล์เดิมที่ผู้ใช้อัปโหลด',
+  `rc_wht_file_uploaded_at` datetime DEFAULT NULL,
+  `rc_notes` text COLLATE utf8mb4_unicode_ci,
+  `rc_internal_note` text COLLATE utf8mb4_unicode_ci,
+  `rc_billing_note_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'บันทึกจากใบวางบิลไหน (อ้างอิงเท่านั้น)',
+  `rc_client_snapshot` json DEFAULT NULL,
+  `rc_company_snapshot` json DEFAULT NULL,
+  `rc_bank_snapshot` json DEFAULT NULL,
+  `rc_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ผู้รับเงิน',
+  `rc_created_by_name` varchar(101) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `rc_cancelled_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `rc_cancelled_at` datetime DEFAULT NULL,
+  `rc_cancel_reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `rc_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `rc_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`rc_id`),
+  UNIQUE KEY `uq_rc_number` (`rc_number`),
+  KEY `idx_rc_client_status` (`rc_client_id`,`rc_status`),
+  KEY `idx_rc_receipt_date` (`rc_receipt_date`),
+  KEY `fk_rc_branch` (`rc_branch_id`),
+  KEY `fk_rc_currency` (`rc_currency`),
+  KEY `fk_rc_bank_account` (`rc_bank_account_id`),
+  KEY `fk_rc_billing_note` (`rc_billing_note_id`),
+  KEY `fk_rc_created_by` (`rc_created_by`),
+  KEY `fk_rc_cancelled_by` (`rc_cancelled_by`),
+  CONSTRAINT `fk_rc_client` FOREIGN KEY (`rc_client_id`) REFERENCES `tb_clients` (`client_id`),
+  CONSTRAINT `fk_rc_branch` FOREIGN KEY (`rc_branch_id`) REFERENCES `tb_branches` (`branch_id`),
+  CONSTRAINT `fk_rc_currency` FOREIGN KEY (`rc_currency`) REFERENCES `tb_currencies` (`cur_code`),
+  CONSTRAINT `fk_rc_bank_account` FOREIGN KEY (`rc_bank_account_id`) REFERENCES `tb_bank_accounts` (`ba_id`),
+  CONSTRAINT `fk_rc_billing_note` FOREIGN KEY (`rc_billing_note_id`) REFERENCES `tb_billing_notes` (`bn_id`),
+  CONSTRAINT `fk_rc_created_by` FOREIGN KEY (`rc_created_by`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_rc_cancelled_by` FOREIGN KEY (`rc_cancelled_by`) REFERENCES `tb_users` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ใบแจ้งหนี้ที่ใบเสร็จตัด · inv_paid_amount = ผลรวม rca_amount ของใบเสร็จที่ไม่ยกเลิก (ปรับใน transaction เดียวกัน)
+-- rca_vat_amount / rca_amount_thb: ครั้งที่ทำให้ใบชำระครบรับเศษ → ผลรวมทุกครั้ง = VAT / ยอดบาทของใบพอดี (เตรียมใบกำกับภาษี B1)
+CREATE TABLE `tb_receipt_allocations` (
+  `rca_receipt_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rca_invoice_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rca_order` int NOT NULL DEFAULT '0',
+  `rca_amount` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ยอดตัดหนี้ใบนี้ (สกุลของใบ)',
+  `rca_vat_amount` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'VAT ส่วนที่รับครั้งนี้',
+  `rca_amount_thb` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ยอดตัดเป็นบาทตามอัตราของใบแจ้งหนี้',
+  PRIMARY KEY (`rca_receipt_id`,`rca_invoice_id`),
+  KEY `fk_rca_invoice` (`rca_invoice_id`),
+  CONSTRAINT `fk_rca_receipt` FOREIGN KEY (`rca_receipt_id`) REFERENCES `tb_receipts` (`rc_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_rca_invoice` FOREIGN KEY (`rca_invoice_id`) REFERENCES `tb_invoices` (`inv_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- FK จากตารางเดิมมาตารางกลุ่มนี้ (ตารางเดิมถูกสร้างก่อน จึงเพิ่มทีหลัง)
 INSERT INTO tb_currencies (cur_code, cur_name_th, cur_name_en, cur_symbol, cur_decimals, cur_unit_th, cur_subunit_th, cur_unit_en, cur_subunit_en, cur_bot_unit, cur_sort_order)
 VALUES ('THB', 'บาท', 'Thai Baht', '฿', 2, 'บาท', 'สตางค์', 'Baht', 'Satang', 1, 1),

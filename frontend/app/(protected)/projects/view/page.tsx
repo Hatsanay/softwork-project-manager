@@ -15,6 +15,7 @@ import Input from "@/components/ui/Input/input";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import SearchableSelect from "@/components/ui/SearchableSelect";
 import { PROJECT_PERMISSION_BITS } from "@/app/components/project-position-bits";
+import ProjectFinanceCard from "./_components/project-finance-card";
 import { toast } from "sonner";
 import { buttonClass } from "@/components/ui/button";
 import { inputClass } from "@/components/ui/form-field";
@@ -1344,6 +1345,9 @@ export default function ViewProjectPage() {
                     onRegenerate={handleRegenerateLink}
                 />
             )}
+
+            {/* การเงิน — เฉพาะผู้มีสิทธิ์ดูใบแจ้งหนี้ (ช่วง 1D) */}
+            <ProjectFinanceCard projectId={id} />
 
             {/* ภาพรวม Agile — เฉพาะโปรเจกต์ agile */}
             {project.project_type === "agile" && (

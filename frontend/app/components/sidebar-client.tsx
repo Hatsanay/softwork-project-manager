@@ -14,6 +14,7 @@ import CommandSearch from "./command-search";
 import { initialsOf } from "@/components/ui/person-cell";
 import {
     Building2,
+    ChartColumn,
     ChevronDown,
     ChevronsLeft,
     ChevronsRight,
@@ -34,6 +35,7 @@ const ICONS: Record<string, LucideIcon> = {
     "/settings": Settings2,
     "/clients": Building2,
     "/sales": ShoppingBag,
+    "/reports": ChartColumn,
 };
 
 // เมนูของผู้ดูแลระบบ (จัดกลุ่มบนหน้าจอเท่านั้น — ใครเห็นเมนูไหนยังขึ้นกับสิทธิ์เหมือนเดิม)

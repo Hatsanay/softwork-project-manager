@@ -30,7 +30,6 @@ export const MENU_DEFS: MenuItem[] = [
     },
     // { key: "customers", label: "จัดการลูกค้า", href: "/customers" },
     // { key: "payments",  label: "การชำระเงิน",  href: "/payments" },
-    // { key: "reports",   label: "รายงาน",       href: "/reports" },
     {
         key: "settings", label: "ตั้งค่าระบบ", href: "/settings",
         children: [
@@ -61,9 +60,12 @@ export const MENU_DEFS: MenuItem[] = [
             { key: "viewQuotations", label: "ใบเสนอราคา", href: "/sales/quotations" },
             { key: "viewInvoices", label: "ใบแจ้งหนี้", href: "/sales/invoices" },
             { key: "viewInvoices", label: "ใบวางบิล", href: "/sales/billing-notes" },
+            { key: "viewReceipts", label: "ใบเสร็จรับเงิน", href: "/sales/receipts" },
+            { key: "viewReceipts", label: "ลูกหนี้คงค้าง", href: "/sales/receivables" },
             { key: "productManagement", label: "สินค้า/บริการ", href: "/sales/products" },
         ],
     },
+    { key: "salesReports", label: "รายงาน", href: "/reports" },
     {
         key: "clientManagement", label: "จัดการลูกค้า", href: "/clients",
         children: [
@@ -161,6 +163,10 @@ export const PERMISSION_GROUPS: PermGroup[] = [
             { key: "createInvoice",    label: "สร้าง/ออกใบแจ้งหนี้และใบวางบิล (ร่าง ออกจากงวดใบเสนอราคา ส่งลูกค้า)",       href: "/sales/invoices/new" },
             { key: "approveInvoice",   label: "อนุมัติ/ตีกลับใบแจ้งหนี้ที่สร้างเอง (ต้องมี role อยู่ในชั้นที่รออยู่ด้วย)",       href: "/sales/invoices/approve" },
             { key: "cancelInvoice",    label: "ยกเลิกใบแจ้งหนี้และใบวางบิล",                                           href: "/sales/invoices/cancel" },
+            { key: "viewReceipts",     label: "ดูใบเสร็จรับเงิน ไฟล์ 50 ทวิ และรายงานลูกหนี้คงค้าง",                         href: "/sales/receipts" },
+            { key: "createReceipt",    label: "บันทึกรับเงิน/ออกใบเสร็จ และแนบ/แก้ข้อมูล 50 ทวิ",                             href: "/sales/receipts/new" },
+            { key: "cancelReceipt",    label: "ยกเลิกใบเสร็จรับเงิน (ยอดรับแล้วของใบแจ้งหนี้ลดกลับ)",                          href: "/sales/receipts/cancel" },
+            { key: "salesReports",     label: "ดูรายงานขาย และดาวน์โหลดไฟล์ส่งนักบัญชี (มีเลขผู้เสียภาษีของลูกค้า)",              href: "/reports" },
         ],
     },
 ];
