@@ -11,6 +11,40 @@
     --shadow-card: 0 1px 2px rgb(16 24 40 / 0.04), 0 4px 16px -8px rgb(16 24 40 / 0.08);
     --shadow-float: 0 24px 48px -16px rgb(16 24 40 / 0.22), 0 4px 12px -4px rgb(16 24 40 / 0.08);
     --shadow-brand: 0 8px 18px -8px rgb(37 99 235 / 0.6);
+
+    /* ภาพเคลื่อนไหว (หน้า login 16 ต.ค. 2026) — ใช้คู่กับ motion-reduce:animate-none เสมอ (ผู้ใช้ที่ปิดการเคลื่อนไหวในเครื่อง) */
+    --animate-fade-up: fade-up 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    --animate-float: float 5s ease-in-out infinite;
+    --animate-grow-x: grow-x var(--carousel-duration, 5s) linear both;
+
+    @keyframes fade-up {
+        from {
+            opacity: 0;
+            transform: translateY(14px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    @keyframes float {
+        0%,
+        100% {
+            transform: translateY(0);
+        }
+        50% {
+            transform: translateY(-6px);
+        }
+    }
+    /* แถบเวลาของ carousel — เต็มแถบ = เลื่อนไปสไลด์ถัดไป */
+    @keyframes grow-x {
+        from {
+            transform: scaleX(0);
+        }
+        to {
+            transform: scaleX(1);
+        }
+    }
 }
 
 /* พื้นไล่เฉดฟ้าของปุ่มหลัก/เมนูที่เลือก/การ์ดต้อนรับ */

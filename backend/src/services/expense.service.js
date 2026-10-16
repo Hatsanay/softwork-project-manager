@@ -7,6 +7,9 @@
 //   สองคนบันทึกบิลใบเดียวกันพร้อมกัน คนที่สองรอแล้วเห็นของคนแรก · ลำดับล็อก: ค่าใช้จ่าย → ผู้ขาย เสมอ
 // - เปลี่ยนสถานะ (ส่ง/อนุมัติ/ตีกลับ/ยกเลิก/คัดลอก) อยู่ที่ expense-workflow.service.js
 // - ไฟล์แนบเก็บแบบส่วนตัว (utils/private-file.js) — service จัดการแถวใน DB · controller เขียน/ลบไฟล์บนดิสก์
+// - ใบเบิกเงินพนักงาน (ขั้น 2-3, ex_kind = claim): ทุกคนที่ login เบิกได้ ไม่ต้องมีสิทธิ์ · ผู้เบิก = ผู้บันทึก
+//   เห็น/แก้/ส่ง/แนบไฟล์ได้เฉพาะเจ้าของใบ · ผู้มีสิทธิ์ดู/อนุมัติค่าใช้จ่าย/ทำจ่าย เห็นทุกใบ · บาทเท่านั้น ไม่หัก ณ ที่จ่าย
+//   ทุกฟังก์ชันที่รับรหัสจาก URL ตรวจว่าเป็นชนิดที่เส้นทางนั้นดูแล (kind) — ใบเบิกเปิดผ่านเส้นทางบิลไม่ได้ และกลับกัน
 const { AppError } = require("../utils/app-error");
 const { generateDailyId } = require("../utils/generateDailyId");
 const { todayBangkok } = require("../utils/bangkok-time");
@@ -27,6 +30,7 @@ const quotationService = require("./quotation.service");
 const purchasingSetupService = require("./purchasing-setup.service");
 const exchangeRateService = require("./exchange-rate.service");
 const { whtFormOf } = require("./vendor.service");
+const paymentService = require("./payment.service");
 
 const MAX_LIST_LIMIT = 200;
 const DOCUMENT_NAME = "ค่าใช้จ่าย";
@@ -76,6 +80,41 @@ async function findForUpdate(conn, expenseId) {
     );
     if (!expense) throw notFound();
     return expense;
+}
+
+// ─── ใครทำอะไรกับรายการไหนได้ ──────────────────────────────────────────────────────────────────
+
+// สิทธิ์ที่เห็นใบเบิกของทุกคน (ผู้ดูค่าใช้จ่าย ผู้อนุมัติ ผู้ทำจ่าย)
+const VIEW_ALL_CLAIMS_PERMISSIONS = ["viewExpenses", "approveExpense", "makePayment"];
+
+function canViewAllClaims(actor) {
+    return VIEW_ALL_CLAIMS_PERMISSIONS.some((key) => hasBit(actor.role_permission, key));
+}
+
+function isClaimOwner(expense, actor) {
+    return expense.ex_kind === "claim" && expense.ex_employee_id === actor.user_id;
+}
+
+/** ผู้แก้ร่าง/ส่ง/แนบไฟล์ได้: บิล = สิทธิ์บันทึกค่าใช้จ่าย · ใบเบิก = เจ้าของใบเท่านั้น */
+function canWorkAsCreator(expense, actor) {
+    if (expense.ex_kind === "claim") return isClaimOwner(expense, actor);
+    return hasBit(actor.role_permission, "createExpense");
+}
+
+/**
+ * รายการต้องเป็นชนิดที่เส้นทางนั้นดูแล และผู้ใช้ต้องเห็นรายการนี้ได้ — ไม่ผ่าน = 404 (ไม่บอกว่ามีรายการนี้อยู่)
+ * สิทธิ์ดูบิลตรวจที่เส้นทางแล้ว · ใบเบิก: เจ้าของ หรือผู้มีสิทธิ์เห็นทุกใบ
+ */
+function assertCanSee(expense, actor, kind) {
+    if (expense.ex_kind !== kind) throw notFound();
+    if (kind === "claim" && !isClaimOwner(expense, actor) && !canViewAllClaims(actor)) throw notFound();
+}
+
+function assertCanWork(expense, actor, kind) {
+    assertCanSee(expense, actor, kind);
+    if (!canWorkAsCreator(expense, actor)) {
+        throw new AppError(403, "EXPENSE_NOT_OWNER", "ใบเบิกแก้/ส่ง/แนบไฟล์ได้เฉพาะผู้เบิกเจ้าของใบ");
+    }
 }
 
 // ─── ตรวจร่าง ───────────────────────────────────────────────────────────────────────────────
@@ -306,6 +345,99 @@ async function prepareBillDraft(conn, draft, existing) {
     return { header, lines, botRate };
 }
 
+/**
+ * ใบเบิกของผู้เบิกคนเดียวกันที่ใช้ใบเสร็จเลขเดียวกันวันเดียวกัน (ไม่ยกเลิก รวมร่าง) — ต้องล็อกแถวผู้เบิกก่อนเรียก
+ * เลขใบเสร็จร้านค้าซ้ำกันข้ามร้านได้ (เช่น 0001) จึงเทียบวันที่ด้วย
+ */
+async function findDuplicateClaim(conn, employeeId, receiptNo, expenseDate, excludeId) {
+    if (!receiptNo) return null;
+    const [[duplicate]] = await conn.query(
+        `SELECT ex_id, ex_number, ex_status FROM tb_expenses
+         WHERE ex_kind = 'claim' AND ex_employee_id = ? AND ex_vendor_doc_no = ? AND ex_expense_date = ?
+           AND ex_status <> 'cancelled' AND ex_id <> ?
+         LIMIT 1`,
+        [employeeId, receiptNo, expenseDate, excludeId ?? ""],
+    );
+    return duplicate ?? null;
+}
+
+/**
+ * ตรวจร่างใบเบิก + คำนวณยอด (บาท ไม่หัก ณ ที่จ่าย · ครบกำหนดจ่ายตั้งตอนอนุมัติ)
+ * @param {object} draft ผ่าน expenseClaimDraftSchema แล้ว
+ * @param {string} employeeId ผู้เบิก
+ */
+async function prepareClaimDraft(conn, draft, existing, employeeId) {
+    const fields = {};
+    const today = todayBangkok();
+
+    // ล็อกแถวผู้เบิกก่อน SELECT ธรรมดาคำสั่งแรก (กดบันทึกใบเสร็จใบเดียวกันสองครั้งพร้อมกัน — เหตุผลเดียวกับบิล R-P2)
+    await conn.query("SELECT user_id FROM tb_users WHERE user_id = ? FOR UPDATE", [employeeId]);
+    const existingLines = existing ? await findLines(conn, existing.ex_id) : [];
+
+    const [[branch]] = await conn.query("SELECT branch_status FROM tb_branches WHERE branch_id = ?", [
+        draft.ex_branch_id,
+    ]);
+    const isBranchChanged = !existing || existing.ex_branch_id !== draft.ex_branch_id;
+    if (!branch) fields.ex_branch_id = "ไม่พบสาขานี้";
+    else if (branch.branch_status !== "active" && isBranchChanged) fields.ex_branch_id = "สาขานี้ถูกปิดใช้งานแล้ว";
+
+    const expenseDateProblem = checkDateRange(draft.ex_expense_date, "วันที่จ่าย", today);
+    if (expenseDateProblem) fields.ex_expense_date = expenseDateProblem;
+    const docDateProblem = checkDateRange(draft.ex_vendor_doc_date, "วันที่ในใบเสร็จ", today);
+    if (docDateProblem) fields.ex_vendor_doc_date = docDateProblem;
+    await checkLines(conn, draft.lines, existingLines, fields);
+
+    const duplicate = await findDuplicateClaim(
+        conn,
+        employeeId,
+        draft.ex_vendor_doc_no,
+        draft.ex_expense_date,
+        existing?.ex_id,
+    );
+    if (duplicate) {
+        fields.ex_vendor_doc_no = `ใบเสร็จเลข ${draft.ex_vendor_doc_no} วันเดียวกันนี้${describeDuplicate(duplicate)} — ใบเสร็จใบเดียวเบิกได้ครั้งเดียว`;
+    }
+    if (Object.keys(fields).length > 0) throw validationError(fields);
+
+    const documentDate = draft.ex_vendor_doc_date ?? draft.ex_expense_date;
+    const officialVatRate = (await companyService.findVatRateOn(conn, documentDate)) ?? "0.00";
+    const calculation = calculateExpense({
+        lines: draft.lines,
+        vatAmount: draft.ex_vat_amount,
+        vatRate: officialVatRate,
+    });
+    if (Object.keys(calculation.errors).length > 0) {
+        throw new AppError(400, "VALIDATION", "ตัวเลขบางช่องใช้ไม่ได้ กรุณาแก้ตามข้อความใต้ช่อง", calculation.errors);
+    }
+    const company = await companyService.findCompany(conn);
+    const isVatRegistered = company.cs_vat_registered_from !== null && company.cs_vat_registered_from <= documentDate;
+
+    const header = {
+        ex_title: draft.ex_title,
+        ex_branch_id: draft.ex_branch_id,
+        ex_merchant_name: draft.ex_merchant_name,
+        ex_vendor_doc_no: draft.ex_vendor_doc_no,
+        ex_vendor_doc_date: draft.ex_vendor_doc_date,
+        ex_doc_type: draft.ex_doc_type,
+        ex_expense_date: draft.ex_expense_date,
+        ex_credit_days: 0,
+        ex_due_date: draft.ex_expense_date,
+        ex_subtotal: toDecimalText(calculation.subtotal),
+        ex_vat_rate: calculation.vat > 0n ? officialVatRate : "0.00",
+        ex_vat_amount: toDecimalText(calculation.vat),
+        ex_vat_claimable: isVatRegistered && draft.ex_doc_type === "tax_invoice" && calculation.vat > 0n ? 1 : 0,
+        ex_total: toDecimalText(calculation.total),
+        ex_subtotal_thb: toDecimalText(calculation.subtotal),
+        ex_total_thb: toDecimalText(calculation.total),
+        ex_notes: draft.ex_notes,
+    };
+    const lines = draft.lines.map((line, index) => ({
+        ...line,
+        exl_amount: toDecimalText(calculation.lineAmounts[index]),
+    }));
+    return { header, lines };
+}
+
 // ─── บันทึก ───────────────────────────────────────────────────────────────────────────────────
 
 async function replaceLines(conn, expenseId, lines) {
@@ -371,6 +503,33 @@ async function createBillDraft(conn, draft, actor) {
     return { ex_id: expenseId };
 }
 
+/**
+ * สร้างร่างใบเบิก — ผู้เบิก = ผู้บันทึกเสมอ (เบิกแทนคนอื่นไม่ได้)
+ * @param {object} draft ผ่าน expenseClaimDraftSchema แล้ว
+ */
+async function createClaimDraft(conn, draft, actor) {
+    const { header, lines } = await prepareClaimDraft(conn, draft, null, actor.user_id);
+    const expenseId = await generateDailyId("tb_expenses", "ex_id", "EXP");
+    const values = {
+        ex_kind: "claim",
+        ex_status: "draft",
+        ex_version: 0,
+        ex_employee_id: actor.user_id,
+        ex_currency: BASE_CURRENCY,
+        ex_exchange_rate: "1",
+        ...header,
+        ex_created_by: actor.user_id,
+        ex_created_by_name: await findUserName(conn, actor.user_id),
+    };
+    const columns = Object.keys(values);
+    await conn.query(
+        `INSERT INTO tb_expenses (ex_id, ${columns.join(", ")}) VALUES (?, ${columns.map(() => "?").join(", ")})`,
+        [expenseId, ...Object.values(values)],
+    );
+    await replaceLines(conn, expenseId, lines);
+    return { ex_id: expenseId };
+}
+
 function requireVersion(draft) {
     if (draft.ex_version === null || draft.ex_version === undefined) {
         throw new AppError(400, "VALIDATION", "หน้าเว็บเป็นเวอร์ชันเก่า กรุณารีเฟรชแล้วลองใหม่", {
@@ -383,16 +542,21 @@ function requireVersion(draft) {
  * แก้ร่าง — ได้เฉพาะสถานะร่าง (รวมที่ถูกตีกลับ)
  * @param {import("mysql2/promise").PoolConnection} conn
  * @param {string} expenseId
- * @param {object} draft ผ่าน expenseBillDraftSchema แล้ว
+ * @param {object} draft ผ่าน expenseBillDraftSchema (บิล) หรือ expenseClaimDraftSchema (ใบเบิก) แล้ว
+ * @param {{ user_id: string, role_permission: string }} actor
+ * @param {"bill" | "claim"} kind ชนิดที่เส้นทางนั้นดูแล
  */
-async function updateBillDraft(conn, expenseId, draft) {
+async function updateDraft(conn, expenseId, draft, actor, kind) {
     const existing = await findForUpdate(conn, expenseId);
-    if (existing.ex_kind !== "bill") throw notFound();
+    assertCanWork(existing, actor, kind);
     if (existing.ex_status !== "draft") throw wrongStatus("รายการนี้ไม่ได้เป็นร่างแล้ว แก้ไขไม่ได้");
     requireVersion(draft);
     assertVersion(existing, draft.ex_version);
 
-    const { header, lines } = await prepareBillDraft(conn, draft, existing);
+    const { header, lines } =
+        kind === "claim"
+            ? await prepareClaimDraft(conn, draft, existing, existing.ex_employee_id)
+            : await prepareBillDraft(conn, draft, existing);
     await conn.query(
         `UPDATE tb_expenses SET ${Object.keys(header)
             .map((column) => `${column} = ?`)
@@ -408,8 +572,9 @@ async function updateBillDraft(conn, expenseId, draft) {
  * ลบร่างจริง (บรรทัด/ไฟล์แนบ/ประวัติตีกลับตามไปด้วย) — ร่างยังไม่มีเลข จึงลบได้โดยเลขไม่ข้าม
  * @returns {Promise<{ filePaths: string[] }>} ไฟล์แนบที่ controller ต้องลบจากดิสก์หลัง commit
  */
-async function deleteDraft(conn, expenseId, expectedVersion) {
+async function deleteDraft(conn, expenseId, expectedVersion, actor, kind) {
     const existing = await findForUpdate(conn, expenseId);
+    assertCanWork(existing, actor, kind);
     if (existing.ex_status !== "draft") {
         throw wrongStatus('ลบได้เฉพาะร่าง — รายการที่อนุมัติแล้วให้ใช้ "ยกเลิก" แทน');
     }
@@ -427,8 +592,9 @@ async function deleteDraft(conn, expenseId, expectedVersion) {
  * แนบไฟล์ได้จนกว่าจะยกเลิก (ใบกำกับตัวจริงมักมาถึงหลังอนุมัติ) · ไม่เกิน MAX_EXPENSE_ATTACHMENTS ไฟล์
  * @param {{ storedPath: string, fileName: string, fileSize: number }} file บันทึกลงดิสก์แล้ว
  */
-async function addAttachment(conn, expenseId, file, actor) {
+async function addAttachment(conn, expenseId, file, actor, kind) {
     const expense = await findForUpdate(conn, expenseId);
+    assertCanWork(expense, actor, kind);
     if (expense.ex_status === "cancelled") throw wrongStatus("รายการนี้ถูกยกเลิกแล้ว แนบไฟล์เพิ่มไม่ได้");
     const [[{ total }]] = await conn.query(
         "SELECT COUNT(*) AS total FROM tb_expense_attachments WHERE exf_expense_id = ?",
@@ -453,8 +619,9 @@ async function addAttachment(conn, expenseId, file, actor) {
  * ลบไฟล์แนบได้เฉพาะตอนเป็นร่าง — ส่งแล้วไฟล์เป็นหลักฐานที่ผู้อนุมัติดู (แนบเพิ่มได้ ลบไม่ได้)
  * @returns {Promise<{ oldPath: string }>}
  */
-async function removeAttachment(conn, expenseId, attachmentId) {
+async function removeAttachment(conn, expenseId, attachmentId, actor, kind) {
     const expense = await findForUpdate(conn, expenseId);
+    assertCanWork(expense, actor, kind);
     if (expense.ex_status !== "draft") {
         throw wrongStatus("ลบไฟล์แนบได้เฉพาะตอนเป็นร่าง — ส่งแล้วไฟล์เป็นหลักฐานของรายการ (แนบไฟล์ที่ถูกต้องเพิ่มได้)");
     }
@@ -467,7 +634,12 @@ async function removeAttachment(conn, expenseId, attachmentId) {
     return { oldPath: file.exf_file_path };
 }
 
-async function findAttachment(conn, expenseId, attachmentId) {
+async function findAttachment(conn, expenseId, attachmentId, actor, kind) {
+    const [[expense]] = await conn.query("SELECT ex_kind, ex_employee_id FROM tb_expenses WHERE ex_id = ?", [
+        expenseId,
+    ]);
+    if (!expense) throw notFound();
+    assertCanSee(expense, actor, kind);
     const [[file]] = await conn.query(
         "SELECT exf_file_path, exf_file_name FROM tb_expense_attachments WHERE exf_id = ? AND exf_expense_id = ?",
         [attachmentId, expenseId],
@@ -556,12 +728,13 @@ const LIST_TABS = {
 
 /**
  * @param {import("mysql2/promise").Pool} conn
- * @param {{ kind?: string, tab?: string, search?: string, vendorId?: string, projectId?: string, limit?: number, offset?: number }} options
+ * @param {{ kind?: string, scope?: string, tab?: string, search?: string, vendorId?: string, projectId?: string, limit?: number, offset?: number }} options
+ *   scope (ใบเบิก): "mine" = ของฉัน (ค่าเริ่มต้น) · "all" = ทุกคน (ต้องมีสิทธิ์ดู/อนุมัติค่าใช้จ่าย/ทำจ่าย)
  * @param {{ user_id: string, user_role_id: string | null, role_permission: string }} actor
  */
 async function listExpenses(
     conn,
-    { kind = "bill", tab = "all", search = "", vendorId, projectId, limit = 20, offset = 0 },
+    { kind = "bill", scope = "mine", tab = "all", search = "", vendorId, projectId, limit = 20, offset = 0 },
     actor,
 ) {
     const today = todayBangkok();
@@ -572,10 +745,19 @@ async function listExpenses(
     const conditions = ["e.ex_kind = ?", tabCondition];
     const params = [kind === "claim" ? "claim" : "bill"];
     if (tabCondition.includes("?")) params.push(today);
+    if (kind === "claim" && scope === "all" && !canViewAllClaims(actor)) {
+        throw new AppError(403, "FORBIDDEN", "ดูใบเบิกของทุกคนได้เฉพาะผู้มีสิทธิ์ดู/อนุมัติค่าใช้จ่ายหรือทำจ่าย");
+    }
+    if (kind === "claim" && scope !== "all") {
+        conditions.push("e.ex_employee_id = ?");
+        params.push(actor.user_id);
+    }
     if (search) {
         const like = `%${search}%`;
-        conditions.push("(e.ex_number LIKE ? OR e.ex_title LIKE ? OR e.ex_vendor_doc_no LIKE ? OR v.vd_name LIKE ?)");
-        params.push(like, like, like, like);
+        conditions.push(
+            "(e.ex_number LIKE ? OR e.ex_title LIKE ? OR e.ex_vendor_doc_no LIKE ? OR v.vd_name LIKE ? OR e.ex_merchant_name LIKE ? OR CONCAT(emp.user_fname, ' ', emp.user_lname) LIKE ?)",
+        );
+        params.push(like, like, like, like, like, like);
     }
     if (vendorId) {
         conditions.push("e.ex_vendor_id = ?");
@@ -593,10 +775,12 @@ async function listExpenses(
                 e.ex_doc_type, e.ex_currency, e.ex_subtotal, e.ex_vat_amount, e.ex_total, e.ex_total_thb, e.ex_paid_amount,
                 e.ex_wht_amount, e.ex_created_by, e.ex_created_by_name, e.ex_auto_approved, e.ex_approval_current_level,
                 e.ex_approval_plan, e.ex_approval_round, e.ex_returned_reason, e.ex_updated_at,
+                e.ex_employee_id, e.ex_merchant_name, CONCAT(emp.user_fname, ' ', emp.user_lname) AS employee_name,
                 (SELECT COUNT(*) FROM tb_expense_attachments f WHERE f.exf_expense_id = e.ex_id) AS attachment_count,
                 ${DATE_COLUMNS}
          FROM tb_expenses e
          LEFT JOIN tb_vendors v ON v.vd_id = e.ex_vendor_id
+         LEFT JOIN tb_users emp ON emp.user_id = e.ex_employee_id
          WHERE ${conditions.join(" AND ")}
          ORDER BY e.ex_updated_at DESC, e.ex_id DESC`,
         params,
@@ -669,22 +853,25 @@ async function findPossibleDuplicates(conn, expense) {
  * @param {string} expenseId
  * @param {{ user_id: string, user_role_id: string | null, role_permission: string }} actor
  */
-async function getExpenseDetail(conn, expenseId, actor) {
+async function getExpenseDetail(conn, expenseId, actor, kind = "bill") {
     const today = todayBangkok();
     const [[expense]] = await conn.query(
         `SELECT e.*, ${DATE_COLUMNS},
                 v.vd_name, v.vd_code, v.vd_type, v.vd_country, v.vd_tax_id, v.vd_branch_code, v.vd_status,
                 b.branch_code, b.branch_name_th, b.branch_status, t.wit_name_th AS wht_income_type_name,
-                CONCAT(c.user_fname, ' ', c.user_lname) AS cancelled_by_name
+                CONCAT(c.user_fname, ' ', c.user_lname) AS cancelled_by_name,
+                CONCAT(emp.user_fname, ' ', emp.user_lname) AS employee_name
          FROM tb_expenses e
          LEFT JOIN tb_vendors v ON v.vd_id = e.ex_vendor_id
          JOIN tb_branches b ON b.branch_id = e.ex_branch_id
          LEFT JOIN tb_wht_income_types t ON t.wit_code = e.ex_wht_income_type
          LEFT JOIN tb_users c ON c.user_id = e.ex_cancelled_by
+         LEFT JOIN tb_users emp ON emp.user_id = e.ex_employee_id
          WHERE e.ex_id = ?`,
         [expenseId],
     );
     if (!expense) throw notFound();
+    assertCanSee(expense, actor, kind);
 
     const [lines] = await conn.query(
         `SELECT l.*, c.ec_name_th AS category_name, c.ec_is_asset, p.project_name
@@ -761,18 +948,20 @@ async function getExpenseDetail(conn, expenseId, actor) {
             ),
         },
         possible_duplicates: await findPossibleDuplicates(conn, expense),
+        // ใบสำคัญจ่ายที่ตัดรายการนี้ (ขั้น 2-4) — เจ้าของใบเบิกเห็นว่าได้เงินคืนแล้วหรือยัง
+        payments: await paymentService.findPaymentsOfExpense(conn, expenseId),
         actions: buildActions(expense, actor, approval, attachments.length),
-        readiness: expense.ex_status === "draft" ? buildReadiness(expense, lines, currency) : [],
+        readiness: expense.ex_status === "draft" ? buildReadiness(expense, lines, currency, attachments.length) : [],
         today,
     };
 }
 
 /**
  * ปุ่มที่ผู้ใช้คนนี้กดได้ตอนนี้ + เหตุผลถ้ากดไม่ได้ (หน้าเว็บซ่อนปุ่มและแสดงเหตุผลในแถบสถานะ — ห้าม tooltip)
- * ยกเลิก: ผู้มีสิทธิ์อนุมัติค่าใช้จ่าย · หรือผู้บันทึก (สิทธิ์บันทึก) เมื่อรายการผ่านอัตโนมัติเพราะยอดต่ำกว่าวงเงิน
+ * ยกเลิก: ผู้มีสิทธิ์อนุมัติค่าใช้จ่าย · หรือผู้บันทึก (บิล = สิทธิ์บันทึก · ใบเบิก = เจ้าของ) เมื่อรายการผ่านอัตโนมัติเพราะยอดต่ำกว่าวงเงิน
  */
 function buildActions(expense, actor, approval, attachmentCount) {
-    const canCreate = hasBit(actor.role_permission, "createExpense");
+    const canCreate = canWorkAsCreator(expense, actor);
     const canApprove = hasBit(actor.role_permission, "approveExpense");
     const status = expense.ex_status;
     const hasPayment = parseHundredths(expense.ex_paid_amount, "ยอดจ่ายแล้ว") > 0n;
@@ -798,11 +987,31 @@ function buildActions(expense, actor, approval, attachmentCount) {
         can_copy: canCreate && expense.ex_kind === "bill",
         can_attach: canCreate && status !== "cancelled" && attachmentCount < MAX_EXPENSE_ATTACHMENTS,
         can_remove_attachment: canCreate && status === "draft",
+        // ทำจ่าย (ขั้น 2-4 — สิทธิ์ของใบสำคัญจ่าย P3 แยกจากผู้อนุมัติ)
+        can_pay:
+            hasBit(actor.role_permission, "makePayment") &&
+            status === "approved" &&
+            parseHundredths(expense.ex_paid_amount, "ยอดจ่ายแล้ว") < parseHundredths(expense.ex_total, "ยอดรวม"),
     };
 }
 
-/** รายการตรวจก่อนส่ง — ข้อที่ไม่ผ่านบอกวิธีแก้ */
-function buildReadiness(expense, lines, currency) {
+/**
+ * รายการตรวจก่อนส่ง — ข้อที่ไม่ผ่านบอกวิธีแก้
+ * ใบเบิก: ต้องแนบรูปใบเสร็จอย่างน้อย 1 ไฟล์ ยกเว้นใบรับรองแทนใบเสร็จ (คำถาม X4) · ไม่มีผู้ขาย/สกุลเงินต่างประเทศ
+ */
+function buildReadiness(expense, lines, currency, attachmentCount) {
+    if (expense.ex_kind === "claim") {
+        return [
+            { key: "lines", ok: lines.length > 0, message: "มีรายการอย่างน้อย 1 บรรทัด" },
+            { key: "total", ok: parseHundredths(expense.ex_total, "ยอดรวม") > 0n, message: "ยอดรวมมากกว่า 0" },
+            { key: "branch", ok: expense.branch_status === "active", message: "สาขายังเปิดใช้งานอยู่" },
+            {
+                key: "attachment",
+                ok: expense.ex_doc_type === "substitute_receipt" || attachmentCount > 0,
+                message: "แนบรูปใบเสร็จอย่างน้อย 1 ไฟล์ (ใบรับรองแทนใบเสร็จไม่ต้องแนบ)",
+            },
+        ];
+    }
     const isForeign = expense.ex_currency !== BASE_CURRENCY;
     const needsNumber = DOC_TYPES_WITH_NUMBER.includes(expense.ex_doc_type);
     return [
@@ -826,7 +1035,8 @@ function buildReadiness(expense, lines, currency) {
 
 module.exports = {
     createBillDraft,
-    updateBillDraft,
+    createClaimDraft,
+    updateDraft,
     deleteDraft,
     addAttachment,
     removeAttachment,
@@ -843,6 +1053,10 @@ module.exports = {
     evaluateFor,
     buildReadiness,
     findDuplicateBill,
+    findDuplicateClaim,
     describeDuplicate,
+    assertCanSee,
+    assertCanWork,
+    canWorkAsCreator,
     DOCUMENT_TYPE_BY_KIND,
 };

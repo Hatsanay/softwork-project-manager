@@ -5,9 +5,12 @@
 // - มูลค่าสัญญานับเฉพาะใบเสนอราคาที่ลูกค้าตอบรับ (ใบที่ถูก revision แทนเป็น superseded ไม่นับ R-D5)
 // - ออกบิล/รับแล้ว นับเฉพาะใบแจ้งหนี้ที่ออกแล้ว · ร่าง/รออนุมัติแสดงแยก "ร่างรอออก"
 // - % งานเสร็จเทียบ % ออกบิล เป็นค่าประมาณช่วยตัดสินใจ (R-D6)
+// - ต้นทุน (เฟส 2 ขั้น 2-5 — P4): บรรทัดค่าใช้จ่าย/ใบเบิกที่อนุมัติแล้ว (ไม่ยกเลิก) ที่ผูกโปรเจกต์นี้ เป็นบาทตามอัตราของรายการ
+//   + VAT ส่วนของบรรทัดเมื่อขอคืนไม่ได้ (บริษัทยังไม่จด VAT → ภาษีซื้อเป็นต้นทุนจริง) · ยังไม่รวมค่าแรงพนักงาน (เฟส 4)
+//   กำไรขั้นต้น = ยอดออกบิลก่อน VAT เป็นบาท − ต้นทุน (ห้ามบวกต่างสกุลตรงๆ R-P9)
 const { AppError } = require("../utils/app-error");
 const { todayBangkok } = require("../utils/bangkok-time");
-const { divideRoundHalfUp, parseHundredths } = require("../shared/money.mjs");
+const { convertToBaht, divideRoundHalfUp, parseHundredths } = require("../shared/money.mjs");
 const { toDecimalText } = require("../shared/quotation-totals.mjs");
 
 // งานนำหน้าการออกบิลเกินกี่จุด (%) ถึงขึ้นข้อความเตือน
@@ -103,7 +106,7 @@ async function getProjectFinance(conn, projectId) {
     );
     const [invoices] = await conn.query(
         `SELECT i.inv_id, i.inv_number, i.inv_status, i.inv_source, i.inv_quotation_id, i.inv_title, i.inv_currency, i.inv_total,
-                i.inv_total_thb, i.inv_paid_amount, DATE_FORMAT(i.inv_due_date, '%Y-%m-%d') AS inv_due_date,
+                i.inv_total_thb, i.inv_after_discount_thb, i.inv_paid_amount, DATE_FORMAT(i.inv_due_date, '%Y-%m-%d') AS inv_due_date,
                 DATE_FORMAT(i.inv_issue_date, '%Y-%m-%d') AS inv_issue_date,
                 COALESCE((SELECT SUM(a.rca_amount_thb) FROM tb_receipt_allocations a JOIN tb_receipts r ON r.rc_id = a.rca_receipt_id
                           WHERE a.rca_invoice_id = i.inv_id AND r.rc_status = 'issued'), 0) AS received_thb
@@ -225,6 +228,7 @@ async function getProjectFinance(conn, projectId) {
     });
 
     // ใบแจ้งหนี้ที่ออกแล้ว: ออกบิล/รับแล้ว/ค้าง/เกินกำหนด
+    let billedBeforeVatThb = 0n;
     const invoiceRows = invoices.map((invoice) => {
         const isIssued = invoice.inv_status === "issued";
         const total = money(invoice.inv_total);
@@ -237,6 +241,7 @@ async function getProjectFinance(conn, projectId) {
             const receivedThb = money(invoice.received_thb);
             totals.billed += total;
             totals.billed_thb += totalThb;
+            billedBeforeVatThb += money(invoice.inv_after_discount_thb);
             if (invoice.inv_source === "manual") totals.billed_manual += total;
             totals.received += paid;
             totals.received_thb += receivedThb;
@@ -249,7 +254,7 @@ async function getProjectFinance(conn, projectId) {
         } else if (invoice.inv_source === "manual") {
             totalsFor(invoice.inv_currency).in_draft += total;
         }
-        const { received_thb: _receivedThb, ...rest } = invoice;
+        const { received_thb: _receivedThb, inv_after_discount_thb: _beforeVatThb, ...rest } = invoice;
         return { ...rest, outstanding_amount: toDecimalText(outstanding), is_overdue: isOverdue };
     });
 
@@ -267,7 +272,20 @@ async function getProjectFinance(conn, projectId) {
         }
     }
 
+    const cost = await findProjectCost(conn, projectId);
+    const grossProfitThb = billedBeforeVatThb - cost.totalThb;
+
     return {
+        // ต้นทุน + กำไรขั้นต้น (ขั้น 2-5) — เป็นบาทเสมอ
+        profit: {
+            billed_before_vat_thb: toDecimalText(billedBeforeVatThb),
+            cost_thb: toDecimalText(cost.totalThb),
+            gross_profit_thb: toDecimalText(grossProfitThb),
+            gross_margin_percent: percentOf(grossProfitThb, billedBeforeVatThb),
+            pending_cost_thb: toDecimalText(cost.pendingThb),
+            by_category: cost.byCategory,
+            expenses: cost.expenses,
+        },
         currencies: [...byCurrency.entries()].map(([currencyCode, totals]) => ({
             currency: currencyCode,
             ...toTextTotals(totals),
@@ -284,6 +302,78 @@ async function getProjectFinance(conn, projectId) {
         invoices: invoiceRows,
         today,
         progress_ahead_threshold: PROGRESS_AHEAD_THRESHOLD,
+    };
+}
+
+/**
+ * ต้นทุนโปรเจกต์จากบรรทัดค่าใช้จ่าย/ใบเบิก — อนุมัติแล้ว = ต้นทุน · ร่าง/รออนุมัติ = "รออนุมัติ" (แสดงแยก ไม่นับ)
+ * ต่อบรรทัด: ยอดก่อน VAT เป็นบาท + VAT ตามสัดส่วนของบรรทัด (เฉพาะรายการที่ขอคืน VAT ไม่ได้) เป็นบาท
+ * @returns {Promise<{ totalThb: bigint, pendingThb: bigint, byCategory: object[], expenses: object[] }>}
+ */
+async function findProjectCost(conn, projectId) {
+    const [lines] = await conn.query(
+        `SELECT l.exl_amount, l.exl_category_id, c.ec_name_th AS category_name,
+                e.ex_id, e.ex_number, e.ex_kind, e.ex_status, e.ex_title, e.ex_subtotal, e.ex_vat_amount, e.ex_vat_claimable,
+                e.ex_exchange_rate, DATE_FORMAT(e.ex_expense_date, '%Y-%m-%d') AS ex_expense_date,
+                IF(e.ex_kind = 'claim', CONCAT(u.user_fname, ' ', u.user_lname), v.vd_name) AS payee_name
+         FROM tb_expense_lines l
+         JOIN tb_expenses e ON e.ex_id = l.exl_expense_id
+         JOIN tb_expense_categories c ON c.ec_id = l.exl_category_id
+         LEFT JOIN tb_vendors v ON v.vd_id = e.ex_vendor_id
+         LEFT JOIN tb_users u ON u.user_id = e.ex_employee_id
+         WHERE l.exl_project_id = ? AND e.ex_status IN ('draft', 'pending_approval', 'approved')
+         ORDER BY e.ex_expense_date, e.ex_number, l.exl_order`,
+        [projectId],
+    );
+
+    let totalThb = 0n;
+    let pendingThb = 0n;
+    const categories = new Map();
+    const expenses = new Map();
+    for (const line of lines) {
+        const amount = money(line.exl_amount);
+        const subtotal = money(line.ex_subtotal);
+        const vatShare =
+            line.ex_vat_claimable === 1 || subtotal <= 0n
+                ? 0n
+                : divideRoundHalfUp(amount * money(line.ex_vat_amount), subtotal);
+        const costThb = convertToBaht(amount + vatShare, line.ex_exchange_rate);
+        if (line.ex_status !== "approved") {
+            pendingThb += costThb;
+            continue;
+        }
+        totalThb += costThb;
+
+        const category = categories.get(line.exl_category_id) ?? {
+            category_id: Number(line.exl_category_id),
+            category_name: line.category_name,
+            amount: 0n,
+        };
+        category.amount += costThb;
+        categories.set(line.exl_category_id, category);
+
+        const expense = expenses.get(line.ex_id) ?? {
+            ex_id: line.ex_id,
+            ex_number: line.ex_number,
+            ex_kind: line.ex_kind,
+            ex_title: line.ex_title,
+            ex_expense_date: line.ex_expense_date,
+            payee_name: line.payee_name,
+            amount: 0n,
+        };
+        expense.amount += costThb;
+        expenses.set(line.ex_id, expense);
+    }
+    return {
+        totalThb,
+        pendingThb,
+        byCategory: [...categories.values()]
+            .sort((first, second) => (second.amount > first.amount ? 1 : second.amount < first.amount ? -1 : 0))
+            .map(({ amount, ...category }) => ({ ...category, amount_thb: toDecimalText(amount) })),
+        expenses: [...expenses.values()].map(({ amount, ...expense }) => ({
+            ...expense,
+            amount_thb: toDecimalText(amount),
+        })),
     };
 }
 

@@ -9,8 +9,12 @@
 // LAST_INSERT_ID(ค่า) จำค่าไว้เฉพาะ connection นี้ ไม่ปนกับคำขออื่นที่ทำพร้อมกัน
 
 // EX ค่าใช้จ่าย/บิลผู้ขาย · EC ใบเบิกเงินพนักงาน (เฟส 2 — ได้เลขตอนอนุมัติครบ)
-const DOCUMENT_TYPES = ["QT", "IV", "BN", "RE", "EX", "EC"];
+// PV ใบสำคัญจ่าย (ขั้น 2-4)
+const DOCUMENT_TYPES = ["QT", "IV", "BN", "RE", "EX", "EC", "PV"];
 const MAX_NUMBERS_PER_DAY = 999_999;
+// เลขรันต่อปี (ไม่รีเซ็ตทุกวัน): WT หนังสือรับรองหัก ณ ที่จ่าย — เล่มที่ = ปี ค.ศ. · แถวลำดับใช้ ds_date = "YYYY0000"
+const YEARLY_DOCUMENT_TYPES = ["WT"];
+const MAX_NUMBERS_PER_YEAR = 999_999;
 const DATE_TEXT = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 /**
@@ -63,4 +67,31 @@ async function issueDocumentNumber(conn, documentType, documentDate) {
     return `${documentType}-${compactDate}-${String(sequence).padStart(6, "0")}`;
 }
 
-module.exports = { issueDocumentNumber, toCompactDate, DOCUMENT_TYPES };
+/**
+ * ออกเลขที่รันต่อปีถัดไป (เงื่อนไข transaction เดียวกับ issueDocumentNumber — rollback แล้วเลขไม่ข้าม)
+ * @param {import("mysql2/promise").PoolConnection} conn connection ที่ beginTransaction แล้ว
+ * @param {"WT"} documentType
+ * @param {string} documentDate วันที่เอกสาร "YYYY-MM-DD" ตามเวลาไทย — ปีของวันนี้คือเล่มที่
+ * @returns {Promise<{ number: string, year: string, sequence: number }>} เช่น { number: "WT-2026-000001", year: "2026", sequence: 1 }
+ */
+async function issueYearlyNumber(conn, documentType, documentDate) {
+    if (!YEARLY_DOCUMENT_TYPES.includes(documentType)) {
+        throw new Error(`ประเภทเอกสารรันต่อปีไม่รู้จัก: ${documentType}`);
+    }
+    const year = toCompactDate(documentDate).slice(0, 4);
+
+    await conn.query(
+        `INSERT INTO tb_document_sequences (ds_doc_type, ds_date, ds_last)
+         VALUES (?, ?, LAST_INSERT_ID(1))
+         ON DUPLICATE KEY UPDATE ds_last = LAST_INSERT_ID(ds_last + 1)`,
+        [documentType, `${year}0000`],
+    );
+    const [[row]] = await conn.query("SELECT LAST_INSERT_ID() AS sequence");
+    const sequence = Number(row.sequence);
+    if (sequence > MAX_NUMBERS_PER_YEAR) {
+        throw new Error(`เลขที่เอกสาร ${documentType} ของปี ${year} เกิน ${MAX_NUMBERS_PER_YEAR} ฉบับ`);
+    }
+    return { number: `${documentType}-${year}-${String(sequence).padStart(6, "0")}`, year, sequence };
+}
+
+module.exports = { issueDocumentNumber, issueYearlyNumber, toCompactDate, DOCUMENT_TYPES };

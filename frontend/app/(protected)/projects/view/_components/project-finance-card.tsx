@@ -3,6 +3,7 @@
 // ส่วน "การเงิน" ในหน้าโปรเจกต์ (2026-10-15 ขั้น 1D-1 — docs/plans/2026-10-15-finance-1d.md หัวข้อ 3.1)
 // เห็นเฉพาะผู้มีสิทธิ์ดูใบแจ้งหนี้ (D1 — backend ตรวจอีกชั้น) · ตัวเลขทั้งหมดคำนวณใน backend
 // ยอดรวมเป็นบาท + แยกสกุล · งวดของใบเสนอราคาที่ตอบรับ · งานเสร็จเทียบออกบิล · ใบแจ้งหนี้สร้างเองของโปรเจกต์
+// + ต้นทุนและกำไรขั้นต้น (เฟส 2 ขั้น 2-5 — P4): ค่าใช้จ่าย/ใบเบิกที่อนุมัติแล้วซึ่งผูกโปรเจกต์นี้ · ยังไม่รวมเงินเดือนพนักงาน
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { FileText, Wallet } from "lucide-react";
@@ -56,7 +57,26 @@ type CurrencyTotals = Record<
     string
 > & { currency: string };
 
+type ProjectProfit = {
+    billed_before_vat_thb: string;
+    cost_thb: string;
+    gross_profit_thb: string;
+    gross_margin_percent: number | null;
+    pending_cost_thb: string;
+    by_category: { category_id: number; category_name: string; amount_thb: string }[];
+    expenses: {
+        ex_id: string;
+        ex_number: string;
+        ex_kind: "bill" | "claim";
+        ex_title: string;
+        ex_expense_date: string;
+        payee_name: string | null;
+        amount_thb: string;
+    }[];
+};
+
 type ProjectFinance = {
+    profit: ProjectProfit;
     currencies: CurrencyTotals[];
     totals_thb: Record<"contract" | "billed" | "received" | "outstanding" | "overdue" | "unbilled", string>;
     quotations: FinanceQuotation[];
@@ -88,6 +108,67 @@ function Stat({
             <span className="text-xs text-gray-500">{label}</span>
             <span className={`text-base font-medium tabular-nums ${tone}`}>{formatAmount(value)}</span>
             {note && <span className="text-xs text-red-600">{note}</span>}
+        </div>
+    );
+}
+
+// ต้นทุน + กำไรขั้นต้น (เป็นบาท) — แสดงเมื่อมีออกบิลหรือมีต้นทุน
+function ProfitSection({ profit }: { profit: ProjectProfit }) {
+    const isLoss = parseHundredths(profit.gross_profit_thb, "กำไร") < 0n;
+    return (
+        <div className="grid gap-3 rounded-xl border border-gray-200 p-4">
+            <h3 className="text-sm font-medium text-gray-900">ต้นทุนและกำไรขั้นต้น (บาท)</h3>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <Stat label="ออกบิลแล้ว (ก่อน VAT)" value={profit.billed_before_vat_thb} />
+                <Stat label="ต้นทุน" value={profit.cost_thb} />
+                <div className="col-span-2 grid content-start gap-0.5 rounded-xl bg-gray-50 p-3 sm:col-span-1">
+                    <span className="text-xs text-gray-500">กำไรขั้นต้น</span>
+                    <span
+                        className={`text-base font-medium tabular-nums ${isLoss ? "text-red-600" : "text-green-600"}`}
+                    >
+                        {formatAmount(profit.gross_profit_thb)}
+                        {profit.gross_margin_percent !== null ? ` (${profit.gross_margin_percent}%)` : ""}
+                    </span>
+                </div>
+            </div>
+            {profit.by_category.length > 0 && (
+                <ul className="grid gap-1 text-sm">
+                    {profit.by_category.map((category) => (
+                        <li key={category.category_id} className="flex justify-between gap-3 text-gray-700">
+                            <span className="min-w-0 wrap-break-word">{category.category_name}</span>
+                            <span className="tabular-nums">{formatAmount(category.amount_thb)}</span>
+                        </li>
+                    ))}
+                </ul>
+            )}
+            {profit.expenses.length > 0 && (
+                <details className="text-sm">
+                    <summary className="-my-2 cursor-pointer py-2 text-blue-600">
+                        รายการค่าใช้จ่ายของโปรเจกต์ ({profit.expenses.length})
+                    </summary>
+                    <ul className="mt-2 grid gap-1.5">
+                        {profit.expenses.map((expense) => (
+                            <li key={expense.ex_id} className="grid grid-cols-[1fr_auto] gap-x-3">
+                                <Link
+                                    href={`${expense.ex_kind === "claim" ? "/purchasing/claims" : "/purchasing/expenses"}/view?id=${expense.ex_id}`}
+                                    className="-my-2 py-2 text-blue-600 tabular-nums hover:underline"
+                                >
+                                    {expense.ex_number} · {expense.ex_title}
+                                </Link>
+                                <span className="tabular-nums">{formatAmount(expense.amount_thb)}</span>
+                                <span className="col-span-2 text-xs text-gray-500">{expense.payee_name ?? ""}</span>
+                            </li>
+                        ))}
+                    </ul>
+                </details>
+            )}
+            <FieldHint>
+                ต้นทุน = ค่าใช้จ่ายและใบเบิกที่อนุมัติแล้วซึ่งผูกโปรเจกต์นี้ (รวม VAT ที่ขอคืนไม่ได้) ·
+                ยังไม่รวมเงินเดือนพนักงาน
+                {isZero(profit.pending_cost_thb)
+                    ? ""
+                    : ` · รออนุมัติอีก ${formatAmount(profit.pending_cost_thb)} บาท (ยังไม่นับ)`}
+            </FieldHint>
         </div>
     );
 }
@@ -140,6 +221,9 @@ export default function ProjectFinanceCard({ projectId }: { projectId: string })
                 </StatusBanner>
             )}
             {!finance && !loadError && <p className="text-sm text-gray-500">กำลังโหลด...</p>}
+            {finance && (!isZero(finance.profit.cost_thb) || !isZero(finance.profit.billed_before_vat_thb)) && (
+                <ProfitSection profit={finance.profit} />
+            )}
             {finance && finance.quotations.length === 0 && finance.invoices.length === 0 && (
                 <p className="text-sm text-gray-500">
                     โปรเจกต์นี้ยังไม่มีใบเสนอราคาที่ลูกค้าตอบรับหรือใบแจ้งหนี้ —

@@ -1,4 +1,5 @@
-// ค่าใช้จ่าย / บิลผู้ขาย (2026-10-16 เฟส 2 ขั้น 2-2) — รับคำขอ → ตรวจข้อมูล (zod) → เรียก service → ตอบ
+// ค่าใช้จ่าย / บิลผู้ขาย (ขั้น 2-2) และใบเบิกเงินพนักงาน (ขั้น 2-3) — รับคำขอ → ตรวจข้อมูล (zod) → เรียก service → ตอบ
+// ชนิดเอกสารมาจากเส้นทาง (routes/expense.routes.js ตั้ง req.expenseKind) — /expenses = บิล · /claims = ใบเบิก
 const pool = require("../config/db");
 const { AppError } = require("../utils/app-error");
 const { validate } = require("../utils/validate");
@@ -10,19 +11,34 @@ const {
     contentTypeOf,
     cleanUploadedFileName,
 } = require("../utils/private-file");
-const { expenseBillDraftSchema, expenseActionSchema, expenseReasonSchema } = require("../shared/schemas/expense.mjs");
+const {
+    expenseBillDraftSchema,
+    expenseClaimDraftSchema,
+    expenseActionSchema,
+    expenseReasonSchema,
+} = require("../shared/schemas/expense.mjs");
 const expenseService = require("../services/expense.service");
 const expenseWorkflowService = require("../services/expense-workflow.service");
 
 // ไฟล์เอกสารของผู้ขาย (มีเลขผู้เสียภาษี/ข้อมูลส่วนตัว) — เก็บต้นฉบับไม่บีบอัด เป็นหลักฐานทางภาษี (R-P7)
 const ATTACHMENT_FOLDER = "expense-documents";
 
+/** @returns {"bill" | "claim"} */
+function kindOf(req) {
+    return req.expenseKind === "claim" ? "claim" : "bill";
+}
+
+function draftSchemaOf(req) {
+    return kindOf(req) === "claim" ? expenseClaimDraftSchema : expenseBillDraftSchema;
+}
+
 async function list(req, res, next) {
     try {
         const result = await expenseService.listExpenses(
             pool,
             {
-                kind: "bill",
+                kind: kindOf(req),
+                scope: String(req.query.scope ?? "mine"),
                 tab: String(req.query.tab ?? "all"),
                 search: String(req.query.search ?? ""),
                 vendorId: req.query.vendor_id ? String(req.query.vendor_id) : undefined,
@@ -48,7 +64,7 @@ async function projectOptions(req, res, next) {
 
 async function getOne(req, res, next) {
     try {
-        res.json(await expenseService.getExpenseDetail(pool, req.params.id, req.user));
+        res.json(await expenseService.getExpenseDetail(pool, req.params.id, req.user, kindOf(req)));
     } catch (err) {
         next(err);
     }
@@ -56,8 +72,12 @@ async function getOne(req, res, next) {
 
 async function create(req, res, next) {
     try {
-        const draft = validate(expenseBillDraftSchema, req.body);
-        const created = await withTransaction((conn) => expenseService.createBillDraft(conn, draft, req.user));
+        const draft = validate(draftSchemaOf(req), req.body);
+        const created = await withTransaction((conn) =>
+            kindOf(req) === "claim"
+                ? expenseService.createClaimDraft(conn, draft, req.user)
+                : expenseService.createBillDraft(conn, draft, req.user),
+        );
         res.status(201).json(created);
     } catch (err) {
         next(err);
@@ -66,8 +86,12 @@ async function create(req, res, next) {
 
 async function update(req, res, next) {
     try {
-        const draft = validate(expenseBillDraftSchema, req.body);
-        res.json(await withTransaction((conn) => expenseService.updateBillDraft(conn, req.params.id, draft)));
+        const draft = validate(draftSchemaOf(req), req.body);
+        res.json(
+            await withTransaction((conn) =>
+                expenseService.updateDraft(conn, req.params.id, draft, req.user, kindOf(req)),
+            ),
+        );
     } catch (err) {
         next(err);
     }
@@ -77,7 +101,9 @@ async function update(req, res, next) {
 async function remove(req, res, next) {
     try {
         const { ex_version: version } = validate(expenseActionSchema, req.body ?? {});
-        const { filePaths } = await withTransaction((conn) => expenseService.deleteDraft(conn, req.params.id, version));
+        const { filePaths } = await withTransaction((conn) =>
+            expenseService.deleteDraft(conn, req.params.id, version, req.user, kindOf(req)),
+        );
         for (const filePath of filePaths) await deletePrivateFile(filePath).catch(() => {});
         res.status(204).end();
     } catch (err) {
@@ -88,7 +114,11 @@ async function remove(req, res, next) {
 async function submit(req, res, next) {
     try {
         const { ex_version: version } = validate(expenseActionSchema, req.body ?? {});
-        res.json(await withTransaction((conn) => expenseWorkflowService.submit(conn, req.params.id, version)));
+        res.json(
+            await withTransaction((conn) =>
+                expenseWorkflowService.submit(conn, req.params.id, version, req.user, kindOf(req)),
+            ),
+        );
     } catch (err) {
         next(err);
     }
@@ -98,7 +128,9 @@ async function approve(req, res, next) {
     try {
         const { ex_version: version } = validate(expenseActionSchema, req.body ?? {});
         res.json(
-            await withTransaction((conn) => expenseWorkflowService.approve(conn, req.params.id, version, req.user)),
+            await withTransaction((conn) =>
+                expenseWorkflowService.approve(conn, req.params.id, version, req.user, kindOf(req)),
+            ),
         );
     } catch (err) {
         next(err);
@@ -110,7 +142,7 @@ async function returnToDraft(req, res, next) {
         const { reason, ex_version: version } = validate(expenseReasonSchema, req.body ?? {});
         res.json(
             await withTransaction((conn) =>
-                expenseWorkflowService.returnToDraft(conn, req.params.id, reason, version, req.user),
+                expenseWorkflowService.returnToDraft(conn, req.params.id, reason, version, req.user, kindOf(req)),
             ),
         );
     } catch (err) {
@@ -123,7 +155,7 @@ async function cancel(req, res, next) {
         const { reason, ex_version: version } = validate(expenseReasonSchema, req.body ?? {});
         res.json(
             await withTransaction((conn) =>
-                expenseWorkflowService.cancel(conn, req.params.id, reason, version, req.user),
+                expenseWorkflowService.cancel(conn, req.params.id, reason, version, req.user, kindOf(req)),
             ),
         );
     } catch (err) {
@@ -154,11 +186,14 @@ async function uploadAttachment(req, res, next) {
         newPath = await savePrivateFile(ATTACHMENT_FOLDER, filePrefix, req.file.buffer, "file");
         const file = {
             storedPath: newPath,
-            fileName: cleanUploadedFileName(req.file.originalname, "เอกสารผู้ขาย"),
+            fileName: cleanUploadedFileName(
+                req.file.originalname,
+                kindOf(req) === "claim" ? "ใบเสร็จ" : "เอกสารผู้ขาย",
+            ),
             fileSize: req.file.size,
         };
         const created = await withTransaction((conn) =>
-            expenseService.addAttachment(conn, req.params.id, file, req.user),
+            expenseService.addAttachment(conn, req.params.id, file, req.user, kindOf(req)),
         );
         newPath = null;
         res.status(201).json(created);
@@ -171,7 +206,7 @@ async function uploadAttachment(req, res, next) {
 async function removeAttachment(req, res, next) {
     try {
         const { oldPath } = await withTransaction((conn) =>
-            expenseService.removeAttachment(conn, req.params.id, req.params.fileId),
+            expenseService.removeAttachment(conn, req.params.id, req.params.fileId, req.user, kindOf(req)),
         );
         await deletePrivateFile(oldPath).catch(() => {});
         res.status(204).end();
@@ -183,7 +218,13 @@ async function removeAttachment(req, res, next) {
 // เปิดไฟล์แนบผ่านการตรวจสิทธิ์ (ไม่มีลิงก์ static) · ไม่ให้ browser/proxy เก็บ cache
 async function downloadAttachment(req, res, next) {
     try {
-        const { storedPath, fileName } = await expenseService.findAttachment(pool, req.params.id, req.params.fileId);
+        const { storedPath, fileName } = await expenseService.findAttachment(
+            pool,
+            req.params.id,
+            req.params.fileId,
+            req.user,
+            kindOf(req),
+        );
         const missing = () => new AppError(404, "EXPENSE_FILE_MISSING", "ไม่พบไฟล์บนเซิร์ฟเวอร์ — แนบไฟล์ใหม่");
         const fullPath = resolvePrivateFile(storedPath);
         if (!fullPath) throw missing();

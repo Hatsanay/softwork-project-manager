@@ -4,7 +4,7 @@ const assert = require("node:assert/strict");
 const fs = require("fs");
 const path = require("path");
 const mysql = require("mysql2/promise");
-const { issueDocumentNumber, toCompactDate } = require("../src/utils/document-number");
+const { issueDocumentNumber, issueYearlyNumber, toCompactDate } = require("../src/utils/document-number");
 
 require("dotenv").config({ path: path.join(__dirname, "..", ".env"), quiet: true });
 
@@ -84,4 +84,35 @@ test("ออกเลขพร้อมกัน 25 คำขอ ได้เล
 
 test("ประเภทเอกสารที่ไม่รู้จักถูกปฏิเสธ", async () => {
     await assert.rejects(issueInTransaction("XX", "2026-12-31"), /ไม่รู้จัก/);
+});
+
+// เลข 50 ทวิ รันต่อปี (ขั้น 2-4 — R-P3): ไม่รีเซ็ตทุกวัน · ขึ้นปีใหม่เริ่ม 1 · rollback แล้วเลขไม่ข้าม
+async function issueYearlyInTransaction(documentDate, shouldCommit = true) {
+    const conn = await pool.getConnection();
+    try {
+        await conn.beginTransaction();
+        const issued = await issueYearlyNumber(conn, "WT", documentDate);
+        if (shouldCommit) await conn.commit();
+        else await conn.rollback();
+        return issued;
+    } finally {
+        conn.release();
+    }
+}
+
+test("เลข 50 ทวิ รันต่อปี: วันต่างกันในปีเดียวต่อเนื่อง · 31 ธ.ค. → 1 ม.ค. ขึ้นเล่มใหม่ · rollback ไม่ข้ามเลข", async () => {
+    assert.deepEqual(await issueYearlyInTransaction("2026-03-01"), {
+        number: "WT-2026-000001",
+        year: "2026",
+        sequence: 1,
+    });
+    assert.equal((await issueYearlyInTransaction("2026-12-31")).number, "WT-2026-000002");
+    await issueYearlyInTransaction("2026-12-31", false);
+    assert.equal((await issueYearlyInTransaction("2026-12-31")).number, "WT-2026-000003", "rollback ไม่ใช้เลข");
+    assert.deepEqual(await issueYearlyInTransaction("2027-01-01"), {
+        number: "WT-2027-000001",
+        year: "2027",
+        sequence: 1,
+    });
+    await assert.rejects(() => issueYearlyNumber(pool, "PV", "2026-12-31"), /ไม่รู้จัก/);
 });

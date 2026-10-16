@@ -154,13 +154,27 @@ const ENTITIES = [
     { re: /^\/expenses\/([^/]+)\/copy$/, type: "expense", table: "tb_expenses", pk: "ex_id", id: "response:ex_id", label: { POST: "คัดลอกเป็นค่าใช้จ่ายใหม่" } },
     { re: /^\/expenses\/([^/]+)$/, type: "expense", table: "tb_expenses", pk: "ex_id", id: "1", label: { PUT: "แก้ร่างค่าใช้จ่าย", DELETE: "ลบร่างค่าใช้จ่าย" } },
     { re: /^\/expenses$/, type: "expense", table: "tb_expenses", pk: "ex_id", id: "response:ex_id", label: { POST: "บันทึกร่างค่าใช้จ่าย" } },
+    // ใบเบิกเงินพนักงาน (ขั้น 2-3)
+    { re: /^\/claims\/([^/]+)\/attachments\/([^/]+)$/, type: "claim", table: "tb_expenses", pk: "ex_id", id: "1", label: { GET: "เปิดไฟล์แนบใบเบิก", DELETE: "ลบไฟล์แนบใบเบิก" } },
+    { re: /^\/claims\/([^/]+)\/attachments$/, type: "claim", table: "tb_expenses", pk: "ex_id", id: "1", label: { POST: "แนบไฟล์ใบเบิก" } },
+    { re: /^\/claims\/([^/]+)\/submit$/, type: "claim", table: "tb_expenses", pk: "ex_id", id: "1", label: { POST: "ส่งใบเบิกเงิน" } },
+    { re: /^\/claims\/([^/]+)\/approve$/, type: "claim", table: "tb_expenses", pk: "ex_id", id: "1", label: { POST: "อนุมัติใบเบิกเงิน" } },
+    { re: /^\/claims\/([^/]+)\/return$/, type: "claim", table: "tb_expenses", pk: "ex_id", id: "1", label: { POST: "ตีกลับใบเบิกเงิน" } },
+    { re: /^\/claims\/([^/]+)\/cancel$/, type: "claim", table: "tb_expenses", pk: "ex_id", id: "1", label: { POST: "ยกเลิกใบเบิกเงิน" } },
+    { re: /^\/claims\/([^/]+)$/, type: "claim", table: "tb_expenses", pk: "ex_id", id: "1", label: { PUT: "แก้ร่างใบเบิกเงิน", DELETE: "ลบร่างใบเบิกเงิน" } },
+    { re: /^\/claims$/, type: "claim", table: "tb_expenses", pk: "ex_id", id: "response:ex_id", label: { POST: "บันทึกร่างใบเบิกเงิน" } },
+    // ทำจ่าย / 50 ทวิ (ขั้น 2-4) — หนังสือรับรองมีเลขผู้เสียภาษีของผู้รับ บันทึกการเปิดดูด้วย
+    { re: /^\/payments\/([^/]+)\/cancel$/, type: "payment", table: "tb_payments", pk: "pv_id", id: "1", label: { POST: "ยกเลิกใบสำคัญจ่าย (50 ทวิ ยกเลิกตาม)" } },
+    { re: /^\/payments$/, type: "payment", table: "tb_payments", pk: "pv_id", id: "response:pv_id", label: { POST: "ทำจ่าย (ออกใบสำคัญจ่าย / 50 ทวิ)" } },
+    { re: /^\/wht-certificates\/([^/]+)$/, type: "wht_certificate", table: "tb_wht_certificates", pk: "wt_id", id: "1", label: { GET: "เปิดหนังสือรับรองหัก ณ ที่จ่าย (50 ทวิ)" } },
+    { re: /^\/reports\/withholding$/, type: "report", label: { GET: "เปิดรายงานภาษีหัก ณ ที่จ่าย (ภ.ง.ด.3/53)" } },
 
     { re: /^\/(logs|audit-logs|error-logs)(\/[^/]+)?$/, type: "log", label: { GET: "เปิดดู log ของระบบ", DELETE: "ลบ log" } },
     { re: /^\/share\/([^/]+)$/, type: "project", table: "tb_projects", pk: "project_share_token", label: { GET: "ลูกค้าเปิดลิงก์ติดตามโปรเจกต์" }, shareView: true },
 ];
 
 // GET ที่บันทึกด้วย (เปิดดูข้อมูลสำคัญ) — นอกนั้น GET ไม่บันทึก ยกเว้นถูกปฏิเสธ/error (ปริมาณมหาศาลและไม่เปลี่ยนข้อมูล)
-const SENSITIVE_READS = [/^\/reports\/accounting-export$/, /^\/receipts\/[^/]+\/wht-certificate\/file$/, /^\/expenses\/[^/]+\/attachments\/[^/]+$/, /^\/users$/, /^\/users\/(?!me$|for-select$)[^/]+$/, /^\/(logs|audit-logs|error-logs)(\/[^/]+)?$/, /^\/share\/[^/]+$/];
+const SENSITIVE_READS = [/^\/reports\/accounting-export$/, /^\/receipts\/[^/]+\/wht-certificate\/file$/, /^\/expenses\/[^/]+\/attachments\/[^/]+$/, /^\/claims\/[^/]+\/attachments\/[^/]+$/, /^\/wht-certificates\/[^/]+$/, /^\/reports\/withholding$/, /^\/users$/, /^\/users\/(?!me$|for-select$)[^/]+$/, /^\/(logs|audit-logs|error-logs)(\/[^/]+)?$/, /^\/share\/[^/]+$/];
 // ไม่บันทึกใน audit: login/logout มีตาราง tb_login_logs ของตัวเอง (และ body login มีรหัสผ่าน)
 const SKIP = [/^\/auth\/(login|logout)$/, /^\/auth\/verifyPermission$/];
 

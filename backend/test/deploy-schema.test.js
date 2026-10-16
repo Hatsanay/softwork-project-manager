@@ -35,6 +35,11 @@ const PRODUCTION_SCHEMA_2026_10_16 = fs.readFileSync(
     path.join(__dirname, "fixtures", "deploy-schema-2026-10-16.sql"),
     "utf8",
 );
+// deploy 16 ต.ค. 2026 20:11 (commit 0e97c00) — มีเฟส 2 ขั้น 2-1/2-2 แล้ว แต่ tb_expenses ยังไม่มี ex_merchant_name (ใบเบิก 2-3)
+const PRODUCTION_SCHEMA_2026_10_16_2011 = fs.readFileSync(
+    path.join(__dirname, "fixtures", "deploy-schema-2026-10-16-2011.sql"),
+    "utf8",
+);
 const SERVER = {
     host: process.env.DB_HOST,
     port: process.env.DB_PORT,
@@ -135,6 +140,32 @@ test("ข้อมูลเริ่มต้นไม่ทับของท�
     });
 });
 
+test("อัปเกรดจากโครงสร้าง deploy 16 ต.ค. 2026 20:11 (มีค่าใช้จ่ายแล้ว): ได้ช่องร้านค้าของใบเบิก · ค่าใช้จ่ายเดิมไม่หาย · รันซ้ำได้", async () => {
+    await withTemporaryDatabase("upgrade10162011", async (conn) => {
+        assert.deepEqual(
+            await runSchemaFile(conn, PRODUCTION_SCHEMA_2026_10_16_2011),
+            [],
+            "ฐานตั้งต้นต้องสมบูรณ์ตามเวอร์ชันเก่า",
+        );
+        await conn.query("INSERT INTO tb_vendors (vd_id, vd_name) VALUES ('VND202610160000001', 'ผู้ขาย')");
+        await conn.query(
+            `INSERT INTO tb_expenses (ex_id, ex_vendor_id, ex_branch_id, ex_title, ex_expense_date, ex_due_date, ex_total)
+             VALUES ('EXP202610160000001', 'VND202610160000001', 'BRA202601010000001', 'ค่าเซิร์ฟเวอร์', '2026-10-16', '2026-10-16', 1200)`,
+        );
+
+        assert.deepEqual(await runSchemaFile(conn, DEPLOY_SCHEMA), [], "หลังอัปเกรด: ส่วนที่ 6 ต้องไม่มีแถว");
+        assert.deepEqual(await runSchemaFile(conn, DEPLOY_SCHEMA), [], "อัปเกรดแล้วรันซ้ำ: ส่วนที่ 6 ต้องไม่มีแถว");
+
+        const [[expense]] = await conn.query("SELECT ex_title, ex_total, ex_kind, ex_merchant_name FROM tb_expenses");
+        assert.deepEqual(expense, {
+            ex_title: "ค่าเซิร์ฟเวอร์",
+            ex_total: "1200.00",
+            ex_kind: "bill",
+            ex_merchant_name: null,
+        });
+    });
+});
+
 test("อัปเกรดจากโครงสร้าง deploy 16 ต.ค. 2026: ได้ตารางเฟส 2 + ข้อมูลเริ่มต้น + กติกาอนุมัติค่าใช้จ่าย · ช่องสิทธิ์ขยายเป็น 255 สิทธิ์เดิมไม่หาย · รันซ้ำไม่ทับที่แก้", async () => {
     await withTemporaryDatabase("upgrade1016", async (conn) => {
         assert.deepEqual(
@@ -162,7 +193,11 @@ test("อัปเกรดจากโครงสร้าง deploy 16 ต.�
         const [[expenseRule]] = await conn.query(
             "SELECT al_min_amount_thb FROM tb_approval_levels WHERE al_doc_type = 'EX' AND al_level = 1",
         );
-        assert.equal(expenseRule.al_min_amount_thb, "3000.00", "ได้กติกาเริ่มต้นของค่าใช้จ่าย (ต่ำกว่า 3,000 ผ่านอัตโนมัติ)");
+        assert.equal(
+            expenseRule.al_min_amount_thb,
+            "3000.00",
+            "ได้กติกาเริ่มต้นของค่าใช้จ่าย (ต่ำกว่า 3,000 ผ่านอัตโนมัติ)",
+        );
         const [[service]] = await conn.query(
             "SELECT wr_rate, wr_min_payment FROM tb_wht_rates WHERE wr_income_type = 'SERVICE'",
         );

@@ -427,6 +427,11 @@ const USER_HISTORY_CHECKS = [
         sql: "SELECT COUNT(*) AS n FROM tb_expenses WHERE ? IN (ex_created_by, ex_employee_id, ex_cancelled_by)",
     },
     { label: "อนุมัติค่าใช้จ่าย", unit: "ครั้ง", sql: "SELECT COUNT(*) AS n FROM tb_expense_approvals WHERE expa_user_id = ?" },
+    {
+        label: "ทำจ่าย/ยกเลิกใบสำคัญจ่าย หรือเป็นผู้รับเงิน",
+        unit: "ใบ",
+        sql: "SELECT COUNT(*) AS n FROM tb_payments WHERE ? IN (pv_created_by, pv_cancelled_by, pv_employee_id)",
+    },
 ];
 
 async function findUserHistory(userId) {

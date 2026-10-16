@@ -74,6 +74,19 @@ export const MENU_DEFS: MenuItem[] = [
             { key: "viewExpenses", label: "ค่าใช้จ่าย", href: "/purchasing/expenses" },
             { key: "createExpense", label: "ค่าใช้จ่าย", href: "/purchasing/expenses", hidden: true },
             { key: "approveExpense", label: "ค่าใช้จ่าย", href: "/purchasing/expenses", hidden: true },
+            // เบิกเงิน: ทุกคนเบิกของตัวเองได้ (ไม่มีบิตเฉพาะ) — ผูกกับ dashboard ที่ทุก role มี
+            { key: "dashboard", label: "เบิกเงิน", href: "/purchasing/claims" },
+            // ทำจ่าย / 50 ทวิ (ขั้น 2-4): ผู้ทำจ่ายเห็นเมนู · ผู้ดู/ผู้ยกเลิกเห็นผ่านเมนูซ่อนที่ href เดียวกัน
+            { key: "makePayment", label: "ใบสำคัญจ่าย", href: "/purchasing/payments" },
+            { key: "viewExpenses", label: "ใบสำคัญจ่าย", href: "/purchasing/payments", hidden: true },
+            { key: "cancelPayment", label: "ใบสำคัญจ่าย", href: "/purchasing/payments", hidden: true },
+            { key: "makePayment", label: "50 ทวิ", href: "/purchasing/wht-certificates" },
+            { key: "viewExpenses", label: "50 ทวิ", href: "/purchasing/wht-certificates", hidden: true },
+            // เจ้าหนี้คงค้าง + รายงาน ภ.ง.ด. (ขั้น 2-5)
+            { key: "viewExpenses", label: "เจ้าหนี้คงค้าง", href: "/purchasing/payables" },
+            { key: "makePayment", label: "เจ้าหนี้คงค้าง", href: "/purchasing/payables", hidden: true },
+            { key: "viewExpenses", label: "รายงาน ภ.ง.ด.3/53", href: "/purchasing/wht-report" },
+            { key: "makePayment", label: "รายงาน ภ.ง.ด.3/53", href: "/purchasing/wht-report", hidden: true },
             { key: "manageVendors", label: "ผู้ขาย", href: "/purchasing/vendors" },
             { key: "companySettings", label: "ตั้งค่าจัดซื้อ", href: "/purchasing/settings" },
         ],

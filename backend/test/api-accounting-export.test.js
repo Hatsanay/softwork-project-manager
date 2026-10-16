@@ -1,4 +1,4 @@
-// ไฟล์ส่งนักบัญชี (ขั้น 1D-3) — 6 ชีต · ชนิดเซลล์ (ตัวเลข/วันที่/ข้อความ) · ลูกหนี้ ณ สิ้นเดือนคิดย้อนหลัง · ยกเลิกในเดือน · สิทธิ์ · audit
+// ไฟล์ส่งนักบัญชี (ขั้น 1D-3) — 6 ชีตฝั่งขาย + 3 ชีตฝั่งจ่าย (ขั้น 2-5 — ทดสอบละเอียดใน api-payables.test.js) · ชนิดเซลล์ (ตัวเลข/วันที่/ข้อความ) · ลูกหนี้ ณ สิ้นเดือนคิดย้อนหลัง · ยกเลิกในเดือน · สิทธิ์ · audit
 // ยิงผ่านเซิร์ฟเวอร์จริงบนฐานข้อมูลชั่วคราว แล้วเปิดไฟล์ที่ได้ด้วย exceljs · แบบระบบ: docs/plans/2026-10-15-finance-1d.md R-D2/R-D3/R-D7/R-D9
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -169,14 +169,24 @@ test.after(async () => {
     await api?.stop();
 });
 
-test("เดือนก่อน: 6 ชีต · ใบแจ้งหนี้รวมใบที่ยกเลิกทีหลัง · ชนิดเซลล์ถูก · ชื่อที่หน้าตาเหมือนสูตรเป็นข้อความ (R-D7)", async () => {
+test("เดือนก่อน: 9 ชีต (ขาย 6 + จ่าย 3) · ใบแจ้งหนี้รวมใบที่ยกเลิกทีหลัง · ชนิดเซลล์ถูก · ชื่อที่หน้าตาเหมือนสูตรเป็นข้อความ (R-D7)", async () => {
     const { workbook, headers } = await download(previousMonth());
     assert.match(headers.get("content-type"), /spreadsheetml/);
     assert.match(headers.get("content-disposition"), /filename\*=UTF-8''softwork-/);
     assert.match(headers.get("cache-control"), /no-store/);
     assert.deepEqual(
         workbook.worksheets.map((sheet) => sheet.name),
-        ["สรุป", "ใบแจ้งหนี้", "ใบเสร็จ", "หัก ณ ที่จ่าย", "ลูกหนี้ ณ สิ้นเดือน", "ยกเลิกในเดือน"],
+        [
+            "สรุป",
+            "ใบแจ้งหนี้",
+            "ใบเสร็จ",
+            "หัก ณ ที่จ่าย",
+            "ลูกหนี้ ณ สิ้นเดือน",
+            "ยกเลิกในเดือน",
+            "ค่าใช้จ่าย",
+            "ใบสำคัญจ่าย",
+            "หัก ณ ที่จ่าย (บริษัทหัก)",
+        ],
     );
 
     const invoices = sheetRows(workbook, "ใบแจ้งหนี้");

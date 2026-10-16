@@ -104,6 +104,26 @@ export const expenseBillDraftSchema = z
         }
     });
 
+/**
+ * ร่างใบเบิกเงินพนักงาน (ขั้น 2-3) — ผู้เบิก = ผู้บันทึกเสมอ (backend ใส่เอง) · เงินบาทเท่านั้น · ไม่หัก ณ ที่จ่าย
+ * ร้านค้าพิมพ์ชื่อเอง (ไม่ต้องอยู่ในทะเบียนผู้ขาย) · ไฟล์ใบเสร็จตรวจตอนส่ง (ต้องมีอย่างน้อย 1 ไฟล์ ยกเว้นใบรับรองแทนใบเสร็จ)
+ */
+export const expenseClaimDraftSchema = z.object({
+    ex_title: requiredText("เรื่อง", 200),
+    ex_branch_id: requiredText("สาขา", 18),
+    ex_merchant_name: optionalText("ร้านค้า / ผู้รับเงิน", 150),
+    ex_vendor_doc_no: optionalText("เลขที่ใบเสร็จ", 50).transform((value) =>
+        value === null ? null : value.replace(/\s+/g, " "),
+    ),
+    ex_vendor_doc_date: optionalDate("วันที่ในใบเสร็จ"),
+    ex_doc_type: z.enum(EXPENSE_DOC_TYPES, { error: "กรุณาเลือกชนิดเอกสาร" }).default("receipt"),
+    ex_expense_date: requiredDate("วันที่จ่าย"),
+    ex_vat_amount: decimalText("VAT ตามใบเสร็จ", { minimum: "0", maximum: "9999999999999.99" }).default("0.00"),
+    ex_notes: optionalText("หมายเหตุ", 2000),
+    lines: z.array(lineSchema).max(MAX_EXPENSE_LINES, `มีได้ไม่เกิน ${MAX_EXPENSE_LINES} บรรทัด`).default([]),
+    ex_version: version,
+});
+
 /** ส่ง / อนุมัติ / ลบร่าง / คัดลอก */
 export const expenseActionSchema = z.object({ ex_version: version });
 

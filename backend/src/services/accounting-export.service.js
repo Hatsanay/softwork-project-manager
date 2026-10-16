@@ -1,6 +1,7 @@
 // ไฟล์ส่งนักบัญชีรายเดือน (.xlsx) (2026-10-15 ขั้น 1D-3 — docs/plans/2026-10-15-finance-1d.md หัวข้อ 3.3)
 //
 // 6 ชีต: สรุป · ใบแจ้งหนี้ · ใบเสร็จ · หัก ณ ที่จ่าย · ลูกหนี้ ณ สิ้นเดือน · ยกเลิกในเดือน
+// + 3 ชีตฝั่งจ่าย (เฟส 2 ขั้น 2-5): ค่าใช้จ่าย (ตามวันที่ค่าใช้จ่าย) · ใบสำคัญจ่าย · หัก ณ ที่จ่ายที่บริษัทหัก (50 ทวิ ที่ออก)
 // - ตัวเลขเป็นตัวเลขจริง · วันที่เป็นวันที่จริง · เลขผู้เสียภาษี/เลขที่เอกสารเป็นข้อความ (ศูนย์นำหน้าไม่หาย)
 // - ข้อความทุกช่องเขียนเป็นเซลล์ข้อความ ไม่ใช่สูตร — ชื่อลูกค้า "=HYPERLINK(...)" ไม่ถูกคำนวณ (R-D7)
 // - ลูกหนี้ ณ สิ้นเดือน คิดย้อนหลังจากใบเสร็จ ไม่ใช้ยอดค้างปัจจุบัน (R-D3)
@@ -18,6 +19,17 @@ const DATE_FORMAT = "dd/mm/yyyy";
 const METHOD_LABELS = { transfer: "โอนเงิน", cheque: "เช็ค", cash: "เงินสด", other: "อื่นๆ" };
 const INVOICE_STATUS = { issued: "ออกแล้ว", cancelled: "ยกเลิก" };
 const RECEIPT_STATUS = { issued: "ออกแล้ว", cancelled: "ยกเลิก" };
+const EXPENSE_STATUS = { approved: "อนุมัติแล้ว", cancelled: "ยกเลิก" };
+const EXPENSE_KIND = { bill: "บิลผู้ขาย", claim: "ใบเบิกพนักงาน" };
+const DOC_TYPE_LABELS = {
+    tax_invoice: "ใบกำกับภาษีเต็มรูป",
+    abbreviated_tax_invoice: "ใบกำกับภาษีอย่างย่อ",
+    receipt: "ใบเสร็จรับเงิน",
+    invoice: "ใบแจ้งหนี้",
+    substitute_receipt: "ใบรับรองแทนใบเสร็จ",
+    none: "ไม่มีเอกสาร",
+};
+const WHT_FORM_LABELS = { PND3: "ภ.ง.ด.3", PND53: "ภ.ง.ด.53" };
 
 /**
  * "2026-10" → ช่วงวันที่ของเดือน
@@ -272,6 +284,142 @@ async function findCancellations(conn, { from, to }) {
 
 // ─── สร้างไฟล์ ────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * ค่าใช้จ่าย/ใบเบิกของเดือน (ตามวันที่ค่าใช้จ่าย) ที่อนุมัติแล้วหรือยกเลิก — รายบรรทัด (หมวด/โปรเจกต์) เพื่อลงบัญชีตามหมวด
+ * ร่าง/รออนุมัติยังไม่ใช่ค่าใช้จ่าย จึงไม่ส่ง · VAT/หัก ณ ที่จ่าย อยู่ที่บรรทัดแรกของแต่ละรายการ (กันนับซ้ำเวลารวมคอลัมน์)
+ */
+async function findExpenses(conn, { from, to }) {
+    const [rows] = await conn.query(
+        `SELECT e.ex_id, e.ex_number, e.ex_kind, e.ex_status, DATE_FORMAT(e.ex_expense_date, '%Y-%m-%d') AS expense_date,
+                DATE_FORMAT(e.ex_due_date, '%Y-%m-%d') AS due_date, e.ex_title, e.ex_doc_type, e.ex_vendor_doc_no,
+                DATE_FORMAT(e.ex_vendor_doc_date, '%Y-%m-%d') AS vendor_doc_date, e.ex_currency, e.ex_exchange_rate,
+                e.ex_vat_amount, e.ex_vat_claimable, e.ex_total, e.ex_total_thb, e.ex_wht_amount, e.ex_paid_amount, e.ex_cancel_reason,
+                IF(e.ex_kind = 'claim', CONCAT(u.user_fname, ' ', u.user_lname), v.vd_name) AS payee,
+                IF(e.ex_kind = 'claim', e.ex_merchant_name, NULL) AS merchant, v.vd_tax_id,
+                l.exl_order, l.exl_description, l.exl_amount, c.ec_name_th AS category, c.ec_account_code AS account_code,
+                p.project_name
+         FROM tb_expenses e
+         JOIN tb_expense_lines l ON l.exl_expense_id = e.ex_id
+         JOIN tb_expense_categories c ON c.ec_id = l.exl_category_id
+         LEFT JOIN tb_projects p ON p.project_id = l.exl_project_id
+         LEFT JOIN tb_vendors v ON v.vd_id = e.ex_vendor_id
+         LEFT JOIN tb_users u ON u.user_id = e.ex_employee_id
+         WHERE e.ex_status IN ('approved', 'cancelled') AND e.ex_number IS NOT NULL AND e.ex_expense_date BETWEEN ? AND ?
+         ORDER BY e.ex_expense_date, e.ex_number, l.exl_order`,
+        [from, to],
+    );
+    const seen = new Set();
+    return rows.map((row) => {
+        const isFirstLine = !seen.has(row.ex_id);
+        seen.add(row.ex_id);
+        return {
+            number: row.ex_number,
+            kind: EXPENSE_KIND[row.ex_kind],
+            expense_date: dateCell(row.expense_date),
+            due_date: dateCell(row.due_date),
+            payee: row.payee ?? "",
+            merchant: row.merchant ?? "",
+            tax_id: row.vd_tax_id ?? "",
+            doc_type: DOC_TYPE_LABELS[row.ex_doc_type] ?? row.ex_doc_type,
+            vendor_doc_no: row.ex_vendor_doc_no ?? "",
+            vendor_doc_date: dateCell(row.vendor_doc_date),
+            title: row.ex_title,
+            line: row.exl_description,
+            category: row.category,
+            account_code: row.account_code ?? "",
+            project: row.project_name ?? "ส่วนกลาง",
+            currency: row.ex_currency,
+            rate: number(row.ex_exchange_rate),
+            line_amount: number(row.exl_amount),
+            vat: isFirstLine ? number(row.ex_vat_amount) : null,
+            vat_claimable: isFirstLine ? (row.ex_vat_claimable === 1 ? "ขอคืนได้" : "เป็นต้นทุน") : "",
+            total: isFirstLine ? number(row.ex_total) : null,
+            total_thb: isFirstLine ? number(row.ex_total_thb) : null,
+            wht_estimate: isFirstLine ? number(row.ex_wht_amount) : null,
+            paid: isFirstLine ? number(row.ex_paid_amount) : null,
+            status: EXPENSE_STATUS[row.ex_status],
+            cancel_reason: row.ex_cancel_reason ?? "",
+            is_approved_first_line: isFirstLine && row.ex_status === "approved",
+        };
+    });
+}
+
+/** ใบสำคัญจ่ายของเดือน (ตามวันที่จ่าย) รวมที่ยกเลิก — ผู้รับใช้ snapshot ณ วันจ่าย */
+async function findPayments(conn, { from, to }) {
+    const [rows] = await conn.query(
+        `SELECT p.pv_number, DATE_FORMAT(p.pv_payment_date, '%Y-%m-%d') AS payment_date, p.pv_status, p.pv_payee_kind,
+                p.pv_payee_snapshot, p.pv_bank_snapshot, p.pv_method, p.pv_reference, p.pv_cheque_no, p.pv_currency,
+                p.pv_allocated_total, p.pv_wht_amount, p.pv_net_paid, p.pv_fee_amount, p.pv_paid_thb, p.pv_actual_rate,
+                p.pv_fx_diff_thb, p.pv_cancel_reason, w.wt_number,
+                (SELECT GROUP_CONCAT(e.ex_number ORDER BY a.pva_order SEPARATOR ', ')
+                 FROM tb_payment_allocations a JOIN tb_expenses e ON e.ex_id = a.pva_expense_id
+                 WHERE a.pva_payment_id = p.pv_id) AS expenses
+         FROM tb_payments p
+         LEFT JOIN tb_wht_certificates w ON w.wt_payment_id = p.pv_id
+         WHERE p.pv_payment_date BETWEEN ? AND ?
+         ORDER BY p.pv_payment_date, p.pv_number`,
+        [from, to],
+    );
+    return rows.map((row) => {
+        const payee = parseJson(row.pv_payee_snapshot) ?? {};
+        const bank = parseJson(row.pv_bank_snapshot);
+        return {
+            number: row.pv_number,
+            payment_date: dateCell(row.payment_date),
+            payee: payee.kind === "employee" ? payee.full_name : payee.vd_name,
+            payee_kind: row.pv_payee_kind === "employee" ? "พนักงาน" : "ผู้ขาย",
+            tax_id: payee.vd_tax_id ?? "",
+            expenses: row.expenses ?? "",
+            method: METHOD_LABELS[row.pv_method] ?? row.pv_method,
+            from_account: bank ? `${bank.ba_bank_name} ${bank.ba_account_no}` : "",
+            reference: row.pv_cheque_no ? `เช็ค ${row.pv_cheque_no}` : (row.pv_reference ?? ""),
+            currency: row.pv_currency,
+            allocated: number(row.pv_allocated_total),
+            withholding: number(row.pv_wht_amount),
+            net_paid: number(row.pv_net_paid),
+            fee: number(row.pv_fee_amount),
+            paid_thb: number(row.pv_paid_thb),
+            actual_rate: number(row.pv_actual_rate),
+            fx_diff_thb: number(row.pv_fx_diff_thb),
+            certificate_no: row.wt_number ?? "",
+            status: row.pv_status === "issued" ? "จ่ายแล้ว" : "ยกเลิก",
+            cancel_reason: row.pv_cancel_reason ?? "",
+            is_issued: row.pv_status === "issued",
+        };
+    });
+}
+
+/** แถวเงินได้ของ 50 ทวิ ที่บริษัทออกในเดือน (ไม่นับที่ยกเลิก) — ใช้ทำ ภ.ง.ด.3/53 */
+async function findIssuedCertificateLines(conn, { from, to }) {
+    const [rows] = await conn.query(
+        `SELECT w.wt_number, w.wt_form, DATE_FORMAT(w.wt_payment_date, '%Y-%m-%d') AS payment_date, w.wt_payee_snapshot,
+                p.pv_number, l.wtl_form_label, l.wtl_rate, l.wtl_paid_amount, l.wtl_tax_amount
+         FROM tb_wht_certificates w
+         JOIN tb_payments p ON p.pv_id = w.wt_payment_id
+         JOIN tb_wht_certificate_lines l ON l.wtl_certificate_id = w.wt_id
+         WHERE w.wt_status = 'issued' AND w.wt_payment_date BETWEEN ? AND ?
+         ORDER BY w.wt_form, w.wt_payment_date, w.wt_number, l.wtl_form_row`,
+        [from, to],
+    );
+    return rows.map((row) => {
+        const payee = parseJson(row.wt_payee_snapshot) ?? {};
+        return {
+            form: WHT_FORM_LABELS[row.wt_form],
+            certificate_no: row.wt_number,
+            payment_date: dateCell(row.payment_date),
+            payee: payee.vd_name ?? "",
+            tax_id: payee.vd_tax_id ?? "",
+            branch: payee.vd_type === "juristic" && payee.vd_branch_code ? payee.vd_branch_code : "",
+            address: payee.vd_address ?? "",
+            income: row.wtl_form_label,
+            rate: number(row.wtl_rate),
+            paid: number(row.wtl_paid_amount),
+            tax: number(row.wtl_tax_amount),
+            payment_no: row.pv_number,
+        };
+    });
+}
+
 const sum = (rows, key) => Math.round(rows.reduce((total, row) => total + (row[key] ?? 0), 0) * 100) / 100;
 
 /**
@@ -298,6 +446,11 @@ async function buildAccountingExport(conn, monthText, actor) {
     const aging = await findAgingAsOf(conn, range.to);
     const cancellations = await findCancellations(conn, range);
     const activeInvoices = invoices.filter((row) => row.status === INVOICE_STATUS.issued);
+    const expenseLines = await findExpenses(conn, range);
+    const approvedExpenses = expenseLines.filter((row) => row.is_approved_first_line);
+    const payments = await findPayments(conn, range);
+    const issuedPayments = payments.filter((row) => row.is_issued);
+    const certificateLines = await findIssuedCertificateLines(conn, range);
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "Softwork";
@@ -323,6 +476,12 @@ async function buildAccountingExport(conn, monthText, actor) {
         ["ลูกหนี้คงค้าง ณ สิ้นเดือน (บาท)", sum(aging, "outstanding_thb")],
         ["เอกสารที่ยกเลิกในเดือน — จำนวน", cancellations.length],
         [],
+        ["ค่าใช้จ่าย/ใบเบิกที่อนุมัติ (ตามวันที่ค่าใช้จ่าย) — จำนวน", approvedExpenses.length],
+        ["ค่าใช้จ่ายรวม (บาท รวม VAT)", sum(approvedExpenses, "total_thb")],
+        ["ใบสำคัญจ่าย (ไม่นับที่ยกเลิก) — จำนวน", issuedPayments.length],
+        ["เงินออกจริง (บาท ไม่รวมค่าธรรมเนียม)", sum(issuedPayments, "paid_thb")],
+        ["ภาษีหัก ณ ที่จ่ายที่บริษัทต้องนำส่ง (บาท)", sum(certificateLines, "tax")],
+        [],
         [
             "หมายเหตุ: ใบเสร็จย้อนวันที่ได้ 30 วัน และยกเลิกเอกสารทีหลังได้ — ตัวเลขของเดือนนี้อาจเปลี่ยน ส่งออกใหม่ถ้ามีการแก้ย้อนหลัง",
         ],
@@ -331,7 +490,7 @@ async function buildAccountingExport(conn, monthText, actor) {
     for (const row of summaryRows) summary.addRow(row);
     summary.getColumn(2).numFmt = MONEY_FORMAT;
     summary.getRow(1).font = { bold: true, size: 13 };
-    for (const rowNumber of [8, 12, 16]) summary.getRow(rowNumber).getCell(2).numFmt = "0";
+    for (const rowNumber of [8, 12, 16, 18, 20]) summary.getRow(rowNumber).getCell(2).numFmt = "0";
 
     addTableSheet(
         workbook,
@@ -441,6 +600,88 @@ async function buildAccountingExport(conn, monthText, actor) {
             { header: "ผู้ยกเลิก", key: "cancelled_by", width: 20 },
         ],
         cancellations,
+    );
+
+    addTableSheet(
+        workbook,
+        "ค่าใช้จ่าย",
+        [
+            { header: "เลขที่", key: "number", width: 20 },
+            { header: "ประเภท", key: "kind", width: 12 },
+            { header: "วันที่ค่าใช้จ่าย", key: "expense_date", type: "date", width: 12 },
+            { header: "ครบกำหนด", key: "due_date", type: "date", width: 12 },
+            { header: "ผู้ขาย / ผู้เบิก", key: "payee", width: 28 },
+            { header: "ร้านค้า (ใบเบิก)", key: "merchant", width: 20 },
+            { header: "เลขผู้เสียภาษี", key: "tax_id", width: 16 },
+            { header: "ชนิดเอกสาร", key: "doc_type", width: 16 },
+            { header: "เลขที่เอกสารผู้ขาย", key: "vendor_doc_no", width: 16 },
+            { header: "วันที่เอกสารผู้ขาย", key: "vendor_doc_date", type: "date", width: 12 },
+            { header: "เรื่อง", key: "title", width: 28 },
+            { header: "รายการ", key: "line", width: 28 },
+            { header: "หมวด", key: "category", width: 20 },
+            { header: "รหัสบัญชี", key: "account_code", width: 10 },
+            { header: "โปรเจกต์", key: "project", width: 20 },
+            { header: "สกุล", key: "currency", width: 7 },
+            { header: "อัตรา", key: "rate", type: "rate" },
+            { header: "ยอดบรรทัด (ก่อน VAT)", key: "line_amount", type: "money" },
+            { header: "VAT ของรายการ", key: "vat", type: "money" },
+            { header: "VAT ขอคืนได้ไหม", key: "vat_claimable", width: 12 },
+            { header: "ยอดรวมรายการ", key: "total", type: "money" },
+            { header: "ยอดรวม (บาท)", key: "total_thb", type: "money" },
+            { header: "หัก ณ ที่จ่าย (ประมาณ)", key: "wht_estimate", type: "money" },
+            { header: "จ่ายแล้ว", key: "paid", type: "money" },
+            { header: "สถานะ", key: "status", width: 10 },
+            { header: "เหตุผลที่ยกเลิก", key: "cancel_reason", width: 30 },
+        ],
+        expenseLines,
+    );
+
+    addTableSheet(
+        workbook,
+        "ใบสำคัญจ่าย",
+        [
+            { header: "เลขที่", key: "number", width: 20 },
+            { header: "วันที่จ่าย", key: "payment_date", type: "date", width: 12 },
+            { header: "ผู้รับ", key: "payee", width: 28 },
+            { header: "ประเภทผู้รับ", key: "payee_kind", width: 10 },
+            { header: "เลขผู้เสียภาษี", key: "tax_id", width: 16 },
+            { header: "รายการที่จ่าย", key: "expenses", width: 28 },
+            { header: "วิธีจ่าย", key: "method", width: 10 },
+            { header: "จากบัญชี", key: "from_account", width: 24 },
+            { header: "อ้างอิง / เช็ค", key: "reference", width: 18 },
+            { header: "สกุล", key: "currency", width: 7 },
+            { header: "ยอดตัดหนี้", key: "allocated", type: "money" },
+            { header: "หัก ณ ที่จ่าย", key: "withholding", type: "money" },
+            { header: "จ่ายสุทธิ", key: "net_paid", type: "money" },
+            { header: "ค่าธรรมเนียมโอน", key: "fee", type: "money" },
+            { header: "ออกจากบัญชี (บาท)", key: "paid_thb", type: "money" },
+            { header: "อัตราจริง", key: "actual_rate", type: "rate" },
+            { header: "ส่วนต่างอัตรา (บาท)", key: "fx_diff_thb", type: "money" },
+            { header: "เลขที่ 50 ทวิ", key: "certificate_no", width: 16 },
+            { header: "สถานะ", key: "status", width: 10 },
+            { header: "เหตุผลที่ยกเลิก", key: "cancel_reason", width: 30 },
+        ],
+        payments,
+    );
+
+    addTableSheet(
+        workbook,
+        "หัก ณ ที่จ่าย (บริษัทหัก)",
+        [
+            { header: "แบบ", key: "form", width: 10 },
+            { header: "เลขที่ 50 ทวิ", key: "certificate_no", width: 16 },
+            { header: "วันที่จ่าย", key: "payment_date", type: "date", width: 12 },
+            { header: "ผู้ถูกหัก", key: "payee", width: 28 },
+            { header: "เลขผู้เสียภาษี", key: "tax_id", width: 16 },
+            { header: "สาขา", key: "branch", width: 8 },
+            { header: "ที่อยู่", key: "address", width: 36 },
+            { header: "ประเภทเงินได้", key: "income", width: 18 },
+            { header: "อัตรา (%)", key: "rate", type: "money", width: 9 },
+            { header: "เงินได้ที่จ่าย", key: "paid", type: "money" },
+            { header: "ภาษีที่หัก", key: "tax", type: "money" },
+            { header: "ใบสำคัญจ่าย", key: "payment_no", width: 20 },
+        ],
+        certificateLines,
     );
 
     const buffer = Buffer.from(await workbook.xlsx.writeBuffer());

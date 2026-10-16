@@ -3,6 +3,7 @@
 -- ฐานข้อมูลที่ใช้งานอยู่: รัน deploy_schema.sql แทน (มีตารางกลุ่มนี้แบบรันซ้ำได้)
 -- ขั้น 2-1: ประเภทเงินได้ + อัตราหัก ณ ที่จ่าย · หมวดค่าใช้จ่าย · ผู้ขาย
 -- ขั้น 2-2: ค่าใช้จ่าย/บิลผู้ขาย + บรรทัด + ไฟล์แนบ + ประวัติอนุมัติ · กติกาอนุมัติเริ่มต้น EX/EC
+-- ขั้น 2-4: ใบสำคัญจ่าย + การตัดหนี้ + หนังสือรับรองหัก ณ ที่จ่าย (50 ทวิ) + แถวเงินได้
 
 -- ประเภทเงินได้ที่บริษัทหัก ณ ที่จ่ายผู้อื่น — แถวบนหนังสือรับรอง 50 ทวิ (1–6 ตามแบบกรมสรรพากร)
 -- อัตราแยกไว้ใน tb_wht_rates ตามวันที่มีผล (แผนแม่บทหลักการข้อ 4 — อัตราเปลี่ยนได้ เอกสารเก่าต้องใช้อัตรา ณ วันนั้น)
@@ -108,6 +109,7 @@ CREATE TABLE `tb_expenses` (
   `ex_version` int unsigned NOT NULL DEFAULT '0',
   `ex_vendor_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'บิลผู้ขาย',
   `ex_employee_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ใบเบิก — ผู้เบิก (ผู้รับเงิน)',
+  `ex_merchant_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ใบเบิก — ชื่อร้าน/ผู้ขายตามใบเสร็จ (ผู้ขายนอกทะเบียน)',
   `ex_branch_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
   `ex_title` varchar(200) COLLATE utf8mb4_unicode_ci NOT NULL,
   `ex_vendor_doc_no` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เลขที่เอกสารของผู้ขาย — ผู้ขายเดียวกันซ้ำในใบที่ไม่ยกเลิกไม่ได้ (R-P2)',
@@ -221,6 +223,120 @@ CREATE TABLE `tb_expense_approvals` (
   KEY `fk_expa_user` (`expa_user_id`),
   CONSTRAINT `fk_expa_expense` FOREIGN KEY (`expa_expense_id`) REFERENCES `tb_expenses` (`ex_id`) ON DELETE CASCADE,
   CONSTRAINT `fk_expa_user` FOREIGN KEY (`expa_user_id`) REFERENCES `tb_users` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ── ขั้น 2-4 (2026-10-16): ทำจ่าย / ใบสำคัญจ่าย (PV) + หนังสือรับรองหัก ณ ที่จ่าย (50 ทวิ, WT) ──
+-- แบบเดียวกับใบเสร็จ (1C) กลับด้าน: บันทึก = ออกเลขทันที (ไม่มีร่าง) · ยกเลิกพร้อมเหตุผล เลขยังอยู่ · 50 ทวิ ยกเลิกตาม
+-- จ่ายหลายรายการของผู้รับรายเดียว สกุลเดียว ในครั้งเดียว · จ่ายบางส่วนได้ · ex_paid_amount ปรับใน transaction เดียวกัน
+-- สมการ (สกุลของรายการ): ยอดตัดหนี้ = จ่ายผู้รับสุทธิ + หัก ณ ที่จ่าย · เงินออกจากบัญชี = จ่ายสุทธิ + ค่าธรรมเนียมโอน
+CREATE TABLE `tb_payments` (
+  `pv_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pv_number` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'PV-yyyymmdd-xxxxxx วันที่ในเลข = วันที่จ่าย',
+  `pv_status` enum('issued','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'issued',
+  `pv_version` int unsigned NOT NULL DEFAULT '0',
+  `pv_payee_kind` enum('vendor','employee') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pv_vendor_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pv_employee_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pv_branch_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pv_currency` char(3) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'THB',
+  `pv_payment_date` date NOT NULL COMMENT 'วันที่จ่าย (ย้อนหลังได้ไม่เกิน 30 วัน — อัตราหัก ณ ที่จ่ายใช้ของวันนี้)',
+  `pv_method` enum('transfer','cheque','cash','other') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pv_bank_account_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'บัญชีบริษัทที่จ่ายออก (บังคับเมื่อโอน/เช็ค)',
+  `pv_reference` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เลขอ้างอิงการโอน / รายละเอียดวิธีอื่น',
+  `pv_cheque_no` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pv_cheque_date` date DEFAULT NULL,
+  `pv_allocated_total` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ผลรวมยอดตัดหนี้',
+  `pv_wht_amount` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'หัก ณ ที่จ่ายจริง (= ยอดภาษีใน 50 ทวิ)',
+  `pv_net_paid` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'จ่ายผู้รับสุทธิ = ตัดหนี้ - หัก',
+  `pv_fee_amount` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ค่าธรรมเนียมโอนที่บริษัทจ่ายเพิ่ม',
+  `pv_allocated_thb` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ยอดตัดหนี้เป็นบาทตามอัตราของรายการ',
+  `pv_paid_thb` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ยอดบาทที่ออกจากบัญชีจริง (ไม่รวมค่าธรรมเนียม)',
+  `pv_actual_rate` decimal(20,10) DEFAULT NULL COMMENT 'อัตราจริง = paid_thb / net_paid (สกุลต่างประเทศ)',
+  `pv_fx_diff_thb` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ส่วนต่างอัตรา บวก = กำไร (จ่ายบาทน้อยกว่าที่บันทึก)',
+  `pv_notes` text COLLATE utf8mb4_unicode_ci,
+  `pv_payee_snapshot` json DEFAULT NULL COMMENT 'ชื่อ/เลขผู้เสียภาษี/ที่อยู่/บัญชีผู้รับ ณ วันจ่าย (R-P6)',
+  `pv_company_snapshot` json DEFAULT NULL,
+  `pv_bank_snapshot` json DEFAULT NULL COMMENT 'บัญชีบริษัทที่จ่ายออก ณ วันจ่าย',
+  `pv_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ผู้ทำจ่าย',
+  `pv_created_by_name` varchar(101) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pv_cancelled_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pv_cancelled_at` datetime DEFAULT NULL,
+  `pv_cancel_reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pv_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `pv_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`pv_id`),
+  UNIQUE KEY `uq_pv_number` (`pv_number`),
+  KEY `idx_pv_payment_date` (`pv_payment_date`),
+  KEY `idx_pv_vendor` (`pv_vendor_id`,`pv_status`),
+  KEY `idx_pv_employee` (`pv_employee_id`,`pv_status`),
+  KEY `fk_pv_branch` (`pv_branch_id`),
+  KEY `fk_pv_currency` (`pv_currency`),
+  KEY `fk_pv_bank_account` (`pv_bank_account_id`),
+  KEY `fk_pv_created_by` (`pv_created_by`),
+  KEY `fk_pv_cancelled_by` (`pv_cancelled_by`),
+  CONSTRAINT `fk_pv_vendor` FOREIGN KEY (`pv_vendor_id`) REFERENCES `tb_vendors` (`vd_id`),
+  CONSTRAINT `fk_pv_employee` FOREIGN KEY (`pv_employee_id`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_pv_branch` FOREIGN KEY (`pv_branch_id`) REFERENCES `tb_branches` (`branch_id`),
+  CONSTRAINT `fk_pv_currency` FOREIGN KEY (`pv_currency`) REFERENCES `tb_currencies` (`cur_code`),
+  CONSTRAINT `fk_pv_bank_account` FOREIGN KEY (`pv_bank_account_id`) REFERENCES `tb_bank_accounts` (`ba_id`),
+  CONSTRAINT `fk_pv_created_by` FOREIGN KEY (`pv_created_by`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_pv_cancelled_by` FOREIGN KEY (`pv_cancelled_by`) REFERENCES `tb_users` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- รายการที่ใบสำคัญจ่ายตัด · pva_base_amount = ยอดก่อน VAT ส่วนที่จ่ายครั้งนี้ (ฐานหัก ณ ที่จ่าย — ครั้งที่ปิดรายการรับเศษ R-P5)
+CREATE TABLE `tb_payment_allocations` (
+  `pva_payment_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pva_expense_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pva_order` int NOT NULL DEFAULT '0',
+  `pva_amount` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ยอดตัดหนี้รายการนี้ (สกุลของรายการ)',
+  `pva_base_amount` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ยอดก่อน VAT ส่วนที่จ่ายครั้งนี้',
+  `pva_amount_thb` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ยอดตัดเป็นบาทตามอัตราของรายการ',
+  `pva_wht_income_type` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ประเภทเงินได้ของรายการ ณ วันจ่าย',
+  PRIMARY KEY (`pva_payment_id`,`pva_expense_id`),
+  KEY `fk_pva_expense` (`pva_expense_id`),
+  CONSTRAINT `fk_pva_payment` FOREIGN KEY (`pva_payment_id`) REFERENCES `tb_payments` (`pv_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_pva_expense` FOREIGN KEY (`pva_expense_id`) REFERENCES `tb_expenses` (`ex_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- หนังสือรับรองหัก ณ ที่จ่าย (50 ทวิ) ที่บริษัทออก — ใบสำคัญจ่ายละไม่เกิน 1 ฉบับ · เลขรันต่อปี (เล่มที่ = ปี ค.ศ. — P5/X5)
+-- ปีตามวันที่จ่าย (เวลาไทย) · เลขออกใน transaction เดียวกับใบสำคัญจ่าย (rollback แล้วเลขไม่ข้าม R-P3) · ยกเลิกแล้วเลขยังอยู่
+CREATE TABLE `tb_wht_certificates` (
+  `wt_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `wt_number` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'WT-yyyy-xxxxxx',
+  `wt_book_no` char(4) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'เล่มที่ = ปี ค.ศ. ของวันที่จ่าย',
+  `wt_sequence` int unsigned NOT NULL COMMENT 'เลขที่ในเล่ม',
+  `wt_payment_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `wt_form` enum('PND3','PND53') COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ภ.ง.ด.3 บุคคลธรรมดา / 53 นิติบุคคล',
+  `wt_payment_date` date NOT NULL,
+  `wt_status` enum('issued','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'issued',
+  `wt_total_paid` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'เงินได้ที่จ่ายรวม (ฐาน)',
+  `wt_total_tax` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ภาษีที่หักรวม',
+  `wt_payer_snapshot` json DEFAULT NULL COMMENT 'บริษัท ณ วันจ่าย',
+  `wt_payee_snapshot` json DEFAULT NULL COMMENT 'ผู้ถูกหัก ณ วันจ่าย',
+  `wt_cancelled_at` datetime DEFAULT NULL,
+  `wt_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`wt_id`),
+  UNIQUE KEY `uq_wt_number` (`wt_number`),
+  UNIQUE KEY `uq_wt_payment` (`wt_payment_id`),
+  KEY `idx_wt_form_date` (`wt_form`,`wt_payment_date`),
+  CONSTRAINT `fk_wt_payment` FOREIGN KEY (`wt_payment_id`) REFERENCES `tb_payments` (`pv_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- แถวเงินได้ในหนังสือรับรอง — เก็บอัตรา/ข้อความ ณ วันจ่าย (แก้ประเภทเงินได้ทีหลัง หนังสือเก่าไม่เปลี่ยน R-P4)
+CREATE TABLE `tb_wht_certificate_lines` (
+  `wtl_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `wtl_certificate_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `wtl_income_type` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `wtl_form_row` tinyint unsigned NOT NULL,
+  `wtl_form_label` varchar(200) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `wtl_rate` decimal(5,2) NOT NULL,
+  `wtl_paid_amount` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'เงินได้ที่จ่าย (ยอดก่อน VAT)',
+  `wtl_tax_amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  PRIMARY KEY (`wtl_id`),
+  KEY `idx_wtl_certificate` (`wtl_certificate_id`),
+  KEY `fk_wtl_income_type` (`wtl_income_type`),
+  CONSTRAINT `fk_wtl_certificate` FOREIGN KEY (`wtl_certificate_id`) REFERENCES `tb_wht_certificates` (`wt_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_wtl_income_type` FOREIGN KEY (`wtl_income_type`) REFERENCES `tb_wht_income_types` (`wit_code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ข้อมูลเริ่มต้น — อัตราและเกณฑ์ต้องยืนยันกับนักบัญชี (คำถาม X1) · หมวดตามผังบัญชีของนักบัญชี (X6)

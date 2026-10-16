@@ -30,6 +30,9 @@ export type ExpenseListRow = ExpenseDueStatus & {
     ex_paid_amount: string;
     ex_wht_amount: string;
     ex_created_by_name: string | null;
+    ex_employee_id: string | null;
+    employee_name: string | null;
+    ex_merchant_name: string | null;
     ex_auto_approved: boolean;
     ex_approval_current_level: number | null;
     ex_returned_reason: string | null;
@@ -55,6 +58,9 @@ export type Expense = ExpenseDueStatus & {
     ex_status: ExpenseStatus;
     ex_version: number;
     ex_vendor_id: string | null;
+    ex_employee_id: string | null;
+    employee_name: string | null;
+    ex_merchant_name: string | null;
     vd_name: string | null;
     vd_code: string | null;
     vd_tax_id: string | null;
@@ -170,8 +176,20 @@ export type ExpenseDetail = {
         can_copy: boolean;
         can_attach: boolean;
         can_remove_attachment: boolean;
+        can_pay: boolean;
     };
     readiness: { key: string; ok: boolean; message: string }[];
+    // ใบสำคัญจ่ายที่ตัดรายการนี้ (รวมที่ยกเลิก)
+    payments: {
+        pv_id: string;
+        pv_number: string;
+        pv_status: "issued" | "cancelled";
+        pv_payment_date: string;
+        pv_method: "transfer" | "cheque" | "cash" | "other";
+        pva_amount: string;
+        wt_id: string | null;
+        wt_number: string | null;
+    }[];
     today: string;
 };
 

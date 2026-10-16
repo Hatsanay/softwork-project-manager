@@ -6,7 +6,8 @@
 // - ส่ง: ยอดก่อน VAT เป็นบาทต่ำกว่าชั้น 1 ของกติกา EX = อนุมัติทันที (P2) · ไม่งั้นรออนุมัติตามชั้น (แผนเก็บไว้ในใบ)
 // - ได้เลข EX-… ตอนอนุมัติครบ (หรือผ่านอัตโนมัติ) — ร่าง/รออนุมัติไม่มีเลข ลบร่างได้โดยเลขไม่ข้าม
 // - ยอดไม่คิดใหม่ตอนส่ง/อนุมัติ: ทุกอัตราที่ใช้ผูกกับวันที่ในเอกสาร (VAT ณ วันที่เอกสาร · หัก ณ ที่จ่าย ณ วันที่ค่าใช้จ่าย)
-// ลำดับล็อก: ค่าใช้จ่าย → ผู้ขาย เสมอ
+// ลำดับล็อก: ค่าใช้จ่าย → ผู้ขาย (บิล) / ผู้เบิก (ใบเบิก) เสมอ
+// ใบเบิก (ขั้น 2-3): ส่ง = เจ้าของใบเท่านั้น · ผู้เบิกอนุมัติใบตัวเองไม่ได้เสมอ (R-P11) · ครบกำหนดจ่าย = วันที่อนุมัติ (คืนเงินพนักงานทันที)
 const { AppError } = require("../utils/app-error");
 const { todayBangkok } = require("../utils/bangkok-time");
 const { issueDocumentNumber } = require("../utils/document-number");
@@ -28,15 +29,17 @@ async function findUserLabel(conn, userId) {
     return user ?? { full_name: "(ผู้ใช้ถูกลบ)", user_role_id: null, role_name: null };
 }
 
-/** อนุมัติครบ: ได้เลข (วันนี้ตามเวลาไทย) → รอจ่าย */
+/** อนุมัติครบ: ได้เลข (วันนี้ตามเวลาไทย) → รอจ่าย · ใบเบิกครบกำหนดจ่ายวันที่อนุมัติ */
 async function finalizeApproval(conn, expense, { isAutomatic }) {
+    const today = todayBangkok();
     const documentType = expenseService.DOCUMENT_TYPE_BY_KIND[expense.ex_kind];
-    const documentNumber = await issueDocumentNumber(conn, documentType, todayBangkok());
+    const documentNumber = await issueDocumentNumber(conn, documentType, today);
+    const dueDate = expense.ex_kind === "claim" ? today : expense.ex_due_date;
     await conn.query(
         `UPDATE tb_expenses SET ex_status = 'approved', ex_number = ?, ex_approved_at = NOW(), ex_auto_approved = ?,
-                ex_approval_current_level = NULL, ex_version = ex_version + 1
+                ex_due_date = ?, ex_approval_current_level = NULL, ex_version = ex_version + 1
          WHERE ex_id = ?`,
-        [documentNumber, isAutomatic ? 1 : 0, expense.ex_id],
+        [documentNumber, isAutomatic ? 1 : 0, dueDate, expense.ex_id],
     );
     return documentNumber;
 }
@@ -46,13 +49,17 @@ async function finalizeApproval(conn, expense, { isAutomatic }) {
 /**
  * ตรวจครบ → ต่ำกว่าวงเงิน = อนุมัติทันที · ไม่งั้น snapshot แผนอนุมัติตามยอดก่อน VAT เป็นบาท → รอชั้นแรก
  */
-async function submit(conn, expenseId, expectedVersion) {
+async function submit(conn, expenseId, expectedVersion, actor, kind) {
     const expense = await expenseService.findForUpdate(conn, expenseId);
+    expenseService.assertCanWork(expense, actor, kind);
     if (expense.ex_status !== "draft") throw expenseService.wrongStatus("ส่งได้เฉพาะร่าง");
     expenseService.assertVersion(expense, expectedVersion);
-    // ล็อกผู้ขายก่อน SELECT ธรรมดาคำสั่งแรก (เหตุผลเดียวกับ prepareBillDraft — ตรวจบิลซ้ำต้องเห็นข้อมูลล่าสุด R-P2)
+    // ล็อกผู้ขาย/ผู้เบิกก่อน SELECT ธรรมดาคำสั่งแรก (เหตุผลเดียวกับ prepareBillDraft — ตรวจซ้ำต้องเห็นข้อมูลล่าสุด R-P2)
     if (expense.ex_vendor_id) {
         await conn.query("SELECT vd_id FROM tb_vendors WHERE vd_id = ? FOR UPDATE", [expense.ex_vendor_id]);
+    }
+    if (expense.ex_employee_id) {
+        await conn.query("SELECT user_id FROM tb_users WHERE user_id = ? FOR UPDATE", [expense.ex_employee_id]);
     }
 
     const [[references]] = await conn.query(
@@ -64,8 +71,12 @@ async function submit(conn, expenseId, expectedVersion) {
     );
     const lines = await expenseService.findLines(conn, expenseId);
     const currency = await quotationService.findCurrency(conn, expense.ex_currency);
+    const [[{ attachmentCount }]] = await conn.query(
+        "SELECT COUNT(*) AS attachmentCount FROM tb_expense_attachments WHERE exf_expense_id = ?",
+        [expenseId],
+    );
     const problems = expenseService
-        .buildReadiness({ ...expense, ...references }, lines, currency)
+        .buildReadiness({ ...expense, ...references }, lines, currency, Number(attachmentCount))
         .filter((item) => !item.ok)
         .map((item) => item.message);
 
@@ -83,6 +94,18 @@ async function submit(conn, expenseId, expectedVersion) {
             );
         }
     }
+    if (expense.ex_kind === "claim" && expense.ex_vendor_doc_no) {
+        const duplicate = await expenseService.findDuplicateClaim(
+            conn,
+            expense.ex_employee_id,
+            expense.ex_vendor_doc_no,
+            expense.ex_expense_date,
+            expenseId,
+        );
+        if (duplicate) {
+            problems.push(`ใบเสร็จเลข ${expense.ex_vendor_doc_no} ${expenseService.describeDuplicate(duplicate)}`);
+        }
+    }
     if (problems.length > 0) {
         throw new AppError(400, "EXPENSE_NOT_READY", `ยังส่งไม่ได้: ${problems.join(" · ")}`, {
             _form: problems.join("\n"),
@@ -95,7 +118,7 @@ async function submit(conn, expenseId, expectedVersion) {
         throw new AppError(
             409,
             "APPROVAL_RULES_MISSING",
-            "ยังไม่ได้ตั้งกติกาอนุมัติค่าใช้จ่าย — ให้ผู้ดูแลตั้งที่ ตั้งค่าระบบ › ข้อมูลบริษัท › การอนุมัติ › ค่าใช้จ่าย / บิลผู้ขาย",
+            `ยังไม่ได้ตั้งกติกาอนุมัติ${expense.ex_kind === "claim" ? "ใบเบิกเงิน" : "ค่าใช้จ่าย"} — ให้ผู้ดูแลตั้งที่ ตั้งค่าระบบ › ข้อมูลบริษัท › การอนุมัติ`,
         );
     }
     const plan = buildApprovalPlan(rules.levels, expense.ex_subtotal_thb);
@@ -139,8 +162,9 @@ async function approvalsThisRound(conn, expense) {
 /**
  * อนุมัติชั้นปัจจุบัน และชั้นถัดไปต่อเนื่องที่ผู้กดมีสิทธิ์ · ครบชั้นสุดท้าย = ได้เลข รอจ่าย
  */
-async function approve(conn, expenseId, expectedVersion, actor) {
+async function approve(conn, expenseId, expectedVersion, actor, kind) {
     const expense = await expenseService.findForUpdate(conn, expenseId);
+    expenseService.assertCanSee(expense, actor, kind);
     if (expense.ex_status !== "pending_approval") throw expenseService.wrongStatus("รายการนี้ไม่ได้รออนุมัติแล้ว");
     expenseService.assertVersion(expense, expectedVersion);
 
@@ -188,8 +212,9 @@ async function approve(conn, expenseId, expectedVersion, actor) {
 }
 
 /** ตีกลับ = กลับเป็นร่าง รอบหน้าเริ่มชั้น 1 ใหม่ · ทำได้โดยผู้มีสิทธิ์อนุมัติที่ role อยู่ในชั้นที่รออยู่ */
-async function returnToDraft(conn, expenseId, reason, expectedVersion, actor) {
+async function returnToDraft(conn, expenseId, reason, expectedVersion, actor, kind) {
     const expense = await expenseService.findForUpdate(conn, expenseId);
+    expenseService.assertCanSee(expense, actor, kind);
     if (expense.ex_status !== "pending_approval") throw expenseService.wrongStatus("รายการนี้ไม่ได้รออนุมัติแล้ว");
     expenseService.assertVersion(expense, expectedVersion);
 
@@ -230,8 +255,9 @@ async function returnToDraft(conn, expenseId, reason, expectedVersion, actor) {
  * ยกเลิกรายการที่อนุมัติแล้ว — เลขยังอยู่ · ห้ามเมื่อจ่ายเงินแล้ว (ใบสำคัญจ่ายที่ไม่ยกเลิก — ขั้น 2-4)
  * สิทธิ์: อนุมัติค่าใช้จ่าย · หรือสิทธิ์บันทึก เมื่อรายการผ่านอัตโนมัติ (ยอดต่ำกว่าวงเงิน ไม่มีผู้อนุมัติให้ขอ)
  */
-async function cancel(conn, expenseId, reason, expectedVersion, actor) {
+async function cancel(conn, expenseId, reason, expectedVersion, actor, kind) {
     const expense = await expenseService.findForUpdate(conn, expenseId);
+    expenseService.assertCanSee(expense, actor, kind);
     if (expense.ex_status === "draft") throw expenseService.wrongStatus('ร่างใช้ "ลบ" แทนการยกเลิก');
     if (expense.ex_status === "pending_approval") {
         throw expenseService.wrongStatus("รายการที่รออนุมัติยกเลิกไม่ได้ — ให้ผู้อนุมัติตีกลับ แล้วลบร่าง");
@@ -240,7 +266,7 @@ async function cancel(conn, expenseId, reason, expectedVersion, actor) {
     expenseService.assertVersion(expense, expectedVersion);
 
     const canApprove = hasBit(actor.role_permission, "approveExpense");
-    const canCancelAutoApproved = hasBit(actor.role_permission, "createExpense") && expense.ex_auto_approved === 1;
+    const canCancelAutoApproved = expenseService.canWorkAsCreator(expense, actor) && expense.ex_auto_approved === 1;
     if (!canApprove && !canCancelAutoApproved) {
         throw new AppError(
             403,
