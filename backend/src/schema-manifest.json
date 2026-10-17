@@ -206,6 +206,7 @@
             "etp_note",
             "etp_other_allowance",
             "etp_parent_allowance",
+            "etp_prior_from_other_employer",
             "etp_prior_income",
             "etp_prior_sso",
             "etp_prior_tax",

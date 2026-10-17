@@ -13,43 +13,7 @@ import { formatAmount } from "@/lib/shared/money.mjs";
 import { amountInWords } from "@/lib/shared/amount-in-words.mjs";
 import type { Certificate } from "@/app/(protected)/purchasing/payments/_types";
 import { formatDocumentDate } from "../../../sales/quotations/print/labels";
-
-const THAI_BAHT_WORDS = {
-    cur_decimals: 2,
-    cur_unit_th: "บาท",
-    cur_subunit_th: "สตางค์",
-    cur_unit_en: "Baht",
-    cur_subunit_en: "Satang",
-};
-
-// แถวเงินได้ตามแบบ 50 ทวิ (ข้อความย่อ)
-const FORM_ROWS: { row: number; label: string }[] = [
-    { row: 1, label: "1. เงินเดือน ค่าจ้าง เบี้ยเลี้ยง โบนัส ฯลฯ ตามมาตรา 40 (1)" },
-    { row: 2, label: "2. ค่าธรรมเนียม ค่านายหน้า ฯลฯ ตามมาตรา 40 (2)" },
-    { row: 3, label: "3. ค่าแห่งลิขสิทธิ์ ฯลฯ ตามมาตรา 40 (3)" },
-    { row: 4, label: "4. ดอกเบี้ย เงินปันผล ฯลฯ ตามมาตรา 40 (4)" },
-    {
-        row: 5,
-        label: "5. การจ่ายเงินได้ที่ต้องหักภาษี ณ ที่จ่าย ตามคำสั่งกรมสรรพากรที่ออกตามมาตรา 3 เตรส เช่น ค่าจ้างทำของ ค่าบริการ ค่าโฆษณา ค่าเช่า ค่าขนส่ง รางวัล ฯลฯ",
-    },
-    { row: 6, label: "6. อื่นๆ (ระบุ)" },
-];
-
-const COPIES = [
-    { title: "ฉบับที่ 1", note: "สำหรับผู้ถูกหักภาษี ณ ที่จ่าย ใช้แนบพร้อมกับแบบแสดงรายการภาษี" },
-    { title: "ฉบับที่ 2", note: "สำหรับผู้หักภาษี ณ ที่จ่าย เก็บไว้เป็นหลักฐาน" },
-];
-
-function Checkbox({ checked, label }: { checked: boolean; label: string }) {
-    return (
-        <span className="inline-flex items-center gap-1">
-            <span className="inline-flex h-3.5 w-3.5 items-center justify-center border border-gray-700 text-[8pt] leading-none">
-                {checked ? "✓" : ""}
-            </span>
-            {label}
-        </span>
-    );
-}
+import { Checkbox, COPIES, FORM_ROWS, PENALTY_NOTE, THAI_BAHT_WORDS } from "../../../_components/wht-form-parts";
 
 function addressOf(snapshot: { branch?: { branch_address_th: string | null } | null; cs_address_th?: string | null }) {
     return snapshot.branch?.branch_address_th || snapshot.cs_address_th || "";
@@ -198,10 +162,7 @@ function CertificateCopy({ certificate, copy }: { certificate: Certificate; copy
                     <p>
                         อ้างอิงใบสำคัญจ่าย {certificate.pv_number} · หนังสือรับรองเลขที่ {certificate.wt_number}
                     </p>
-                    <p>
-                        คำเตือน ผู้มีหน้าที่ออกหนังสือรับรองการหักภาษี ณ ที่จ่าย ฝ่าฝืนไม่ปฏิบัติตามมาตรา 50 ทวิ
-                        แห่งประมวลรัษฎากร ต้องรับโทษทางอาญาตามมาตรา 35 แห่งประมวลรัษฎากร
-                    </p>
+                    <p>{PENALTY_NOTE}</p>
                 </div>
                 <div className="grid min-w-[75mm] gap-1 text-center">
                     <p>ขอรับรองว่าข้อความและตัวเลขดังกล่าวข้างต้นถูกต้องตรงกับความจริงทุกประการ</p>

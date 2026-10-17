@@ -421,5 +421,74 @@ export type Payslip = {
 export type TaxProfile = {
     tax_year: number;
     is_saved: boolean;
-    profile: Record<string, string | null>;
+    profile: Record<string, string | boolean | null>;
+};
+
+// ─── แบบยื่นภาษี/ประกันสังคม (ขั้น 4-5) ─────────────────────────────────────────────────────────────
+
+type ReportCompany = { name: string; tax_id: string | null; address: string | null };
+type ReportRun = { pr_id: number; pr_number: string; pr_status: PayrollStatus; pr_paid_date: string | null } | null;
+
+export type Pnd1Report = {
+    period: string;
+    company: ReportCompany;
+    run: ReportRun;
+    notice: string | null;
+    paid_date: string | null;
+    due_date: string;
+    due_date_online: string;
+    rows: { emp_code: string; full_name: string; national_id: string | null; income: string; tax: string }[];
+    total_income: string;
+    total_tax: string;
+    missing_national_id: string[];
+};
+
+export type SsoReport = {
+    period: string;
+    company: ReportCompany;
+    run: ReportRun;
+    notice: string | null;
+    due_date: string;
+    rows: {
+        emp_code: string;
+        full_name: string;
+        sso_number: string | null;
+        wage: string;
+        employee_contribution: string;
+    }[];
+    total_wage: string;
+    total_employee: string;
+    total_employer: string;
+    total_remit: string;
+    missing_sso_number: string[];
+};
+
+export type AnnualEmployeeTotal = {
+    emp_id: string;
+    emp_code: string;
+    full_name: string;
+    national_id: string | null;
+    address: string | null;
+    income: string;
+    tax: string;
+    sso: string;
+    last_paid_date: string | null;
+};
+
+export type Pnd1aReport = {
+    year: number;
+    company: ReportCompany;
+    due_date: string;
+    unpaid_runs: string[];
+    rows: AnnualEmployeeTotal[];
+    total_income: string;
+    total_tax: string;
+    missing_national_id: string[];
+};
+
+export type AnnualCertificates = {
+    year: number;
+    company: ReportCompany;
+    unpaid_runs: string[];
+    certificates: (AnnualEmployeeTotal & { reference: string })[];
 };

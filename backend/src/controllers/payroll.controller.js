@@ -15,6 +15,7 @@ const {
 } = require("../shared/schemas/payroll.mjs");
 const payrollService = require("../services/payroll.service");
 const taxProfileService = require("../services/tax-profile.service");
+const reportService = require("../services/payroll-report.service");
 
 const runId = (req) => Number(req.params.id);
 
@@ -29,6 +30,18 @@ function handle(work) {
             next(err);
         }
     };
+}
+
+const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+function requestedMonth(req) {
+    const month = String(req.query.month ?? "");
+    return MONTH_PATTERN.test(month) ? month : todayBangkok().slice(0, 7);
+}
+
+function requestedQueryYear(req) {
+    const year = Number(req.query.year);
+    return Number.isInteger(year) && year >= 2000 && year <= 2100 ? year : Number(todayBangkok().slice(0, 4));
 }
 
 function requestedYear(req) {
@@ -98,6 +111,18 @@ module.exports = {
 
     listMyPayslips: handle(async (req) => ({ data: await payrollService.listMyPayslips(pool, req.user.user_id) })),
     getPayslip: handle((req) => payrollService.getPayslip(pool, req.user, Number(req.params.itemId))),
+
+    pnd1Report: handle((req) => reportService.monthlyPnd1(pool, requestedMonth(req))),
+    ssoReport: handle((req) => reportService.monthlySso(pool, requestedMonth(req))),
+    pnd1aReport: handle((req) => reportService.annualPnd1a(pool, requestedQueryYear(req))),
+    certificates: handle((req) =>
+        reportService.annualCertificates(
+            pool,
+            requestedQueryYear(req),
+            req.query.employee_id ? String(req.query.employee_id) : null,
+        ),
+    ),
+    myCertificates: handle((req) => reportService.myCertificates(pool, req.user.user_id, requestedQueryYear(req))),
 
     getTaxProfile: handle((req) => taxProfileService.getTaxProfile(pool, req.params.employeeId, requestedYear(req))),
     saveTaxProfile: handle((req) => {

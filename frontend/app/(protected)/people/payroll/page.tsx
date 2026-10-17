@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus } from "lucide-react";
+import { FileText, Plus } from "lucide-react";
 import PageHeader from "@/components/ui/page-header";
 import StatusPill from "@/components/ui/status-pill";
 import StatusBanner from "@/components/ui/guidance/status-banner";
@@ -75,17 +75,22 @@ export default function PayrollListPage() {
                 title="รอบเงินเดือน"
                 description={PAYROLL_MESSAGES.listDescription}
                 actions={
-                    canRun &&
-                    !isCreating && (
-                        <button
-                            type="button"
-                            className={buttonClass("primary", "md")}
-                            onClick={() => setIsCreating(true)}
-                        >
-                            <Plus size={16} />
-                            สร้างรอบ
-                        </button>
-                    )
+                    <>
+                        <Link href="/people/payroll/reports" className={buttonClass("secondary", "md")}>
+                            <FileText size={16} />
+                            แบบยื่นภาษี/ประกันสังคม
+                        </Link>
+                        {canRun && !isCreating && (
+                            <button
+                                type="button"
+                                className={buttonClass("primary", "md")}
+                                onClick={() => setIsCreating(true)}
+                            >
+                                <Plus size={16} />
+                                สร้างรอบ
+                            </button>
+                        )}
+                    </>
                 }
             />
             <StatusBanner tone="warn" title="รอนักบัญชียืนยันตัวเลข">

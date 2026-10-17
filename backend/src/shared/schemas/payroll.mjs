@@ -59,5 +59,7 @@ export const taxProfileSchema = z.object({
     etp_prior_income: allowance("เงินได้ยกมา"),
     etp_prior_tax: allowance("ภาษียกมา"),
     etp_prior_sso: allowance("ประกันสังคมยกมา"),
+    // ยอดยกมาจากที่ทำงานเดิม = ใช้คิดภาษีเท่านั้น ไม่รวมในแบบ ภ.ง.ด.1ก / 50 ทวิ ของบริษัท (ขั้น 4-5)
+    etp_prior_from_other_employer: z.boolean().default(false),
     etp_note: optionalText("หมายเหตุ", 255),
 });

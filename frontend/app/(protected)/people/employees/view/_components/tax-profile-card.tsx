@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight, Receipt } from "lucide-react";
 import SectionCard from "@/components/ui/section-card";
 import FormField, { inputClass } from "@/components/ui/form-field";
 import FieldHint from "@/components/ui/guidance/field-hint";
+import Switch from "@/components/ui/switch";
 import { buttonClass } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
 import { toFieldErrors, type FieldErrors } from "@/lib/form-errors";
@@ -32,6 +33,7 @@ const PRIOR_FIELDS: [string, string][] = [
 export default function TaxProfileCard({ employeeId, currentYear }: { employeeId: string; currentYear: number }) {
     const [year, setYear] = useState(currentYear);
     const [form, setForm] = useState<Record<string, string> | null>(null);
+    const [isPriorFromOtherEmployer, setIsPriorFromOtherEmployer] = useState(false);
     const [isSaved, setIsSaved] = useState(false);
     const [errors, setErrors] = useState<FieldErrors>({});
     const [saveError, setSaveError] = useState<string | null>(null);
@@ -44,7 +46,14 @@ export default function TaxProfileCard({ employeeId, currentYear }: { employeeId
             setSaveError(error?.message ?? null);
             if (!data) return;
             setIsSaved(data.is_saved);
-            setForm(Object.fromEntries(Object.entries(data.profile).map(([key, value]) => [key, value ?? ""])));
+            setIsPriorFromOtherEmployer(data.profile.etp_prior_from_other_employer === true);
+            setForm(
+                Object.fromEntries(
+                    Object.entries(data.profile)
+                        .filter(([key]) => key !== "etp_prior_from_other_employer")
+                        .map(([key, value]) => [key, typeof value === "string" ? value : ""]),
+                ),
+            );
         });
         return () => {
             isLeftPage = true;
@@ -54,7 +63,10 @@ export default function TaxProfileCard({ employeeId, currentYear }: { employeeId
     async function save(event: React.FormEvent) {
         event.preventDefault();
         if (!form) return;
-        const checked = taxProfileSchema.safeParse(form);
+        const checked = taxProfileSchema.safeParse({
+            ...form,
+            etp_prior_from_other_employer: isPriorFromOtherEmployer,
+        });
         if (!checked.success) {
             setErrors(toFieldErrors(checked.error.issues));
             return;
@@ -122,6 +134,13 @@ export default function TaxProfileCard({ employeeId, currentYear }: { employeeId
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{ALLOWANCE_FIELDS.map(field)}</div>
                     <p className="text-sm font-medium text-gray-900">ยอดยกมาของปี</p>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">{PRIOR_FIELDS.map(field)}</div>
+                    <Switch
+                        id="etp_prior_from_other_employer"
+                        label="ยอดยกมาเป็นของที่ทำงานเดิม"
+                        description="เปิด = ใช้คิดภาษีทั้งปีเท่านั้น ไม่รวมใน ภ.ง.ด.1ก / 50 ทวิ ของบริษัท (ที่ทำงานเดิมออก 50 ทวิ เอง) · ปิด = เงินที่บริษัทนี้จ่ายก่อนเริ่มใช้ระบบ"
+                        checked={isPriorFromOtherEmployer}
+                        onChange={setIsPriorFromOtherEmployer}
+                    />
                     <FormField label="หมายเหตุ" htmlFor="etp_note" error={errors.etp_note}>
                         <input
                             id="etp_note"

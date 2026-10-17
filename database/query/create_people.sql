@@ -306,6 +306,7 @@ CREATE TABLE `tb_employee_tax_profiles` (
   `etp_prior_income` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'เงินได้ยกมาของปี (ก่อนรอบแรกในระบบ)',
   `etp_prior_tax` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ภาษีที่หักไปแล้วยกมา',
   `etp_prior_sso` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ประกันสังคมที่หักไปแล้วยกมา',
+  `etp_prior_from_other_employer` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1 = ยอดยกมาจากที่ทำงานเดิม — ใช้คิดภาษีเท่านั้น ไม่รวมใน ภ.ง.ด.1ก/50 ทวิ ของบริษัท',
   `etp_note` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `etp_updated_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `etp_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

@@ -222,7 +222,7 @@ const ENTITIES = [
 ];
 
 // GET ที่บันทึกด้วย (เปิดดูข้อมูลสำคัญ) — นอกนั้น GET ไม่บันทึก ยกเว้นถูกปฏิเสธ/error (ปริมาณมหาศาลและไม่เปลี่ยนข้อมูล)
-const SENSITIVE_READS = [/^\/payroll\/runs\/[^/]+$/, /^\/payroll\/payslips\/[^/]+$/, /^\/employees\/[^/]+\/tax-profiles\/[^/]+$/, /^\/employees\/(?!form-options$)[^/]+$/, /^\/reports\/accounting-export$/, /^\/receipts\/[^/]+\/wht-certificate\/file$/, /^\/expenses\/[^/]+\/attachments\/[^/]+$/, /^\/claims\/[^/]+\/attachments\/[^/]+$/, /^\/wht-certificates\/[^/]+$/, /^\/reports\/withholding$/, /^\/users$/, /^\/users\/(?!me$|for-select$)[^/]+$/, /^\/(logs|audit-logs|error-logs)(\/[^/]+)?$/, /^\/share\/[^/]+$/];
+const SENSITIVE_READS = [/^\/payroll\/reports\/[^/]+$/, /^\/payroll\/my-certificates$/, /^\/payroll\/runs\/[^/]+$/, /^\/payroll\/payslips\/[^/]+$/, /^\/employees\/[^/]+\/tax-profiles\/[^/]+$/, /^\/employees\/(?!form-options$)[^/]+$/, /^\/reports\/accounting-export$/, /^\/receipts\/[^/]+\/wht-certificate\/file$/, /^\/expenses\/[^/]+\/attachments\/[^/]+$/, /^\/claims\/[^/]+\/attachments\/[^/]+$/, /^\/wht-certificates\/[^/]+$/, /^\/reports\/withholding$/, /^\/users$/, /^\/users\/(?!me$|for-select$)[^/]+$/, /^\/(logs|audit-logs|error-logs)(\/[^/]+)?$/, /^\/share\/[^/]+$/];
 // ไม่บันทึกใน audit: login/logout มีตาราง tb_login_logs ของตัวเอง (และ body login มีรหัสผ่าน)
 const SKIP = [/^\/auth\/(login|logout)$/, /^\/auth\/verifyPermission$/];
 

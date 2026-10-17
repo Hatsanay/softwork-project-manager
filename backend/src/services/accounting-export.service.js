@@ -10,6 +10,7 @@
 const ExcelJS = require("exceljs");
 const { AppError } = require("../utils/app-error");
 const companyService = require("./company.service");
+const payrollReportService = require("./payroll-report.service");
 const { AGING_BUCKETS } = require("./receivable.service");
 
 const MONTH_TEXT = /^(\d{4})-(0[1-9]|1[0-2])$/;
@@ -428,6 +429,21 @@ const sum = (rows, key) => Math.round(rows.reduce((total, row) => total + (row[k
  * @param {{ user_id: string }} actor
  * @returns {Promise<{ buffer: Buffer, fileName: string }>}
  */
+// ยอดรวมรอบเงินเดือนของเดือน (เฟส 4 ขั้น 4-5) — ลงบัญชีค่าใช้จ่ายเงินเดือน/ประกันสังคม/ภาษีค้างนำส่ง · ไม่มีรายคน (R-H1)
+function payrollSummaryRows(payroll) {
+    if (!payroll) return [["รอบเงินเดือนของเดือนนี้", "ยังไม่มีรอบที่อนุมัติ"]];
+    const amount = (value) => Number(value);
+    return [
+        ["รอบเงินเดือน", `${payroll.pr_number} (${payroll.pr_status === "paid" ? "จ่ายแล้ว" : "อนุมัติแล้ว ยังไม่จ่าย"})`],
+        ["เงินเดือนและค่าจ้างรวม (บาท)", amount(payroll.pr_total_gross)],
+        ["ประกันสังคมส่วนบริษัท — ค่าใช้จ่าย (บาท)", amount(payroll.pr_total_sso_employer)],
+        ["ประกันสังคมค้างนำส่ง (พนักงาน + บริษัท) (บาท)", Math.round((amount(payroll.pr_total_sso_employee) + amount(payroll.pr_total_sso_employer)) * 100) / 100],
+        ["ภาษีเงินเดือนค้างนำส่ง ภ.ง.ด.1 (บาท)", amount(payroll.pr_total_tax)],
+        ["รายหักอื่นจากเงินเดือน (บาท)", amount(payroll.pr_total_deductions)],
+        ["เงินเดือนจ่ายสุทธิ (บาท)", amount(payroll.pr_total_net)],
+    ];
+}
+
 async function buildAccountingExport(conn, monthText, actor) {
     const range = monthRange(monthText);
     const company = await companyService.findCompany(conn);
@@ -451,6 +467,7 @@ async function buildAccountingExport(conn, monthText, actor) {
     const payments = await findPayments(conn, range);
     const issuedPayments = payments.filter((row) => row.is_issued);
     const certificateLines = await findIssuedCertificateLines(conn, range);
+    const payroll = await payrollReportService.payrollJournalOfMonth(conn, range.month);
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "Softwork";
@@ -481,6 +498,8 @@ async function buildAccountingExport(conn, monthText, actor) {
         ["ใบสำคัญจ่าย (ไม่นับที่ยกเลิก) — จำนวน", issuedPayments.length],
         ["เงินออกจริง (บาท ไม่รวมค่าธรรมเนียม)", sum(issuedPayments, "paid_thb")],
         ["ภาษีหัก ณ ที่จ่ายที่บริษัทต้องนำส่ง (บาท)", sum(certificateLines, "tax")],
+        [],
+        ...payrollSummaryRows(payroll),
         [],
         [
             "หมายเหตุ: ใบเสร็จย้อนวันที่ได้ 30 วัน และยกเลิกเอกสารทีหลังได้ — ตัวเลขของเดือนนี้อาจเปลี่ยน ส่งออกใหม่ถ้ามีการแก้ย้อนหลัง",

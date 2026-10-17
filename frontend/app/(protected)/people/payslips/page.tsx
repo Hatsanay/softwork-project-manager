@@ -3,17 +3,22 @@
 // สลิปเงินเดือนของฉัน (ขั้น 4-4) — เฉพาะรอบที่บันทึกจ่ายแล้ว · ทุกคนที่ login (backend ตรวจเจ้าของ)
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Printer } from "lucide-react";
+import { FileText, Printer } from "lucide-react";
 import PageHeader from "@/components/ui/page-header";
 import StatusBanner from "@/components/ui/guidance/status-banner";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { CARD_CLASS } from "@/components/ui/card";
+import { buttonClass } from "@/components/ui/button";
 import { apiFetch, type ApiError } from "@/lib/api";
 import { formatAmount } from "@/lib/shared/money.mjs";
 import { formatDateOnly } from "@/app/function";
 import { PAYROLL_MESSAGES } from "../_messages";
 import type { PayslipSummary } from "../_types";
 import { periodLabel } from "../payroll/_lib";
+
+// 50 ทวิ ประจำปีออกหลังจบปี — ลิงก์ของปีที่แล้ว (ปีนี้ยังไม่ครบ)
+const lastYear =
+    Number(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric" }).format(new Date())) - 1;
 
 export default function MyPayslipsPage() {
     const [slips, setSlips] = useState<PayslipSummary[] | null>(null);
@@ -33,7 +38,21 @@ export default function MyPayslipsPage() {
 
     return (
         <div className="mx-auto grid w-full max-w-3xl grid-cols-1 gap-6">
-            <PageHeader eyebrow="บุคคล" title="สลิปเงินเดือนของฉัน" description={PAYROLL_MESSAGES.payslip} />
+            <PageHeader
+                eyebrow="บุคคล"
+                title="สลิปเงินเดือนของฉัน"
+                description={PAYROLL_MESSAGES.payslip}
+                actions={
+                    <Link
+                        href={`/people/payroll/certificates/print?mine=1&year=${lastYear}`}
+                        target="_blank"
+                        className={buttonClass("secondary", "md")}
+                    >
+                        <FileText size={16} />
+                        50 ทวิ ปี {lastYear + 543}
+                    </Link>
+                }
+            />
             {loadError && (
                 <StatusBanner tone="error" title="โหลดสลิปไม่สำเร็จ">
                     {loadError.message}

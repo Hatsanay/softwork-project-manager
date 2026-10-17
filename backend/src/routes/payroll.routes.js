@@ -31,6 +31,13 @@ function registerPayrollRoutes(router) {
     router.post(`${runPath}/paid`, requireAuth, canRun, payrollController.markPaid);
     router.post(`${runPath}/cancel`, requireAuth, canRun, payrollController.cancel);
 
+    // แบบยื่นภาษี/ประกันสังคม (ขั้น 4-5) — ผู้ดูรอบเงินเดือน · 50 ทวิ ประจำปีของตัวเอง: ทุกคน
+    router.get("/V1/payroll/reports/pnd1", requireAuth, canView, payrollController.pnd1Report);
+    router.get("/V1/payroll/reports/sso", requireAuth, canView, payrollController.ssoReport);
+    router.get("/V1/payroll/reports/pnd1a", requireAuth, canView, payrollController.pnd1aReport);
+    router.get("/V1/payroll/reports/certificates", requireAuth, canView, payrollController.certificates);
+    router.get("/V1/payroll/my-certificates", requireAuth, payrollController.myCertificates);
+
     router.get("/V1/payroll/payslips", requireAuth, payrollController.listMyPayslips);
     router.get("/V1/payroll/payslips/:itemId", requireAuth, payrollController.getPayslip);
 

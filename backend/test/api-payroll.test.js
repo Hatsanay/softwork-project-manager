@@ -382,3 +382,69 @@ test("ค่าลดหย่อนรายปี: บันทึก/อ่�
     const removed = expectStatus(await api.callApi("DELETE", `/V1/employees/${employees.leaver}`), 409);
     assert.equal(removed.code, "EMPLOYEE_HAS_HISTORY");
 });
+
+test("แบบยื่น (4-5): ภ.ง.ด.1 / สปส.1-10 นับเฉพาะรอบที่จ่ายแล้ว · ภ.ง.ด.1ก / 50 ทวิ ไม่รวมยอดยกมาจากที่ทำงานเดิม", async () => {
+    const pnd1 = expectStatus(await as(people.hr, "GET", `/V1/payroll/reports/pnd1?month=${MARCH}`), 200);
+    assert.equal(pnd1.notice, null);
+    assert.equal(pnd1.due_date, "2026-04-07");
+    assert.deepEqual(
+        pnd1.rows.map((row) => [row.emp_code, row.income, row.tax]),
+        [
+            ["PR-A", "31000.00", "1.25"],
+            ["PR-B", "16000.00", "0.00"],
+            ["PR-C", "10000.00", "0.00"],
+        ],
+    );
+    assert.equal(pnd1.total_income, "57000.00");
+    assert.deepEqual(pnd1.missing_national_id, ["PR-A", "PR-C"]);
+
+    const sso = expectStatus(await as(people.hr, "GET", `/V1/payroll/reports/sso?month=${MARCH}`), 200);
+    assert.equal(sso.rows.length, 3);
+    assert.equal(sso.total_employee, "2175.00", "875 + 800 + 500");
+    assert.equal(sso.total_remit, "4350.00", "พนักงาน + บริษัท");
+
+    const april = expectStatus(await as(people.hr, "GET", `/V1/payroll/reports/pnd1?month=${APRIL}`), 200);
+    assert.ok(april.notice, "เมษายนยังไม่มีรอบที่จ่าย — มีข้อความบอก");
+    assert.equal(april.rows.length, 0);
+    expectStatus(await as(people.dev, "GET", `/V1/payroll/reports/pnd1?month=${MARCH}`), 403);
+
+    // ยอดยกมา 50,000 / ภาษี 1,000 จากที่ทำงานเดิม — คิดภาษีได้ แต่ไม่อยู่ในแบบของบริษัท
+    expectStatus(
+        await as(people.hr, "PUT", `/V1/employees/${employees.full}/tax-profiles/2026`, {
+            etp_prior_income: "50000",
+            etp_prior_tax: "1000",
+            etp_prior_from_other_employer: true,
+        }),
+        200,
+    );
+    let pnd1a = expectStatus(await as(people.hr, "GET", "/V1/payroll/reports/pnd1a?year=2026"), 200);
+    assert.equal(pnd1a.due_date, "2027-02-28");
+    assert.equal(pnd1a.rows.find((row) => row.emp_code === "PR-A").income, "31000.00");
+
+    expectStatus(
+        await as(people.hr, "PUT", `/V1/employees/${employees.full}/tax-profiles/2026`, {
+            etp_prior_income: "50000",
+            etp_prior_tax: "1000",
+            etp_prior_from_other_employer: false,
+        }),
+        200,
+    );
+    pnd1a = expectStatus(await as(people.hr, "GET", "/V1/payroll/reports/pnd1a?year=2026"), 200);
+    const full = pnd1a.rows.find((row) => row.emp_code === "PR-A");
+    assert.deepEqual([full.income, full.tax], ["81000.00", "1001.25"], "ยอดยกมาของบริษัทนี้รวมในแบบรายปี");
+
+    const certificates = expectStatus(
+        await as(people.hr, "GET", `/V1/payroll/reports/certificates?year=2026&employee_id=${employees.full}`),
+        200,
+    );
+    assert.equal(certificates.certificates[0].reference, "2026/PR-A");
+    assert.equal(certificates.certificates[0].sso, "875.00");
+
+    const mine = expectStatus(await as(people.dev, "GET", "/V1/payroll/my-certificates?year=2026"), 200);
+    assert.deepEqual(
+        mine.certificates.map((certificate) => certificate.emp_code),
+        ["PR-A"],
+    );
+    const outsider = expectStatus(await as(people.outsider, "GET", "/V1/payroll/my-certificates?year=2026"), 200);
+    assert.equal(outsider.certificates.length, 0);
+});

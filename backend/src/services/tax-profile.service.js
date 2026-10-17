@@ -13,6 +13,7 @@ const PROFILE_COLUMNS = [
     "etp_prior_income",
     "etp_prior_tax",
     "etp_prior_sso",
+    "etp_prior_from_other_employer",
     "etp_note",
 ];
 
@@ -31,7 +32,12 @@ async function getTaxProfile(conn, employeeId, taxYear) {
         [employeeId, taxYear],
     );
     const empty = Object.fromEntries(PROFILE_COLUMNS.map((column) => [column, column === "etp_note" ? null : "0.00"]));
-    return { tax_year: taxYear, is_saved: Boolean(profile), profile: profile ?? empty };
+    const current = profile ?? empty;
+    return {
+        tax_year: taxYear,
+        is_saved: Boolean(profile),
+        profile: { ...current, etp_prior_from_other_employer: current.etp_prior_from_other_employer === 1 },
+    };
 }
 
 /**
@@ -40,7 +46,9 @@ async function getTaxProfile(conn, employeeId, taxYear) {
  */
 async function saveTaxProfile(conn, user, employeeId, taxYear, profile) {
     await assertEmployee(conn, employeeId);
-    const values = PROFILE_COLUMNS.map((column) => profile[column]);
+    const values = PROFILE_COLUMNS.map((column) =>
+        column === "etp_prior_from_other_employer" ? (profile[column] ? 1 : 0) : profile[column],
+    );
     await conn.query(
         `INSERT INTO tb_employee_tax_profiles (etp_employee_id, etp_tax_year, ${PROFILE_COLUMNS.join(", ")}, etp_updated_by)
          VALUES (?, ?, ${PROFILE_COLUMNS.map(() => "?").join(", ")}, ?)
