@@ -14,6 +14,7 @@ const { PERMISSION_KEYS } = require("../src/shared/permissions.mjs");
 const POSITION_BIT_COUNT = 29;
 const ROLE_BIT_COUNT = PERMISSION_KEYS.length;
 const SHOULD_UPDATE_SNAPSHOT = process.env.UPDATE_API_SNAPSHOT === "1";
+const AUDIT_WRITE_SETTLE_MS = 500;
 
 let api;
 let testImage;
@@ -230,6 +231,8 @@ test("แดชบอร์ด, log และลิงก์ลูกค้า",
     await step("แดชบอร์ด: งานของสมาชิก", "GET", `/V1/dashboard/team/${SEED_ADMIN.userId}/tasks`);
 
     await step("log เข้าสู่ระบบ", "GET", "/V1/logs");
+    // audit log เขียนหลังตอบกลับ (res "finish") — รอให้แถวของคำขอก่อนหน้าลงครบก่อน ไม่งั้นแถวบนสุดสลับไปมาระหว่างรอบ
+    await new Promise((resolve) => setTimeout(resolve, AUDIT_WRITE_SETTLE_MS));
     const auditLogs = await step("audit log", "GET", "/V1/audit-logs");
     await step("ดู audit log", "GET", `/V1/audit-logs/${auditLogs.body.data[0].aud_id}`);
     await step("error log", "GET", "/V1/error-logs");

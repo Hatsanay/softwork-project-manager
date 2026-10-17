@@ -112,6 +112,12 @@
             "client_vat_treatment",
             "client_wht_rate"
         ],
+        "tb_company_holidays": [
+            "hd_created_at",
+            "hd_created_by",
+            "hd_date",
+            "hd_name"
+        ],
         "tb_company_settings": [
             "cs_address_en",
             "cs_address_th",
@@ -168,6 +174,59 @@
             "otp_purpose",
             "otp_used_at",
             "otp_user_id"
+        ],
+        "tb_employee_compensations": [
+            "ecm_base_salary",
+            "ecm_created_at",
+            "ecm_created_by",
+            "ecm_effective_from",
+            "ecm_employee_id",
+            "ecm_note"
+        ],
+        "tb_employee_recurring_items": [
+            "eri_amount",
+            "eri_created_at",
+            "eri_created_by",
+            "eri_effective_from",
+            "eri_effective_to",
+            "eri_employee_id",
+            "eri_id",
+            "eri_is_sso_wage",
+            "eri_is_taxable",
+            "eri_kind",
+            "eri_label",
+            "eri_note"
+        ],
+        "tb_employees": [
+            "emp_address",
+            "emp_bank_account_name",
+            "emp_bank_account_no",
+            "emp_bank_name",
+            "emp_birth_date",
+            "emp_branch_id",
+            "emp_code",
+            "emp_created_at",
+            "emp_created_by",
+            "emp_department_id",
+            "emp_email",
+            "emp_first_name_en",
+            "emp_first_name_th",
+            "emp_hire_date",
+            "emp_id",
+            "emp_last_name_en",
+            "emp_last_name_th",
+            "emp_national_id",
+            "emp_nickname",
+            "emp_notes",
+            "emp_phone",
+            "emp_position",
+            "emp_sso_enrolled",
+            "emp_sso_number",
+            "emp_termination_date",
+            "emp_termination_reason",
+            "emp_title",
+            "emp_updated_at",
+            "emp_user_id"
         ],
         "tb_error_logs": [
             "err_count",
@@ -287,6 +346,21 @@
             "ex_wht_income_type",
             "ex_wht_rate"
         ],
+        "tb_income_tax_brackets": [
+            "itb_from_amount",
+            "itb_rate",
+            "itb_tax_year"
+        ],
+        "tb_income_tax_years": [
+            "ity_created_at",
+            "ity_created_by",
+            "ity_expense_cap",
+            "ity_expense_rate",
+            "ity_note",
+            "ity_personal_allowance",
+            "ity_tax_year",
+            "ity_updated_at"
+        ],
         "tb_invoice_approvals": [
             "inva_action",
             "inva_created_at",
@@ -384,6 +458,20 @@
             "inv_wht_amount",
             "inv_wht_rate"
         ],
+        "tb_leave_types": [
+            "lt_attachment_from_days",
+            "lt_carry_over_days",
+            "lt_created_at",
+            "lt_days_per_year",
+            "lt_id",
+            "lt_is_paid",
+            "lt_min_service_days",
+            "lt_name_en",
+            "lt_name_th",
+            "lt_sort_order",
+            "lt_status",
+            "lt_updated_at"
+        ],
         "tb_login_logs": [
             "log_action",
             "log_created_at",
@@ -443,6 +531,16 @@
             "pv_version",
             "pv_wht_amount"
         ],
+        "tb_payroll_settings": [
+            "ps_hours_per_day",
+            "ps_id",
+            "ps_pay_day",
+            "ps_timesheet_backdate_days",
+            "ps_unpaid_leave_divisor",
+            "ps_updated_at",
+            "ps_updated_by",
+            "ps_working_weekdays"
+        ],
         "tb_product_categories": [
             "pc_created_at",
             "pc_id",
@@ -501,6 +599,16 @@
             "last_read_at",
             "project_id",
             "user_id"
+        ],
+        "tb_project_labels": [
+            "pl_color",
+            "pl_created_at",
+            "pl_created_by",
+            "pl_id",
+            "pl_name",
+            "pl_project_id",
+            "pl_sort_order",
+            "pl_updated_at"
         ],
         "tb_project_member_positions": [
             "position_id",
@@ -701,6 +809,16 @@
             "role_type",
             "role_update_at"
         ],
+        "tb_sso_rates": [
+            "sr_created_at",
+            "sr_created_by",
+            "sr_effective_from",
+            "sr_employee_rate",
+            "sr_employer_rate",
+            "sr_note",
+            "sr_wage_ceiling",
+            "sr_wage_floor"
+        ],
         "tb_task_activity_log": [
             "log_action",
             "log_created_at",
@@ -734,6 +852,17 @@
             "last_read_at",
             "task_id",
             "user_id"
+        ],
+        "tb_task_checklist_items": [
+            "tci_created_at",
+            "tci_created_by",
+            "tci_done_at",
+            "tci_done_by",
+            "tci_id",
+            "tci_is_done",
+            "tci_sort_order",
+            "tci_task_id",
+            "tci_text"
         ],
         "tb_task_issue_images": [
             "image_created_at",
@@ -775,6 +904,10 @@
             "issue_updated_at",
             "task_id"
         ],
+        "tb_task_labels": [
+            "tl_label_id",
+            "tl_task_id"
+        ],
         "tb_tasks": [
             "project_id",
             "task_completed_at",
@@ -790,6 +923,33 @@
             "task_title",
             "task_updated_at",
             "task_weight"
+        ],
+        "tb_timesheet_entries": [
+            "tse_approved_at",
+            "tse_approved_by",
+            "tse_date",
+            "tse_employee_id",
+            "tse_hours",
+            "tse_id",
+            "tse_note",
+            "tse_project_id",
+            "tse_task_id",
+            "tse_week_id"
+        ],
+        "tb_timesheet_weeks": [
+            "tsw_approved_at",
+            "tsw_created_at",
+            "tsw_employee_id",
+            "tsw_id",
+            "tsw_return_reason",
+            "tsw_returned_at",
+            "tsw_returned_by",
+            "tsw_status",
+            "tsw_submitted_at",
+            "tsw_total_hours",
+            "tsw_updated_at",
+            "tsw_version",
+            "tsw_week_start"
         ],
         "tb_user_signatures": [
             "sig_created_at",

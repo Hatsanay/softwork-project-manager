@@ -3,7 +3,8 @@
 // ส่วน "การเงิน" ในหน้าโปรเจกต์ (2026-10-15 ขั้น 1D-1 — docs/plans/2026-10-15-finance-1d.md หัวข้อ 3.1)
 // เห็นเฉพาะผู้มีสิทธิ์ดูใบแจ้งหนี้ (D1 — backend ตรวจอีกชั้น) · ตัวเลขทั้งหมดคำนวณใน backend
 // ยอดรวมเป็นบาท + แยกสกุล · งวดของใบเสนอราคาที่ตอบรับ · งานเสร็จเทียบออกบิล · ใบแจ้งหนี้สร้างเองของโปรเจกต์
-// + ต้นทุนและกำไรขั้นต้น (เฟส 2 ขั้น 2-5 — P4): ค่าใช้จ่าย/ใบเบิกที่อนุมัติแล้วซึ่งผูกโปรเจกต์นี้ · ยังไม่รวมเงินเดือนพนักงาน
+// + ต้นทุนและกำไรขั้นต้น (เฟส 2 ขั้น 2-5 — P4): ค่าใช้จ่าย/ใบเบิกที่อนุมัติแล้วซึ่งผูกโปรเจกต์นี้
+// + ค่าแรง (เฟส 4 ขั้น 4-2): ชั่วโมงที่อนุมัติ × ต้นทุนต่อชั่วโมง ยอดรวมเท่านั้น (ไม่แยกรายคน H3) · ประมาณการจนกว่าจะมีรอบเงินเดือน
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { FileText, Wallet } from "lucide-react";
@@ -60,6 +61,11 @@ type CurrencyTotals = Record<
 type ProjectProfit = {
     billed_before_vat_thb: string;
     cost_thb: string;
+    expense_cost_thb: string;
+    labor_cost_thb: string;
+    labor_hours: string;
+    labor_pending_hours: string;
+    labor_is_estimate: boolean;
     gross_profit_thb: string;
     gross_margin_percent: number | null;
     pending_cost_thb: string;
@@ -115,6 +121,7 @@ function Stat({
 // ต้นทุน + กำไรขั้นต้น (เป็นบาท) — แสดงเมื่อมีออกบิลหรือมีต้นทุน
 function ProfitSection({ profit }: { profit: ProjectProfit }) {
     const isLoss = parseHundredths(profit.gross_profit_thb, "กำไร") < 0n;
+    const hasLabor = !isZero(profit.labor_hours) || !isZero(profit.labor_pending_hours);
     return (
         <div className="grid gap-3 rounded-xl border border-gray-200 p-4">
             <h3 className="text-sm font-medium text-gray-900">ต้นทุนและกำไรขั้นต้น (บาท)</h3>
@@ -131,6 +138,18 @@ function ProfitSection({ profit }: { profit: ProjectProfit }) {
                     </span>
                 </div>
             </div>
+            <ul className="grid gap-1 text-sm">
+                <li className="flex justify-between gap-3 text-gray-700">
+                    <span>ค่าใช้จ่าย/ใบเบิก</span>
+                    <span className="tabular-nums">{formatAmount(profit.expense_cost_thb)}</span>
+                </li>
+                <li className="flex justify-between gap-3 text-gray-700">
+                    <span>
+                        ค่าแรง{profit.labor_is_estimate ? " (ประมาณการ)" : ""} · {Number(profit.labor_hours)} ชม.
+                    </span>
+                    <span className="tabular-nums">{formatAmount(profit.labor_cost_thb)}</span>
+                </li>
+            </ul>
             {profit.by_category.length > 0 && (
                 <ul className="grid gap-1 text-sm">
                     {profit.by_category.map((category) => (
@@ -163,11 +182,16 @@ function ProfitSection({ profit }: { profit: ProjectProfit }) {
                 </details>
             )}
             <FieldHint>
-                ต้นทุน = ค่าใช้จ่ายและใบเบิกที่อนุมัติแล้วซึ่งผูกโปรเจกต์นี้ (รวม VAT ที่ขอคืนไม่ได้) ·
-                ยังไม่รวมเงินเดือนพนักงาน
+                ต้นทุน = ค่าใช้จ่ายและใบเบิกที่อนุมัติแล้วซึ่งผูกโปรเจกต์นี้ (รวม VAT ที่ขอคืนไม่ได้) + ค่าแรง ·
+                ค่าแรง = ชั่วโมงที่อนุมัติ × ต้นทุนต่อชั่วโมงของแต่ละคน (เงินเดือน + ประกันสังคมส่วนบริษัท) ไม่แสดงรายคน
+                {profit.labor_is_estimate ? " · ตอนนี้คิดจากค่าจ้างปัจจุบัน (ยังไม่มีรอบเงินเดือน)" : ""}
                 {isZero(profit.pending_cost_thb)
                     ? ""
-                    : ` · รออนุมัติอีก ${formatAmount(profit.pending_cost_thb)} บาท (ยังไม่นับ)`}
+                    : ` · ค่าใช้จ่ายรออนุมัติอีก ${formatAmount(profit.pending_cost_thb)} บาท (ยังไม่นับ)`}
+                {isZero(profit.labor_pending_hours)
+                    ? ""
+                    : ` · ชั่วโมงรออนุมัติอีก ${Number(profit.labor_pending_hours)} ชม. (ยังไม่นับ)`}
+                {hasLabor ? "" : " · ยังไม่มีชั่วโมงทำงานที่อนุมัติ"}
             </FieldHint>
         </div>
     );

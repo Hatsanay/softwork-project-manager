@@ -547,9 +547,14 @@
                     "assignees": [
                         "object"
                     ],
+                    "checklist_done": "number",
+                    "checklist_total": "number",
+                    "labels": [],
                     "open_issue_count": "number",
                     "project_id": "string",
+                    "subtask_done": "number",
                     "subtask_open_issue_count": "number",
+                    "subtask_total": "number",
                     "task_completed_at": "null",
                     "task_created_at": "string",
                     "task_due_date": "string",
@@ -576,6 +581,8 @@
                     "user_id": "string"
                 }
             ],
+            "checklist": [],
+            "labels": [],
             "project_id": "string",
             "task_completed_at": "null",
             "task_created_at": "string",
@@ -959,7 +966,7 @@
                     "aud_action": "string",
                     "aud_created_at": "string",
                     "aud_duration_ms": "number",
-                    "aud_entity_id": "string",
+                    "aud_entity_id": "null",
                     "aud_entity_type": "string",
                     "aud_error": "null",
                     "aud_event": "string",
@@ -967,7 +974,7 @@
                     "aud_ip": "string",
                     "aud_method": "string",
                     "aud_path": "string",
-                    "aud_project_id": "string",
+                    "aud_project_id": "null",
                     "aud_request_id": "string",
                     "aud_role_name": "string",
                     "aud_status": "number",
@@ -986,31 +993,10 @@
         "status": 200,
         "body": {
             "aud_action": "string",
-            "aud_changes": {
-                "message_created_at": {
-                    "from": "null",
-                    "to": "string"
-                },
-                "message_id": {
-                    "from": "null",
-                    "to": "string"
-                },
-                "message_text": {
-                    "from": "null",
-                    "to": "string"
-                },
-                "project_id": {
-                    "from": "null",
-                    "to": "string"
-                },
-                "user_id": {
-                    "from": "null",
-                    "to": "string"
-                }
-            },
+            "aud_changes": "null",
             "aud_created_at": "string",
             "aud_duration_ms": "number",
-            "aud_entity_id": "string",
+            "aud_entity_id": "null",
             "aud_entity_type": "string",
             "aud_error": "null",
             "aud_event": "string",
@@ -1018,17 +1004,8 @@
             "aud_ip": "string",
             "aud_method": "string",
             "aud_path": "string",
-            "aud_payload": {
-                "__files": [
-                    {
-                        "name": "string",
-                        "size": "number",
-                        "type": "string"
-                    }
-                ],
-                "message_text": "string"
-            },
-            "aud_project_id": "string",
+            "aud_payload": "null",
+            "aud_project_id": "null",
             "aud_request_id": "string",
             "aud_role_name": "string",
             "aud_status": "number",

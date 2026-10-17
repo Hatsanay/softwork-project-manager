@@ -31,6 +31,9 @@ const { registerFinanceRoutes } = require("./finance.routes");
 const { registerPurchasingRoutes } = require("./purchasing.routes");
 const { registerExpenseRoutes } = require("./expense.routes");
 const { registerPaymentRoutes } = require("./payment.routes");
+const { registerPeopleRoutes } = require("./people.routes");
+const { registerTimesheetRoutes } = require("./timesheet.routes");
+const { registerTaskBoardRoutes } = require("./task-board.routes");
 
 const router = express.Router();
 
@@ -284,6 +287,9 @@ registerFinanceRoutes(router);
 registerPurchasingRoutes(router);
 registerExpenseRoutes(router);
 registerPaymentRoutes(router);
+registerPeopleRoutes(router);
+registerTimesheetRoutes(router);
+registerTaskBoardRoutes(router);
 
 // ─── public share (ลูกค้าดู ไม่ต้อง login) ───────────────────────────────────
 router.get("/V1/share/:token", shareController.getSharedProject);

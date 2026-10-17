@@ -64,6 +64,14 @@ export const PERMISSION_KEYS = [
     "approveExpense",
     "makePayment",
     "cancelPayment",
+    // บุคคล / เงินเดือน เฟส 4 (2026-10-17) — เห็นเงินเดือนได้เฉพาะผู้มีสิทธิ์ (H3) · ลงเวลา/ขอลา/ดูสลิปของตัวเองไม่ต้องมีสิทธิ์
+    "manageEmployees",
+    "viewPayroll",
+    "runPayroll",
+    "approvePayroll",
+    "approveTimesheet",
+    "approveLeave",
+    "manageHrSettings",
 ];
 
 /** ตำแหน่งบิตของแต่ละสิทธิ์ เช่น BIT_INDEX.createUsers = 2 */

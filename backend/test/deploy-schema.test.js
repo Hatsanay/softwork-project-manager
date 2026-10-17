@@ -117,6 +117,36 @@ test("ฐานว่าง: สร้างครบตามที่ตรว
             { al_doc_type: "IV", al_level: 1, al_min_amount_thb: "0.00", alr_role_id: "ROL202601010000001" },
             { al_doc_type: "QT", al_level: 1, al_min_amount_thb: "0.00", alr_role_id: "ROL202601010000001" },
         ]);
+
+        // เฟส 4 ขั้น 4-1: อัตราประกันสังคม · ปีภาษี 2026 ครบ 8 ขั้น · ประเภทลาตามกฎหมาย · ตั้งค่าเวลาทำงาน
+        const [[ssoRate]] = await conn.query(
+            "SELECT DATE_FORMAT(sr_effective_from, '%Y-%m-%d') AS sr_effective_from, sr_employee_rate, sr_wage_ceiling FROM tb_sso_rates",
+        );
+        assert.deepEqual(ssoRate, {
+            sr_effective_from: "2026-01-01",
+            sr_employee_rate: "5.00",
+            sr_wage_ceiling: "17500.00",
+        });
+        assert.equal(
+            await countRows(conn, "SELECT COUNT(*) AS total FROM tb_income_tax_brackets WHERE itb_tax_year = 2026"),
+            8,
+        );
+        const [leaveTypes] = await conn.query(
+            "SELECT lt_name_th, lt_is_paid FROM tb_leave_types ORDER BY lt_sort_order",
+        );
+        assert.deepEqual(
+            leaveTypes.map((type) => [type.lt_name_th, type.lt_is_paid]),
+            [
+                ["ลาป่วย", 1],
+                ["ลากิจ", 1],
+                ["ลาพักร้อน", 1],
+                ["ลาไม่รับค่าจ้าง", 0],
+            ],
+        );
+        const [[payrollSettings]] = await conn.query(
+            "SELECT ps_working_weekdays, ps_hours_per_day FROM tb_payroll_settings",
+        );
+        assert.deepEqual(payrollSettings, { ps_working_weekdays: "1111100", ps_hours_per_day: "8.00" });
     });
 });
 
@@ -128,6 +158,10 @@ test("ข้อมูลเริ่มต้นไม่ทับของท�
         );
         await conn.query("UPDATE tb_currencies SET cur_status = 'inactive' WHERE cur_code = 'USD'");
         await conn.query("UPDATE tb_branches SET branch_name_th = 'สำนักงานใหญ่ (กรุงเทพ)'");
+        await conn.query("UPDATE tb_leave_types SET lt_days_per_year = 10 WHERE lt_name_th = 'ลากิจ'");
+        await conn.query("DELETE FROM tb_leave_types WHERE lt_name_th = 'ลาไม่รับค่าจ้าง'");
+        await conn.query("DELETE FROM tb_income_tax_brackets WHERE itb_from_amount = 5000000");
+        await conn.query("UPDATE tb_sso_rates SET sr_wage_ceiling = 15000");
 
         assert.deepEqual(await runSchemaFile(conn, DEPLOY_SCHEMA), []);
 
@@ -137,6 +171,24 @@ test("ข้อมูลเริ่มต้นไม่ทับของท�
         assert.equal(usd.cur_status, "inactive");
         assert.equal(await countRows(conn, "SELECT COUNT(*) AS total FROM tb_branches"), 1);
         assert.equal(await countRows(conn, "SELECT COUNT(*) AS total FROM tb_approval_level_roles"), 4);
+        assert.equal(
+            await countRows(conn, "SELECT COUNT(*) AS total FROM tb_leave_types"),
+            3,
+            "ประเภทลาที่ลบไม่กลับมา",
+        );
+        assert.equal(
+            await countRows(conn, "SELECT COUNT(*) AS total FROM tb_leave_types WHERE lt_days_per_year = 10"),
+            1,
+        );
+        assert.equal(
+            await countRows(conn, "SELECT COUNT(*) AS total FROM tb_income_tax_brackets"),
+            7,
+            "ขั้นภาษีที่แก้ไม่ถูกเติมกลับ",
+        );
+        assert.equal(
+            await countRows(conn, "SELECT COUNT(*) AS total FROM tb_sso_rates WHERE sr_wage_ceiling = 15000"),
+            1,
+        );
     });
 });
 
@@ -163,6 +215,10 @@ test("อัปเกรดจากโครงสร้าง deploy 16 ต.�
             ex_kind: "bill",
             ex_merchant_name: null,
         });
+        // เฟส 4 ขั้น 4-1: ตารางบุคคลพร้อมข้อมูลเริ่มต้น · role Admin เดิมไม่ถูกแตะ (role ระบบได้สิทธิ์ครบเสมออยู่แล้ว)
+        assert.equal(await countRows(conn, "SELECT COUNT(*) AS total FROM tb_leave_types"), 4);
+        assert.equal(await countRows(conn, "SELECT COUNT(*) AS total FROM tb_payroll_settings"), 1);
+        assert.equal(await countRows(conn, "SELECT COUNT(*) AS total FROM tb_employees"), 0);
     });
 });
 

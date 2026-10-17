@@ -21,6 +21,9 @@ const { PERMISSION_KEYS } = require("../utils/permissions");
 const { PROJECT_PERMISSION_KEYS } = require("../utils/projectPermissions");
 
 const SECRET_KEYS = /password|token|otp|secret|authorization|cookie|code_hash/i;
+// ค่าเงินเดือน/รายการเงินรายคน — ไม่เก็บตัวเลขใน log (คนเปิดดู log ไม่ควรเห็นเงินเดือนของทุกคน — แบบเฟส 4 R-H1)
+// diff ยังบอกว่าช่องนี้ "เปลี่ยน" และใครเปลี่ยน · ตัวเลขจริงอยู่ในประวัติค่าจ้างของพนักงาน (เห็นเฉพาะสิทธิ์จัดการพนักงาน)
+const PAYROLL_PRIVATE_KEYS = /salary|^eri_amount$/i;
 const MAX_PAYLOAD_CHARS = 8000;
 const MASK = "[ปิดบัง]";
 
@@ -171,10 +174,34 @@ const ENTITIES = [
 
     { re: /^\/(logs|audit-logs|error-logs)(\/[^/]+)?$/, type: "log", label: { GET: "เปิดดู log ของระบบ", DELETE: "ลบ log" } },
     { re: /^\/share\/([^/]+)$/, type: "project", table: "tb_projects", pk: "project_share_token", label: { GET: "ลูกค้าเปิดลิงก์ติดตามโปรเจกต์" }, shareView: true },
+    // บุคคล เฟส 4 ขั้น 4-1 (2026-10-17) — ค่าเงินเดือนถูกปิดบังใน diff/payload (PAYROLL_PRIVATE_KEYS) บันทึกแค่ว่ามีการเปลี่ยน (R-H1)
+    // เปิดดูข้อมูลพนักงาน (เลขประจำตัว/เงินเดือน/บัญชี) บันทึกทุกครั้ง — /employees/form-options ไม่ใช่ข้อมูลรายคน
+    { re: /^\/employees\/([^/]+)\/compensations(\/[^/]+)?$/, type: "employee", id: "1", label: { POST: "เพิ่มอัตราเงินเดือนพนักงาน", PUT: "แก้อัตราเงินเดือนพนักงาน", DELETE: "ลบอัตราเงินเดือนพนักงาน" } },
+    { re: /^\/employees\/([^/]+)\/recurring-items(\/[^/]+)?(\/end)?$/, type: "employee", id: "1", label: { POST: "เพิ่ม/หยุดรายการประจำของพนักงาน", DELETE: "ลบรายการประจำของพนักงาน" } },
+    { re: /^\/employees\/([^/]+)\/terminate$/, type: "employee", table: "tb_employees", pk: "emp_id", id: "1", label: { POST: "ตั้งพนักงานพ้นสภาพ" } },
+    { re: /^\/employees\/([^/]+)\/reinstate$/, type: "employee", table: "tb_employees", pk: "emp_id", id: "1", label: { POST: "ยกเลิกการพ้นสภาพของพนักงาน" } },
+    { re: /^\/employees\/(?!form-options$)([^/]+)$/, type: "employee", table: "tb_employees", pk: "emp_id", id: "1", label: { GET: "เปิดข้อมูลพนักงาน", PUT: "แก้ไขข้อมูลพนักงาน", DELETE: "ลบพนักงาน" } },
+    { re: /^\/employees$/, type: "employee", table: "tb_employees", pk: "emp_id", id: "response:emp_id", label: { POST: "เพิ่มพนักงาน" } },
+    { re: /^\/people\/settings$/, type: "hr_setting", table: "tb_payroll_settings", pk: "ps_id", id: "fixed:1", label: { PUT: "แก้ตั้งค่าเวลาทำงาน/เงินเดือน" } },
+    { re: /^\/people\/sso-rates(\/[^/]+)?$/, type: "sso_rate", label: { POST: "เพิ่มอัตราประกันสังคม", DELETE: "ลบอัตราประกันสังคม" } },
+    { re: /^\/people\/tax-years\/([^/]+)$/, type: "income_tax_year", table: "tb_income_tax_years", pk: "ity_tax_year", id: "1", label: { PUT: "บันทึกปีภาษี/ขั้นภาษีเงินได้", DELETE: "ลบปีภาษีเงินได้" } },
+    { re: /^\/people\/holidays(\/[^/]+)?$/, type: "company_holiday", label: { POST: "เพิ่มวันหยุดบริษัท", DELETE: "ลบวันหยุดบริษัท" } },
+    { re: /^\/people\/leave-types\/([^/]+)$/, type: "leave_type", table: "tb_leave_types", pk: "lt_id", id: "1", label: { PUT: "แก้ไขประเภทลา" } },
+    { re: /^\/people\/leave-types$/, type: "leave_type", table: "tb_leave_types", pk: "lt_id", id: "response:lt_id", label: { POST: "เพิ่มประเภทลา" } },
+    // ลงเวลา เฟส 4 ขั้น 4-2 — id สัปดาห์ = เลขรัน (tb_timesheet_weeks.tsw_id)
+    { re: /^\/timesheet\/me$/, type: "timesheet", label: { PUT: "บันทึกลงเวลาของตัวเอง" } },
+    { re: /^\/timesheet\/me\/submit$/, type: "timesheet", label: { POST: "ส่งลงเวลาให้อนุมัติ" } },
+    { re: /^\/timesheet\/weeks\/([^/]+)\/approve$/, type: "timesheet", table: "tb_timesheet_weeks", pk: "tsw_id", id: "1", label: { POST: "อนุมัติลงเวลา" } },
+    { re: /^\/timesheet\/weeks\/([^/]+)\/return$/, type: "timesheet", table: "tb_timesheet_weeks", pk: "tsw_id", id: "1", label: { POST: "ตีกลับลงเวลา" } },
+    // บอร์ดงานแบบ Trello (2026-10-17) — ป้ายสี · checklist · เรียงลำดับการ์ด (เปลี่ยนสถานะใช้เส้นทางเดิม)
+    { re: /^\/projects\/([^/]+)\/labels(\/[^/]+)?$/, type: "project_label", id: "1", project: "1", label: { POST: "เพิ่มป้ายของโปรเจกต์", PUT: "แก้ป้ายของโปรเจกต์", DELETE: "ลบป้ายของโปรเจกต์" } },
+    { re: /^\/projects\/([^/]+)\/task-order$/, type: "task", id: "1", project: "1", label: { PUT: "เรียงลำดับงานในบอร์ด" } },
+    { re: /^\/projects\/([^/]+)\/tasks\/([^/]+)\/labels$/, type: "task", table: "tb_tasks", pk: "task_id", id: "2", project: "1", label: { PUT: "ติดป้ายงาน" } },
+    { re: /^\/projects\/([^/]+)\/tasks\/([^/]+)\/checklist(-order|\/[^/]+(\/done)?)?$/, type: "task", id: "2", project: "1", label: { POST: "เพิ่ม checklist ของงาน", PUT: "แก้ checklist ของงาน", DELETE: "ลบ checklist ของงาน" } },
 ];
 
 // GET ที่บันทึกด้วย (เปิดดูข้อมูลสำคัญ) — นอกนั้น GET ไม่บันทึก ยกเว้นถูกปฏิเสธ/error (ปริมาณมหาศาลและไม่เปลี่ยนข้อมูล)
-const SENSITIVE_READS = [/^\/reports\/accounting-export$/, /^\/receipts\/[^/]+\/wht-certificate\/file$/, /^\/expenses\/[^/]+\/attachments\/[^/]+$/, /^\/claims\/[^/]+\/attachments\/[^/]+$/, /^\/wht-certificates\/[^/]+$/, /^\/reports\/withholding$/, /^\/users$/, /^\/users\/(?!me$|for-select$)[^/]+$/, /^\/(logs|audit-logs|error-logs)(\/[^/]+)?$/, /^\/share\/[^/]+$/];
+const SENSITIVE_READS = [/^\/employees\/(?!form-options$)[^/]+$/, /^\/reports\/accounting-export$/, /^\/receipts\/[^/]+\/wht-certificate\/file$/, /^\/expenses\/[^/]+\/attachments\/[^/]+$/, /^\/claims\/[^/]+\/attachments\/[^/]+$/, /^\/wht-certificates\/[^/]+$/, /^\/reports\/withholding$/, /^\/users$/, /^\/users\/(?!me$|for-select$)[^/]+$/, /^\/(logs|audit-logs|error-logs)(\/[^/]+)?$/, /^\/share\/[^/]+$/];
 // ไม่บันทึกใน audit: login/logout มีตาราง tb_login_logs ของตัวเอง (และ body login มีรหัสผ่าน)
 const SKIP = [/^\/auth\/(login|logout)$/, /^\/auth\/verifyPermission$/];
 
@@ -217,7 +244,7 @@ function redact(value, depth = 0) {
     if (Array.isArray(value)) return value.slice(0, 100).map((v) => redact(v, depth + 1));
     if (typeof value === "object") {
         const out = {};
-        for (const [k, v] of Object.entries(value)) out[k] = SECRET_KEYS.test(k) ? MASK : redact(v, depth + 1);
+        for (const [k, v] of Object.entries(value)) out[k] = SECRET_KEYS.test(k) || PAYROLL_PRIVATE_KEYS.test(k) ? MASK : redact(v, depth + 1);
         return out;
     }
     if (typeof value === "string" && value.length > 1000) return `${value.slice(0, 1000)}…`;

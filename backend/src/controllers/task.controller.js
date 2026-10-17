@@ -3,6 +3,9 @@ const { generateDailyId } = require("../utils/generateDailyId");
 const { recomputeProjectProgress } = require("../utils/projectProgress");
 const { hasProjectBit } = require("../utils/projectPermissions");
 const { sendTaskAssignedEmail } = require("../utils/mailer");
+const { withTransaction } = require("../utils/with-transaction");
+const { AppError } = require("../utils/app-error");
+const boardService = require("../services/task-board.service");
 
 async function writeTaskLog({ task_id, user_id, action, old_value, new_value, message }) {
     const log_id = await generateDailyId("tb_task_activity_log", "log_id", "LOG");
@@ -164,6 +167,29 @@ async function attachUnreadChatCounts(projectId, userId, tasks) {
     return tasks.map((t) => ({ ...t, unread_chat_count: countMap[t.task_id] ?? 0 }));
 }
 
+// ข้อมูลที่การ์ดบนบอร์ดใช้ (บอร์ดงาน 2026-10-17) — ป้าย · checklist เสร็จ/ทั้งหมด · subtask เสร็จ/ทั้งหมด (คำนวณจากรายการเดียวกัน ไม่ query ซ้ำทีละงาน)
+async function attachBoardDetails(projectId, tasks) {
+    if (tasks.length === 0) return tasks;
+    const labelsByTask = await boardService.findLabelsByTask(pool, projectId);
+    const checklistCounts = await boardService.findChecklistCounts(pool, projectId);
+    const subtaskCounts = new Map();
+    for (const task of tasks) {
+        if (!task.task_parent_id) continue;
+        const counts = subtaskCounts.get(task.task_parent_id) ?? { done: 0, total: 0 };
+        counts.total += 1;
+        if (task.task_status === "done") counts.done += 1;
+        subtaskCounts.set(task.task_parent_id, counts);
+    }
+    return tasks.map((task) => ({
+        ...task,
+        labels: labelsByTask.get(task.task_id) ?? [],
+        checklist_done: checklistCounts.get(task.task_id)?.done ?? 0,
+        checklist_total: checklistCounts.get(task.task_id)?.total ?? 0,
+        subtask_done: subtaskCounts.get(task.task_id)?.done ?? 0,
+        subtask_total: subtaskCounts.get(task.task_id)?.total ?? 0,
+    }));
+}
+
 async function getAll(req, res, next) {
     try {
         const [rows] = await pool.query(
@@ -178,6 +204,7 @@ async function getAll(req, res, next) {
         let data = await attachAssignees(req.params.projectId, rows);
         data = await attachIssueCounts(req.params.projectId, data);
         data = await attachUnreadChatCounts(req.params.projectId, req.user.user_id, data);
+        data = await attachBoardDetails(req.params.projectId, data);
         res.json({ data });
     } catch (err) {
         next(err);
@@ -198,7 +225,9 @@ async function getOne(req, res, next) {
             [req.params.id]
         );
 
-        res.json({ ...task, assignees: assigneeRows });
+        const labelsByTask = await boardService.findLabelsByTask(pool, task.project_id);
+        const checklist = await boardService.listChecklist(pool, task.task_id);
+        res.json({ ...task, assignees: assigneeRows, labels: labelsByTask.get(task.task_id) ?? [], checklist });
     } catch (err) {
         next(err);
     }
@@ -340,20 +369,39 @@ async function updateStatus(req, res, next) {
             return res.status(400).json({ message: "สถานะไม่ถูกต้อง" });
         }
 
+        // expected_status ไม่บังคับ — หน้าเดิมไม่ส่งก็ทำงานเหมือนเดิม · บอร์ดส่งสถานะที่เห็นตอนลาก
+        const expectedStatus = req.body.expected_status;
+        if (expectedStatus !== undefined && !validStatuses.includes(expectedStatus)) {
+            return res.status(400).json({ message: "สถานะเดิมที่ส่งมาไม่ถูกต้อง" });
+        }
+
         const task = req.task;
 
         const allowed = await canChangeStatus(req.projectPermission, task, req.user.user_id);
         if (!allowed) return res.status(403).json({ message: "ไม่มีสิทธิ์เปลี่ยนสถานะ task นี้" });
 
-        const completedAt = task_status === "done" ? new Date() : null;
-        await pool.query(
-            "UPDATE tb_tasks SET task_status = ?, task_completed_at = ? WHERE task_id = ?",
-            [task_status, completedAt, req.params.id]
-        );
+        const previousStatus = await withTransaction(async (conn) => {
+            const [[current]] = await conn.query(
+                "SELECT task_status FROM tb_tasks WHERE task_id = ? FOR UPDATE",
+                [req.params.id]
+            );
+            if (expectedStatus !== undefined && current.task_status !== expectedStatus) {
+                throw new AppError(409, "TASK_STATUS_CHANGED", "งานนี้ถูกย้ายไปสถานะอื่นโดยคนอื่นแล้ว — โหลดบอร์ดใหม่ให้แล้ว");
+            }
+            if (current.task_status !== task_status) {
+                const completedAt = task_status === "done" ? new Date() : null;
+                await conn.query(
+                    "UPDATE tb_tasks SET task_status = ?, task_completed_at = ? WHERE task_id = ?",
+                    [task_status, completedAt, req.params.id]
+                );
+            }
+            return current.task_status;
+        });
+        if (previousStatus === task_status) return res.json({ message: "สถานะเดิมอยู่แล้ว" });
 
         await writeTaskLog({
             task_id: req.params.id, user_id: req.user.user_id, action: "status_changed",
-            old_value: task.task_status, new_value: task_status,
+            old_value: previousStatus, new_value: task_status,
         });
         await recomputeProjectProgress(task.project_id);
 
@@ -447,4 +495,8 @@ async function getActivity(req, res, next) {
     }
 }
 
-module.exports = { getAll, getOne, create, update, updateStatus, remove, getActivity, claim };
+module.exports = {
+    getAll, getOne, create, update, updateStatus, remove, getActivity, claim,
+    // ใช้ร่วมกับบอร์ดงาน (task-board.controller.js) — กติกาสิทธิ์ของงานอยู่ที่เดียว
+    canEditTask, canChangeStatus, writeTaskLog,
+};

@@ -91,6 +91,18 @@ export const MENU_DEFS: MenuItem[] = [
             { key: "companySettings", label: "ตั้งค่าจัดซื้อ", href: "/purchasing/settings" },
         ],
     },
+    // บุคคล เฟส 4 (4-1 พนักงาน + ตั้งค่า · 4-2 ลงเวลา) — ลา/เงินเดือนเพิ่มในขั้นถัดไป
+    {
+        key: "people",
+        label: "บุคคล",
+        href: "/people",
+        children: [
+            // ลงเวลา: ทุกคนลงของตัวเองได้ (ไม่มีบิตเฉพาะ) — ผูกกับ dashboard ที่ทุก role มี · แท็บอนุมัติขึ้นตามขอบเขตจาก backend
+            { key: "dashboard", label: "ลงเวลาทำงาน", href: "/people/timesheet" },
+            { key: "manageEmployees", label: "พนักงาน", href: "/people/employees" },
+            { key: "manageHrSettings", label: "ตั้งค่าบุคคล", href: "/people/settings" },
+        ],
+    },
     { key: "salesReports", label: "รายงาน", href: "/reports" },
     {
         key: "clientManagement", label: "จัดการลูกค้า", href: "/clients",
@@ -205,6 +217,19 @@ export const PERMISSION_GROUPS: PermGroup[] = [
             { key: "approveExpense", label: "อนุมัติ/ตีกลับค่าใช้จ่ายและใบเบิกเงิน (ต้องมี role อยู่ในชั้นที่รออยู่ด้วย)",            href: "/purchasing/expenses/approve" },
             { key: "makePayment",    label: "ทำจ่ายเงิน และออกหนังสือรับรองหัก ณ ที่จ่าย (50 ทวิ)",                              href: "/purchasing/payments/new" },
             { key: "cancelPayment",  label: "ยกเลิกใบสำคัญจ่าย (50 ทวิ ของใบนั้นยกเลิกด้วย)",                                   href: "/purchasing/payments/cancel" },
+        ],
+    },
+    // บุคคล / เงินเดือน เฟส 4 — ลำดับบิตต้องตรงกับ PERMISSION_KEYS (append-only)
+    {
+        groupLabel: "บุคคล / เงินเดือน",
+        bits: [
+            { key: "manageEmployees",  label: "จัดการพนักงาน (ทะเบียน ค่าจ้าง เลขประจำตัวประชาชน บัญชีรับเงินเดือน — เห็นเงินเดือนทุกคน)", href: "/people/employees" },
+            { key: "viewPayroll",      label: "ดูรอบเงินเดือน สลิปของทุกคน และรายงานเงินเดือน/ภาษี",                                  href: "/people/payroll" },
+            { key: "runPayroll",       label: "สร้าง/คิด/แก้รอบเงินเดือน และบันทึกจ่ายเงินเดือน",                                       href: "/people/payroll/new" },
+            { key: "approvePayroll",   label: "อนุมัติ/ตีกลับรอบเงินเดือน (ต้องมี role อยู่ในชั้นที่รออยู่ด้วย)",                          href: "/people/payroll/approve" },
+            { key: "approveTimesheet", label: "อนุมัติลงเวลาของทุกคน (ผู้จัดการโปรเจกต์อนุมัติของโปรเจกต์ตัวเองได้โดยไม่ต้องมีสิทธิ์นี้)",       href: "/people/timesheet/approve" },
+            { key: "approveLeave",     label: "อนุมัติ/ไม่อนุมัติใบลาของทุกคน และเห็นเหตุผล/ไฟล์แนบของใบลา",                              href: "/people/leave/approve" },
+            { key: "manageHrSettings", label: "ตั้งค่าบุคคล (อัตราประกันสังคม ภาษีเงินได้ วันหยุดบริษัท ประเภทลา เวลาทำงาน)",                  href: "/people/settings" },
         ],
     },
 ];

@@ -371,6 +371,7 @@ type ActivityEntry = {
     log_action: string;
     log_old_value: string | null;
     log_new_value: string | null;
+    log_message?: string | null;
     log_created_at: string;
 };
 
@@ -407,6 +408,9 @@ export function ProjectActivityCard({ activity }: { activity: ActivityEntry[] })
                                             ({statusLabel(entry.log_old_value)} → {statusLabel(entry.log_new_value)})
                                         </>
                                     )}
+                                {entry.log_action === "edited" && entry.log_message && (
+                                    <span className="text-gray-500"> · {entry.log_message}</span>
+                                )}
                             </p>
                             <p className="text-xs text-gray-400">{formatDate(entry.log_created_at)}</p>
                         </li>

@@ -6,12 +6,15 @@
 // - ออกบิล/รับแล้ว นับเฉพาะใบแจ้งหนี้ที่ออกแล้ว · ร่าง/รออนุมัติแสดงแยก "ร่างรอออก"
 // - % งานเสร็จเทียบ % ออกบิล เป็นค่าประมาณช่วยตัดสินใจ (R-D6)
 // - ต้นทุน (เฟส 2 ขั้น 2-5 — P4): บรรทัดค่าใช้จ่าย/ใบเบิกที่อนุมัติแล้ว (ไม่ยกเลิก) ที่ผูกโปรเจกต์นี้ เป็นบาทตามอัตราของรายการ
-//   + VAT ส่วนของบรรทัดเมื่อขอคืนไม่ได้ (บริษัทยังไม่จด VAT → ภาษีซื้อเป็นต้นทุนจริง) · ยังไม่รวมค่าแรงพนักงาน (เฟส 4)
-//   กำไรขั้นต้น = ยอดออกบิลก่อน VAT เป็นบาท − ต้นทุน (ห้ามบวกต่างสกุลตรงๆ R-P9)
+//   + VAT ส่วนของบรรทัดเมื่อขอคืนไม่ได้ (บริษัทยังไม่จด VAT → ภาษีซื้อเป็นต้นทุนจริง)
+// - ค่าแรง (เฟส 4 ขั้น 4-2 — H2-ก): ชั่วโมงที่อนุมัติ × ต้นทุนต่อชั่วโมงของพนักงาน (services/labor-cost.service.js) ยอดรวมเท่านั้น (H3)
+//   ตอนนี้เป็นประมาณการจากค่าจ้างปัจจุบัน — ขั้น 4-4 ใช้ตัวเลขจริงของรอบเงินเดือนที่อนุมัติแล้ว
+//   กำไรขั้นต้น = ยอดออกบิลก่อน VAT เป็นบาท − ค่าใช้จ่าย − ค่าแรง (ห้ามบวกต่างสกุลตรงๆ R-P9)
 const { AppError } = require("../utils/app-error");
 const { todayBangkok } = require("../utils/bangkok-time");
 const { convertToBaht, divideRoundHalfUp, parseHundredths } = require("../shared/money.mjs");
 const { toDecimalText } = require("../shared/quotation-totals.mjs");
+const { estimateProjectLabor } = require("./labor-cost.service");
 
 // งานนำหน้าการออกบิลเกินกี่จุด (%) ถึงขึ้นข้อความเตือน
 const PROGRESS_AHEAD_THRESHOLD = 10;
@@ -273,13 +276,21 @@ async function getProjectFinance(conn, projectId) {
     }
 
     const cost = await findProjectCost(conn, projectId);
-    const grossProfitThb = billedBeforeVatThb - cost.totalThb;
+    const labor = await estimateProjectLabor(conn, projectId);
+    const totalCostThb = cost.totalThb + labor.costThb;
+    const grossProfitThb = billedBeforeVatThb - totalCostThb;
 
     return {
-        // ต้นทุน + กำไรขั้นต้น (ขั้น 2-5) — เป็นบาทเสมอ
+        // ต้นทุน + กำไรขั้นต้น (ขั้น 2-5 · ค่าแรงขั้น 4-2) — เป็นบาทเสมอ · cost_thb = ค่าใช้จ่าย + ค่าแรง
         profit: {
             billed_before_vat_thb: toDecimalText(billedBeforeVatThb),
-            cost_thb: toDecimalText(cost.totalThb),
+            cost_thb: toDecimalText(totalCostThb),
+            expense_cost_thb: toDecimalText(cost.totalThb),
+            labor_cost_thb: toDecimalText(labor.costThb),
+            labor_hours: toDecimalText(labor.approvedHours),
+            labor_pending_hours: toDecimalText(labor.pendingHours),
+            labor_by_month: labor.byMonth,
+            labor_is_estimate: true,
             gross_profit_thb: toDecimalText(grossProfitThb),
             gross_margin_percent: percentOf(grossProfitThb, billedBeforeVatThb),
             pending_cost_thb: toDecimalText(cost.pendingThb),

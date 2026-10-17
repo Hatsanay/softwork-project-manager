@@ -19,6 +19,7 @@ import {
     ChevronsLeft,
     ChevronsRight,
     FolderKanban,
+    IdCard,
     LayoutDashboard,
     Search,
     Settings2,
@@ -38,6 +39,7 @@ const ICONS: Record<string, LucideIcon> = {
     "/sales": ShoppingBag,
     "/reports": ChartColumn,
     "/purchasing": Wallet,
+    "/people": IdCard,
 };
 
 // เมนูของผู้ดูแลระบบ (จัดกลุ่มบนหน้าจอเท่านั้น — ใครเห็นเมนูไหนยังขึ้นกับสิทธิ์เหมือนเดิม)

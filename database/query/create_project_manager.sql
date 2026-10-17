@@ -337,6 +337,55 @@ CREATE TABLE tb_task_activity_log (
   CONSTRAINT fk_tal_user FOREIGN KEY (user_id) REFERENCES tb_users(user_id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ─── บอร์ดงานแบบ Trello (2026-10-17) — ป้ายสีของโปรเจกต์ + checklist ในงาน · แบบ: docs/plans/2026-10-17-project-kanban.md ───
+-- ป้ายอยู่กับโปรเจกต์ (แบบ Trello ที่ป้ายอยู่กับบอร์ด) · สีเก็บเป็นรหัส ไม่เก็บ hex (เปลี่ยนเฉดทีหลังได้ที่เดียวในหน้าเว็บ)
+-- สีครบชุด Trello รวมเขียว/เหลือง/แดง = ข้อยกเว้นของกติกาธีม เฉพาะป้ายบนบอร์ด (เจ้าของระบบเลือก 17 ต.ค. 2026 — K8)
+CREATE TABLE tb_project_labels (
+  pl_id          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  pl_project_id  VARCHAR(18) NOT NULL,
+  pl_name        VARCHAR(50) NOT NULL,
+  pl_color       ENUM('green','yellow','orange','red','purple','blue','sky','lime','pink','black') NOT NULL DEFAULT 'blue',
+  pl_sort_order  INT NOT NULL DEFAULT 0,
+  pl_created_by  VARCHAR(18) NULL,
+  pl_created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+  pl_updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (pl_id),
+  UNIQUE KEY uq_pl_project_name (pl_project_id, pl_name),
+  KEY fk_pl_created_by (pl_created_by),
+  CONSTRAINT fk_pl_project FOREIGN KEY (pl_project_id) REFERENCES tb_projects(project_id) ON DELETE CASCADE,
+  CONSTRAINT fk_pl_created_by FOREIGN KEY (pl_created_by) REFERENCES tb_users(user_id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ป้ายที่ติดกับงาน — ลบงานหรือลบป้ายแล้วความผูกหายตาม
+CREATE TABLE tb_task_labels (
+  tl_task_id   VARCHAR(18) NOT NULL,
+  tl_label_id  INT UNSIGNED NOT NULL,
+  PRIMARY KEY (tl_task_id, tl_label_id),
+  KEY fk_tl_label (tl_label_id),
+  CONSTRAINT fk_tl_task FOREIGN KEY (tl_task_id) REFERENCES tb_tasks(task_id) ON DELETE CASCADE,
+  CONSTRAINT fk_tl_label FOREIGN KEY (tl_label_id) REFERENCES tb_project_labels(pl_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- checklist ในงาน — รายการย่อยเบาๆ ไม่มีผู้รับผิดชอบ/สถานะ ไม่นับเข้าความคืบหน้าโปรเจกต์ (ต่างจาก subtask)
+CREATE TABLE tb_task_checklist_items (
+  tci_id          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  tci_task_id     VARCHAR(18) NOT NULL,
+  tci_text        VARCHAR(200) NOT NULL,
+  tci_is_done     TINYINT(1) NOT NULL DEFAULT 0,
+  tci_sort_order  INT NOT NULL DEFAULT 0,
+  tci_done_by     VARCHAR(18) NULL,
+  tci_done_at     DATETIME NULL,
+  tci_created_by  VARCHAR(18) NULL,
+  tci_created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (tci_id),
+  KEY idx_tci_task (tci_task_id, tci_sort_order),
+  KEY fk_tci_done_by (tci_done_by),
+  KEY fk_tci_created_by (tci_created_by),
+  CONSTRAINT fk_tci_task FOREIGN KEY (tci_task_id) REFERENCES tb_tasks(task_id) ON DELETE CASCADE,
+  CONSTRAINT fk_tci_done_by FOREIGN KEY (tci_done_by) REFERENCES tb_users(user_id) ON DELETE SET NULL,
+  CONSTRAINT fk_tci_created_by FOREIGN KEY (tci_created_by) REFERENCES tb_users(user_id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 commit;
 
 -- ─── ข้อมูลเริ่มต้น ───────────────────────────────────────────────────────────

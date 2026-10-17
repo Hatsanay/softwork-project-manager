@@ -16,6 +16,10 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import SearchableSelect from "@/components/ui/SearchableSelect";
 import { PROJECT_PERMISSION_BITS } from "@/app/components/project-position-bits";
 import ProjectFinanceCard from "./_components/project-finance-card";
+import TaskBoard from "./_components/board/task-board";
+import TaskLabelsChecklist, { type ChecklistItem } from "./_components/board/task-labels-checklist";
+import type { BoardLabel } from "./_components/board/board-types";
+import Segmented from "@/components/ui/segmented";
 import { toast } from "sonner";
 import { buttonClass } from "@/components/ui/button";
 import { inputClass } from "@/components/ui/form-field";
@@ -70,7 +74,36 @@ type Task = {
     open_issue_count: number;
     subtask_open_issue_count: number;
     unread_chat_count: number;
+    // บอร์ดงาน (2026-10-17)
+    task_sort_order?: number;
+    task_completed_at?: string | null;
+    labels?: BoardLabel[];
+    checklist_done?: number;
+    checklist_total?: number;
+    subtask_done?: number;
+    subtask_total?: number;
 };
+
+// มุมมองงาน ตาราง/บอร์ด — จำไว้ต่อเครื่อง (K5) · อ่าน localStorage ไม่ได้ (โหมดส่วนตัว) = ตาราง
+type TaskView = "table" | "board";
+const TASK_VIEW_STORAGE_KEY = "softwork.projectTaskView";
+
+function readTaskView(): TaskView {
+    if (typeof window === "undefined") return "table";
+    try {
+        return window.localStorage.getItem(TASK_VIEW_STORAGE_KEY) === "board" ? "board" : "table";
+    } catch {
+        return "table";
+    }
+}
+
+function saveTaskView(view: TaskView) {
+    try {
+        window.localStorage.setItem(TASK_VIEW_STORAGE_KEY, view);
+    } catch {
+        // เก็บไม่ได้ก็ใช้ได้ปกติ แค่ไม่จำค่า
+    }
+}
 
 type IssueStatus = "open" | "resolved";
 type IssueImage = { image_id: string; issue_id: string; image_url: string };
@@ -180,7 +213,7 @@ type ActivityEntry = {
 };
 
 type PositionOption = { position_id: string; position_name: string };
-type TaskDetail = Task & { task_description: string | null };
+type TaskDetail = Task & { task_description: string | null; checklist?: ChecklistItem[] };
 
 type TaskFormState = {
     task_title: string;
@@ -281,6 +314,7 @@ export default function ViewProjectPage() {
     const [shareEmailError, setShareEmailError] = useState<string | null>(null);
     const [isSendingShareEmail, setIsSendingShareEmail] = useState(false);
     const [showOnlyMyTasks, setShowOnlyMyTasks] = useState(false);
+    const [taskView, setTaskView] = useState<TaskView>(readTaskView);
     const [agileOverviewTab, setAgileOverviewTab] = useState<"all" | "task" | "subtask">("all");
 
     const [taskModalOpen, setTaskModalOpen] = useState(false);
@@ -1373,6 +1407,36 @@ export default function ViewProjectPage() {
                     )
                 }
             >
+                <Segmented<TaskView>
+                    label="มุมมองงาน"
+                    value={taskView}
+                    onChange={(view) => {
+                        setTaskView(view);
+                        saveTaskView(view);
+                    }}
+                    options={[
+                        { value: "table", label: "ตาราง" },
+                        { value: "board", label: "บอร์ด" },
+                    ]}
+                />
+                {taskView === "board" ? (
+                    <TaskBoard
+                        projectId={id as string}
+                        tasks={tasks}
+                        currentUserId={currentUserId}
+                        isAgile={project.project_type === "agile"}
+                        canReorder={canEditTask}
+                        canAddTask={canAddTask}
+                        canChangeStatus={(task) => canChangeThisTaskStatus(task as Task)}
+                        onOpenTask={(task) => openTaskDetail(task as Task)}
+                        onClaimTask={(task) => handleClaimTask(task as Task)}
+                        onAddTask={() => openCreateTask()}
+                        onChanged={async () => {
+                            await loadAll(id as string);
+                        }}
+                    />
+                ) : (
+                <>
                 <div className="flex flex-wrap gap-x-8 gap-y-3">
                     <Switch
                         id="show-only-my-tasks"
@@ -1404,6 +1468,8 @@ export default function ViewProjectPage() {
                         </div>
                     )}
                 />
+                </>
+                )}
             </SectionCard>
 
             {/* สมาชิก */}
@@ -1637,6 +1703,22 @@ export default function ViewProjectPage() {
                                         </div>
                                     </div>
                                 </div>
+
+                                <hr className="border-gray-100" />
+                                {/* ป้ายสี + checklist (บอร์ดงาน 2026-10-17) — key = งาน ให้สถานะในส่วนนี้เริ่มใหม่เมื่อเปิดงานอื่น */}
+                                <TaskLabelsChecklist
+                                    key={detailTask.task_id}
+                                    projectId={id as string}
+                                    taskId={detailTask.task_id}
+                                    initialLabels={detailTask.labels ?? []}
+                                    initialChecklist={detailTask.checklist ?? []}
+                                    canEdit={canEditThisTask(detailTask)}
+                                    canTick={canChangeThisTaskStatus(detailTask)}
+                                    canManageLabels={canEditProjectInfo}
+                                    onChanged={async () => {
+                                        await loadAll(id as string);
+                                    }}
+                                />
 
                                 {/* subtask ไม่มี subtask ของตัวเองได้อีก (จำกัดไว้แค่ 1 ชั้น) เลยไม่ต้องโชว์ section นี้เลยตอนดูรายละเอียด subtask */}
                                 {!detailTask.task_parent_id && (
@@ -2092,6 +2174,9 @@ export default function ViewProjectPage() {
                                                                     {" → "}
                                                                     {TASK_STATUS_LABEL[entry.log_new_value as TaskStatus] ?? entry.log_new_value})
                                                                 </>
+                                                            )}
+                                                            {entry.log_action === "edited" && entry.log_message && (
+                                                                <span className="text-gray-500"> · {entry.log_message}</span>
                                                             )}
                                                         </p>
                                                         <p className="text-xs text-gray-400">{formatDate(entry.log_created_at)}</p>
