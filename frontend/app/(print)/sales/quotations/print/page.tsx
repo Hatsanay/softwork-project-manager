@@ -87,6 +87,8 @@ export default function QuotationPrintPage() {
     const clientName = client.client_company || client.client_name;
     const hasVat = parseHundredths(quotation.qt_vat_rate, "VAT") > 0n;
     const isVatZero = quotation.qt_vat_treatment === "zero";
+    const hasVatLine = hasVat || isVatZero;
+    const hasDiscount = parseHundredths(quotation.qt_discount_amount, "ส่วนลด") > 0n;
     const numberText = quotation.qt_number
         ? `${quotation.qt_number}${quotation.qt_revision > 0 ? ` Rev.${quotation.qt_revision}` : ""}`
         : labels.notIssued;
@@ -318,21 +320,32 @@ export default function QuotationPrintPage() {
                         ( {amountInWords(quotation.qt_total, currency, language)} )
                     </p>
                     <dl className="grid min-w-[70mm] grid-cols-[1fr_auto] gap-x-4 gap-y-0.5">
-                        <dt>{labels.subtotal}</dt>
-                        <dd className="text-right tabular-nums">{formatAmount(quotation.qt_subtotal, decimals)}</dd>
-                        {parseHundredths(quotation.qt_discount_amount, "ส่วนลด") > 0n && (
+                        {/* ยอดที่เท่ารวมทั้งสิ้นไม่พิมพ์ซ้ำ: รวมเป็นเงิน (มีส่วนลด/VAT ตามมา) · หลังหักส่วนลด (มี VAT ตามมา) */}
+                        {(hasDiscount || hasVatLine) && (
+                            <>
+                                <dt>{labels.subtotal}</dt>
+                                <dd className="text-right tabular-nums">
+                                    {formatAmount(quotation.qt_subtotal, decimals)}
+                                </dd>
+                            </>
+                        )}
+                        {hasDiscount && (
                             <>
                                 <dt>{labels.billDiscount}</dt>
                                 <dd className="text-right tabular-nums">
                                     {formatAmount(quotation.qt_discount_amount, decimals)}
                                 </dd>
+                            </>
+                        )}
+                        {hasDiscount && hasVatLine && (
+                            <>
                                 <dt>{labels.afterDiscount}</dt>
                                 <dd className="text-right tabular-nums">
                                     {formatAmount(quotation.qt_after_discount, decimals)}
                                 </dd>
                             </>
                         )}
-                        {(hasVat || isVatZero) && (
+                        {hasVatLine && (
                             <>
                                 <dt>{isVatZero ? labels.vatZero : `${labels.vat} ${quotation.qt_vat_rate}%`}</dt>
                                 <dd className="text-right tabular-nums">

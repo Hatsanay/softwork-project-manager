@@ -52,3 +52,129 @@ test("ค่าแรง = ต้นทุนเดือน × ชั่วโ�
     assert.equal(laborCostOf(3_000_000n, 100n, 17_600n), 17_045n, "30,000 × 1/176 = 170.4545… → 170.45");
     assert.equal(laborCostOf(3_000_000n, 800n, 0n), 0n);
 });
+
+// ─── รอบเงินเดือน (ขั้น 4-4) ──────────────────────────────────────────────────────────────────
+
+const {
+    daysInMonth,
+    prorateByDays,
+    unpaidLeaveDeductionOf,
+    incomeTaxOf,
+    annualNetIncomeOf,
+    monthlyWithholdingOf,
+} = require("../src/shared/payroll-math.mjs");
+
+const BRACKETS_2026 = [
+    { from: "0.00", rate: "0.00" },
+    { from: "150000.00", rate: "5.00" },
+    { from: "300000.00", rate: "10.00" },
+    { from: "500000.00", rate: "15.00" },
+    { from: "750000.00", rate: "20.00" },
+    { from: "1000000.00", rate: "25.00" },
+    { from: "2000000.00", rate: "30.00" },
+    { from: "5000000.00", rate: "35.00" },
+];
+const TAX_YEAR = { expenseRate: "50.00", expenseCap: "100000.00" };
+const PERSONAL_ALLOWANCE = 6_000_000n;
+const baht = (amount) => BigInt(Math.round(amount * 100));
+
+test("สัดส่วนวัน: เข้างานกลางเดือน · ขึ้นเงินเดือนกลางเดือน · ทั้งเดือนได้เต็ม", () => {
+    assert.equal(daysInMonth("2026-02"), 28);
+    assert.equal(daysInMonth("2028-02"), 29);
+    assert.equal(prorateByDays([{ amount: baht(30000), days: 31 }], 31), baht(30000), "ทั้งเดือน = เต็ม");
+    assert.equal(
+        prorateByDays([{ amount: baht(31000), days: 16 }], 31),
+        baht(16000),
+        "เข้างาน 16 ต.ค.: 31,000 × 16/31",
+    );
+    assert.equal(
+        prorateByDays(
+            [
+                { amount: baht(30000), days: 14 },
+                { amount: baht(36000), days: 16 },
+            ],
+            30,
+        ),
+        baht(33200),
+        "ขึ้นเงินเดือนวันที่ 15: (30,000×14 + 36,000×16) ÷ 30",
+    );
+});
+
+test("หักลาไม่รับค่าจ้าง: ÷30 หรือ ÷วันทำงาน · ครึ่งวัน", () => {
+    const days = [
+        { salary: baht(30000), dayUnits: 100n },
+        { salary: baht(30000), dayUnits: 50n },
+    ];
+    assert.equal(unpaidLeaveDeductionOf(days, 30), baht(1500), "1.5 วัน × 1,000");
+    assert.equal(unpaidLeaveDeductionOf(days, 22), 204_545n, "30,000 × 1.5 ÷ 22 = 2,045.45");
+    assert.equal(unpaidLeaveDeductionOf([], 30), 0n);
+});
+
+test("ภาษีขั้นบันได: ไม่ถึง 150,000 ไม่เสีย · คิดเป็นขั้น", () => {
+    assert.equal(incomeTaxOf(baht(150000), BRACKETS_2026), 0n);
+    assert.equal(incomeTaxOf(baht(429500), BRACKETS_2026), baht(20450), "7,500 + 12,950");
+    assert.equal(
+        incomeTaxOf(baht(1200000), BRACKETS_2026),
+        baht(165000),
+        "7,500 + 20,000 + 37,500 + 50,000 + 50,000 (ส่วนเกิน 1 ล้าน 25%)",
+    );
+    assert.equal(
+        annualNetIncomeOf({
+            annualIncome: baht(600000),
+            ...TAX_YEAR,
+            allowances: PERSONAL_ALLOWANCE,
+            ssoAnnual: baht(10500),
+        }),
+        baht(429500),
+        "หักค่าใช้จ่ายเต็มเพดาน 100,000",
+    );
+});
+
+// จำลองทั้งปีแบบที่รอบเงินเดือนคิด: ประมาณการทั้งปีจากเดือนนี้ → หักเดือนนี้ = ที่ค้าง ÷ เดือนที่เหลือ · ธันวาคม true-up
+function simulateYear(monthlySalaries) {
+    let incomeBefore = 0n;
+    let ssoBefore = 0n;
+    let withheldBefore = 0n;
+    const withheld = [];
+    monthlySalaries.forEach((salary, index) => {
+        const remainingMonths = 12 - index;
+        const sso = salary === 0n ? 0n : 87_500n;
+        const annualIncome = incomeBefore + salary * BigInt(remainingMonths);
+        const ssoAnnual = ssoBefore + sso * BigInt(remainingMonths);
+        const net = annualNetIncomeOf({ annualIncome, ...TAX_YEAR, allowances: PERSONAL_ALLOWANCE, ssoAnnual });
+        const tax = monthlyWithholdingOf({
+            annualTax: incomeTaxOf(net, BRACKETS_2026),
+            withheldBefore,
+            remainingMonths,
+        });
+        withheld.push(tax);
+        incomeBefore += salary;
+        ssoBefore += sso;
+        withheldBefore += tax;
+    });
+    const actualNet = annualNetIncomeOf({
+        annualIncome: incomeBefore,
+        ...TAX_YEAR,
+        allowances: PERSONAL_ALLOWANCE,
+        ssoAnnual: ssoBefore,
+    });
+    return { withheld, total: withheldBefore, actualTax: incomeTaxOf(actualNet, BRACKETS_2026) };
+}
+
+test("ภาษีทั้งปี 12 เดือน: เงินเดือนคงที่ · ขึ้นเงินเดือนกลางปี · เข้างานกลางปี — ยอดหักรวมเท่าภาษีจริงทั้งปีพอดี (R-H5)", () => {
+    const flat = simulateYear(Array(12).fill(baht(50000)));
+    assert.equal(flat.total, baht(20450));
+    assert.equal(flat.total, flat.actualTax);
+    const firstMonth = flat.withheld[0];
+    assert.ok(
+        flat.withheld.every((tax) => tax - firstMonth <= 2n && firstMonth - tax <= 2n),
+        "ทุกเดือนต่างกันไม่เกิน 2 สตางค์ (เศษจากการปัด)",
+    );
+
+    const raised = simulateYear([...Array(6).fill(baht(50000)), ...Array(6).fill(baht(70000))]);
+    assert.equal(raised.total, raised.actualTax, "ขึ้นเงินเดือน ก.ค.");
+
+    const joined = simulateYear([...Array(4).fill(0n), baht(15000), ...Array(7).fill(baht(40000))]);
+    assert.equal(joined.total, joined.actualTax, "เข้างาน พ.ค. (เดือนแรกได้ครึ่งเดือน)");
+    assert.ok(joined.withheld.every((tax) => tax >= 0n));
+});

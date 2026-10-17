@@ -281,6 +281,17 @@ async function deleteEmployee(conn, employeeId) {
             `ลบพนักงานนี้ไม่ได้ เพราะมีลงเวลาแล้ว ${weekCount} สัปดาห์ — ใช้ "ตั้งพ้นสภาพ" แทน (ประวัติยังอยู่ครบ)`,
         );
     }
+    const [[{ payrollCount }]] = await conn.query(
+        "SELECT COUNT(*) AS payrollCount FROM tb_payroll_items WHERE pri_employee_id = ?",
+        [employeeId],
+    );
+    if (Number(payrollCount) > 0) {
+        throw new AppError(
+            409,
+            "EMPLOYEE_HAS_HISTORY",
+            `ลบพนักงานนี้ไม่ได้ เพราะอยู่ในรอบเงินเดือนแล้ว ${payrollCount} รอบ — ใช้ "ตั้งพ้นสภาพ" แทน (ประวัติยังอยู่ครบ)`,
+        );
+    }
     const [[{ leaveCount }]] = await conn.query(
         "SELECT COUNT(*) AS leaveCount FROM tb_leave_requests WHERE lr_employee_id = ?",
         [employeeId],

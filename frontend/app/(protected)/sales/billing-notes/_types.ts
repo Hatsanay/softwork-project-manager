@@ -99,6 +99,8 @@ export type BillingNoteDetail = {
     billing_note: BillingNote;
     invoices: BillingNoteInvoice[];
     withholding_total: string;
+    // ยอดรวม − หัก ณ ที่จ่าย (ประมาณ) ตามสัดส่วนยอดที่วางบิล
+    net_payable: string;
     currency: CurrencyInfo;
     actions: BillingNoteActions;
     readiness: { key: string; ok: boolean; message: string }[];

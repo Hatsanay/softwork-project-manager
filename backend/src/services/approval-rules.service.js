@@ -23,7 +23,7 @@ async function findRoleChoices(conn) {
  * กติกาของเอกสารประเภทหนึ่ง พร้อมผู้ใช้ที่อนุมัติได้ในแต่ละชั้น และคำเตือน
  * ผู้อนุมัติได้ = ผู้ใช้ที่เปิดใช้งาน role อยู่ในชั้นนั้น และ role มีสิทธิ์อนุมัติของเอกสารประเภทนั้น (APPROVAL_DOCUMENTS)
  * @param {import("mysql2/promise").Pool | import("mysql2/promise").PoolConnection} conn
- * @param {"QT" | "IV" | "EX" | "EC"} documentType
+ * @param {"QT" | "IV" | "EX" | "EC" | "PR"} documentType
  */
 async function findApprovalRules(conn, documentType) {
     const document = APPROVAL_DOCUMENTS[documentType];
@@ -76,6 +76,7 @@ const PERMISSION_LABELS = {
     approveQuotation: "อนุมัติใบเสนอราคา",
     approveInvoice: "อนุมัติใบแจ้งหนี้",
     approveExpense: "อนุมัติค่าใช้จ่าย",
+    approvePayroll: "อนุมัติรอบเงินเดือน",
 };
 
 /**

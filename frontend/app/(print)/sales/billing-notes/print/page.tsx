@@ -85,6 +85,8 @@ export default function BillingNotePrintPage() {
         company.cs_address_th;
     const clientName = client.client_company || client.client_name;
     const hasWithholding = parseHundredths(detail.withholding_total, "หัก ณ ที่จ่าย") > 0n;
+    // ใบที่รับเงินบางส่วนก่อนวางบิล: ยอดวางบิล ≠ ยอดใบแจ้งหนี้ → แสดงทั้งสองคอลัมน์ (ใบปกติแสดงคอลัมน์เดียว ไม่ซ้ำ)
+    const hasPartialInvoice = detail.invoices.some((invoice) => invoice.bni_amount !== invoice.inv_total);
 
     return (
         <div className="min-h-screen bg-gray-100 py-6 print:bg-white print:py-0">
@@ -199,7 +201,10 @@ export default function BillingNotePrintPage() {
                             <th className="py-1.5 font-medium">{labels.invoiceNumber}</th>
                             <th className="w-28 py-1.5 font-medium">{labels.invoiceDate}</th>
                             <th className="w-28 py-1.5 font-medium">{labels.dueDate}</th>
-                            <th className="w-32 py-1.5 pr-1 text-right font-medium">{labels.amount}</th>
+                            {hasPartialInvoice && (
+                                <th className="w-32 py-1.5 text-right font-medium">{labels.invoiceTotal}</th>
+                            )}
+                            <th className="w-32 py-1.5 pr-1 text-right font-medium">{labels.billedAmount}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -216,6 +221,11 @@ export default function BillingNotePrintPage() {
                                 <td className="py-1">
                                     {invoice.inv_due_date ? formatDocumentDate(invoice.inv_due_date, language) : ""}
                                 </td>
+                                {hasPartialInvoice && (
+                                    <td className="py-1 text-right tabular-nums">
+                                        {formatAmount(invoice.inv_total, decimals)}
+                                    </td>
+                                )}
                                 <td className="py-1 pr-1 text-right tabular-nums">
                                     {formatAmount(invoice.bni_amount, decimals)}
                                 </td>
@@ -234,7 +244,16 @@ export default function BillingNotePrintPage() {
                             {formatAmount(note.bn_total, decimals)} {currency.cur_code}
                         </dd>
                         {hasWithholding && (
-                            <dt className="col-span-2 text-[8.5pt] text-gray-600">{labels.withholdingNote}</dt>
+                            <>
+                                <dt className="text-gray-600">{labels.withholdingEstimate}</dt>
+                                <dd className="text-right tabular-nums text-gray-600">
+                                    {formatAmount(detail.withholding_total, decimals)}
+                                </dd>
+                                <dt className="font-medium">{labels.netPayable}</dt>
+                                <dd className="text-right font-medium tabular-nums">
+                                    {formatAmount(detail.net_payable, decimals)} {currency.cur_code}
+                                </dd>
+                            </>
                         )}
                     </dl>
                 </section>

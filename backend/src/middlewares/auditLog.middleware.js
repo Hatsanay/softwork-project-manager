@@ -23,7 +23,7 @@ const { PROJECT_PERMISSION_KEYS } = require("../utils/projectPermissions");
 const SECRET_KEYS = /password|token|otp|secret|authorization|cookie|code_hash/i;
 // ค่าเงินเดือน/รายการเงินรายคน — ไม่เก็บตัวเลขใน log (คนเปิดดู log ไม่ควรเห็นเงินเดือนของทุกคน — แบบเฟส 4 R-H1)
 // diff ยังบอกว่าช่องนี้ "เปลี่ยน" และใครเปลี่ยน · ตัวเลขจริงอยู่ในประวัติค่าจ้างของพนักงาน (เห็นเฉพาะสิทธิ์จัดการพนักงาน)
-const PAYROLL_PRIVATE_KEYS = /salary|^eri_amount$/i;
+const PAYROLL_PRIVATE_KEYS = /salary|^eri_amount$|^pil_amount$|^etp_/i;
 const MAX_PAYLOAD_CHARS = 8000;
 const MASK = "[ปิดบัง]";
 
@@ -208,10 +208,21 @@ const ENTITIES = [
     { re: /^\/leave\/requests\/([^/]+)\/cancel-approved$/, type: "leave", table: "tb_leave_requests", pk: "lr_id", id: "1", label: { POST: "ยกเลิกลาที่อนุมัติแล้ว" } },
     { re: /^\/leave\/requests\/([^/]+)\/attachments(\/[^/]+)?$/, type: "leave", id: "1", label: { POST: "แนบไฟล์คำขอลา", DELETE: "ลบไฟล์แนบคำขอลา" } },
     { re: /^\/leave\/requests\/([^/]+)$/, type: "leave", table: "tb_leave_requests", pk: "lr_id", id: "1", label: { PUT: "แก้คำขอลา", DELETE: "ลบร่างคำขอลา" } },
+    // รอบเงินเดือน เฟส 4 ขั้น 4-4 — ยอดเงินในรายการ (pil_amount) และค่าลดหย่อน (etp_*) ถูกปิดบัง
+    { re: /^\/payroll\/runs$/, type: "payroll", table: "tb_payroll_runs", pk: "pr_id", id: "response:pr_id", label: { POST: "สร้างรอบเงินเดือน" } },
+    { re: /^\/payroll\/runs\/([^/]+)\/recalculate$/, type: "payroll", id: "1", label: { POST: "คิดรอบเงินเดือนใหม่" } },
+    { re: /^\/payroll\/runs\/([^/]+)\/items\/[^/]+\/lines(\/[^/]+)?$/, type: "payroll", id: "1", label: { POST: "เพิ่มรายการเงินเดือนรายคน", DELETE: "ลบรายการเงินเดือนรายคน" } },
+    { re: /^\/payroll\/runs\/([^/]+)\/submit$/, type: "payroll", id: "1", label: { POST: "ส่งอนุมัติรอบเงินเดือน" } },
+    { re: /^\/payroll\/runs\/([^/]+)\/approve$/, type: "payroll", id: "1", label: { POST: "อนุมัติรอบเงินเดือน" } },
+    { re: /^\/payroll\/runs\/([^/]+)\/return$/, type: "payroll", id: "1", label: { POST: "ตีกลับรอบเงินเดือน" } },
+    { re: /^\/payroll\/runs\/([^/]+)\/paid$/, type: "payroll", id: "1", label: { POST: "บันทึกจ่ายเงินเดือน" } },
+    { re: /^\/payroll\/runs\/([^/]+)\/cancel$/, type: "payroll", id: "1", label: { POST: "ยกเลิกรอบเงินเดือน" } },
+    { re: /^\/payroll\/runs\/([^/]+)$/, type: "payroll", id: "1", label: { PUT: "แก้วันจ่ายเงินเดือน" } },
+    { re: /^\/employees\/([^/]+)\/tax-profiles\/[^/]+$/, type: "employee", id: "1", label: { PUT: "บันทึกค่าลดหย่อนรายปี" } },
 ];
 
 // GET ที่บันทึกด้วย (เปิดดูข้อมูลสำคัญ) — นอกนั้น GET ไม่บันทึก ยกเว้นถูกปฏิเสธ/error (ปริมาณมหาศาลและไม่เปลี่ยนข้อมูล)
-const SENSITIVE_READS = [/^\/employees\/(?!form-options$)[^/]+$/, /^\/reports\/accounting-export$/, /^\/receipts\/[^/]+\/wht-certificate\/file$/, /^\/expenses\/[^/]+\/attachments\/[^/]+$/, /^\/claims\/[^/]+\/attachments\/[^/]+$/, /^\/wht-certificates\/[^/]+$/, /^\/reports\/withholding$/, /^\/users$/, /^\/users\/(?!me$|for-select$)[^/]+$/, /^\/(logs|audit-logs|error-logs)(\/[^/]+)?$/, /^\/share\/[^/]+$/];
+const SENSITIVE_READS = [/^\/payroll\/runs\/[^/]+$/, /^\/payroll\/payslips\/[^/]+$/, /^\/employees\/[^/]+\/tax-profiles\/[^/]+$/, /^\/employees\/(?!form-options$)[^/]+$/, /^\/reports\/accounting-export$/, /^\/receipts\/[^/]+\/wht-certificate\/file$/, /^\/expenses\/[^/]+\/attachments\/[^/]+$/, /^\/claims\/[^/]+\/attachments\/[^/]+$/, /^\/wht-certificates\/[^/]+$/, /^\/reports\/withholding$/, /^\/users$/, /^\/users\/(?!me$|for-select$)[^/]+$/, /^\/(logs|audit-logs|error-logs)(\/[^/]+)?$/, /^\/share\/[^/]+$/];
 // ไม่บันทึกใน audit: login/logout มีตาราง tb_login_logs ของตัวเอง (และ body login มีรหัสผ่าน)
 const SKIP = [/^\/auth\/(login|logout)$/, /^\/auth\/verifyPermission$/];
 

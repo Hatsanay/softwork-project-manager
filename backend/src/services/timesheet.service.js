@@ -15,6 +15,7 @@ const { addDays, weekDates, weekdayIndex } = require("../shared/payroll-math.mjs
 const { formatHundredths } = require("../shared/money.mjs");
 const { findLinkedEmployee } = require("./linked-employee.service");
 const leaveService = require("./leave.service");
+const { assertPeriodsOpen } = require("./payroll.service");
 
 const EDITABLE_STATUSES = ["draft", "returned"];
 const MANAGE_MEMBERS_BIT = PROJECT_BIT_INDEX.manageMembers;
@@ -178,6 +179,7 @@ async function saveMyWeek(conn, userId, payload) {
     const employee = requireEmployee(await findLinkedEmployee(conn, userId, { forUpdate: true }));
     const week = await findWeek(conn, employee.emp_id, payload.week_start, { forUpdate: true });
     assertEditable(week, payload.tsw_version);
+    await assertPeriodsOpen(conn, weekDates(payload.week_start), "ลงเวลา");
 
     const previousEntries = week ? await findEntries(conn, week.tsw_id) : [];
     await assertEntriesAllowed(conn, userId, employee, week, payload.entries, previousEntries);
@@ -217,6 +219,7 @@ async function submitMyWeek(conn, userId, weekStart, version) {
     const week = await findWeek(conn, employee.emp_id, weekStart, { forUpdate: true });
     if (!week) throw new AppError(409, "TIMESHEET_EMPTY", "ยังไม่ได้ลงเวลาในสัปดาห์นี้ — บันทึกก่อนแล้วค่อยส่ง");
     assertEditable(week, version);
+    await assertPeriodsOpen(conn, weekDates(weekStart), "ลงเวลา");
     const [[{ entryCount }]] = await conn.query(
         "SELECT COUNT(*) AS entryCount FROM tb_timesheet_entries WHERE tse_week_id = ?",
         [week.tsw_id],
@@ -497,7 +500,8 @@ async function returnWeek(conn, user, weekId, version, reason) {
 
 async function lockSubmittedWeek(conn, weekId, version) {
     const [[week]] = await conn.query(
-        "SELECT tsw_id, tsw_employee_id, tsw_status, tsw_version FROM tb_timesheet_weeks WHERE tsw_id = ? FOR UPDATE",
+        `SELECT tsw_id, tsw_employee_id, tsw_status, tsw_version, DATE_FORMAT(tsw_week_start, '%Y-%m-%d') AS tsw_week_start
+         FROM tb_timesheet_weeks WHERE tsw_id = ? FOR UPDATE`,
         [weekId],
     );
     if (!week) throw new AppError(404, "TIMESHEET_NOT_FOUND", "ไม่พบสัปดาห์นี้ กรุณาโหลดหน้าใหม่");
@@ -505,6 +509,7 @@ async function lockSubmittedWeek(conn, weekId, version) {
     if (week.tsw_status !== "submitted") {
         throw new AppError(409, "TIMESHEET_NOT_SUBMITTED", "สัปดาห์นี้ไม่ได้รออนุมัติแล้ว กรุณาโหลดหน้าใหม่");
     }
+    await assertPeriodsOpen(conn, weekDates(week.tsw_week_start), "ลงเวลา");
     return week;
 }
 

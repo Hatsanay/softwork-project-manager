@@ -1,5 +1,5 @@
 // ข้อความกำกับฝั่งบุคคล (เฟส 4) — แบบระบบ docs/plans/2026-10-17-people-payroll-4.md หัวข้อ 5 · ห้าม tooltip (ui-guidance)
-import type { EmploymentStatus, HalfDay, LeaveStatus, TimesheetStatus } from "./_types";
+import type { EmploymentStatus, HalfDay, LeaveStatus, PayrollStatus, TimesheetStatus } from "./_types";
 import type { PillTone } from "@/components/ui/status-pill";
 
 export const EMPLOYMENT_STATUS: Record<EmploymentStatus, { label: string; tone: PillTone }> = {
@@ -114,4 +114,29 @@ export const LEAVE_MESSAGES = {
     calendarDescription: "ใครลาวันไหน (อนุมัติแล้วและรออนุมัติ) — ไม่แสดงประเภทลาและเหตุผล",
     cancelApprovedHint: "ลาที่อนุมัติแล้วและยังไม่ถึงวันยกเลิกเองได้ · ถึงวันแล้วให้ผู้อนุมัติยกเลิกให้",
     balanceHint: "คงเหลือ = โควตาปีนี้ + ยกยอดจากปีก่อน − ที่อนุมัติแล้ว (ที่รออนุมัติยังไม่หัก)",
+};
+
+// ─── รอบเงินเดือน (ขั้น 4-4) ──────────────────────────────────────────────────────────────────
+
+export const PAYROLL_STATUS: Record<PayrollStatus, { label: string; tone: PillTone }> = {
+    draft: { label: "ร่าง", tone: "neutral" },
+    pending_approval: { label: "รออนุมัติ", tone: "wait" },
+    approved: { label: "อนุมัติแล้ว รอจ่าย", tone: "info" },
+    paid: { label: "จ่ายแล้ว", tone: "success" },
+    cancelled: { label: "ยกเลิก", tone: "neutral" },
+};
+
+export const PAYROLL_MESSAGES = {
+    listDescription:
+        "เดือนละหนึ่งรอบ · สร้างรอบถัดไปได้เมื่อรอบก่อนอนุมัติแล้ว (ภาษีสะสมต้องต่อเนื่อง) · ระบบคิดจากค่าจ้าง ลา รายการประจำ และอัตราล่าสุด",
+    recalculate:
+        'ระบบคิดจากค่าจ้าง ลา และอัตราล่าสุดทุกครั้งที่กด "คิดใหม่" · รายการที่กรอกเองยังอยู่ · อนุมัติแล้วแก้ไม่ได้ ผิดให้ปรับในรอบถัดไป',
+    tax: "ภาษีคิดแบบประมาณการทั้งปีหารเดือนที่เหลือ ตามค่าลดหย่อนที่แจ้ง · ธันวาคม (หรือเดือนที่ออก) ปรับให้ตรงทั้งปี · รายรับครั้งเดียว (โบนัส) ไม่ถูกคูณทั้งปี",
+    approvedLock: "อนุมัติแล้ว: ตัวเลขล็อก · ลงเวลาและการลาของเดือนนี้แก้ไม่ได้ · ค่าแรงจริงเข้าหน้าโปรเจกต์แล้ว",
+    paidNote: "จ่ายแล้ว: พนักงานเปิดดูสลิปของตัวเองได้ · ยกเลิกไม่ได้ (ปรับในรอบถัดไป)",
+    payslip: "เห็นเฉพาะของคุณ (เปิดให้ดูหลังบันทึกจ่ายแล้ว) · ฝ่ายบุคคลเปิดดูได้และทุกการเปิดถูกบันทึก",
+    accountantPending:
+        "ตัวเลขประกันสังคม/ภาษี/การหักลาไม่รับค่าจ้าง ใช้ค่าเริ่มต้นที่รอนักบัญชียืนยัน (Y1–Y4) — ตรวจกับนักบัญชีก่อนจ่ายเงินเดือนจริง",
+    taxProfile:
+        "ค่าลดหย่อนตามที่พนักงานแจ้ง (ล.ย.01) เป็นบาทต่อปี · ยอดยกมา = เงินได้/ภาษี/ประกันสังคมของปีนี้ก่อนเริ่มใช้ระบบ หรือจากที่ทำงานเดิม · แก้แล้วมีผลในรอบเงินเดือนถัดไป",
 };

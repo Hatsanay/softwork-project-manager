@@ -27,13 +27,14 @@ export type LevelForm = {
     role_ids: string[];
 };
 
-type DocumentType = "QT" | "IV" | "EX" | "EC";
+type DocumentType = "QT" | "IV" | "EX" | "EC" | "PR";
 
 type ApprovalTabProps = {
     approval: ApprovalRules;
     invoiceApproval: ApprovalRules;
     expenseApproval: ApprovalRules;
     claimApproval: ApprovalRules;
+    payrollApproval: ApprovalRules;
     roles: RoleChoice[];
     canEdit: boolean;
     onSaved: () => Promise<void>;
@@ -64,6 +65,7 @@ export default function ApprovalTab({
     invoiceApproval,
     expenseApproval,
     claimApproval,
+    payrollApproval,
     roles,
     canEdit,
     onSaved,
@@ -75,6 +77,7 @@ export default function ApprovalTab({
         IV: invoiceApproval,
         EX: expenseApproval,
         EC: claimApproval,
+        PR: payrollApproval,
     };
 
     return (
@@ -89,6 +92,7 @@ export default function ApprovalTab({
                         { value: "IV", label: messages.documentTypes.IV },
                         { value: "EX", label: messages.documentTypes.EX },
                         { value: "EC", label: messages.documentTypes.EC },
+                        { value: "PR", label: messages.documentTypes.PR },
                     ]}
                 />
                 <FieldHint>{messages.documentTypeHint}</FieldHint>
@@ -114,6 +118,7 @@ function ApprovalRulesEditor({ documentType, approval, roles, canEdit, onSaved }
         IV: messages.invoiceDescription,
         EX: messages.expenseDescription,
         EC: messages.claimDescription,
+        PR: messages.payrollDescription,
     };
     const [levels, setLevels] = useState<LevelForm[]>(() => toLevelForms(approval));
     const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});

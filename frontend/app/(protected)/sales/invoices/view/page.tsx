@@ -729,6 +729,21 @@ function PaymentCard({ detail }: { detail: InvoiceDetail }) {
                             {formatAmount(invoice.outstanding_amount, decimals)} {currency.cur_code}
                         </span>
                     </div>
+                    {/* มีหัก ณ ที่จ่าย: ยอดค้างที่ลูกค้าโอนจริง = ค้างชำระ − หัก ณ ที่จ่ายของยอดค้าง (= ยอดในคิวอาร์ · หน้าพิมพ์) */}
+                    {parseHundredths(payment.outstanding_withholding, "หัก ณ ที่จ่าย") > 0n && (
+                        <>
+                            <TotalRow
+                                label={`หัก ณ ที่จ่าย ${percentLabel(invoice.inv_wht_rate)}% ของยอดค้าง (ประมาณ)`}
+                                value={formatAmount(payment.outstanding_withholding, decimals)}
+                            />
+                            <div className="flex justify-between gap-3 font-medium text-gray-900">
+                                <span>ลูกค้าโอนสุทธิ</span>
+                                <span className="tabular-nums">
+                                    {formatAmount(payment.outstanding_net, decimals)} {currency.cur_code}
+                                </span>
+                            </div>
+                        </>
+                    )}
                     {receipts.length > 0 && (
                         <ul className="grid gap-1 border-t border-gray-200 pt-1.5 text-xs">
                             {receipts.map((row) => (

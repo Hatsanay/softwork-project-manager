@@ -170,6 +170,8 @@ export const APPROVAL_DOCUMENTS = {
     IV: { name: "ใบแจ้งหนี้ที่สร้างเอง", permission: "approveInvoice", allowsThreshold: false },
     EX: { name: "ค่าใช้จ่าย / บิลผู้ขาย", permission: "approveExpense", allowsThreshold: true },
     EC: { name: "ใบเบิกเงินพนักงาน", permission: "approveExpense", allowsThreshold: true },
+    // รอบเงินเดือน (เฟส 4 ขั้น 4-4) — ทุกรอบต้องผ่านชั้น 1 (ไม่มีวงเงินอนุมัติอัตโนมัติ) · ยอดที่ใช้เทียบชั้น = ยอดจ่ายสุทธิรวม
+    PR: { name: "รอบเงินเดือน", permission: "approvePayroll", allowsThreshold: false },
 };
 export const APPROVAL_DOCUMENT_TYPES = Object.keys(APPROVAL_DOCUMENTS);
 

@@ -55,6 +55,8 @@ export default function PaymentPrintPage() {
     if (!detail) return <p className="p-8 text-sm text-gray-500">กำลังเตรียมหน้าพิมพ์...</p>;
 
     const { payment, allocations, currency, certificate } = detail;
+    // ยอดรวมรายการแสดงเฉพาะเมื่อมีรายการที่จ่ายไม่เต็ม (จ่ายเต็มทุกรายการ = ยอดเดียวกับจ่ายครั้งนี้ ไม่พิมพ์ซ้ำ)
+    const showExpenseTotal = allocations.some((row) => row.pva_amount !== row.ex_total);
     const company = payment.pv_company_snapshot;
     const payee = payment.pv_payee_snapshot;
     const decimals = currency.cur_decimals;
@@ -136,7 +138,7 @@ export default function PaymentPrintPage() {
                         <tr className="border-y border-gray-400 bg-gray-50 text-left">
                             <th className="w-12 py-1.5 pl-1 font-medium">ลำดับ</th>
                             <th className="py-1.5 font-medium">รายการ</th>
-                            <th className="w-32 py-1.5 text-right font-medium">ยอดรวมรายการ</th>
+                            {showExpenseTotal && <th className="w-32 py-1.5 text-right font-medium">ยอดรวมรายการ</th>}
                             <th className="w-32 py-1.5 pr-1 text-right font-medium">จ่ายครั้งนี้</th>
                         </tr>
                     </thead>
@@ -151,7 +153,11 @@ export default function PaymentPrintPage() {
                                     </p>
                                     <p className="text-[8.5pt] text-gray-600">{row.ex_title}</p>
                                 </td>
-                                <td className="py-1 text-right tabular-nums">{formatAmount(row.ex_total, decimals)}</td>
+                                {showExpenseTotal && (
+                                    <td className="py-1 text-right tabular-nums">
+                                        {formatAmount(row.ex_total, decimals)}
+                                    </td>
+                                )}
                                 <td className="py-1 pr-1 text-right tabular-nums">
                                     {formatAmount(row.pva_amount, decimals)}
                                 </td>
@@ -162,12 +168,12 @@ export default function PaymentPrintPage() {
 
                 <section className="print-row mt-3 grid grid-cols-[1fr_auto] gap-6 border-t border-gray-400 pt-2 text-[9.5pt]">
                     <p className="self-start rounded bg-gray-50 px-2 py-1">
-                        ( {amountInWords(payment.pv_net_paid, currency, "th")} )
+                        ( {amountInWords(payment.pv_allocated_total, currency, "th")} )
                     </p>
                     <dl className="grid min-w-[70mm] grid-cols-[1fr_auto] gap-x-4 gap-y-0.5">
-                        <dt>ยอดตัดหนี้รวม</dt>
-                        <dd className="text-right tabular-nums">
-                            {formatAmount(payment.pv_allocated_total, decimals)}
+                        <dt className="font-medium">ยอดตัดหนี้รวม</dt>
+                        <dd className="text-right font-medium tabular-nums">
+                            {formatAmount(payment.pv_allocated_total, decimals)} {currency.cur_code}
                         </dd>
                         {hasWithholding && (
                             <>

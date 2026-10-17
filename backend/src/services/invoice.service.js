@@ -1013,10 +1013,16 @@ async function buildPayment(conn, invoice) {
         invoice.inv_currency === BASE_CURRENCY &&
         normalizePromptPayId(promptPayId) !== null &&
         qrAmount > 0n;
+    const outstandingNet = qrAmount > 0n ? qrAmount : 0n;
+    const outstandingOrZero = outstanding > 0n ? outstanding : 0n;
     return {
         bank_account: bankAccount,
         promptpay_id: promptPayId,
         net_payable: toDecimalText(netPayable),
+        // รับเงินบางส่วนแล้ว — หน้าพิมพ์แสดงยอดคงค้าง · หัก ณ ที่จ่ายส่วนที่เหลือ · คงค้างสุทธิ (= ยอดในคิวอาร์)
+        outstanding: toDecimalText(outstandingOrZero),
+        outstanding_withholding: toDecimalText(outstandingOrZero - outstandingNet),
+        outstanding_net: toDecimalText(outstandingNet),
         qr_amount: toDecimalText(qrAmount > 0n ? qrAmount : 0n),
         qr_payload: canUseQr ? buildPromptPayPayload({ promptPayId, amount: qrAmount }) : null,
     };

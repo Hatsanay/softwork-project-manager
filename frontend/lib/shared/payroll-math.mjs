@@ -137,3 +137,91 @@ export function daysBetween(fromDate, toDate) {
     };
     return Math.round((toTime(toDate) - toTime(fromDate)) / 86_400_000);
 }
+
+// ─── รอบเงินเดือน (ขั้น 4-4) — แบบระบบหัวข้อ 4.3 · ตัวเลขทุกตัวรอนักบัญชียืนยัน (Y1–Y4) ───────────────────────────
+
+const PERCENT_RATE_DIVISOR = 10_000n; // อัตรา % เก็บเป็น 1/100 (5.00% = 500n) และหาร 100 อีกชั้น
+
+/**
+ * จำนวนวันในเดือน
+ * @param {string} yearMonth "YYYY-MM"
+ */
+export function daysInMonth(yearMonth) {
+    const [year, month] = yearMonth.split("-").map(Number);
+    return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+/**
+ * ยอดตามสัดส่วนวัน (เข้า/ออกกลางเดือน · ขึ้นเงินเดือนกลางเดือน) = Σ (ยอดต่อเดือน × วัน) ÷ วันในเดือน — หารครั้งเดียว (Y4)
+ * @param {Array<{ amount: bigint, days: number }>} parts ยอดต่อเดือนของแต่ละช่วง + จำนวนวันปฏิทินของช่วง
+ * @param {number} totalDays วันในเดือน
+ * @returns {bigint} สตางค์
+ */
+export function prorateByDays(parts, totalDays) {
+    const numerator = parts.reduce((sum, part) => sum + part.amount * BigInt(part.days), 0n);
+    return divideRoundHalfUp(numerator, BigInt(totalDays));
+}
+
+/**
+ * หักลาไม่รับค่าจ้าง = Σ (เงินเดือน ณ วันที่ลา × หน่วยวัน) ÷ ตัวหาร (Y3: 30 หรือวันทำงานของเดือน)
+ * @param {Array<{ salary: bigint, dayUnits: bigint }>} leaveDays dayUnits หน่วย 1/100 วัน (เต็มวัน 100n · ครึ่งวัน 50n)
+ * @param {number} divisor
+ * @returns {bigint} สตางค์
+ */
+export function unpaidLeaveDeductionOf(leaveDays, divisor) {
+    if (divisor <= 0) return 0n;
+    const numerator = leaveDays.reduce((sum, day) => sum + day.salary * day.dayUnits, 0n);
+    return divideRoundHalfUp(numerator, BigInt(divisor) * 100n);
+}
+
+/**
+ * ภาษีเงินได้บุคคลธรรมดาขั้นบันไดจากเงินได้สุทธิทั้งปี — คิดเต็มแล้วปัดครั้งเดียว
+ * @param {bigint} netIncome สตางค์
+ * @param {Array<{ from: string, rate: string }>} brackets ขั้นแรกเริ่ม 0 · rate เป็น % เช่น "5.00"
+ * @returns {bigint} สตางค์
+ */
+export function incomeTaxOf(netIncome, brackets) {
+    if (netIncome <= 0n) return 0n;
+    const steps = brackets
+        .map((bracket) => ({
+            from: parseHundredths(bracket.from, "ขั้นภาษี"),
+            rate: parseHundredths(bracket.rate, "อัตราภาษี"),
+        }))
+        .sort((first, second) => (first.from < second.from ? -1 : 1));
+    let numerator = 0n;
+    steps.forEach((step, index) => {
+        if (netIncome <= step.from) return;
+        const upper = steps[index + 1]?.from ?? netIncome;
+        const top = netIncome < upper ? netIncome : upper;
+        numerator += (top - step.from) * step.rate;
+    });
+    return divideRoundHalfUp(numerator, PERCENT_RATE_DIVISOR);
+}
+
+/**
+ * เงินได้สุทธิทั้งปี = เงินได้ − ค่าใช้จ่าย (ร้อยละ ไม่เกินเพดาน) − ลดหย่อน − ประกันสังคมที่จ่าย (ไม่ติดลบ)
+ * @param {{ annualIncome: bigint, expenseRate: string, expenseCap: string, allowances: bigint, ssoAnnual: bigint }} input
+ * @returns {bigint}
+ */
+export function annualNetIncomeOf({ annualIncome, expenseRate, expenseCap, allowances, ssoAnnual }) {
+    const expense = divideRoundHalfUp(
+        annualIncome * parseHundredths(expenseRate, "อัตราหักค่าใช้จ่าย"),
+        PERCENT_RATE_DIVISOR,
+    );
+    const cap = parseHundredths(expenseCap, "เพดานหักค่าใช้จ่าย");
+    const net = annualIncome - (expense < cap ? expense : cap) - allowances - ssoAnnual;
+    return net > 0n ? net : 0n;
+}
+
+/**
+ * ภาษีหัก ณ ที่จ่ายเดือนนี้ (H9) = (ภาษีทั้งปี − ที่หักแล้ว) ÷ เดือนที่เหลือรวมเดือนนี้ · เดือนสุดท้าย = ส่วนที่เหลือทั้งหมด (true-up)
+ * ติดลบ = 0 (หักเกินไปแล้ว — คืนตอนยื่นภาษีเอง)
+ * @param {{ annualTax: bigint, withheldBefore: bigint, remainingMonths: number }} input remainingMonths ≥ 1
+ * @returns {bigint}
+ */
+export function monthlyWithholdingOf({ annualTax, withheldBefore, remainingMonths }) {
+    const outstanding = annualTax - withheldBefore;
+    if (outstanding <= 0n) return 0n;
+    if (remainingMonths <= 1) return outstanding;
+    return divideRoundHalfUp(outstanding, BigInt(remainingMonths));
+}

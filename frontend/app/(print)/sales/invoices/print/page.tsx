@@ -73,6 +73,9 @@ export default function InvoicePrintPage() {
 
     const { detail, company, client } = printData;
     const { invoice, currency, items, payment } = detail;
+    // ใบเสร็จที่ตัดใบนี้แล้ว (ไม่นับที่ยกเลิก) — ใบละบรรทัด ยอด = ยอดตัดหนี้ (รวมส่วนที่ลูกค้าหัก ณ ที่จ่าย)
+    const paidReceipts = detail.receipts.filter((receipt) => receipt.rc_status !== "cancelled");
+    const isFullyPaid = parseHundredths(payment.outstanding, "ยอดคงค้าง") === 0n;
     const language = invoice.inv_language;
     const labels = INVOICE_PRINT_LABELS[language];
     const decimals = currency.cur_decimals;
@@ -87,6 +90,8 @@ export default function InvoicePrintPage() {
     const clientName = client.client_company || client.client_name;
     const hasVat = parseHundredths(invoice.inv_vat_rate, "VAT") > 0n;
     const isVatZero = invoice.inv_vat_treatment === "zero";
+    const hasVatLine = hasVat || isVatZero;
+    const hasDiscount = parseHundredths(invoice.inv_discount_amount, "ส่วนลด") > 0n;
     const hasWithholding = parseHundredths(invoice.inv_wht_amount, "หัก ณ ที่จ่าย") > 0n;
     const account = payment.bank_account;
     // ร่าง/รออนุมัติไม่พิมพ์ QR — กันลูกค้าสแกนจ่ายจากเอกสารที่ยังไม่ออก (ไม่มีเลขที่)
@@ -317,21 +322,32 @@ export default function InvoicePrintPage() {
                         ( {amountInWords(invoice.inv_total, currency, language)} )
                     </p>
                     <dl className="grid min-w-[70mm] grid-cols-[1fr_auto] gap-x-4 gap-y-0.5">
-                        <dt>{labels.subtotal}</dt>
-                        <dd className="text-right tabular-nums">{formatAmount(invoice.inv_subtotal, decimals)}</dd>
-                        {parseHundredths(invoice.inv_discount_amount, "ส่วนลด") > 0n && (
+                        {/* ยอดที่เท่ารวมทั้งสิ้นไม่พิมพ์ซ้ำ: รวมเป็นเงิน (มีส่วนลด/VAT ตามมา) · หลังหักส่วนลด (มี VAT ตามมา) */}
+                        {(hasDiscount || hasVatLine) && (
+                            <>
+                                <dt>{labels.subtotal}</dt>
+                                <dd className="text-right tabular-nums">
+                                    {formatAmount(invoice.inv_subtotal, decimals)}
+                                </dd>
+                            </>
+                        )}
+                        {hasDiscount && (
                             <>
                                 <dt>{labels.billDiscount}</dt>
                                 <dd className="text-right tabular-nums">
                                     {formatAmount(invoice.inv_discount_amount, decimals)}
                                 </dd>
+                            </>
+                        )}
+                        {hasDiscount && hasVatLine && (
+                            <>
                                 <dt>{labels.afterDiscount}</dt>
                                 <dd className="text-right tabular-nums">
                                     {formatAmount(invoice.inv_after_discount, decimals)}
                                 </dd>
                             </>
                         )}
-                        {(hasVat || isVatZero) && (
+                        {hasVatLine && (
                             <>
                                 <dt>{isVatZero ? labels.vatZero : `${labels.vat} ${invoice.inv_vat_rate}%`}</dt>
                                 <dd className="text-right tabular-nums">
@@ -343,7 +359,7 @@ export default function InvoicePrintPage() {
                         <dd className="border-t border-gray-300 pt-1 text-right font-medium tabular-nums">
                             {formatAmount(invoice.inv_total, decimals)} {currency.cur_code}
                         </dd>
-                        {hasWithholding && (
+                        {hasWithholding && paidReceipts.length === 0 && (
                             <>
                                 <dt className="text-gray-600">
                                     {labels.withholding} {percentLabel(invoice.inv_wht_rate)}% {labels.withholdingNote}
@@ -354,6 +370,44 @@ export default function InvoicePrintPage() {
                                 <dt className="font-medium">{labels.netPayable}</dt>
                                 <dd className="text-right font-medium tabular-nums">
                                     {formatAmount(payment.net_payable, decimals)} {currency.cur_code}
+                                </dd>
+                            </>
+                        )}
+                        {paidReceipts.length > 0 && (
+                            <>
+                                {paidReceipts.map((receipt, index) => (
+                                    <Fragment key={receipt.rc_id}>
+                                        <dt
+                                            className={`text-gray-600 ${index === 0 ? "mt-1 border-t border-gray-300 pt-1" : ""}`}
+                                        >
+                                            {labels.receivedBy} {receipt.rc_number} ·{" "}
+                                            {formatDocumentDate(receipt.rc_receipt_date, language)}
+                                        </dt>
+                                        <dd
+                                            className={`text-right tabular-nums text-gray-600 ${index === 0 ? "mt-1 border-t border-gray-300 pt-1" : ""}`}
+                                        >
+                                            {formatAmount(receipt.rca_amount, decimals)}
+                                        </dd>
+                                    </Fragment>
+                                ))}
+                                <dt>{labels.outstanding}</dt>
+                                <dd className="text-right tabular-nums">
+                                    {formatAmount(payment.outstanding, decimals)}
+                                </dd>
+                                {hasWithholding && !isFullyPaid && (
+                                    <>
+                                        <dt className="text-gray-600">
+                                            {labels.withholding} {percentLabel(invoice.inv_wht_rate)}%{" "}
+                                            {labels.ofOutstanding}
+                                        </dt>
+                                        <dd className="text-right tabular-nums text-gray-600">
+                                            {formatAmount(payment.outstanding_withholding, decimals)}
+                                        </dd>
+                                    </>
+                                )}
+                                <dt className="font-medium">{isFullyPaid ? labels.fullyPaid : labels.netPayable}</dt>
+                                <dd className="text-right font-medium tabular-nums">
+                                    {formatAmount(payment.outstanding_net, decimals)} {currency.cur_code}
                                 </dd>
                             </>
                         )}

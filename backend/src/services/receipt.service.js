@@ -557,6 +557,7 @@ async function getReceiptDetail(conn, receiptId, actor) {
          ORDER BY a.rca_order`,
         [receiptId],
     );
+    const receivedUpToThis = await receivedUpToReceipt(conn, receipt, allocations);
     const currency = await quotationService.findCurrency(conn, receipt.rc_currency);
     const { rc_wht_file_path: whtFilePath, ...publicFields } = receipt;
     const isIssued = receipt.rc_status === "issued";
@@ -570,7 +571,14 @@ async function getReceiptDetail(conn, receiptId, actor) {
             rc_company_snapshot: quotationService.parseJson(receipt.rc_company_snapshot),
             rc_bank_snapshot: quotationService.parseJson(receipt.rc_bank_snapshot),
         },
-        allocations: allocations.map((row) => ({ ...row, outstanding_amount: toDecimalText(outstandingOf(row)) })),
+        allocations: allocations.map((row) => ({
+            ...row,
+            outstanding_amount: toDecimalText(outstandingOf(row)),
+            // คงค้าง ณ ใบเสร็จนี้ (ไม่ใช่วันนี้) — พิมพ์ซ้ำทีหลังได้ยอดเดิมเสมอ
+            outstanding_after_receipt: toDecimalText(
+                parseHundredths(row.inv_total, "ยอดใบแจ้งหนี้") - (receivedUpToThis.get(row.inv_id) ?? 0n),
+            ),
+        })),
         currency,
         actions: {
             can_cancel: hasBit(actor.role_permission, "cancelReceipt") && isIssued,
@@ -578,6 +586,24 @@ async function getReceiptDetail(conn, receiptId, actor) {
             can_manage_file: canCreate && isIssued,
         },
     };
+}
+
+/**
+ * ยอดที่ตัดแต่ละใบแจ้งหนี้แล้ว นับถึงใบเสร็จนี้ (เรียงวันที่รับ → เลขที่) — ไม่นับใบเสร็จที่ยกเลิก ยกเว้นใบนี้เอง
+ * @returns {Promise<Map<string, bigint>>}
+ */
+async function receivedUpToReceipt(conn, receipt, allocations) {
+    const invoiceIds = allocations.map((row) => row.inv_id);
+    if (invoiceIds.length === 0) return new Map();
+    const [rows] = await conn.query(
+        `SELECT a.rca_invoice_id, SUM(a.rca_amount) AS received
+         FROM tb_receipt_allocations a JOIN tb_receipts r ON r.rc_id = a.rca_receipt_id
+         WHERE a.rca_invoice_id IN (?) AND (r.rc_status <> 'cancelled' OR r.rc_id = ?)
+           AND (r.rc_receipt_date < ? OR (r.rc_receipt_date = ? AND r.rc_number <= ?))
+         GROUP BY a.rca_invoice_id`,
+        [invoiceIds, receipt.rc_id, receipt.rc_receipt_date, receipt.rc_receipt_date, receipt.rc_number],
+    );
+    return new Map(rows.map((row) => [row.rca_invoice_id, parseHundredths(row.received, "ยอดรับ")]));
 }
 
 module.exports = {

@@ -12,7 +12,7 @@ const { generateDailyId } = require("../utils/generateDailyId");
 const { todayBangkok } = require("../utils/bangkok-time");
 const { issueDocumentNumber } = require("../utils/document-number");
 const { hasBit } = require("../utils/permissions");
-const { parseHundredths } = require("../shared/money.mjs");
+const { divideRoundHalfUp, parseHundredths } = require("../shared/money.mjs");
 const { toDecimalText } = require("../shared/quotation-totals.mjs");
 const companyService = require("./company.service");
 const quotationService = require("./quotation.service");
@@ -488,10 +488,14 @@ async function getBillingNoteDetail(conn, billingNoteId, actor) {
         };
     });
     const total = invoices.reduce((sum, row) => sum + parseHundredths(row.bni_amount, "ยอด"), 0n);
-    const withholdingTotal = invoices.reduce(
-        (sum, row) => sum + parseHundredths(row.inv_wht_amount, "หัก ณ ที่จ่าย"),
-        0n,
-    );
+    // หัก ณ ที่จ่าย (ประมาณ) ของยอดที่วางบิล = ยอดหักของใบแจ้งหนี้ × ยอดวางบิล ÷ ยอดใบแจ้งหนี้
+    // (ใบที่รับเงินบางส่วนก่อนวางบิล หักเฉพาะส่วนที่เหลือ — ตรงกับ "ยอดชำระสุทธิ" ในหน้าพิมพ์ใบแจ้งหนี้)
+    const withholdingTotal = invoices.reduce((sum, row) => {
+        const invoiceTotal = parseHundredths(row.inv_total, "ยอดใบแจ้งหนี้");
+        if (invoiceTotal <= 0n) return sum;
+        const billed = parseHundredths(row.bni_amount, "ยอดวางบิล");
+        return sum + divideRoundHalfUp(parseHundredths(row.inv_wht_amount, "หัก ณ ที่จ่าย") * billed, invoiceTotal);
+    }, 0n);
     const currency = await quotationService.findCurrency(conn, note.bn_currency);
 
     return {
@@ -503,6 +507,7 @@ async function getBillingNoteDetail(conn, billingNoteId, actor) {
         },
         invoices,
         withholding_total: toDecimalText(withholdingTotal),
+        net_payable: toDecimalText(total - withholdingTotal),
         currency,
         actions: buildActions(note, actor, invoices),
         readiness: isDraft ? buildReadiness(note, invoices, today) : [],

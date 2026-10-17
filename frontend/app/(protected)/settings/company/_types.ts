@@ -103,6 +103,7 @@ export type CompanySettings = {
     invoice_approval: ApprovalRules;
     expense_approval: ApprovalRules;
     claim_approval: ApprovalRules;
+    payroll_approval: ApprovalRules;
     roles: RoleChoice[];
     can_edit: boolean;
 };

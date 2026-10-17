@@ -1,7 +1,8 @@
 // ต้นทุนค่าแรงโปรเจกต์ (2026-10-17 เฟส 4 ขั้น 4-2 — docs/plans/2026-10-17-people-payroll-4.md หัวข้อ 4.2, H2-ก)
 //
 // ค่าแรง = ต้นทุนเดือนนั้นของพนักงาน × ชั่วโมงที่อนุมัติในโปรเจกต์ ÷ ชั่วโมงมาตรฐานของเดือน
-// ต้นทุนเดือน (ประมาณการ — ขั้น 4-4 จะใช้ตัวเลขจริงจากรอบเงินเดือนที่อนุมัติแทน) =
+// เดือนที่รอบเงินเดือนอนุมัติแล้ว (ขั้น 4-4): ใช้ค่าจริงที่ snapshot ไว้ใน tb_labor_cost_allocations
+// เดือนที่ยังไม่ปิด: ประมาณการ — ต้นทุนเดือน =
 //   เงินเดือนฐาน + รายรับประจำที่ติ๊ก "นับเป็นค่าจ้างประกันสังคม" + ประกันสังคมส่วนบริษัท (ถ้าเข้าประกันสังคม)
 //   ใช้อัตราที่มีผล ณ วันอ้างอิงของเดือน = วันที่ 1 หรือวันเริ่มงานถ้าเริ่มกลางเดือน
 // ชั่วโมงมาตรฐาน = วันทำงานของเดือน (ตามวันทำงานในสัปดาห์ ไม่รวมวันหยุดบริษัท) × ชั่วโมงต่อวัน · 0 ชม. = ค่าแรง 0 (R-H11)
@@ -34,34 +35,55 @@ async function estimateProjectLabor(conn, projectId) {
         [projectId],
     );
 
+    const [actualRows] = await conn.query(
+        `SELECT a.lca_period, SUM(a.lca_hours) AS hours, SUM(a.lca_amount) AS amount
+         FROM tb_labor_cost_allocations a JOIN tb_payroll_runs r ON r.pr_id = a.lca_run_id
+         WHERE a.lca_project_id = ? AND r.pr_status IN ('approved', 'paid')
+         GROUP BY a.lca_period`,
+        [projectId],
+    );
+    const closedMonths = new Set(actualRows.map((row) => row.lca_period));
+    const estimatedRows = approved.filter((row) => !closedMonths.has(row.month_key));
+
     const monthContext = await loadMonthContext(
         conn,
-        approved.map((row) => row.month_key),
+        estimatedRows.map((row) => row.month_key),
     );
     const months = new Map();
     let costThb = 0n;
     let approvedHours = 0n;
-    for (const row of approved) {
+    for (const row of actualRows) {
+        const hours = money(row.hours);
+        const cost = money(row.amount);
+        costThb += cost;
+        approvedHours += hours;
+        months.set(row.lca_period, { hours, cost, isEstimate: false });
+    }
+    for (const row of estimatedRows) {
         const hours = money(row.hours);
         const monthlyCost = await monthlyLaborCost(conn, row.tse_employee_id, row.month_key);
         const cost = laborCostOf(monthlyCost, hours, monthContext.get(row.month_key).standardHours);
         costThb += cost;
         approvedHours += hours;
-        const month = months.get(row.month_key) ?? { hours: 0n, cost: 0n };
+        const month = months.get(row.month_key) ?? { hours: 0n, cost: 0n, isEstimate: true };
         month.hours += hours;
         month.cost += cost;
         months.set(row.month_key, month);
     }
+    const byMonth = [...months.entries()]
+        .sort(([first], [second]) => (first < second ? -1 : 1))
+        .map(([yearMonth, month]) => ({
+            year_month: yearMonth,
+            hours: toDecimalText(month.hours),
+            cost_thb: toDecimalText(month.cost),
+            is_estimate: month.isEstimate,
+        }));
     return {
         costThb,
         approvedHours,
         pendingHours: money(pending.hours),
-        byMonth: [...months.entries()].map(([yearMonth, month]) => ({
-            year_month: yearMonth,
-            hours: toDecimalText(month.hours),
-            cost_thb: toDecimalText(month.cost),
-            standard_hours: toDecimalText(monthContext.get(yearMonth).standardHours),
-        })),
+        byMonth,
+        isEstimate: byMonth.some((month) => month.is_estimate),
     };
 }
 

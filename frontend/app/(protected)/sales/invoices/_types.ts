@@ -194,6 +194,10 @@ export type InvoicePayment = {
     net_payable: string;
     // ยอดที่ฝังใน QR = ยอดค้างหลังหัก ณ ที่จ่าย (รับเงินบางส่วนแล้วจะน้อยกว่า net_payable)
     qr_amount: string;
+    // รับเงินบางส่วนแล้ว: ยอดคงค้าง (ก่อนหัก) · หัก ณ ที่จ่ายของยอดคงค้าง · คงค้างสุทธิ (= qr_amount)
+    outstanding: string;
+    outstanding_withholding: string;
+    outstanding_net: string;
     qr_payload: string | null;
 };
 

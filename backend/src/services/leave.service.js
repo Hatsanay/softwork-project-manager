@@ -15,6 +15,7 @@ const { formatHundredths, parseHundredths } = require("../shared/money.mjs");
 const { addDays, workingDatesBetween } = require("../shared/payroll-math.mjs");
 const { MAX_LEAVE_ATTACHMENTS } = require("../shared/schemas/leave.mjs");
 const { findLinkedEmployee } = require("./linked-employee.service");
+const { assertPeriodsOpen } = require("./payroll.service");
 
 const DAY_HUNDREDTHS = 100n;
 const HALF_DAY_HUNDREDTHS = 50n;
@@ -314,6 +315,7 @@ async function ownEmployeeIdsOf(conn, userId) {
  * @returns {Promise<{ type: object, dates: string[], dayCount: bigint }>}
  */
 async function checkRequest(conn, employee, request) {
+    await assertPeriodsOpen(conn, [request.lr_start_date, request.lr_end_date], "การลา");
     const [[type]] = await conn.query(
         "SELECT lt_id, lt_name_th, lt_status, lt_min_service_days, lt_attachment_from_days FROM tb_leave_types WHERE lt_id = ?",
         [request.lr_leave_type_id],
@@ -552,6 +554,7 @@ async function lockOwn(conn, user, requestId, version) {
     if (employee.emp_user_id !== user.user_id) throw notFound();
     const row = await lockRequest(conn, requestId);
     if (row.lr_version !== version) throw versionChanged();
+    await assertPeriodsOpen(conn, [row.lr_start_date, row.lr_end_date], "การลา");
     return { row, employee };
 }
 
@@ -568,6 +571,7 @@ async function lockForApprover(conn, user, requestId, version) {
     }
     const row = await lockRequest(conn, requestId);
     if (row.lr_version !== version) throw versionChanged();
+    await assertPeriodsOpen(conn, [row.lr_start_date, row.lr_end_date], "การลา");
     return { row, employee };
 }
 

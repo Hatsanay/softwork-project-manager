@@ -308,3 +308,118 @@ export type TeamCalendar = {
         employee_name: string;
     }[];
 };
+
+// ─── รอบเงินเดือน (ขั้น 4-4) ───────────────────────────────────────────────────────────────────
+
+export type PayrollStatus = "draft" | "pending_approval" | "approved" | "paid" | "cancelled";
+
+export type PayrollRunSummary = {
+    pr_id: number;
+    pr_number: string;
+    pr_period: string;
+    pr_pay_date: string;
+    pr_status: PayrollStatus;
+    pr_employee_count: number;
+    pr_total_gross: string;
+    pr_total_net: string;
+    pr_total_tax: string;
+    pr_total_sso_employee: string;
+    pr_total_sso_employer: string;
+    pr_paid_date: string | null;
+};
+
+export type PayrollLine = {
+    pil_id: number;
+    pil_source: "recurring" | "manual";
+    pil_kind: "earning" | "deduction";
+    pil_label: string;
+    pil_amount: string;
+    pil_is_taxable: boolean;
+    pil_is_sso_wage: boolean;
+    pil_is_one_off: boolean;
+};
+
+export type PayrollItem = {
+    pri_id: number;
+    pri_employee_id: string;
+    pri_emp_code: string;
+    pri_full_name: string;
+    pri_national_id: string | null;
+    pri_position: string | null;
+    pri_department_name: string | null;
+    pri_bank_name: string | null;
+    pri_bank_account_no: string | null;
+    pri_sso_enrolled: boolean;
+    pri_employed_days: number;
+    pri_days_in_month: number;
+    pri_unpaid_leave_days: string;
+    pri_standard_hours: string;
+    pri_base_salary: string;
+    pri_salary_amount: string;
+    pri_unpaid_leave_amount: string;
+    pri_other_earnings: string;
+    pri_other_deductions: string;
+    pri_gross: string;
+    pri_taxable_income: string;
+    pri_sso_wage: string;
+    pri_sso_employee: string;
+    pri_sso_employer: string;
+    pri_ytd_income_before: string;
+    pri_ytd_tax_before: string;
+    pri_ytd_sso_before: string;
+    pri_annual_income_estimate: string;
+    pri_annual_tax_estimate: string;
+    pri_tax: string;
+    pri_net: string;
+    pri_labor_cost: string;
+    lines: PayrollLine[];
+};
+
+export type PayrollRun = Omit<PayrollRunSummary, "pr_paid_date"> & {
+    pr_version: number;
+    pr_working_days: number;
+    pr_standard_hours: string;
+    pr_total_deductions: string;
+    pr_calculated_at: string | null;
+    pr_returned_reason: string | null;
+    pr_paid_date: string | null;
+    pr_paid_note: string | null;
+    pr_cancel_reason: string | null;
+    approval_plan: { level: number; roles: { role_id: string; role_name: string }[] }[];
+    pr_approval_current_level: number | null;
+    items: PayrollItem[];
+    approvals: {
+        pra_round: number;
+        pra_level: number;
+        pra_action: "approve" | "return";
+        pra_user_name: string | null;
+        pra_role_name: string | null;
+        pra_reason: string | null;
+        pra_created_at: string;
+    }[];
+    readiness: { problems: string[]; warnings: string[] } | null;
+    approval: { can_approve: boolean; reason: string | null; is_final: boolean } | null;
+};
+
+export type PayslipSummary = {
+    pri_id: number;
+    pr_number: string;
+    pr_period: string;
+    pr_paid_date: string | null;
+    pri_gross: string;
+    pri_net: string;
+    pri_tax: string;
+    pri_sso_employee: string;
+};
+
+export type Payslip = {
+    company: { name: string; tax_id: string | null };
+    run: { pr_number: string; pr_period: string; pr_pay_date: string; pr_status: PayrollStatus };
+    item: PayrollItem;
+};
+
+export type TaxProfile = {
+    tax_year: number;
+    is_saved: boolean;
+    profile: Record<string, string | null>;
+};

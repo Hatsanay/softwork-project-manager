@@ -122,6 +122,8 @@ export type ReceiptAllocation = {
     inv_issue_date: string;
     inv_due_date: string;
     outstanding_amount: string;
+    // คงค้างของใบแจ้งหนี้หลังรับชำระด้วยใบเสร็จนี้ (ไม่เปลี่ยนตามการรับเงินครั้งหลัง)
+    outstanding_after_receipt: string;
 };
 
 export type ReceiptDetail = {

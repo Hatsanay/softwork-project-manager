@@ -1794,6 +1794,177 @@ CREATE TABLE IF NOT EXISTS `tb_leave_attachments` (
   CONSTRAINT `fk_lra_uploaded_by` FOREIGN KEY (`lra_uploaded_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ════ เฟส 4 ขั้น 4-4 (2026-10-17) — รอบเงินเดือน + ค่าลดหย่อนรายปี + ค่าแรงจริงต่อโปรเจกต์ · แบบระบบ: docs/plans/2026-10-17-people-payroll-4.md หัวข้อ 3.7, 4.3 ════
+-- ── ขั้น 4-4 (2026-10-17): รอบเงินเดือน ──
+-- ค่าลดหย่อนรายปีของพนักงาน (ล.ย.01) + ยอดยกมาของปี (เงินได้/ภาษี/ประกันสังคมก่อนใช้ระบบ หรือจากที่ทำงานเดิม)
+-- ยอดลดหย่อนกรอกเป็นบาทตามที่กฎหมายให้ (ฝ่ายบุคคลคิดเอง) · แก้กลางปีได้ — รอบถัดไปคิดภาษีทั้งปีใหม่
+CREATE TABLE IF NOT EXISTS `tb_employee_tax_profiles` (
+  `etp_employee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `etp_tax_year` smallint unsigned NOT NULL COMMENT 'ปี ค.ศ.',
+  `etp_spouse_allowance` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `etp_child_allowance` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `etp_parent_allowance` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `etp_insurance_allowance` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ประกันชีวิต/สุขภาพ',
+  `etp_fund_allowance` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'กองทุน (สำรองเลี้ยงชีพ/RMF/SSF ฯลฯ)',
+  `etp_home_loan_interest` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `etp_other_allowance` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `etp_prior_income` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'เงินได้ยกมาของปี (ก่อนรอบแรกในระบบ)',
+  `etp_prior_tax` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ภาษีที่หักไปแล้วยกมา',
+  `etp_prior_sso` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ประกันสังคมที่หักไปแล้วยกมา',
+  `etp_note` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `etp_updated_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `etp_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`etp_employee_id`,`etp_tax_year`),
+  KEY `fk_etp_updated_by` (`etp_updated_by`),
+  CONSTRAINT `fk_etp_employee` FOREIGN KEY (`etp_employee_id`) REFERENCES `tb_employees` (`emp_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_etp_updated_by` FOREIGN KEY (`etp_updated_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- รอบเงินเดือนรายเดือน — เดือนละหนึ่งรอบที่ไม่ยกเลิก (ตรวจใน service + ล็อกแถว tb_payroll_settings ก่อนตรวจ R-H2)
+-- draft (คิดใหม่/แก้รายการได้) → pending_approval (ตัวเลขล็อก · กติกาอนุมัติประเภท PR) → approved (ล็อกถาวร + snapshot ค่าแรง + ล็อกลงเวลา/ลาของเดือน)
+-- → paid (สลิปเปิดให้พนักงาน) · ยกเลิกได้ก่อนจ่าย
+CREATE TABLE IF NOT EXISTS `tb_payroll_runs` (
+  `pr_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `pr_period` char(7) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'YYYY-MM',
+  `pr_number` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'PR-YYYY-MM',
+  `pr_pay_date` date NOT NULL,
+  `pr_status` enum('draft','pending_approval','approved','paid','cancelled') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'draft',
+  `pr_version` int unsigned NOT NULL DEFAULT '1',
+  `pr_working_days` smallint unsigned NOT NULL DEFAULT '0',
+  `pr_standard_hours` decimal(6,2) NOT NULL DEFAULT '0.00',
+  `pr_employee_count` smallint unsigned NOT NULL DEFAULT '0',
+  `pr_total_gross` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pr_total_deductions` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'รายหักอื่น (ไม่รวมประกันสังคม/ภาษี)',
+  `pr_total_sso_employee` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pr_total_sso_employer` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pr_total_tax` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pr_total_net` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pr_calculated_at` datetime DEFAULT NULL,
+  `pr_approval_round` int unsigned NOT NULL DEFAULT '0',
+  `pr_approval_current_level` tinyint unsigned DEFAULT NULL,
+  `pr_approval_plan` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT 'snapshot แผนอนุมัติตอนส่ง (JSON)',
+  `pr_submitted_at` datetime DEFAULT NULL,
+  `pr_approved_at` datetime DEFAULT NULL,
+  `pr_returned_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pr_paid_date` date DEFAULT NULL,
+  `pr_paid_note` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เช่น บัญชีที่โอน',
+  `pr_paid_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pr_cancelled_at` datetime DEFAULT NULL,
+  `pr_cancel_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pr_cancelled_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pr_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pr_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `pr_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`pr_id`),
+  KEY `idx_pr_period_status` (`pr_period`,`pr_status`),
+  KEY `fk_pr_paid_by` (`pr_paid_by`),
+  KEY `fk_pr_cancelled_by` (`pr_cancelled_by`),
+  KEY `fk_pr_created_by` (`pr_created_by`),
+  CONSTRAINT `fk_pr_cancelled_by` FOREIGN KEY (`pr_cancelled_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_pr_created_by` FOREIGN KEY (`pr_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_pr_paid_by` FOREIGN KEY (`pr_paid_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ประวัติอนุมัติ/ตีกลับ — รูปแบบเดียวกับ tb_expense_approvals
+CREATE TABLE IF NOT EXISTS `tb_payroll_approvals` (
+  `pra_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `pra_run_id` int unsigned NOT NULL,
+  `pra_round` int unsigned NOT NULL,
+  `pra_level` tinyint unsigned NOT NULL,
+  `pra_action` enum('approve','return') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pra_user_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pra_user_name` varchar(201) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pra_role_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pra_role_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pra_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pra_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`pra_id`),
+  KEY `idx_pra_run_round` (`pra_run_id`,`pra_round`),
+  KEY `fk_pra_user` (`pra_user_id`),
+  CONSTRAINT `fk_pra_run` FOREIGN KEY (`pra_run_id`) REFERENCES `tb_payroll_runs` (`pr_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_pra_user` FOREIGN KEY (`pra_user_id`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- รายคนในรอบ — snapshot ข้อมูลพนักงาน + ตัวเลขทุกตัวที่ใช้คิด (สลิป/แบบภาษีอ่านจากตรงนี้ ไม่คิดใหม่)
+CREATE TABLE IF NOT EXISTS `tb_payroll_items` (
+  `pri_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `pri_run_id` int unsigned NOT NULL,
+  `pri_employee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pri_emp_code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pri_full_name` varchar(250) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pri_national_id` varchar(13) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pri_position` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pri_department_name` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pri_bank_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pri_bank_account_no` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pri_sso_enrolled` tinyint(1) NOT NULL DEFAULT '1',
+  `pri_employed_days` smallint unsigned NOT NULL COMMENT 'วันปฏิทินที่เป็นพนักงานในเดือน',
+  `pri_days_in_month` smallint unsigned NOT NULL,
+  `pri_base_salary` decimal(15,2) NOT NULL COMMENT 'เงินเดือนต่อเดือน ณ วันสุดท้ายที่ทำงานในเดือน',
+  `pri_salary_amount` decimal(15,2) NOT NULL COMMENT 'เงินเดือนตามสัดส่วนวัน',
+  `pri_unpaid_leave_days` decimal(5,1) NOT NULL DEFAULT '0.0',
+  `pri_unpaid_leave_amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_other_earnings` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_other_deductions` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_gross` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'เงินเดือนสุทธิจากลา + รายรับอื่น',
+  `pri_taxable_income` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_sso_wage` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_sso_employee` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_sso_employer` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_ytd_income_before` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_ytd_tax_before` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_ytd_sso_before` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_annual_income_estimate` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_annual_tax_estimate` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_tax` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_net` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_standard_hours` decimal(6,2) NOT NULL DEFAULT '0.00',
+  `pri_labor_cost` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ต้นทุนทั้งเดือน = ค่าจ้าง + ประกันสังคมส่วนบริษัท',
+  PRIMARY KEY (`pri_id`),
+  UNIQUE KEY `uq_pri_run_employee` (`pri_run_id`,`pri_employee_id`),
+  KEY `idx_pri_employee` (`pri_employee_id`),
+  CONSTRAINT `fk_pri_employee` FOREIGN KEY (`pri_employee_id`) REFERENCES `tb_employees` (`emp_id`),
+  CONSTRAINT `fk_pri_run` FOREIGN KEY (`pri_run_id`) REFERENCES `tb_payroll_runs` (`pr_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- รายการเพิ่ม/หักของแต่ละคน: recurring = ดึงจากรายการประจำตอนคิด (คิดใหม่แล้วสร้างใหม่) · manual = กรอกเอง (คิดใหม่แล้วยังอยู่)
+CREATE TABLE IF NOT EXISTS `tb_payroll_item_lines` (
+  `pil_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `pil_item_id` int unsigned NOT NULL,
+  `pil_source` enum('recurring','manual') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pil_kind` enum('earning','deduction') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pil_label` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pil_amount` decimal(15,2) NOT NULL,
+  `pil_is_taxable` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'รายรับ: นับเป็นเงินได้คิดภาษี',
+  `pil_is_sso_wage` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'รายรับ: นับเป็นค่าจ้างประกันสังคม',
+  `pil_is_one_off` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'รายรับครั้งเดียว (โบนัส) — ไม่ประมาณการซ้ำทั้งปีตอนคิดภาษี',
+  `pil_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pil_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`pil_id`),
+  KEY `idx_pil_item` (`pil_item_id`),
+  KEY `fk_pil_created_by` (`pil_created_by`),
+  CONSTRAINT `fk_pil_created_by` FOREIGN KEY (`pil_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_pil_item` FOREIGN KEY (`pil_item_id`) REFERENCES `tb_payroll_items` (`pri_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ค่าแรงจริงต่อโปรเจกต์ — snapshot ตอนอนุมัติรอบ (โปรเจกต์ว่าง = ส่วนกลาง: งานภายใน + ชั่วโมงที่ไม่ได้ลง) · หน้าโปรเจกต์อ่านจากที่นี่
+CREATE TABLE IF NOT EXISTS `tb_labor_cost_allocations` (
+  `lca_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `lca_run_id` int unsigned NOT NULL,
+  `lca_period` char(7) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `lca_employee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `lca_project_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `lca_hours` decimal(8,2) NOT NULL DEFAULT '0.00',
+  `lca_amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  PRIMARY KEY (`lca_id`),
+  KEY `idx_lca_project_period` (`lca_project_id`,`lca_period`),
+  KEY `idx_lca_run` (`lca_run_id`),
+  KEY `fk_lca_employee` (`lca_employee_id`),
+  CONSTRAINT `fk_lca_employee` FOREIGN KEY (`lca_employee_id`) REFERENCES `tb_employees` (`emp_id`),
+  CONSTRAINT `fk_lca_project` FOREIGN KEY (`lca_project_id`) REFERENCES `tb_projects` (`project_id`),
+  CONSTRAINT `fk_lca_run` FOREIGN KEY (`lca_run_id`) REFERENCES `tb_payroll_runs` (`pr_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ─── ส่วนที่ 2: เติมคอลัมน์ที่ยังขาด (สำหรับฐานข้อมูลที่สร้างจากโครงสร้างเวอร์ชันเก่า) ──────────────
 -- แต่ละบรรทัด: ถ้าคอลัมน์ยังไม่มี → ADD COLUMN, มีแล้ว → ไม่ทำอะไร
 
@@ -2663,6 +2834,128 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA 
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_attachments' AND COLUMN_NAME = 'lra_uploaded_by') = 0, 'ALTER TABLE `tb_leave_attachments` ADD COLUMN `lra_uploaded_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `lra_file_size`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_attachments' AND COLUMN_NAME = 'lra_uploaded_at') = 0, 'ALTER TABLE `tb_leave_attachments` ADD COLUMN `lra_uploaded_at` datetime DEFAULT CURRENT_TIMESTAMP AFTER `lra_uploaded_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- ════ เฟส 4 ขั้น 4-4 (2026-10-17) — รอบเงินเดือน
+
+-- tb_employee_tax_profiles
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_tax_profiles' AND COLUMN_NAME = 'etp_employee_id') = 0, 'ALTER TABLE `tb_employee_tax_profiles` ADD COLUMN `etp_employee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_tax_profiles' AND COLUMN_NAME = 'etp_tax_year') = 0, 'ALTER TABLE `tb_employee_tax_profiles` ADD COLUMN `etp_tax_year` smallint unsigned NOT NULL COMMENT ''ปี ค.ศ.'' AFTER `etp_employee_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_tax_profiles' AND COLUMN_NAME = 'etp_spouse_allowance') = 0, 'ALTER TABLE `tb_employee_tax_profiles` ADD COLUMN `etp_spouse_allowance` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `etp_tax_year`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_tax_profiles' AND COLUMN_NAME = 'etp_child_allowance') = 0, 'ALTER TABLE `tb_employee_tax_profiles` ADD COLUMN `etp_child_allowance` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `etp_spouse_allowance`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_tax_profiles' AND COLUMN_NAME = 'etp_parent_allowance') = 0, 'ALTER TABLE `tb_employee_tax_profiles` ADD COLUMN `etp_parent_allowance` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `etp_child_allowance`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_tax_profiles' AND COLUMN_NAME = 'etp_insurance_allowance') = 0, 'ALTER TABLE `tb_employee_tax_profiles` ADD COLUMN `etp_insurance_allowance` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''ประกันชีวิต/สุขภาพ'' AFTER `etp_parent_allowance`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_tax_profiles' AND COLUMN_NAME = 'etp_fund_allowance') = 0, 'ALTER TABLE `tb_employee_tax_profiles` ADD COLUMN `etp_fund_allowance` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''กองทุน (สำรองเลี้ยงชีพ/RMF/SSF ฯลฯ)'' AFTER `etp_insurance_allowance`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_tax_profiles' AND COLUMN_NAME = 'etp_home_loan_interest') = 0, 'ALTER TABLE `tb_employee_tax_profiles` ADD COLUMN `etp_home_loan_interest` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `etp_fund_allowance`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_tax_profiles' AND COLUMN_NAME = 'etp_other_allowance') = 0, 'ALTER TABLE `tb_employee_tax_profiles` ADD COLUMN `etp_other_allowance` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `etp_home_loan_interest`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_tax_profiles' AND COLUMN_NAME = 'etp_prior_income') = 0, 'ALTER TABLE `tb_employee_tax_profiles` ADD COLUMN `etp_prior_income` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''เงินได้ยกมาของปี (ก่อนรอบแรกในระบบ)'' AFTER `etp_other_allowance`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_tax_profiles' AND COLUMN_NAME = 'etp_prior_tax') = 0, 'ALTER TABLE `tb_employee_tax_profiles` ADD COLUMN `etp_prior_tax` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''ภาษีที่หักไปแล้วยกมา'' AFTER `etp_prior_income`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_tax_profiles' AND COLUMN_NAME = 'etp_prior_sso') = 0, 'ALTER TABLE `tb_employee_tax_profiles` ADD COLUMN `etp_prior_sso` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''ประกันสังคมที่หักไปแล้วยกมา'' AFTER `etp_prior_tax`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_tax_profiles' AND COLUMN_NAME = 'etp_note') = 0, 'ALTER TABLE `tb_employee_tax_profiles` ADD COLUMN `etp_note` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `etp_prior_sso`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_tax_profiles' AND COLUMN_NAME = 'etp_updated_by') = 0, 'ALTER TABLE `tb_employee_tax_profiles` ADD COLUMN `etp_updated_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `etp_note`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_tax_profiles' AND COLUMN_NAME = 'etp_updated_at') = 0, 'ALTER TABLE `tb_employee_tax_profiles` ADD COLUMN `etp_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `etp_updated_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_payroll_runs
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_id') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_id` int unsigned NOT NULL AUTO_INCREMENT FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_period') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_period` char(7) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT ''YYYY-MM'' AFTER `pr_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_number') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_number` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT ''PR-YYYY-MM'' AFTER `pr_period`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_pay_date') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_pay_date` date NOT NULL AFTER `pr_number`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_status') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_status` enum(''draft'',''pending_approval'',''approved'',''paid'',''cancelled'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''draft'' AFTER `pr_pay_date`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_version') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_version` int unsigned NOT NULL DEFAULT ''1'' AFTER `pr_status`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_working_days') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_working_days` smallint unsigned NOT NULL DEFAULT ''0'' AFTER `pr_version`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_standard_hours') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_standard_hours` decimal(6,2) NOT NULL DEFAULT ''0.00'' AFTER `pr_working_days`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_employee_count') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_employee_count` smallint unsigned NOT NULL DEFAULT ''0'' AFTER `pr_standard_hours`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_total_gross') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_total_gross` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `pr_employee_count`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_total_deductions') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_total_deductions` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''รายหักอื่น (ไม่รวมประกันสังคม/ภาษี)'' AFTER `pr_total_gross`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_total_sso_employee') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_total_sso_employee` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `pr_total_deductions`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_total_sso_employer') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_total_sso_employer` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `pr_total_sso_employee`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_total_tax') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_total_tax` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `pr_total_sso_employer`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_total_net') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_total_net` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `pr_total_tax`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_calculated_at') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_calculated_at` datetime DEFAULT NULL AFTER `pr_total_net`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_approval_round') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_approval_round` int unsigned NOT NULL DEFAULT ''0'' AFTER `pr_calculated_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_approval_current_level') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_approval_current_level` tinyint unsigned DEFAULT NULL AFTER `pr_approval_round`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_approval_plan') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_approval_plan` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT ''snapshot แผนอนุมัติตอนส่ง (JSON)'' AFTER `pr_approval_current_level`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_submitted_at') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_submitted_at` datetime DEFAULT NULL AFTER `pr_approval_plan`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_approved_at') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_approved_at` datetime DEFAULT NULL AFTER `pr_submitted_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_returned_reason') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_returned_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `pr_approved_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_paid_date') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_paid_date` date DEFAULT NULL AFTER `pr_returned_reason`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_paid_note') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_paid_note` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''เช่น บัญชีที่โอน'' AFTER `pr_paid_date`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_paid_by') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_paid_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `pr_paid_note`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_cancelled_at') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_cancelled_at` datetime DEFAULT NULL AFTER `pr_paid_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_cancel_reason') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_cancel_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `pr_cancelled_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_cancelled_by') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_cancelled_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `pr_cancel_reason`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_created_by') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `pr_cancelled_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_created_at') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_created_at` datetime DEFAULT CURRENT_TIMESTAMP AFTER `pr_created_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND COLUMN_NAME = 'pr_updated_at') = 0, 'ALTER TABLE `tb_payroll_runs` ADD COLUMN `pr_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `pr_created_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_payroll_approvals
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_approvals' AND COLUMN_NAME = 'pra_id') = 0, 'ALTER TABLE `tb_payroll_approvals` ADD COLUMN `pra_id` bigint unsigned NOT NULL AUTO_INCREMENT FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_approvals' AND COLUMN_NAME = 'pra_run_id') = 0, 'ALTER TABLE `tb_payroll_approvals` ADD COLUMN `pra_run_id` int unsigned NOT NULL AFTER `pra_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_approvals' AND COLUMN_NAME = 'pra_round') = 0, 'ALTER TABLE `tb_payroll_approvals` ADD COLUMN `pra_round` int unsigned NOT NULL AFTER `pra_run_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_approvals' AND COLUMN_NAME = 'pra_level') = 0, 'ALTER TABLE `tb_payroll_approvals` ADD COLUMN `pra_level` tinyint unsigned NOT NULL AFTER `pra_round`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_approvals' AND COLUMN_NAME = 'pra_action') = 0, 'ALTER TABLE `tb_payroll_approvals` ADD COLUMN `pra_action` enum(''approve'',''return'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `pra_level`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_approvals' AND COLUMN_NAME = 'pra_user_id') = 0, 'ALTER TABLE `tb_payroll_approvals` ADD COLUMN `pra_user_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `pra_action`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_approvals' AND COLUMN_NAME = 'pra_user_name') = 0, 'ALTER TABLE `tb_payroll_approvals` ADD COLUMN `pra_user_name` varchar(201) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `pra_user_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_approvals' AND COLUMN_NAME = 'pra_role_id') = 0, 'ALTER TABLE `tb_payroll_approvals` ADD COLUMN `pra_role_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `pra_user_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_approvals' AND COLUMN_NAME = 'pra_role_name') = 0, 'ALTER TABLE `tb_payroll_approvals` ADD COLUMN `pra_role_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `pra_role_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_approvals' AND COLUMN_NAME = 'pra_reason') = 0, 'ALTER TABLE `tb_payroll_approvals` ADD COLUMN `pra_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `pra_role_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_approvals' AND COLUMN_NAME = 'pra_created_at') = 0, 'ALTER TABLE `tb_payroll_approvals` ADD COLUMN `pra_created_at` datetime DEFAULT CURRENT_TIMESTAMP AFTER `pra_reason`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_payroll_items
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_id') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_id` int unsigned NOT NULL AUTO_INCREMENT FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_run_id') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_run_id` int unsigned NOT NULL AFTER `pri_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_employee_id') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_employee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `pri_run_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_emp_code') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_emp_code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `pri_employee_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_full_name') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_full_name` varchar(250) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `pri_emp_code`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_national_id') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_national_id` varchar(13) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `pri_full_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_position') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_position` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `pri_national_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_department_name') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_department_name` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `pri_position`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_bank_name') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_bank_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `pri_department_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_bank_account_no') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_bank_account_no` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `pri_bank_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_sso_enrolled') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_sso_enrolled` tinyint(1) NOT NULL DEFAULT ''1'' AFTER `pri_bank_account_no`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_employed_days') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_employed_days` smallint unsigned NOT NULL COMMENT ''วันปฏิทินที่เป็นพนักงานในเดือน'' AFTER `pri_sso_enrolled`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_days_in_month') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_days_in_month` smallint unsigned NOT NULL AFTER `pri_employed_days`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_base_salary') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_base_salary` decimal(15,2) NOT NULL COMMENT ''เงินเดือนต่อเดือน ณ วันสุดท้ายที่ทำงานในเดือน'' AFTER `pri_days_in_month`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_salary_amount') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_salary_amount` decimal(15,2) NOT NULL COMMENT ''เงินเดือนตามสัดส่วนวัน'' AFTER `pri_base_salary`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_unpaid_leave_days') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_unpaid_leave_days` decimal(5,1) NOT NULL DEFAULT ''0.0'' AFTER `pri_salary_amount`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_unpaid_leave_amount') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_unpaid_leave_amount` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `pri_unpaid_leave_days`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_other_earnings') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_other_earnings` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `pri_unpaid_leave_amount`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_other_deductions') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_other_deductions` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `pri_other_earnings`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_gross') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_gross` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''เงินเดือนสุทธิจากลา + รายรับอื่น'' AFTER `pri_other_deductions`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_taxable_income') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_taxable_income` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `pri_gross`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_sso_wage') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_sso_wage` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `pri_taxable_income`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_sso_employee') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_sso_employee` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `pri_sso_wage`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_sso_employer') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_sso_employer` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `pri_sso_employee`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_ytd_income_before') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_ytd_income_before` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `pri_sso_employer`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_ytd_tax_before') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_ytd_tax_before` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `pri_ytd_income_before`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_ytd_sso_before') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_ytd_sso_before` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `pri_ytd_tax_before`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_annual_income_estimate') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_annual_income_estimate` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `pri_ytd_sso_before`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_annual_tax_estimate') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_annual_tax_estimate` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `pri_annual_income_estimate`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_tax') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_tax` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `pri_annual_tax_estimate`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_net') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_net` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `pri_tax`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_standard_hours') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_standard_hours` decimal(6,2) NOT NULL DEFAULT ''0.00'' AFTER `pri_net`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_labor_cost') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_labor_cost` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''ต้นทุนทั้งเดือน = ค่าจ้าง + ประกันสังคมส่วนบริษัท'' AFTER `pri_standard_hours`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_payroll_item_lines
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_item_lines' AND COLUMN_NAME = 'pil_id') = 0, 'ALTER TABLE `tb_payroll_item_lines` ADD COLUMN `pil_id` int unsigned NOT NULL AUTO_INCREMENT FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_item_lines' AND COLUMN_NAME = 'pil_item_id') = 0, 'ALTER TABLE `tb_payroll_item_lines` ADD COLUMN `pil_item_id` int unsigned NOT NULL AFTER `pil_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_item_lines' AND COLUMN_NAME = 'pil_source') = 0, 'ALTER TABLE `tb_payroll_item_lines` ADD COLUMN `pil_source` enum(''recurring'',''manual'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `pil_item_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_item_lines' AND COLUMN_NAME = 'pil_kind') = 0, 'ALTER TABLE `tb_payroll_item_lines` ADD COLUMN `pil_kind` enum(''earning'',''deduction'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `pil_source`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_item_lines' AND COLUMN_NAME = 'pil_label') = 0, 'ALTER TABLE `tb_payroll_item_lines` ADD COLUMN `pil_label` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `pil_kind`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_item_lines' AND COLUMN_NAME = 'pil_amount') = 0, 'ALTER TABLE `tb_payroll_item_lines` ADD COLUMN `pil_amount` decimal(15,2) NOT NULL AFTER `pil_label`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_item_lines' AND COLUMN_NAME = 'pil_is_taxable') = 0, 'ALTER TABLE `tb_payroll_item_lines` ADD COLUMN `pil_is_taxable` tinyint(1) NOT NULL DEFAULT ''1'' COMMENT ''รายรับ: นับเป็นเงินได้คิดภาษี'' AFTER `pil_amount`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_item_lines' AND COLUMN_NAME = 'pil_is_sso_wage') = 0, 'ALTER TABLE `tb_payroll_item_lines` ADD COLUMN `pil_is_sso_wage` tinyint(1) NOT NULL DEFAULT ''0'' COMMENT ''รายรับ: นับเป็นค่าจ้างประกันสังคม'' AFTER `pil_is_taxable`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_item_lines' AND COLUMN_NAME = 'pil_is_one_off') = 0, 'ALTER TABLE `tb_payroll_item_lines` ADD COLUMN `pil_is_one_off` tinyint(1) NOT NULL DEFAULT ''0'' COMMENT ''รายรับครั้งเดียว (โบนัส) — ไม่ประมาณการซ้ำทั้งปีตอนคิดภาษี'' AFTER `pil_is_sso_wage`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_item_lines' AND COLUMN_NAME = 'pil_created_by') = 0, 'ALTER TABLE `tb_payroll_item_lines` ADD COLUMN `pil_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `pil_is_one_off`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_item_lines' AND COLUMN_NAME = 'pil_created_at') = 0, 'ALTER TABLE `tb_payroll_item_lines` ADD COLUMN `pil_created_at` datetime DEFAULT CURRENT_TIMESTAMP AFTER `pil_created_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_labor_cost_allocations
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_labor_cost_allocations' AND COLUMN_NAME = 'lca_id') = 0, 'ALTER TABLE `tb_labor_cost_allocations` ADD COLUMN `lca_id` int unsigned NOT NULL AUTO_INCREMENT FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_labor_cost_allocations' AND COLUMN_NAME = 'lca_run_id') = 0, 'ALTER TABLE `tb_labor_cost_allocations` ADD COLUMN `lca_run_id` int unsigned NOT NULL AFTER `lca_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_labor_cost_allocations' AND COLUMN_NAME = 'lca_period') = 0, 'ALTER TABLE `tb_labor_cost_allocations` ADD COLUMN `lca_period` char(7) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `lca_run_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_labor_cost_allocations' AND COLUMN_NAME = 'lca_employee_id') = 0, 'ALTER TABLE `tb_labor_cost_allocations` ADD COLUMN `lca_employee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `lca_period`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_labor_cost_allocations' AND COLUMN_NAME = 'lca_project_id') = 0, 'ALTER TABLE `tb_labor_cost_allocations` ADD COLUMN `lca_project_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `lca_employee_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_labor_cost_allocations' AND COLUMN_NAME = 'lca_hours') = 0, 'ALTER TABLE `tb_labor_cost_allocations` ADD COLUMN `lca_hours` decimal(8,2) NOT NULL DEFAULT ''0.00'' AFTER `lca_project_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_labor_cost_allocations' AND COLUMN_NAME = 'lca_amount') = 0, 'ALTER TABLE `tb_labor_cost_allocations` ADD COLUMN `lca_amount` decimal(15,2) NOT NULL DEFAULT ''0.00'' AFTER `lca_hours`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
 -- ── การเปลี่ยนชนิด/เงื่อนไขของคอลัมน์ที่มีอยู่แล้ว (เรียงตามเวลา) ──────────────────────────────────
 -- 2026-10-07 onboarding: ผู้ใช้เดิมได้ชื่อผู้ใช้ = user_id (ยัง login ด้วยอีเมลได้เหมือนเดิม) — UPDATE นี้รันซ้ำได้ แตะเฉพาะแถวที่ยังว่าง
 UPDATE tb_users SET user_username = user_id WHERE user_username IS NULL OR user_username = '';
@@ -3061,6 +3354,39 @@ SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM informa
 SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_attachments' AND INDEX_NAME = 'idx_lra_request') = 0, 'ALTER TABLE `tb_leave_attachments` ADD KEY `idx_lra_request` (`lra_request_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_attachments' AND INDEX_NAME = 'fk_lra_uploaded_by') = 0, 'ALTER TABLE `tb_leave_attachments` ADD KEY `fk_lra_uploaded_by` (`lra_uploaded_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- tb_employee_tax_profiles
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_tax_profiles' AND INDEX_NAME = 'fk_etp_updated_by') = 0, 'ALTER TABLE `tb_employee_tax_profiles` ADD KEY `fk_etp_updated_by` (`etp_updated_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_payroll_runs
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND INDEX_NAME = 'idx_pr_period_status') <> 'pr_period,pr_status', 'ALTER TABLE `tb_payroll_runs` DROP INDEX `idx_pr_period_status`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND INDEX_NAME = 'idx_pr_period_status') = 0, 'ALTER TABLE `tb_payroll_runs` ADD KEY `idx_pr_period_status` (`pr_period`,`pr_status`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND INDEX_NAME = 'fk_pr_paid_by') = 0, 'ALTER TABLE `tb_payroll_runs` ADD KEY `fk_pr_paid_by` (`pr_paid_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND INDEX_NAME = 'fk_pr_cancelled_by') = 0, 'ALTER TABLE `tb_payroll_runs` ADD KEY `fk_pr_cancelled_by` (`pr_cancelled_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND INDEX_NAME = 'fk_pr_created_by') = 0, 'ALTER TABLE `tb_payroll_runs` ADD KEY `fk_pr_created_by` (`pr_created_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_payroll_approvals
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_approvals' AND INDEX_NAME = 'idx_pra_run_round') <> 'pra_run_id,pra_round', 'ALTER TABLE `tb_payroll_approvals` DROP INDEX `idx_pra_run_round`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_approvals' AND INDEX_NAME = 'idx_pra_run_round') = 0, 'ALTER TABLE `tb_payroll_approvals` ADD KEY `idx_pra_run_round` (`pra_run_id`,`pra_round`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_approvals' AND INDEX_NAME = 'fk_pra_user') = 0, 'ALTER TABLE `tb_payroll_approvals` ADD KEY `fk_pra_user` (`pra_user_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_payroll_items
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND INDEX_NAME = 'uq_pri_run_employee') <> 'pri_run_id,pri_employee_id', 'ALTER TABLE `tb_payroll_items` DROP INDEX `uq_pri_run_employee`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND INDEX_NAME = 'uq_pri_run_employee') = 0, 'ALTER TABLE `tb_payroll_items` ADD UNIQUE KEY `uq_pri_run_employee` (`pri_run_id`,`pri_employee_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND INDEX_NAME = 'idx_pri_employee') <> 'pri_employee_id', 'ALTER TABLE `tb_payroll_items` DROP INDEX `idx_pri_employee`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND INDEX_NAME = 'idx_pri_employee') = 0, 'ALTER TABLE `tb_payroll_items` ADD KEY `idx_pri_employee` (`pri_employee_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_payroll_item_lines
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_item_lines' AND INDEX_NAME = 'idx_pil_item') <> 'pil_item_id', 'ALTER TABLE `tb_payroll_item_lines` DROP INDEX `idx_pil_item`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_item_lines' AND INDEX_NAME = 'idx_pil_item') = 0, 'ALTER TABLE `tb_payroll_item_lines` ADD KEY `idx_pil_item` (`pil_item_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_item_lines' AND INDEX_NAME = 'fk_pil_created_by') = 0, 'ALTER TABLE `tb_payroll_item_lines` ADD KEY `fk_pil_created_by` (`pil_created_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_labor_cost_allocations
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_labor_cost_allocations' AND INDEX_NAME = 'idx_lca_project_period') <> 'lca_project_id,lca_period', 'ALTER TABLE `tb_labor_cost_allocations` DROP INDEX `idx_lca_project_period`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_labor_cost_allocations' AND INDEX_NAME = 'idx_lca_project_period') = 0, 'ALTER TABLE `tb_labor_cost_allocations` ADD KEY `idx_lca_project_period` (`lca_project_id`,`lca_period`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_labor_cost_allocations' AND INDEX_NAME = 'idx_lca_run') <> 'lca_run_id', 'ALTER TABLE `tb_labor_cost_allocations` DROP INDEX `idx_lca_run`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_labor_cost_allocations' AND INDEX_NAME = 'idx_lca_run') = 0, 'ALTER TABLE `tb_labor_cost_allocations` ADD KEY `idx_lca_run` (`lca_run_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_labor_cost_allocations' AND INDEX_NAME = 'fk_lca_employee') = 0, 'ALTER TABLE `tb_labor_cost_allocations` ADD KEY `fk_lca_employee` (`lca_employee_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
 -- ─── ส่วนที่ 4: เติม foreign key ที่ยังขาด (รวม FK ย้อนกลับ tb_roles -> tb_users ที่สร้างพร้อมตารางไม่ได้) ──
 -- สกุลเงินเริ่มต้น THB + USD (2026-10-13) — ต้องมีก่อนเพิ่ม FK สกุลเงินของลูกค้า (ลูกค้าเดิมทุกรายได้ค่าเริ่มต้น THB)
 -- ใส่เฉพาะตอนตารางยังว่าง · ข้อมูลเริ่มต้นอื่นอยู่ส่วนที่ 5
@@ -3306,6 +3632,32 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CON
 -- tb_leave_attachments
 SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_attachments' AND CONSTRAINT_NAME = 'fk_lra_request' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_leave_attachments` ADD CONSTRAINT `fk_lra_request` FOREIGN KEY (`lra_request_id`) REFERENCES `tb_leave_requests` (`lr_id`) ON DELETE CASCADE', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_attachments' AND CONSTRAINT_NAME = 'fk_lra_uploaded_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_leave_attachments` ADD CONSTRAINT `fk_lra_uploaded_by` FOREIGN KEY (`lra_uploaded_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_employee_tax_profiles
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_tax_profiles' AND CONSTRAINT_NAME = 'fk_etp_employee' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_employee_tax_profiles` ADD CONSTRAINT `fk_etp_employee` FOREIGN KEY (`etp_employee_id`) REFERENCES `tb_employees` (`emp_id`) ON DELETE CASCADE', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_tax_profiles' AND CONSTRAINT_NAME = 'fk_etp_updated_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_employee_tax_profiles` ADD CONSTRAINT `fk_etp_updated_by` FOREIGN KEY (`etp_updated_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_payroll_runs
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND CONSTRAINT_NAME = 'fk_pr_cancelled_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_payroll_runs` ADD CONSTRAINT `fk_pr_cancelled_by` FOREIGN KEY (`pr_cancelled_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND CONSTRAINT_NAME = 'fk_pr_created_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_payroll_runs` ADD CONSTRAINT `fk_pr_created_by` FOREIGN KEY (`pr_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_runs' AND CONSTRAINT_NAME = 'fk_pr_paid_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_payroll_runs` ADD CONSTRAINT `fk_pr_paid_by` FOREIGN KEY (`pr_paid_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_payroll_approvals
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_approvals' AND CONSTRAINT_NAME = 'fk_pra_run' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_payroll_approvals` ADD CONSTRAINT `fk_pra_run` FOREIGN KEY (`pra_run_id`) REFERENCES `tb_payroll_runs` (`pr_id`) ON DELETE CASCADE', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_approvals' AND CONSTRAINT_NAME = 'fk_pra_user' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_payroll_approvals` ADD CONSTRAINT `fk_pra_user` FOREIGN KEY (`pra_user_id`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_payroll_items
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND CONSTRAINT_NAME = 'fk_pri_employee' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_payroll_items` ADD CONSTRAINT `fk_pri_employee` FOREIGN KEY (`pri_employee_id`) REFERENCES `tb_employees` (`emp_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND CONSTRAINT_NAME = 'fk_pri_run' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_payroll_items` ADD CONSTRAINT `fk_pri_run` FOREIGN KEY (`pri_run_id`) REFERENCES `tb_payroll_runs` (`pr_id`) ON DELETE CASCADE', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_payroll_item_lines
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_item_lines' AND CONSTRAINT_NAME = 'fk_pil_created_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_payroll_item_lines` ADD CONSTRAINT `fk_pil_created_by` FOREIGN KEY (`pil_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_item_lines' AND CONSTRAINT_NAME = 'fk_pil_item' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_payroll_item_lines` ADD CONSTRAINT `fk_pil_item` FOREIGN KEY (`pil_item_id`) REFERENCES `tb_payroll_items` (`pri_id`) ON DELETE CASCADE', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_labor_cost_allocations
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_labor_cost_allocations' AND CONSTRAINT_NAME = 'fk_lca_employee' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_labor_cost_allocations` ADD CONSTRAINT `fk_lca_employee` FOREIGN KEY (`lca_employee_id`) REFERENCES `tb_employees` (`emp_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_labor_cost_allocations' AND CONSTRAINT_NAME = 'fk_lca_project' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_labor_cost_allocations` ADD CONSTRAINT `fk_lca_project` FOREIGN KEY (`lca_project_id`) REFERENCES `tb_projects` (`project_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_labor_cost_allocations' AND CONSTRAINT_NAME = 'fk_lca_run' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_labor_cost_allocations` ADD CONSTRAINT `fk_lca_run` FOREIGN KEY (`lca_run_id`) REFERENCES `tb_payroll_runs` (`pr_id`) ON DELETE CASCADE', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
 -- ─── ส่วนที่ 5: ข้อมูลเริ่มต้น (ใส่เฉพาะตอนตารางยังว่างเท่านั้น) ─────────────────────────────────
 -- ตั้งใจเช็ค "ตารางว่าง" ไม่ใช่ "ไม่มีแถวนี้" — ถ้าแอดมินลบ/เปลี่ยนบัญชีเริ่มต้นไปแล้วบน production
@@ -3573,6 +3925,12 @@ FROM (
     UNION ALL SELECT 'tb_task_checklist_items' AS table_name, 'tci_created_at,tci_created_by,tci_done_at,tci_done_by,tci_id,tci_is_done,tci_sort_order,tci_task_id,tci_text' AS expected_columns, 'fk_tci_created_by(tci_created_by),fk_tci_done_by(tci_done_by),idx_tci_task(tci_task_id+tci_sort_order),primary(tci_id)' AS expected_indexes
     UNION ALL SELECT 'tb_leave_requests' AS table_name, 'lr_cancel_reason,lr_cancelled_at,lr_cancelled_by,lr_created_at,lr_created_by,lr_days,lr_decided_at,lr_decided_by,lr_decision_note,lr_employee_id,lr_end_date,lr_half_day,lr_id,lr_leave_type_id,lr_reason,lr_start_date,lr_status,lr_submitted_at,lr_updated_at,lr_version' AS expected_columns, 'fk_lr_cancelled_by(lr_cancelled_by),fk_lr_created_by(lr_created_by),fk_lr_decided_by(lr_decided_by),fk_lr_leave_type(lr_leave_type_id),idx_lr_employee_dates(lr_employee_id+lr_start_date),idx_lr_status_dates(lr_status+lr_start_date),primary(lr_id)' AS expected_indexes
     UNION ALL SELECT 'tb_leave_attachments' AS table_name, 'lra_file_name,lra_file_path,lra_file_size,lra_id,lra_request_id,lra_uploaded_at,lra_uploaded_by' AS expected_columns, 'fk_lra_uploaded_by(lra_uploaded_by),idx_lra_request(lra_request_id),primary(lra_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_employee_tax_profiles' AS table_name, 'etp_child_allowance,etp_employee_id,etp_fund_allowance,etp_home_loan_interest,etp_insurance_allowance,etp_note,etp_other_allowance,etp_parent_allowance,etp_prior_income,etp_prior_sso,etp_prior_tax,etp_spouse_allowance,etp_tax_year,etp_updated_at,etp_updated_by' AS expected_columns, 'fk_etp_updated_by(etp_updated_by),primary(etp_employee_id+etp_tax_year)' AS expected_indexes
+    UNION ALL SELECT 'tb_payroll_runs' AS table_name, 'pr_approval_current_level,pr_approval_plan,pr_approval_round,pr_approved_at,pr_calculated_at,pr_cancel_reason,pr_cancelled_at,pr_cancelled_by,pr_created_at,pr_created_by,pr_employee_count,pr_id,pr_number,pr_paid_by,pr_paid_date,pr_paid_note,pr_pay_date,pr_period,pr_returned_reason,pr_standard_hours,pr_status,pr_submitted_at,pr_total_deductions,pr_total_gross,pr_total_net,pr_total_sso_employee,pr_total_sso_employer,pr_total_tax,pr_updated_at,pr_version,pr_working_days' AS expected_columns, 'fk_pr_cancelled_by(pr_cancelled_by),fk_pr_created_by(pr_created_by),fk_pr_paid_by(pr_paid_by),idx_pr_period_status(pr_period+pr_status),primary(pr_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_payroll_approvals' AS table_name, 'pra_action,pra_created_at,pra_id,pra_level,pra_reason,pra_role_id,pra_role_name,pra_round,pra_run_id,pra_user_id,pra_user_name' AS expected_columns, 'fk_pra_user(pra_user_id),idx_pra_run_round(pra_run_id+pra_round),primary(pra_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_payroll_items' AS table_name, 'pri_annual_income_estimate,pri_annual_tax_estimate,pri_bank_account_no,pri_bank_name,pri_base_salary,pri_days_in_month,pri_department_name,pri_emp_code,pri_employed_days,pri_employee_id,pri_full_name,pri_gross,pri_id,pri_labor_cost,pri_national_id,pri_net,pri_other_deductions,pri_other_earnings,pri_position,pri_run_id,pri_salary_amount,pri_sso_employee,pri_sso_employer,pri_sso_enrolled,pri_sso_wage,pri_standard_hours,pri_tax,pri_taxable_income,pri_unpaid_leave_amount,pri_unpaid_leave_days,pri_ytd_income_before,pri_ytd_sso_before,pri_ytd_tax_before' AS expected_columns, 'idx_pri_employee(pri_employee_id),primary(pri_id),uq_pri_run_employee(pri_run_id+pri_employee_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_payroll_item_lines' AS table_name, 'pil_amount,pil_created_at,pil_created_by,pil_id,pil_is_one_off,pil_is_sso_wage,pil_is_taxable,pil_item_id,pil_kind,pil_label,pil_source' AS expected_columns, 'fk_pil_created_by(pil_created_by),idx_pil_item(pil_item_id),primary(pil_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_labor_cost_allocations' AS table_name, 'lca_amount,lca_employee_id,lca_hours,lca_id,lca_period,lca_project_id,lca_run_id' AS expected_columns, 'fk_lca_employee(lca_employee_id),idx_lca_project_period(lca_project_id+lca_period),idx_lca_run(lca_run_id),primary(lca_id)' AS expected_indexes
 ) e
 LEFT JOIN (
     SELECT LOWER(c.TABLE_NAME) AS table_name,

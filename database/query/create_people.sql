@@ -2,7 +2,7 @@
 -- รันหลัง create_users_roles.sql, create_project_manager.sql, create_sales.sql, create_purchasing.sql (อ้าง tb_users, tb_department, tb_branches)
 -- ฐานข้อมูลที่ใช้งานอยู่: รัน deploy_schema.sql แทน (มีตารางกลุ่มนี้แบบรันซ้ำได้)
 -- ขั้น 4-1: ทะเบียนพนักงาน + ค่าจ้างตามวันที่มีผล + รายการประจำ · อัตราประกันสังคม · ปีภาษี/ขั้นภาษี · ตั้งค่าเงินเดือน · วันหยุดบริษัท · ประเภทลา
--- ขั้น 4-2: ลงเวลารายสัปดาห์ (สัปดาห์ + แถวชั่วโมงต่อวัน/โปรเจกต์) · ขั้น 4-3: คำขอลา + ไฟล์แนบ — อยู่ท้ายไฟล์ ก่อนข้อมูลเริ่มต้น
+-- ขั้น 4-2: ลงเวลารายสัปดาห์ (สัปดาห์ + แถวชั่วโมงต่อวัน/โปรเจกต์) · ขั้น 4-3: คำขอลา + ไฟล์แนบ · ขั้น 4-4: รอบเงินเดือน — อยู่ท้ายไฟล์ ก่อนข้อมูลเริ่มต้น
 --
 -- ข้อมูลกลุ่มนี้อ่อนไหว (เงินเดือน เลขประจำตัวประชาชน เลขบัญชี) — ทุก endpoint ตรวจสิทธิ์ manageEmployees
 -- audit log ปิดบังค่าเงินเดือน (บันทึกว่า "เปลี่ยน" แต่ไม่เก็บตัวเลข) — แบบระบบ R-H1/R-H8
@@ -288,6 +288,176 @@ CREATE TABLE `tb_leave_attachments` (
   KEY `fk_lra_uploaded_by` (`lra_uploaded_by`),
   CONSTRAINT `fk_lra_request` FOREIGN KEY (`lra_request_id`) REFERENCES `tb_leave_requests` (`lr_id`) ON DELETE CASCADE,
   CONSTRAINT `fk_lra_uploaded_by` FOREIGN KEY (`lra_uploaded_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ── ขั้น 4-4 (2026-10-17): รอบเงินเดือน ──
+-- ค่าลดหย่อนรายปีของพนักงาน (ล.ย.01) + ยอดยกมาของปี (เงินได้/ภาษี/ประกันสังคมก่อนใช้ระบบ หรือจากที่ทำงานเดิม)
+-- ยอดลดหย่อนกรอกเป็นบาทตามที่กฎหมายให้ (ฝ่ายบุคคลคิดเอง) · แก้กลางปีได้ — รอบถัดไปคิดภาษีทั้งปีใหม่
+CREATE TABLE `tb_employee_tax_profiles` (
+  `etp_employee_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `etp_tax_year` smallint unsigned NOT NULL COMMENT 'ปี ค.ศ.',
+  `etp_spouse_allowance` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `etp_child_allowance` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `etp_parent_allowance` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `etp_insurance_allowance` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ประกันชีวิต/สุขภาพ',
+  `etp_fund_allowance` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'กองทุน (สำรองเลี้ยงชีพ/RMF/SSF ฯลฯ)',
+  `etp_home_loan_interest` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `etp_other_allowance` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `etp_prior_income` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'เงินได้ยกมาของปี (ก่อนรอบแรกในระบบ)',
+  `etp_prior_tax` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ภาษีที่หักไปแล้วยกมา',
+  `etp_prior_sso` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ประกันสังคมที่หักไปแล้วยกมา',
+  `etp_note` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `etp_updated_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `etp_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`etp_employee_id`,`etp_tax_year`),
+  KEY `fk_etp_updated_by` (`etp_updated_by`),
+  CONSTRAINT `fk_etp_employee` FOREIGN KEY (`etp_employee_id`) REFERENCES `tb_employees` (`emp_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_etp_updated_by` FOREIGN KEY (`etp_updated_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- รอบเงินเดือนรายเดือน — เดือนละหนึ่งรอบที่ไม่ยกเลิก (ตรวจใน service + ล็อกแถว tb_payroll_settings ก่อนตรวจ R-H2)
+-- draft (คิดใหม่/แก้รายการได้) → pending_approval (ตัวเลขล็อก · กติกาอนุมัติประเภท PR) → approved (ล็อกถาวร + snapshot ค่าแรง + ล็อกลงเวลา/ลาของเดือน)
+-- → paid (สลิปเปิดให้พนักงาน) · ยกเลิกได้ก่อนจ่าย
+CREATE TABLE `tb_payroll_runs` (
+  `pr_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `pr_period` char(7) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'YYYY-MM',
+  `pr_number` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'PR-YYYY-MM',
+  `pr_pay_date` date NOT NULL,
+  `pr_status` enum('draft','pending_approval','approved','paid','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'draft',
+  `pr_version` int unsigned NOT NULL DEFAULT '1',
+  `pr_working_days` smallint unsigned NOT NULL DEFAULT '0',
+  `pr_standard_hours` decimal(6,2) NOT NULL DEFAULT '0.00',
+  `pr_employee_count` smallint unsigned NOT NULL DEFAULT '0',
+  `pr_total_gross` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pr_total_deductions` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'รายหักอื่น (ไม่รวมประกันสังคม/ภาษี)',
+  `pr_total_sso_employee` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pr_total_sso_employer` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pr_total_tax` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pr_total_net` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pr_calculated_at` datetime DEFAULT NULL,
+  `pr_approval_round` int unsigned NOT NULL DEFAULT '0',
+  `pr_approval_current_level` tinyint unsigned DEFAULT NULL,
+  `pr_approval_plan` text COLLATE utf8mb4_unicode_ci COMMENT 'snapshot แผนอนุมัติตอนส่ง (JSON)',
+  `pr_submitted_at` datetime DEFAULT NULL,
+  `pr_approved_at` datetime DEFAULT NULL,
+  `pr_returned_reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pr_paid_date` date DEFAULT NULL,
+  `pr_paid_note` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เช่น บัญชีที่โอน',
+  `pr_paid_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pr_cancelled_at` datetime DEFAULT NULL,
+  `pr_cancel_reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pr_cancelled_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pr_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pr_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `pr_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`pr_id`),
+  KEY `idx_pr_period_status` (`pr_period`,`pr_status`),
+  KEY `fk_pr_paid_by` (`pr_paid_by`),
+  KEY `fk_pr_cancelled_by` (`pr_cancelled_by`),
+  KEY `fk_pr_created_by` (`pr_created_by`),
+  CONSTRAINT `fk_pr_paid_by` FOREIGN KEY (`pr_paid_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_pr_cancelled_by` FOREIGN KEY (`pr_cancelled_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_pr_created_by` FOREIGN KEY (`pr_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ประวัติอนุมัติ/ตีกลับ — รูปแบบเดียวกับ tb_expense_approvals
+CREATE TABLE `tb_payroll_approvals` (
+  `pra_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `pra_run_id` int unsigned NOT NULL,
+  `pra_round` int unsigned NOT NULL,
+  `pra_level` tinyint unsigned NOT NULL,
+  `pra_action` enum('approve','return') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pra_user_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pra_user_name` varchar(201) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pra_role_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pra_role_name` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pra_reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pra_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`pra_id`),
+  KEY `idx_pra_run_round` (`pra_run_id`,`pra_round`),
+  KEY `fk_pra_user` (`pra_user_id`),
+  CONSTRAINT `fk_pra_run` FOREIGN KEY (`pra_run_id`) REFERENCES `tb_payroll_runs` (`pr_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_pra_user` FOREIGN KEY (`pra_user_id`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- รายคนในรอบ — snapshot ข้อมูลพนักงาน + ตัวเลขทุกตัวที่ใช้คิด (สลิป/แบบภาษีอ่านจากตรงนี้ ไม่คิดใหม่)
+CREATE TABLE `tb_payroll_items` (
+  `pri_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `pri_run_id` int unsigned NOT NULL,
+  `pri_employee_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pri_emp_code` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pri_full_name` varchar(250) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pri_national_id` varchar(13) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pri_position` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pri_department_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pri_bank_name` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pri_bank_account_no` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pri_sso_enrolled` tinyint(1) NOT NULL DEFAULT '1',
+  `pri_employed_days` smallint unsigned NOT NULL COMMENT 'วันปฏิทินที่เป็นพนักงานในเดือน',
+  `pri_days_in_month` smallint unsigned NOT NULL,
+  `pri_base_salary` decimal(15,2) NOT NULL COMMENT 'เงินเดือนต่อเดือน ณ วันสุดท้ายที่ทำงานในเดือน',
+  `pri_salary_amount` decimal(15,2) NOT NULL COMMENT 'เงินเดือนตามสัดส่วนวัน',
+  `pri_unpaid_leave_days` decimal(5,1) NOT NULL DEFAULT '0.0',
+  `pri_unpaid_leave_amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_other_earnings` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_other_deductions` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_gross` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'เงินเดือนสุทธิจากลา + รายรับอื่น',
+  `pri_taxable_income` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_sso_wage` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_sso_employee` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_sso_employer` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_ytd_income_before` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_ytd_tax_before` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_ytd_sso_before` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_annual_income_estimate` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_annual_tax_estimate` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_tax` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_net` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_standard_hours` decimal(6,2) NOT NULL DEFAULT '0.00',
+  `pri_labor_cost` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ต้นทุนทั้งเดือน = ค่าจ้าง + ประกันสังคมส่วนบริษัท',
+  PRIMARY KEY (`pri_id`),
+  UNIQUE KEY `uq_pri_run_employee` (`pri_run_id`,`pri_employee_id`),
+  KEY `idx_pri_employee` (`pri_employee_id`),
+  CONSTRAINT `fk_pri_run` FOREIGN KEY (`pri_run_id`) REFERENCES `tb_payroll_runs` (`pr_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_pri_employee` FOREIGN KEY (`pri_employee_id`) REFERENCES `tb_employees` (`emp_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- รายการเพิ่ม/หักของแต่ละคน: recurring = ดึงจากรายการประจำตอนคิด (คิดใหม่แล้วสร้างใหม่) · manual = กรอกเอง (คิดใหม่แล้วยังอยู่)
+CREATE TABLE `tb_payroll_item_lines` (
+  `pil_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `pil_item_id` int unsigned NOT NULL,
+  `pil_source` enum('recurring','manual') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pil_kind` enum('earning','deduction') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pil_label` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pil_amount` decimal(15,2) NOT NULL,
+  `pil_is_taxable` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'รายรับ: นับเป็นเงินได้คิดภาษี',
+  `pil_is_sso_wage` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'รายรับ: นับเป็นค่าจ้างประกันสังคม',
+  `pil_is_one_off` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'รายรับครั้งเดียว (โบนัส) — ไม่ประมาณการซ้ำทั้งปีตอนคิดภาษี',
+  `pil_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pil_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`pil_id`),
+  KEY `idx_pil_item` (`pil_item_id`),
+  KEY `fk_pil_created_by` (`pil_created_by`),
+  CONSTRAINT `fk_pil_item` FOREIGN KEY (`pil_item_id`) REFERENCES `tb_payroll_items` (`pri_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_pil_created_by` FOREIGN KEY (`pil_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ค่าแรงจริงต่อโปรเจกต์ — snapshot ตอนอนุมัติรอบ (โปรเจกต์ว่าง = ส่วนกลาง: งานภายใน + ชั่วโมงที่ไม่ได้ลง) · หน้าโปรเจกต์อ่านจากที่นี่
+CREATE TABLE `tb_labor_cost_allocations` (
+  `lca_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `lca_run_id` int unsigned NOT NULL,
+  `lca_period` char(7) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `lca_employee_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `lca_project_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `lca_hours` decimal(8,2) NOT NULL DEFAULT '0.00',
+  `lca_amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  PRIMARY KEY (`lca_id`),
+  KEY `idx_lca_project_period` (`lca_project_id`,`lca_period`),
+  KEY `idx_lca_run` (`lca_run_id`),
+  KEY `fk_lca_employee` (`lca_employee_id`),
+  CONSTRAINT `fk_lca_run` FOREIGN KEY (`lca_run_id`) REFERENCES `tb_payroll_runs` (`pr_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_lca_employee` FOREIGN KEY (`lca_employee_id`) REFERENCES `tb_employees` (`emp_id`),
+  CONSTRAINT `fk_lca_project` FOREIGN KEY (`lca_project_id`) REFERENCES `tb_projects` (`project_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ── ข้อมูลเริ่มต้น (ตัวเลขทุกตัวต้องให้นักบัญชียืนยันก่อนจ่ายเงินเดือนจริง — คำถาม Y1/Y2) ──

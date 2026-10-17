@@ -61,6 +61,10 @@ export default function ReceiptPrintPage() {
     if (!detail) return <p className="p-8 text-sm text-gray-500">กำลังเตรียมหน้าพิมพ์...</p>;
 
     const { receipt, allocations, currency } = detail;
+    // ชำระบางส่วน: แสดงคอลัมน์คงค้างหลังรับชำระ (ชำระครบทุกใบไม่แสดง — ไม่มีศูนย์ซ้ำ ๆ)
+    // ยอดตามใบแจ้งหนี้แสดงเฉพาะเมื่อมีใบที่ตัดไม่เต็มใบ (รับเต็มทุกใบ = ยอดเดียวกับจำนวนเงินที่ชำระ ไม่พิมพ์ซ้ำ)
+    const showInvoiceTotal = allocations.some((row) => row.rca_amount !== row.inv_total);
+    const hasBalance = allocations.some((row) => parseHundredths(row.outstanding_after_receipt, "คงค้าง") > 0n);
     const company = receipt.rc_company_snapshot;
     const client = receipt.rc_client_snapshot;
     if (!company || !client)
@@ -170,8 +174,15 @@ export default function ReceiptPrintPage() {
                             <th className="w-12 py-1.5 pl-1 font-medium">{labels.index}</th>
                             <th className="py-1.5 font-medium">{labels.invoiceNumber}</th>
                             <th className="w-32 py-1.5 font-medium">{labels.invoiceDate}</th>
-                            <th className="w-32 py-1.5 text-right font-medium">{labels.invoiceTotal}</th>
-                            <th className="w-32 py-1.5 pr-1 text-right font-medium">{labels.paidAmount}</th>
+                            {showInvoiceTotal && (
+                                <th className="w-32 py-1.5 text-right font-medium">{labels.invoiceTotal}</th>
+                            )}
+                            <th className={`w-32 py-1.5 text-right font-medium ${hasBalance ? "" : "pr-1"}`}>
+                                {labels.paidAmount}
+                            </th>
+                            {hasBalance && (
+                                <th className="w-32 py-1.5 pr-1 text-right font-medium">{labels.outstandingAfter}</th>
+                            )}
                         </tr>
                     </thead>
                     <tbody>
@@ -183,12 +194,19 @@ export default function ReceiptPrintPage() {
                                     <p className="text-[8.5pt] text-gray-600">{row.inv_title}</p>
                                 </td>
                                 <td className="py-1">{formatDocumentDate(row.inv_issue_date, language)}</td>
-                                <td className="py-1 text-right tabular-nums">
-                                    {formatAmount(row.inv_total, decimals)}
-                                </td>
-                                <td className="py-1 pr-1 text-right tabular-nums">
+                                {showInvoiceTotal && (
+                                    <td className="py-1 text-right tabular-nums">
+                                        {formatAmount(row.inv_total, decimals)}
+                                    </td>
+                                )}
+                                <td className={`py-1 text-right tabular-nums ${hasBalance ? "" : "pr-1"}`}>
                                     {formatAmount(row.rca_amount, decimals)}
                                 </td>
+                                {hasBalance && (
+                                    <td className="py-1 pr-1 text-right tabular-nums">
+                                        {formatAmount(row.outstanding_after_receipt, decimals)}
+                                    </td>
+                                )}
                             </tr>
                         ))}
                     </tbody>

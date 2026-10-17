@@ -249,7 +249,19 @@ export default function BillingNoteViewPage() {
                         <span className="tabular-nums">{formatAmount(note.bn_total, decimals)}</span>
                     </div>
                     <p className="text-xs text-gray-500">{amountInWords(note.bn_total, currency, note.bn_language)}</p>
-                    {hasWithholding && <FieldHint>{BILLING_NOTE_MESSAGES.withholding}</FieldHint>}
+                    {hasWithholding && (
+                        <>
+                            <div className="flex justify-between text-gray-600">
+                                <span>หัก ณ ที่จ่าย (ประมาณ)</span>
+                                <span className="tabular-nums">{formatAmount(detail.withholding_total, decimals)}</span>
+                            </div>
+                            <div className="flex justify-between font-medium text-gray-900">
+                                <span>ยอดชำระสุทธิ ({code})</span>
+                                <span className="tabular-nums">{formatAmount(detail.net_payable, decimals)}</span>
+                            </div>
+                            <FieldHint>{BILLING_NOTE_MESSAGES.withholding}</FieldHint>
+                        </>
+                    )}
                 </div>
 
                 {note.bn_notes && (

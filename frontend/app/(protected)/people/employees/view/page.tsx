@@ -20,6 +20,7 @@ import EmployeeSummaryCard from "./_components/employee-summary-card";
 import CompensationCard from "./_components/compensation-card";
 import RecurringItemsCard from "./_components/recurring-items-card";
 import LeaveBalanceCard from "./_components/leave-balance-card";
+import TaxProfileCard from "./_components/tax-profile-card";
 import TerminateDialog from "./_components/terminate-dialog";
 
 type PendingAction = "delete" | "reinstate" | null;
@@ -157,6 +158,7 @@ export default function EmployeeViewPage() {
             <CompensationCard employee={employee} onChanged={reload} />
             <RecurringItemsCard employee={employee} onChanged={reload} />
             <LeaveBalanceCard employeeId={employee.emp_id} currentYear={currentYearBangkok()} />
+            <TaxProfileCard employeeId={employee.emp_id} currentYear={currentYearBangkok()} />
 
             {isTerminating && (
                 <TerminateDialog

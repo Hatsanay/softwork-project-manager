@@ -290,7 +290,7 @@ async function getProjectFinance(conn, projectId) {
             labor_hours: toDecimalText(labor.approvedHours),
             labor_pending_hours: toDecimalText(labor.pendingHours),
             labor_by_month: labor.byMonth,
-            labor_is_estimate: true,
+            labor_is_estimate: labor.isEstimate,
             gross_profit_thb: toDecimalText(grossProfitThb),
             gross_margin_percent: percentOf(grossProfitThb, billedBeforeVatThb),
             pending_cost_thb: toDecimalText(cost.pendingThb),
