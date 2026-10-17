@@ -19,9 +19,15 @@ import type { Employee } from "../../_types";
 import EmployeeSummaryCard from "./_components/employee-summary-card";
 import CompensationCard from "./_components/compensation-card";
 import RecurringItemsCard from "./_components/recurring-items-card";
+import LeaveBalanceCard from "./_components/leave-balance-card";
 import TerminateDialog from "./_components/terminate-dialog";
 
 type PendingAction = "delete" | "reinstate" | null;
+
+// ปีปัจจุบันตามเวลาไทย (ไม่ใช่เขตเวลาเครื่องผู้ใช้)
+function currentYearBangkok() {
+    return Number(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric" }).format(new Date()));
+}
 
 export default function EmployeeViewPage() {
     const router = useRouter();
@@ -150,6 +156,7 @@ export default function EmployeeViewPage() {
             <EmployeeSummaryCard employee={employee} />
             <CompensationCard employee={employee} onChanged={reload} />
             <RecurringItemsCard employee={employee} onChanged={reload} />
+            <LeaveBalanceCard employeeId={employee.emp_id} currentYear={currentYearBangkok()} />
 
             {isTerminating && (
                 <TerminateDialog

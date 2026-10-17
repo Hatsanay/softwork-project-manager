@@ -198,6 +198,16 @@ const ENTITIES = [
     { re: /^\/projects\/([^/]+)\/task-order$/, type: "task", id: "1", project: "1", label: { PUT: "เรียงลำดับงานในบอร์ด" } },
     { re: /^\/projects\/([^/]+)\/tasks\/([^/]+)\/labels$/, type: "task", table: "tb_tasks", pk: "task_id", id: "2", project: "1", label: { PUT: "ติดป้ายงาน" } },
     { re: /^\/projects\/([^/]+)\/tasks\/([^/]+)\/checklist(-order|\/[^/]+(\/done)?)?$/, type: "task", id: "2", project: "1", label: { POST: "เพิ่ม checklist ของงาน", PUT: "แก้ checklist ของงาน", DELETE: "ลบ checklist ของงาน" } },
+    // การลา เฟส 4 ขั้น 4-3 — id คำขอ = เลขรัน (tb_leave_requests.lr_id) · ไฟล์แนบไม่เก็บเนื้อไฟล์
+    { re: /^\/leave\/requests$/, type: "leave", table: "tb_leave_requests", pk: "lr_id", id: "response:lr_id", label: { POST: "สร้างคำขอลา" } },
+    { re: /^\/leave\/requests\/([^/]+)\/submit$/, type: "leave", table: "tb_leave_requests", pk: "lr_id", id: "1", label: { POST: "ส่งคำขอลา" } },
+    { re: /^\/leave\/requests\/([^/]+)\/withdraw$/, type: "leave", table: "tb_leave_requests", pk: "lr_id", id: "1", label: { POST: "ดึงคำขอลากลับ" } },
+    { re: /^\/leave\/requests\/([^/]+)\/cancel$/, type: "leave", table: "tb_leave_requests", pk: "lr_id", id: "1", label: { POST: "ยกเลิกคำขอลา" } },
+    { re: /^\/leave\/requests\/([^/]+)\/approve$/, type: "leave", table: "tb_leave_requests", pk: "lr_id", id: "1", label: { POST: "อนุมัติลา" } },
+    { re: /^\/leave\/requests\/([^/]+)\/reject$/, type: "leave", table: "tb_leave_requests", pk: "lr_id", id: "1", label: { POST: "ไม่อนุมัติลา" } },
+    { re: /^\/leave\/requests\/([^/]+)\/cancel-approved$/, type: "leave", table: "tb_leave_requests", pk: "lr_id", id: "1", label: { POST: "ยกเลิกลาที่อนุมัติแล้ว" } },
+    { re: /^\/leave\/requests\/([^/]+)\/attachments(\/[^/]+)?$/, type: "leave", id: "1", label: { POST: "แนบไฟล์คำขอลา", DELETE: "ลบไฟล์แนบคำขอลา" } },
+    { re: /^\/leave\/requests\/([^/]+)$/, type: "leave", table: "tb_leave_requests", pk: "lr_id", id: "1", label: { PUT: "แก้คำขอลา", DELETE: "ลบร่างคำขอลา" } },
 ];
 
 // GET ที่บันทึกด้วย (เปิดดูข้อมูลสำคัญ) — นอกนั้น GET ไม่บันทึก ยกเว้นถูกปฏิเสธ/error (ปริมาณมหาศาลและไม่เปลี่ยนข้อมูล)

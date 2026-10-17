@@ -458,6 +458,37 @@
             "inv_wht_amount",
             "inv_wht_rate"
         ],
+        "tb_leave_attachments": [
+            "lra_file_name",
+            "lra_file_path",
+            "lra_file_size",
+            "lra_id",
+            "lra_request_id",
+            "lra_uploaded_at",
+            "lra_uploaded_by"
+        ],
+        "tb_leave_requests": [
+            "lr_cancel_reason",
+            "lr_cancelled_at",
+            "lr_cancelled_by",
+            "lr_created_at",
+            "lr_created_by",
+            "lr_days",
+            "lr_decided_at",
+            "lr_decided_by",
+            "lr_decision_note",
+            "lr_employee_id",
+            "lr_end_date",
+            "lr_half_day",
+            "lr_id",
+            "lr_leave_type_id",
+            "lr_reason",
+            "lr_start_date",
+            "lr_status",
+            "lr_submitted_at",
+            "lr_updated_at",
+            "lr_version"
+        ],
         "tb_leave_types": [
             "lt_attachment_from_days",
             "lt_carry_over_days",

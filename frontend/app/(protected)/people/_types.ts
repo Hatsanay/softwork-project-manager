@@ -177,6 +177,7 @@ export type TimesheetDay = {
     date: string;
     is_working_day: boolean;
     holiday_name: string | null;
+    leave: "full" | "morning" | "afternoon" | null;
     blocked_reason: string | null;
 };
 
@@ -231,5 +232,79 @@ export type ApprovalWeek = {
         tse_hours: string;
         tse_note: string | null;
         is_approved: boolean;
+    }[];
+};
+
+// ─── การลา (ขั้น 4-3) ──────────────────────────────────────────────────────────────────────────
+
+export type LeaveStatus = "draft" | "pending" | "approved" | "rejected" | "cancelled";
+export type HalfDay = "none" | "morning" | "afternoon";
+
+export type LeaveBalance = {
+    lt_id: number;
+    lt_name_th: string;
+    lt_is_paid: boolean;
+    lt_attachment_from_days: string | null;
+    lt_min_service_days: number;
+    lt_status: "active" | "inactive";
+    quota: string | null;
+    carried: string;
+    used: string;
+    pending: string;
+    remaining: string | null;
+};
+
+export type LeaveAttachment = { lra_id: number; lra_file_name: string; lra_file_size: number };
+
+export type LeaveRequest = {
+    lr_id: number;
+    lr_employee_id: string;
+    lr_leave_type_id: number;
+    lt_name_th: string;
+    lt_is_paid: boolean;
+    lr_start_date: string;
+    lr_end_date: string;
+    lr_half_day: HalfDay;
+    lr_days: string;
+    lr_reason: string | null;
+    lr_status: LeaveStatus;
+    lr_version: number;
+    lr_decision_note: string | null;
+    lr_cancel_reason: string | null;
+    decided_by_name: string | null;
+    attachment_count: number;
+    attachments: LeaveAttachment[];
+};
+
+export type MyLeave = {
+    year: number;
+    today: string;
+    employee: { emp_id: string; emp_hire_date: string; emp_termination_date: string | null } | null;
+    balances: LeaveBalance[];
+    requests: LeaveRequest[];
+};
+
+export type PendingLeave = LeaveRequest & {
+    employee_name: string;
+    emp_code: string;
+    emp_nickname: string | null;
+    quota: string | null;
+    remaining_after_approve: string | null;
+    is_over_quota: boolean;
+};
+
+export type TeamCalendar = {
+    month: string;
+    month_start: string;
+    month_end: string;
+    working_weekdays: string;
+    holidays: string[];
+    leaves: {
+        lr_id: number;
+        lr_start_date: string;
+        lr_end_date: string;
+        lr_half_day: HalfDay;
+        lr_status: "pending" | "approved";
+        employee_name: string;
     }[];
 };

@@ -18,6 +18,8 @@ export type TimesheetRow = {
 };
 
 // "2026-10-19" → "จ. 19 ต.ค." (วันที่ล้วน ไม่ผ่านเขตเวลาเครื่อง)
+const HALF_DAY_LEAVE_NOTE = { morning: "ลาครึ่งวันเช้า", afternoon: "ลาครึ่งวันบ่าย" };
+
 export function dayLabel(dateText: string) {
     return new Intl.DateTimeFormat("th-TH", {
         weekday: "short",
@@ -51,7 +53,8 @@ export default function DayCard({
     onRemove: (key: string) => void;
 }) {
     const canAdd = isEditable && day.blocked_reason === null;
-    const dayNote = day.holiday_name ?? (day.is_working_day ? null : "วันหยุดประจำสัปดาห์");
+    const leaveNote = day.leave && day.leave !== "full" ? HALF_DAY_LEAVE_NOTE[day.leave] : null;
+    const dayNote = day.holiday_name ?? (day.is_working_day ? leaveNote : "วันหยุดประจำสัปดาห์");
 
     return (
         <section

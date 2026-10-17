@@ -6,13 +6,15 @@
 // - โปรเจกต์ต้องเป็นสมาชิกและไม่ถูกยกเลิก (แถวเดิมที่ลงไว้ก่อนออกจากโปรเจกต์คงไว้ได้)
 // - ผู้อนุมัติ: approveTimesheet = ทุกแถว · สมาชิกโปรเจกต์ที่มีสิทธิ์ "จัดการสมาชิก" = เฉพาะแถวของโปรเจกต์นั้น · อนุมัติของตัวเองไม่ได้
 //   อนุมัติครบทุกแถว = สัปดาห์ approved · ตีกลับ = ทั้งสัปดาห์กลับไปแก้ + ล้างการอนุมัติทุกแถว
-// - ขั้น 4-3 เพิ่ม: ลงวันที่ลาเต็มวันไม่ได้ · ขั้น 4-4 เพิ่ม: สัปดาห์ในเดือนที่รอบเงินเดือนอนุมัติแล้วแก้/ตีกลับไม่ได้
+// - ลงวันที่ลาเต็มวัน (อนุมัติแล้ว) ไม่ได้ (ขั้น 4-3) · ขั้น 4-4 เพิ่ม: สัปดาห์ในเดือนที่รอบเงินเดือนอนุมัติแล้วแก้/ตีกลับไม่ได้
 const { AppError } = require("../utils/app-error");
 const { todayBangkok } = require("../utils/bangkok-time");
 const { hasBit } = require("../shared/permissions.mjs");
 const { PROJECT_BIT_INDEX } = require("../utils/projectPermissions");
 const { addDays, weekDates, weekdayIndex } = require("../shared/payroll-math.mjs");
 const { formatHundredths } = require("../shared/money.mjs");
+const { findLinkedEmployee } = require("./linked-employee.service");
+const leaveService = require("./leave.service");
 
 const EDITABLE_STATUSES = ["draft", "returned"];
 const MANAGE_MEMBERS_BIT = PROJECT_BIT_INDEX.manageMembers;
@@ -26,24 +28,6 @@ function validationError(fields, message = "ลงเวลาบางแถว
 }
 
 // ─── พนักงานของผู้ใช้ ──────────────────────────────────────────────────────────────────────────
-
-/**
- * พนักงานที่ผูกกับบัญชีนี้ — ถ้ามีหลายช่วง (ออกแล้วกลับมาใหม่) ใช้ช่วงล่าสุด
- * @param {import("mysql2/promise").Pool | import("mysql2/promise").PoolConnection} conn
- * @param {string} userId
- * @param {{ forUpdate?: boolean }} [options] forUpdate = ล็อกแถวพนักงานก่อนอ่านอย่างอื่น (บันทึก/ส่ง)
- */
-async function findLinkedEmployee(conn, userId, { forUpdate = false } = {}) {
-    const [[employee]] = await conn.query(
-        `SELECT emp_id, emp_code, emp_first_name_th, emp_last_name_th,
-                DATE_FORMAT(emp_hire_date, '%Y-%m-%d') AS emp_hire_date,
-                DATE_FORMAT(emp_termination_date, '%Y-%m-%d') AS emp_termination_date
-         FROM tb_employees WHERE emp_user_id = ?
-         ORDER BY emp_hire_date DESC LIMIT 1 ${forUpdate ? "FOR UPDATE" : ""}`,
-        [userId],
-    );
-    return employee ?? null;
-}
 
 function requireEmployee(employee) {
     if (employee) return employee;
@@ -124,11 +108,13 @@ async function describeDays(conn, weekStart, settings, employee, today, week) {
     const holidayNames = new Map(holidays.map((holiday) => [holiday.hd_date, holiday.hd_name]));
     const earliestDate = addDays(today, -settings.ps_timesheet_backdate_days);
     const isReturned = week?.tsw_status === "returned";
+    const leaveDays = await leaveService.approvedLeaveDays(conn, employee.emp_id, dates[0], dates[6]);
     return dates.map((date) => ({
         date,
         is_working_day: settings.ps_working_weekdays[weekdayIndex(date)] === "1" && !holidayNames.has(date),
         holiday_name: holidayNames.get(date) ?? null,
-        blocked_reason: blockedReasonOf(date, { employee, today, earliestDate, isReturned }),
+        leave: leaveDays.get(date) ?? null,
+        blocked_reason: blockedReasonOf(date, { employee, today, earliestDate, isReturned, leaveDays }),
     }));
 }
 
@@ -136,8 +122,9 @@ async function describeDays(conn, weekStart, settings, employee, today, week) {
  * ทำไมวันนี้ลงเวลาไม่ได้ — null = ลงได้
  * @returns {string | null}
  */
-function blockedReasonOf(date, { employee, today, earliestDate, isReturned }) {
+function blockedReasonOf(date, { employee, today, earliestDate, isReturned, leaveDays }) {
     if (date < employee.emp_hire_date) return "ก่อนวันเริ่มงาน";
+    if (leaveDays.get(date) === "full") return "ลาเต็มวัน (อนุมัติแล้ว)";
     if (employee.emp_termination_date && date > employee.emp_termination_date) return "หลังวันทำงานวันสุดท้าย";
     if (date > today) return "ยังไม่ถึงวันนี้";
     if (!isReturned && date < earliestDate) return "เกินระยะลงย้อนหลัง";
@@ -271,11 +258,17 @@ function assertEditable(week, version) {
 async function assertEntriesAllowed(conn, userId, employee, week, entries, previousEntries) {
     const today = todayBangkok();
     const settings = await findTimesheetSettings(conn);
+    const entryDates = entries.map((entry) => entry.tse_date).sort();
+    const leaveDays =
+        entryDates.length > 0
+            ? await leaveService.approvedLeaveDays(conn, employee.emp_id, entryDates[0], entryDates.at(-1))
+            : new Map();
     const context = {
         employee,
         today,
         earliestDate: addDays(today, -settings.ps_timesheet_backdate_days),
         isReturned: week?.tsw_status === "returned",
+        leaveDays,
     };
     const previousKeys = new Set(previousEntries.map(entryKey));
     const projects = await findProjectsForCheck(conn, userId, entries);

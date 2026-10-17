@@ -107,3 +107,33 @@ export function laborCostOf(monthlyCost, hours, standardHours) {
     if (standardHours <= 0n) return 0n;
     return divideRoundHalfUp(monthlyCost * hours, standardHours);
 }
+
+/**
+ * วันทำงานในช่วงวันที่ (รวมหัวท้าย) — วันในสัปดาห์ที่ตั้งเป็นวันทำงาน ไม่รวมวันหยุดบริษัท (ใช้คิดวันลา — ขั้น 4-3)
+ * @param {string} startDate "YYYY-MM-DD"
+ * @param {string} endDate "YYYY-MM-DD" (ต้องไม่ก่อน startDate)
+ * @param {string} workingWeekdays 7 ตัว จันทร์→อาทิตย์
+ * @param {Set<string>} holidayDates
+ * @returns {string[]}
+ */
+export function workingDatesBetween(startDate, endDate, workingWeekdays, holidayDates) {
+    const dates = [];
+    for (let date = startDate; date <= endDate; date = addDays(date, 1)) {
+        const isWorkingWeekday = workingWeekdays[weekdayIndex(date)] === "1";
+        if (isWorkingWeekday && !holidayDates.has(date)) dates.push(date);
+    }
+    return dates;
+}
+
+/**
+ * จำนวนวันระหว่างสองวัน (ไม่รวมวันแรก) — "2026-01-01" ถึง "2026-01-02" = 1
+ * @param {string} fromDate
+ * @param {string} toDate
+ */
+export function daysBetween(fromDate, toDate) {
+    const toTime = (dateText) => {
+        const [year, month, day] = dateText.split("-").map(Number);
+        return Date.UTC(year, month - 1, day);
+    };
+    return Math.round((toTime(toDate) - toTime(fromDate)) / 86_400_000);
+}

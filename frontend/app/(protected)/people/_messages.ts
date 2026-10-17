@@ -1,5 +1,5 @@
 // ข้อความกำกับฝั่งบุคคล (เฟส 4) — แบบระบบ docs/plans/2026-10-17-people-payroll-4.md หัวข้อ 5 · ห้าม tooltip (ui-guidance)
-import type { EmploymentStatus, TimesheetStatus } from "./_types";
+import type { EmploymentStatus, HalfDay, LeaveStatus, TimesheetStatus } from "./_types";
 import type { PillTone } from "@/components/ui/status-pill";
 
 export const EMPLOYMENT_STATUS: Record<EmploymentStatus, { label: string; tone: PillTone }> = {
@@ -84,4 +84,34 @@ export const TIMESHEET_MESSAGES = {
     returnHint:
         "ตีกลับแล้วทั้งสัปดาห์กลับไปให้พนักงานแก้ และการอนุมัติของผู้อื่นในสัปดาห์นี้จะถูกล้าง ต้องอนุมัติใหม่หลังส่งอีกครั้ง",
     copyPrevious: "คัดลอกแถวจากสัปดาห์ก่อนมาวันเดียวกัน (เฉพาะวันที่ลงได้) แล้วแก้ชั่วโมงก่อนบันทึก",
+};
+
+// ─── การลา (ขั้น 4-3) ─────────────────────────────────────────────────────────────────────────
+
+export const LEAVE_STATUS: Record<LeaveStatus, { label: string; tone: PillTone }> = {
+    draft: { label: "ร่าง", tone: "neutral" },
+    pending: { label: "รออนุมัติ", tone: "wait" },
+    approved: { label: "อนุมัติแล้ว", tone: "success" },
+    rejected: { label: "ไม่อนุมัติ", tone: "danger" },
+    cancelled: { label: "ยกเลิก", tone: "neutral" },
+};
+
+export const HALF_DAY_LABEL: Record<HalfDay, string> = {
+    none: "เต็มวัน",
+    morning: "ครึ่งวันเช้า",
+    afternoon: "ครึ่งวันบ่าย",
+};
+
+export const LEAVE_MESSAGES = {
+    description:
+        "ขอลาและดูวันลาคงเหลือของตัวเอง · ระบบนับเฉพาะวันทำงาน (ไม่นับเสาร์-อาทิตย์และวันหยุดบริษัท) · ส่งแล้วรอผู้อนุมัติ",
+    notEmployee: "บัญชีของคุณยังไม่ได้ผูกกับพนักงาน — ติดต่อฝ่ายบุคคลให้ผูกบัญชีในหน้าพนักงานก่อน จึงจะขอลาได้",
+    formRules:
+        "ครึ่งวันได้เฉพาะลาวันเดียว · ลาคร่อมปีไม่ได้ (แยก 2 ใบ) · ลาเต็มวันในวันที่ลงเวลาทำงานไว้ไม่ได้ (ลบชั่วโมงก่อน) · บันทึกเป็นร่างแล้วแนบไฟล์ได้ก่อนส่ง",
+    overQuota: "เกินโควตา — ส่งได้ แต่ผู้อนุมัติจะเห็นคำเตือน",
+    approvalsDescription:
+        "คำขอลาที่รออนุมัติ (ไม่รวมของตัวเอง) · เกินโควตาอนุมัติได้แต่ระบบเตือน · ไม่อนุมัติต้องใส่เหตุผล (พนักงานเห็น)",
+    calendarDescription: "ใครลาวันไหน (อนุมัติแล้วและรออนุมัติ) — ไม่แสดงประเภทลาและเหตุผล",
+    cancelApprovedHint: "ลาที่อนุมัติแล้วและยังไม่ถึงวันยกเลิกเองได้ · ถึงวันแล้วให้ผู้อนุมัติยกเลิกให้",
+    balanceHint: "คงเหลือ = โควตาปีนี้ + ยกยอดจากปีก่อน − ที่อนุมัติแล้ว (ที่รออนุมัติยังไม่หัก)",
 };

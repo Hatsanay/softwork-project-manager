@@ -2,7 +2,7 @@
 -- รันหลัง create_users_roles.sql, create_project_manager.sql, create_sales.sql, create_purchasing.sql (อ้าง tb_users, tb_department, tb_branches)
 -- ฐานข้อมูลที่ใช้งานอยู่: รัน deploy_schema.sql แทน (มีตารางกลุ่มนี้แบบรันซ้ำได้)
 -- ขั้น 4-1: ทะเบียนพนักงาน + ค่าจ้างตามวันที่มีผล + รายการประจำ · อัตราประกันสังคม · ปีภาษี/ขั้นภาษี · ตั้งค่าเงินเดือน · วันหยุดบริษัท · ประเภทลา
--- ขั้น 4-2: ลงเวลารายสัปดาห์ (สัปดาห์ + แถวชั่วโมงต่อวัน/โปรเจกต์) — อยู่ท้ายไฟล์ ก่อนข้อมูลเริ่มต้น
+-- ขั้น 4-2: ลงเวลารายสัปดาห์ (สัปดาห์ + แถวชั่วโมงต่อวัน/โปรเจกต์) · ขั้น 4-3: คำขอลา + ไฟล์แนบ — อยู่ท้ายไฟล์ ก่อนข้อมูลเริ่มต้น
 --
 -- ข้อมูลกลุ่มนี้อ่อนไหว (เงินเดือน เลขประจำตัวประชาชน เลขบัญชี) — ทุก endpoint ตรวจสิทธิ์ manageEmployees
 -- audit log ปิดบังค่าเงินเดือน (บันทึกว่า "เปลี่ยน" แต่ไม่เก็บตัวเลข) — แบบระบบ R-H1/R-H8
@@ -232,6 +232,62 @@ CREATE TABLE `tb_timesheet_entries` (
   CONSTRAINT `fk_tse_project` FOREIGN KEY (`tse_project_id`) REFERENCES `tb_projects` (`project_id`),
   CONSTRAINT `fk_tse_task` FOREIGN KEY (`tse_task_id`) REFERENCES `tb_tasks` (`task_id`) ON DELETE SET NULL,
   CONSTRAINT `fk_tse_approved_by` FOREIGN KEY (`tse_approved_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ── ขั้น 4-3 (2026-10-17): คำขอลา ──
+-- flow: draft (แนบไฟล์ได้) → pending (ส่งแล้ว) → approved / rejected · ดึงกลับ pending → draft ได้ · ยกเลิก = cancelled (เก็บประวัติ)
+-- จำนวนวันคิดใน backend เฉพาะวันทำงาน (ps_working_weekdays ไม่รวมวันหยุดบริษัท) · ครึ่งวันได้เฉพาะลาวันเดียว (= 0.5)
+-- ห้ามคร่อมปี (โควตาเป็นรายปีปฏิทิน — แยกเป็น 2 ใบ) · ทับซ้อนกับลาที่ส่งแล้ว/อนุมัติแล้วไม่ได้ (เช้า+บ่ายวันเดียวกันได้)
+-- ขั้น 4-4 จะล็อกลาที่อยู่ในเดือนที่รอบเงินเดือนอนุมัติแล้ว
+CREATE TABLE `tb_leave_requests` (
+  `lr_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `lr_employee_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `lr_leave_type_id` int unsigned NOT NULL,
+  `lr_start_date` date NOT NULL,
+  `lr_end_date` date NOT NULL,
+  `lr_half_day` enum('none','morning','afternoon') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'none',
+  `lr_days` decimal(5,1) NOT NULL COMMENT 'วันทำงานที่ลา (คิดใน backend)',
+  `lr_reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เห็นเฉพาะเจ้าของ/ผู้อนุมัติ/ฝ่ายบุคคล',
+  `lr_status` enum('draft','pending','approved','rejected','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'draft',
+  `lr_version` int unsigned NOT NULL DEFAULT '1',
+  `lr_submitted_at` datetime DEFAULT NULL,
+  `lr_decided_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `lr_decided_at` datetime DEFAULT NULL,
+  `lr_decision_note` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เหตุผลที่ไม่อนุมัติ',
+  `lr_cancelled_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `lr_cancelled_at` datetime DEFAULT NULL,
+  `lr_cancel_reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `lr_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `lr_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `lr_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`lr_id`),
+  KEY `idx_lr_employee_dates` (`lr_employee_id`,`lr_start_date`),
+  KEY `idx_lr_status_dates` (`lr_status`,`lr_start_date`),
+  KEY `fk_lr_leave_type` (`lr_leave_type_id`),
+  KEY `fk_lr_decided_by` (`lr_decided_by`),
+  KEY `fk_lr_cancelled_by` (`lr_cancelled_by`),
+  KEY `fk_lr_created_by` (`lr_created_by`),
+  CONSTRAINT `fk_lr_employee` FOREIGN KEY (`lr_employee_id`) REFERENCES `tb_employees` (`emp_id`),
+  CONSTRAINT `fk_lr_leave_type` FOREIGN KEY (`lr_leave_type_id`) REFERENCES `tb_leave_types` (`lt_id`),
+  CONSTRAINT `fk_lr_decided_by` FOREIGN KEY (`lr_decided_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_lr_cancelled_by` FOREIGN KEY (`lr_cancelled_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_lr_created_by` FOREIGN KEY (`lr_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ไฟล์แนบคำขอลา (ใบรับรองแพทย์ ฯลฯ) — เก็บใน storage ส่วนตัว (private-file.js) เปิดผ่าน API ที่ตรวจสิทธิ์เท่านั้น (R-H8)
+CREATE TABLE `tb_leave_attachments` (
+  `lra_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `lra_request_id` int unsigned NOT NULL,
+  `lra_file_path` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `lra_file_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `lra_file_size` int unsigned NOT NULL DEFAULT '0',
+  `lra_uploaded_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `lra_uploaded_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`lra_id`),
+  KEY `idx_lra_request` (`lra_request_id`),
+  KEY `fk_lra_uploaded_by` (`lra_uploaded_by`),
+  CONSTRAINT `fk_lra_request` FOREIGN KEY (`lra_request_id`) REFERENCES `tb_leave_requests` (`lr_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_lra_uploaded_by` FOREIGN KEY (`lra_uploaded_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ── ข้อมูลเริ่มต้น (ตัวเลขทุกตัวต้องให้นักบัญชียืนยันก่อนจ่ายเงินเดือนจริง — คำถาม Y1/Y2) ──

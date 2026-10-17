@@ -91,7 +91,7 @@ export const MENU_DEFS: MenuItem[] = [
             { key: "companySettings", label: "ตั้งค่าจัดซื้อ", href: "/purchasing/settings" },
         ],
     },
-    // บุคคล เฟส 4 (4-1 พนักงาน + ตั้งค่า · 4-2 ลงเวลา) — ลา/เงินเดือนเพิ่มในขั้นถัดไป
+    // บุคคล เฟส 4 (4-1 พนักงาน + ตั้งค่า · 4-2 ลงเวลา · 4-3 ลา) — เงินเดือนเพิ่มในขั้นถัดไป
     {
         key: "people",
         label: "บุคคล",
@@ -99,6 +99,8 @@ export const MENU_DEFS: MenuItem[] = [
         children: [
             // ลงเวลา: ทุกคนลงของตัวเองได้ (ไม่มีบิตเฉพาะ) — ผูกกับ dashboard ที่ทุก role มี · แท็บอนุมัติขึ้นตามขอบเขตจาก backend
             { key: "dashboard", label: "ลงเวลาทำงาน", href: "/people/timesheet" },
+            // การลา: ทุกคนขอลาของตัวเองได้ · แท็บอนุมัติขึ้นเมื่อมีสิทธิ์ approveLeave
+            { key: "dashboard", label: "การลา", href: "/people/leave" },
             { key: "manageEmployees", label: "พนักงาน", href: "/people/employees" },
             { key: "manageHrSettings", label: "ตั้งค่าบุคคล", href: "/people/settings" },
         ],

@@ -1737,6 +1737,63 @@ CREATE TABLE IF NOT EXISTS `tb_task_checklist_items` (
   CONSTRAINT `fk_tci_task` FOREIGN KEY (`tci_task_id`) REFERENCES `tb_tasks` (`task_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ════ เฟส 4 ขั้น 4-3 (2026-10-17) — คำขอลา + ไฟล์แนบ · แบบระบบ: docs/plans/2026-10-17-people-payroll-4.md หัวข้อ 4.4 ════
+-- ── ขั้น 4-3 (2026-10-17): คำขอลา ──
+-- flow: draft (แนบไฟล์ได้) → pending (ส่งแล้ว) → approved / rejected · ดึงกลับ pending → draft ได้ · ยกเลิก = cancelled (เก็บประวัติ)
+-- จำนวนวันคิดใน backend เฉพาะวันทำงาน (ps_working_weekdays ไม่รวมวันหยุดบริษัท) · ครึ่งวันได้เฉพาะลาวันเดียว (= 0.5)
+-- ห้ามคร่อมปี (โควตาเป็นรายปีปฏิทิน — แยกเป็น 2 ใบ) · ทับซ้อนกับลาที่ส่งแล้ว/อนุมัติแล้วไม่ได้ (เช้า+บ่ายวันเดียวกันได้)
+-- ขั้น 4-4 จะล็อกลาที่อยู่ในเดือนที่รอบเงินเดือนอนุมัติแล้ว
+CREATE TABLE IF NOT EXISTS `tb_leave_requests` (
+  `lr_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `lr_employee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `lr_leave_type_id` int unsigned NOT NULL,
+  `lr_start_date` date NOT NULL,
+  `lr_end_date` date NOT NULL,
+  `lr_half_day` enum('none','morning','afternoon') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'none',
+  `lr_days` decimal(5,1) NOT NULL COMMENT 'วันทำงานที่ลา (คิดใน backend)',
+  `lr_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เห็นเฉพาะเจ้าของ/ผู้อนุมัติ/ฝ่ายบุคคล',
+  `lr_status` enum('draft','pending','approved','rejected','cancelled') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'draft',
+  `lr_version` int unsigned NOT NULL DEFAULT '1',
+  `lr_submitted_at` datetime DEFAULT NULL,
+  `lr_decided_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `lr_decided_at` datetime DEFAULT NULL,
+  `lr_decision_note` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เหตุผลที่ไม่อนุมัติ',
+  `lr_cancelled_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `lr_cancelled_at` datetime DEFAULT NULL,
+  `lr_cancel_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `lr_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `lr_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `lr_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`lr_id`),
+  KEY `idx_lr_employee_dates` (`lr_employee_id`,`lr_start_date`),
+  KEY `idx_lr_status_dates` (`lr_status`,`lr_start_date`),
+  KEY `fk_lr_leave_type` (`lr_leave_type_id`),
+  KEY `fk_lr_decided_by` (`lr_decided_by`),
+  KEY `fk_lr_cancelled_by` (`lr_cancelled_by`),
+  KEY `fk_lr_created_by` (`lr_created_by`),
+  CONSTRAINT `fk_lr_cancelled_by` FOREIGN KEY (`lr_cancelled_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_lr_created_by` FOREIGN KEY (`lr_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_lr_decided_by` FOREIGN KEY (`lr_decided_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_lr_employee` FOREIGN KEY (`lr_employee_id`) REFERENCES `tb_employees` (`emp_id`),
+  CONSTRAINT `fk_lr_leave_type` FOREIGN KEY (`lr_leave_type_id`) REFERENCES `tb_leave_types` (`lt_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ไฟล์แนบคำขอลา (ใบรับรองแพทย์ ฯลฯ) — เก็บใน storage ส่วนตัว (private-file.js) เปิดผ่าน API ที่ตรวจสิทธิ์เท่านั้น (R-H8)
+CREATE TABLE IF NOT EXISTS `tb_leave_attachments` (
+  `lra_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `lra_request_id` int unsigned NOT NULL,
+  `lra_file_path` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `lra_file_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `lra_file_size` int unsigned NOT NULL DEFAULT '0',
+  `lra_uploaded_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `lra_uploaded_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`lra_id`),
+  KEY `idx_lra_request` (`lra_request_id`),
+  KEY `fk_lra_uploaded_by` (`lra_uploaded_by`),
+  CONSTRAINT `fk_lra_request` FOREIGN KEY (`lra_request_id`) REFERENCES `tb_leave_requests` (`lr_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_lra_uploaded_by` FOREIGN KEY (`lra_uploaded_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ─── ส่วนที่ 2: เติมคอลัมน์ที่ยังขาด (สำหรับฐานข้อมูลที่สร้างจากโครงสร้างเวอร์ชันเก่า) ──────────────
 -- แต่ละบรรทัด: ถ้าคอลัมน์ยังไม่มี → ADD COLUMN, มีแล้ว → ไม่ทำอะไร
 
@@ -2573,6 +2630,39 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA 
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_task_checklist_items' AND COLUMN_NAME = 'tci_created_by') = 0, 'ALTER TABLE `tb_task_checklist_items` ADD COLUMN `tci_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `tci_done_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_task_checklist_items' AND COLUMN_NAME = 'tci_created_at') = 0, 'ALTER TABLE `tb_task_checklist_items` ADD COLUMN `tci_created_at` datetime DEFAULT CURRENT_TIMESTAMP AFTER `tci_created_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- ════ เฟส 4 ขั้น 4-3 (2026-10-17) — ลา
+
+-- tb_leave_requests
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND COLUMN_NAME = 'lr_id') = 0, 'ALTER TABLE `tb_leave_requests` ADD COLUMN `lr_id` int unsigned NOT NULL AUTO_INCREMENT FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND COLUMN_NAME = 'lr_employee_id') = 0, 'ALTER TABLE `tb_leave_requests` ADD COLUMN `lr_employee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `lr_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND COLUMN_NAME = 'lr_leave_type_id') = 0, 'ALTER TABLE `tb_leave_requests` ADD COLUMN `lr_leave_type_id` int unsigned NOT NULL AFTER `lr_employee_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND COLUMN_NAME = 'lr_start_date') = 0, 'ALTER TABLE `tb_leave_requests` ADD COLUMN `lr_start_date` date NOT NULL AFTER `lr_leave_type_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND COLUMN_NAME = 'lr_end_date') = 0, 'ALTER TABLE `tb_leave_requests` ADD COLUMN `lr_end_date` date NOT NULL AFTER `lr_start_date`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND COLUMN_NAME = 'lr_half_day') = 0, 'ALTER TABLE `tb_leave_requests` ADD COLUMN `lr_half_day` enum(''none'',''morning'',''afternoon'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''none'' AFTER `lr_end_date`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND COLUMN_NAME = 'lr_days') = 0, 'ALTER TABLE `tb_leave_requests` ADD COLUMN `lr_days` decimal(5,1) NOT NULL COMMENT ''วันทำงานที่ลา (คิดใน backend)'' AFTER `lr_half_day`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND COLUMN_NAME = 'lr_reason') = 0, 'ALTER TABLE `tb_leave_requests` ADD COLUMN `lr_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''เห็นเฉพาะเจ้าของ/ผู้อนุมัติ/ฝ่ายบุคคล'' AFTER `lr_days`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND COLUMN_NAME = 'lr_status') = 0, 'ALTER TABLE `tb_leave_requests` ADD COLUMN `lr_status` enum(''draft'',''pending'',''approved'',''rejected'',''cancelled'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''draft'' AFTER `lr_reason`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND COLUMN_NAME = 'lr_version') = 0, 'ALTER TABLE `tb_leave_requests` ADD COLUMN `lr_version` int unsigned NOT NULL DEFAULT ''1'' AFTER `lr_status`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND COLUMN_NAME = 'lr_submitted_at') = 0, 'ALTER TABLE `tb_leave_requests` ADD COLUMN `lr_submitted_at` datetime DEFAULT NULL AFTER `lr_version`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND COLUMN_NAME = 'lr_decided_by') = 0, 'ALTER TABLE `tb_leave_requests` ADD COLUMN `lr_decided_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `lr_submitted_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND COLUMN_NAME = 'lr_decided_at') = 0, 'ALTER TABLE `tb_leave_requests` ADD COLUMN `lr_decided_at` datetime DEFAULT NULL AFTER `lr_decided_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND COLUMN_NAME = 'lr_decision_note') = 0, 'ALTER TABLE `tb_leave_requests` ADD COLUMN `lr_decision_note` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''เหตุผลที่ไม่อนุมัติ'' AFTER `lr_decided_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND COLUMN_NAME = 'lr_cancelled_by') = 0, 'ALTER TABLE `tb_leave_requests` ADD COLUMN `lr_cancelled_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `lr_decision_note`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND COLUMN_NAME = 'lr_cancelled_at') = 0, 'ALTER TABLE `tb_leave_requests` ADD COLUMN `lr_cancelled_at` datetime DEFAULT NULL AFTER `lr_cancelled_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND COLUMN_NAME = 'lr_cancel_reason') = 0, 'ALTER TABLE `tb_leave_requests` ADD COLUMN `lr_cancel_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `lr_cancelled_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND COLUMN_NAME = 'lr_created_by') = 0, 'ALTER TABLE `tb_leave_requests` ADD COLUMN `lr_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `lr_cancel_reason`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND COLUMN_NAME = 'lr_created_at') = 0, 'ALTER TABLE `tb_leave_requests` ADD COLUMN `lr_created_at` datetime DEFAULT CURRENT_TIMESTAMP AFTER `lr_created_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND COLUMN_NAME = 'lr_updated_at') = 0, 'ALTER TABLE `tb_leave_requests` ADD COLUMN `lr_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `lr_created_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_leave_attachments
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_attachments' AND COLUMN_NAME = 'lra_id') = 0, 'ALTER TABLE `tb_leave_attachments` ADD COLUMN `lra_id` bigint unsigned NOT NULL AUTO_INCREMENT FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_attachments' AND COLUMN_NAME = 'lra_request_id') = 0, 'ALTER TABLE `tb_leave_attachments` ADD COLUMN `lra_request_id` int unsigned NOT NULL AFTER `lra_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_attachments' AND COLUMN_NAME = 'lra_file_path') = 0, 'ALTER TABLE `tb_leave_attachments` ADD COLUMN `lra_file_path` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `lra_request_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_attachments' AND COLUMN_NAME = 'lra_file_name') = 0, 'ALTER TABLE `tb_leave_attachments` ADD COLUMN `lra_file_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `lra_file_path`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_attachments' AND COLUMN_NAME = 'lra_file_size') = 0, 'ALTER TABLE `tb_leave_attachments` ADD COLUMN `lra_file_size` int unsigned NOT NULL DEFAULT ''0'' AFTER `lra_file_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_attachments' AND COLUMN_NAME = 'lra_uploaded_by') = 0, 'ALTER TABLE `tb_leave_attachments` ADD COLUMN `lra_uploaded_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `lra_file_size`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_attachments' AND COLUMN_NAME = 'lra_uploaded_at') = 0, 'ALTER TABLE `tb_leave_attachments` ADD COLUMN `lra_uploaded_at` datetime DEFAULT CURRENT_TIMESTAMP AFTER `lra_uploaded_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
 -- ── การเปลี่ยนชนิด/เงื่อนไขของคอลัมน์ที่มีอยู่แล้ว (เรียงตามเวลา) ──────────────────────────────────
 -- 2026-10-07 onboarding: ผู้ใช้เดิมได้ชื่อผู้ใช้ = user_id (ยัง login ด้วยอีเมลได้เหมือนเดิม) — UPDATE นี้รันซ้ำได้ แตะเฉพาะแถวที่ยังว่าง
 UPDATE tb_users SET user_username = user_id WHERE user_username IS NULL OR user_username = '';
@@ -2956,6 +3046,21 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHE
 SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_task_checklist_items' AND INDEX_NAME = 'fk_tci_done_by') = 0, 'ALTER TABLE `tb_task_checklist_items` ADD KEY `fk_tci_done_by` (`tci_done_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_task_checklist_items' AND INDEX_NAME = 'fk_tci_created_by') = 0, 'ALTER TABLE `tb_task_checklist_items` ADD KEY `fk_tci_created_by` (`tci_created_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- tb_leave_requests
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND INDEX_NAME = 'idx_lr_employee_dates') <> 'lr_employee_id,lr_start_date', 'ALTER TABLE `tb_leave_requests` DROP INDEX `idx_lr_employee_dates`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND INDEX_NAME = 'idx_lr_employee_dates') = 0, 'ALTER TABLE `tb_leave_requests` ADD KEY `idx_lr_employee_dates` (`lr_employee_id`,`lr_start_date`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND INDEX_NAME = 'idx_lr_status_dates') <> 'lr_status,lr_start_date', 'ALTER TABLE `tb_leave_requests` DROP INDEX `idx_lr_status_dates`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND INDEX_NAME = 'idx_lr_status_dates') = 0, 'ALTER TABLE `tb_leave_requests` ADD KEY `idx_lr_status_dates` (`lr_status`,`lr_start_date`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND INDEX_NAME = 'fk_lr_leave_type') = 0, 'ALTER TABLE `tb_leave_requests` ADD KEY `fk_lr_leave_type` (`lr_leave_type_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND INDEX_NAME = 'fk_lr_decided_by') = 0, 'ALTER TABLE `tb_leave_requests` ADD KEY `fk_lr_decided_by` (`lr_decided_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND INDEX_NAME = 'fk_lr_cancelled_by') = 0, 'ALTER TABLE `tb_leave_requests` ADD KEY `fk_lr_cancelled_by` (`lr_cancelled_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND INDEX_NAME = 'fk_lr_created_by') = 0, 'ALTER TABLE `tb_leave_requests` ADD KEY `fk_lr_created_by` (`lr_created_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_leave_attachments
+SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_attachments' AND INDEX_NAME = 'idx_lra_request') <> 'lra_request_id', 'ALTER TABLE `tb_leave_attachments` DROP INDEX `idx_lra_request`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_attachments' AND INDEX_NAME = 'idx_lra_request') = 0, 'ALTER TABLE `tb_leave_attachments` ADD KEY `idx_lra_request` (`lra_request_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_attachments' AND INDEX_NAME = 'fk_lra_uploaded_by') = 0, 'ALTER TABLE `tb_leave_attachments` ADD KEY `fk_lra_uploaded_by` (`lra_uploaded_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
 -- ─── ส่วนที่ 4: เติม foreign key ที่ยังขาด (รวม FK ย้อนกลับ tb_roles -> tb_users ที่สร้างพร้อมตารางไม่ได้) ──
 -- สกุลเงินเริ่มต้น THB + USD (2026-10-13) — ต้องมีก่อนเพิ่ม FK สกุลเงินของลูกค้า (ลูกค้าเดิมทุกรายได้ค่าเริ่มต้น THB)
 -- ใส่เฉพาะตอนตารางยังว่าง · ข้อมูลเริ่มต้นอื่นอยู่ส่วนที่ 5
@@ -3190,6 +3295,17 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CON
 SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_task_checklist_items' AND CONSTRAINT_NAME = 'fk_tci_created_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_task_checklist_items` ADD CONSTRAINT `fk_tci_created_by` FOREIGN KEY (`tci_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_task_checklist_items' AND CONSTRAINT_NAME = 'fk_tci_done_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_task_checklist_items` ADD CONSTRAINT `fk_tci_done_by` FOREIGN KEY (`tci_done_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_task_checklist_items' AND CONSTRAINT_NAME = 'fk_tci_task' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_task_checklist_items` ADD CONSTRAINT `fk_tci_task` FOREIGN KEY (`tci_task_id`) REFERENCES `tb_tasks` (`task_id`) ON DELETE CASCADE', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_leave_requests
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND CONSTRAINT_NAME = 'fk_lr_cancelled_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_leave_requests` ADD CONSTRAINT `fk_lr_cancelled_by` FOREIGN KEY (`lr_cancelled_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND CONSTRAINT_NAME = 'fk_lr_created_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_leave_requests` ADD CONSTRAINT `fk_lr_created_by` FOREIGN KEY (`lr_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND CONSTRAINT_NAME = 'fk_lr_decided_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_leave_requests` ADD CONSTRAINT `fk_lr_decided_by` FOREIGN KEY (`lr_decided_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND CONSTRAINT_NAME = 'fk_lr_employee' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_leave_requests` ADD CONSTRAINT `fk_lr_employee` FOREIGN KEY (`lr_employee_id`) REFERENCES `tb_employees` (`emp_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_requests' AND CONSTRAINT_NAME = 'fk_lr_leave_type' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_leave_requests` ADD CONSTRAINT `fk_lr_leave_type` FOREIGN KEY (`lr_leave_type_id`) REFERENCES `tb_leave_types` (`lt_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- tb_leave_attachments
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_attachments' AND CONSTRAINT_NAME = 'fk_lra_request' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_leave_attachments` ADD CONSTRAINT `fk_lra_request` FOREIGN KEY (`lra_request_id`) REFERENCES `tb_leave_requests` (`lr_id`) ON DELETE CASCADE', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_leave_attachments' AND CONSTRAINT_NAME = 'fk_lra_uploaded_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_leave_attachments` ADD CONSTRAINT `fk_lra_uploaded_by` FOREIGN KEY (`lra_uploaded_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
 -- ─── ส่วนที่ 5: ข้อมูลเริ่มต้น (ใส่เฉพาะตอนตารางยังว่างเท่านั้น) ─────────────────────────────────
 -- ตั้งใจเช็ค "ตารางว่าง" ไม่ใช่ "ไม่มีแถวนี้" — ถ้าแอดมินลบ/เปลี่ยนบัญชีเริ่มต้นไปแล้วบน production
@@ -3455,6 +3571,8 @@ FROM (
     UNION ALL SELECT 'tb_project_labels' AS table_name, 'pl_color,pl_created_at,pl_created_by,pl_id,pl_name,pl_project_id,pl_sort_order,pl_updated_at' AS expected_columns, 'fk_pl_created_by(pl_created_by),primary(pl_id),uq_pl_project_name(pl_project_id+pl_name)' AS expected_indexes
     UNION ALL SELECT 'tb_task_labels' AS table_name, 'tl_label_id,tl_task_id' AS expected_columns, 'fk_tl_label(tl_label_id),primary(tl_task_id+tl_label_id)' AS expected_indexes
     UNION ALL SELECT 'tb_task_checklist_items' AS table_name, 'tci_created_at,tci_created_by,tci_done_at,tci_done_by,tci_id,tci_is_done,tci_sort_order,tci_task_id,tci_text' AS expected_columns, 'fk_tci_created_by(tci_created_by),fk_tci_done_by(tci_done_by),idx_tci_task(tci_task_id+tci_sort_order),primary(tci_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_leave_requests' AS table_name, 'lr_cancel_reason,lr_cancelled_at,lr_cancelled_by,lr_created_at,lr_created_by,lr_days,lr_decided_at,lr_decided_by,lr_decision_note,lr_employee_id,lr_end_date,lr_half_day,lr_id,lr_leave_type_id,lr_reason,lr_start_date,lr_status,lr_submitted_at,lr_updated_at,lr_version' AS expected_columns, 'fk_lr_cancelled_by(lr_cancelled_by),fk_lr_created_by(lr_created_by),fk_lr_decided_by(lr_decided_by),fk_lr_leave_type(lr_leave_type_id),idx_lr_employee_dates(lr_employee_id+lr_start_date),idx_lr_status_dates(lr_status+lr_start_date),primary(lr_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_leave_attachments' AS table_name, 'lra_file_name,lra_file_path,lra_file_size,lra_id,lra_request_id,lra_uploaded_at,lra_uploaded_by' AS expected_columns, 'fk_lra_uploaded_by(lra_uploaded_by),idx_lra_request(lra_request_id),primary(lra_id)' AS expected_indexes
 ) e
 LEFT JOIN (
     SELECT LOWER(c.TABLE_NAME) AS table_name,
