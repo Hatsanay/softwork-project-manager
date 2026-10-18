@@ -75,8 +75,9 @@ async function findForUpdate(conn, receiptId) {
     return receipt;
 }
 
+// ยอดค้างหลังลดหนี้ — สูตรกลางของใบแจ้งหนี้ (R-N2)
 function outstandingOf(invoice) {
-    return parseHundredths(invoice.inv_total, "ยอดรวม") - parseHundredths(invoice.inv_paid_amount, "ยอดรับแล้ว");
+    return invoiceService.balanceOf(invoice).outstanding;
 }
 
 // ─── ล็อกและตรวจใบแจ้งหนี้ที่ตัด ─────────────────────────────────────────────────────────────────
@@ -89,7 +90,8 @@ function outstandingOf(invoice) {
 async function lockInvoices(conn, invoiceIds) {
     const [rows] = await conn.query(
         `SELECT i.inv_id, i.inv_number, i.inv_status, i.inv_client_id, i.inv_currency, i.inv_total, i.inv_vat_amount,
-                i.inv_total_thb, i.inv_paid_amount, ${INVOICE_DATE_COLUMNS}
+                i.inv_total_thb, i.inv_paid_amount, i.inv_credited_amount, i.inv_credited_vat, i.inv_credited_thb,
+                i.inv_refunded_amount, ${INVOICE_DATE_COLUMNS}
          FROM tb_invoices i WHERE i.inv_id IN (?) ORDER BY i.inv_id FOR UPDATE`,
         [invoiceIds],
     );
@@ -246,13 +248,19 @@ async function createReceipt(conn, input, actor) {
         allocations: input.allocations.map((row) => {
             const invoice = invoicesById.get(row.rca_invoice_id);
             const shares = prior.get(invoice.inv_id) ?? { vat: 0n, thb: 0n };
+            // ขั้น N-1: ยอด/VAT/ยอดบาทของใบ = หลังลดหนี้ · รับแล้ว = สุทธิหลังคืนเงิน → ครั้งที่ปิดใบรับเศษพอดีกับยอดหลังลดหนี้
+            const balance = invoiceService.balanceOf(invoice);
             return {
                 invoiceId: invoice.inv_id,
                 amount: parseHundredths(row.rca_amount, "ยอดรับ"),
-                invoiceTotal: parseHundredths(invoice.inv_total, "ยอดรวม"),
-                invoiceVat: parseHundredths(invoice.inv_vat_amount, "VAT"),
-                invoiceTotalThb: parseHundredths(invoice.inv_total_thb, "ยอดบาท"),
-                paidBefore: parseHundredths(invoice.inv_paid_amount, "ยอดรับแล้ว"),
+                invoiceTotal: balance.effectiveTotal,
+                invoiceVat:
+                    parseHundredths(invoice.inv_vat_amount, "VAT") -
+                    parseHundredths(invoice.inv_credited_vat, "VAT ที่ลด"),
+                invoiceTotalThb:
+                    parseHundredths(invoice.inv_total_thb, "ยอดบาท") -
+                    parseHundredths(invoice.inv_credited_thb, "ยอดบาทที่ลด"),
+                paidBefore: balance.netReceived,
                 vatBefore: shares.vat,
                 thbBefore: shares.thb,
             };
@@ -315,6 +323,8 @@ async function createReceipt(conn, input, actor) {
             rca_amount: toDecimalText(line.amount),
             rca_vat_amount: toDecimalText(line.vat),
             rca_amount_thb: toDecimalText(line.amountThb),
+            // ขั้น N-1: ยอดใบลดหนี้ ณ ตอนออกใบเสร็จนี้ — คงค้างบนใบเสร็จคิดจากค่านี้ ใบลดหนี้ที่ออก/ยกเลิกทีหลังไม่กระทบ (R-N3)
+            rca_credited_before: invoicesById.get(line.invoiceId).inv_credited_amount,
         });
         await conn.query(
             "UPDATE tb_invoices SET inv_paid_amount = inv_paid_amount + ?, inv_version = inv_version + 1 WHERE inv_id = ?",
@@ -413,7 +423,7 @@ async function findWhtFile(conn, receiptId) {
  */
 async function listReceivableInvoices(conn, { clientId, billingNoteId } = {}) {
     const today = todayBangkok();
-    const conditions = ["i.inv_status = 'issued'", "i.inv_paid_amount < i.inv_total"];
+    const conditions = ["i.inv_status = 'issued'", `${invoiceService.outstandingSql("i")} > 0`];
     const params = [];
     let billingNote = null;
     if (billingNoteId) {
@@ -434,7 +444,8 @@ async function listReceivableInvoices(conn, { clientId, billingNoteId } = {}) {
     }
     const [rows] = await conn.query(
         `SELECT i.inv_id, i.inv_number, i.inv_title, i.inv_client_id, i.inv_branch_id, i.inv_language, i.inv_currency,
-                i.inv_total, i.inv_vat_amount, i.inv_total_thb, i.inv_paid_amount, i.inv_wht_amount, ${INVOICE_DATE_COLUMNS},
+                i.inv_total, i.inv_vat_amount, i.inv_total_thb, i.inv_paid_amount, i.inv_wht_amount, i.inv_credited_amount,
+                i.inv_credited_wht, i.inv_refunded_amount, ${INVOICE_DATE_COLUMNS},
                 c.client_name, c.client_company,
                 COALESCE(prior.vat, 0) AS vat_received, COALESCE(prior.thb, 0) AS thb_received
          FROM tb_invoices i
@@ -456,6 +467,12 @@ async function listReceivableInvoices(conn, { clientId, billingNoteId } = {}) {
             return {
                 ...row,
                 outstanding_amount: toDecimalText(outstandingOf(row)),
+                // ขั้น N-1: ยอดหลังลดหนี้ + หัก ณ ที่จ่ายประมาณการหลังลดหนี้ — หน้าบันทึกรับเงินใช้เสนอยอดหัก
+                effective_total: toDecimalText(invoiceService.balanceOf(row).effectiveTotal),
+                effective_wht_amount: toDecimalText(
+                    parseHundredths(row.inv_wht_amount, "หัก ณ ที่จ่าย") -
+                        parseHundredths(row.inv_credited_wht, "หักที่ลด"),
+                ),
                 is_overdue: daysPastDue > 0,
                 days_overdue: Math.max(daysPastDue, 0),
             };
@@ -550,8 +567,8 @@ async function getReceiptDetail(conn, receiptId, actor) {
     if (!receipt) throw notFound();
 
     const [allocations] = await conn.query(
-        `SELECT a.rca_order, a.rca_amount, a.rca_vat_amount, a.rca_amount_thb, i.inv_id, i.inv_number, i.inv_title, i.inv_status,
-                i.inv_total, i.inv_paid_amount, ${INVOICE_DATE_COLUMNS}
+        `SELECT a.rca_order, a.rca_amount, a.rca_vat_amount, a.rca_amount_thb, a.rca_credited_before, i.inv_id, i.inv_number, i.inv_title, i.inv_status,
+                i.inv_total, i.inv_paid_amount, i.inv_credited_amount, i.inv_refunded_amount, ${INVOICE_DATE_COLUMNS}
          FROM tb_receipt_allocations a JOIN tb_invoices i ON i.inv_id = a.rca_invoice_id
          WHERE a.rca_receipt_id = ?
          ORDER BY a.rca_order`,
@@ -575,8 +592,16 @@ async function getReceiptDetail(conn, receiptId, actor) {
             ...row,
             outstanding_amount: toDecimalText(outstandingOf(row)),
             // คงค้าง ณ ใบเสร็จนี้ (ไม่ใช่วันนี้) — พิมพ์ซ้ำทีหลังได้ยอดเดิมเสมอ
+            // ยอดตามใบแจ้งหนี้หลังลดหนี้ ณ ตอนออกใบเสร็จนี้ (หน้าพิมพ์ใช้คอลัมน์ "ยอดตามใบแจ้งหนี้")
+            invoice_total_at_receipt: toDecimalText(
+                parseHundredths(row.inv_total, "ยอดใบแจ้งหนี้") -
+                    parseHundredths(row.rca_credited_before, "ลดหนี้ก่อนใบเสร็จ"),
+            ),
+            // ใบลดหนี้นับตามที่มี ณ ตอนออกใบเสร็จนี้ (R-N3) — ออก/ยกเลิกทีหลังไม่ทำให้ใบเสร็จที่พิมพ์แล้วเปลี่ยน
             outstanding_after_receipt: toDecimalText(
-                parseHundredths(row.inv_total, "ยอดใบแจ้งหนี้") - (receivedUpToThis.get(row.inv_id) ?? 0n),
+                parseHundredths(row.inv_total, "ยอดใบแจ้งหนี้") -
+                    parseHundredths(row.rca_credited_before, "ลดหนี้ก่อนใบเสร็จ") -
+                    (receivedUpToThis.get(row.inv_id) ?? 0n),
             ),
         })),
         currency,

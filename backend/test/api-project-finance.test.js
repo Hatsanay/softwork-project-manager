@@ -211,6 +211,7 @@ test("สรุปแยกสกุล + รวมบาท: ใบยกเล
     assert.deepEqual(finance.totals_thb, {
         contract: "144985.00",
         billed: "33170.00",
+        credited: "0.00",
         received: "10000.00",
         outstanding: "23170.00",
         overdue: "22100.00",

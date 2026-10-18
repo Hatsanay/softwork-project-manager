@@ -60,6 +60,7 @@ export const MENU_DEFS: MenuItem[] = [
             { key: "viewQuotations", label: "ใบเสนอราคา", href: "/sales/quotations" },
             { key: "viewInvoices", label: "ใบแจ้งหนี้", href: "/sales/invoices" },
             { key: "viewInvoices", label: "ใบวางบิล", href: "/sales/billing-notes" },
+            { key: "viewInvoices", label: "ใบลดหนี้", href: "/sales/credit-notes" },
             { key: "viewReceipts", label: "ใบเสร็จรับเงิน", href: "/sales/receipts" },
             { key: "viewReceipts", label: "ลูกหนี้คงค้าง", href: "/sales/receivables" },
             { key: "productManagement", label: "สินค้า/บริการ", href: "/sales/products" },
@@ -238,6 +239,12 @@ export const PERMISSION_GROUPS: PermGroup[] = [
             { key: "approveTimesheet", label: "อนุมัติลงเวลาของทุกคน (ผู้จัดการโปรเจกต์อนุมัติของโปรเจกต์ตัวเองได้โดยไม่ต้องมีสิทธิ์นี้)",       href: "/people/timesheet/approve" },
             { key: "approveLeave",     label: "อนุมัติ/ไม่อนุมัติใบลาของทุกคน และเห็นเหตุผล/ไฟล์แนบของใบลา",                              href: "/people/leave/approve" },
             { key: "manageHrSettings", label: "ตั้งค่าบุคคล (อัตราประกันสังคม ภาษีเงินได้ วันหยุดบริษัท ประเภทลา เวลาทำงาน)",                  href: "/people/settings" },
+        ],
+    },    // ปรับยอดเอกสาร (2026-10-18) — ลำดับบิตต้องตรงกับ PERMISSION_KEYS (append-only)
+    {
+        groupLabel: "ปรับยอด / คืนเงิน",
+        bits: [
+            { key: "refundCustomer", label: "บันทึกคืนเงินลูกค้าตามใบลดหนี้ (เงินออกจากบัญชีบริษัท)", href: "/sales/credit-notes/refund" },
         ],
     },
 ];

@@ -3,7 +3,7 @@
 // ต้นฉบับอยู่ที่ backend/src/shared/ — สำเนาใน frontend/lib/shared/ สร้างด้วย `npm run sync-shared` ห้ามแก้ที่สำเนา
 // ชื่อฟิลด์ = ชื่อคอลัมน์ · แบบระบบ: docs/plans/2026-10-14-invoices-1b.md หัวข้อ 4
 //
-// ใบแจ้งหนี้มี 2 แบบ:
+// ใบแจ้งหนี้มี 2 แบบ (+ ใบเพิ่มหนี้ ซึ่งเป็นใบสร้างเองที่อ้างใบเดิม — invoiceDebitNoteDraftSchema):
 //   - ออกจากงวดของใบเสนอราคา: ยอด/รายการ/ลูกค้า/สกุลเงินล็อกตามใบเสนอราคา แก้ได้แค่ข้อมูลประกอบ (invoiceQuotationDraftSchema)
 //   - สร้างเอง: แก้ได้ทุกช่องเหมือนร่างใบเสนอราคา (invoiceManualDraftSchema) แล้วต้องผ่านการอนุมัติ
 // ความครบถ้วนตรวจตอนออก/ส่งขออนุมัติ (backend/src/services/invoice-workflow.service.js)
@@ -94,6 +94,27 @@ const itemSchema = z
               },
     );
 
+/** แถวที่เป็นรายการ (มีราคา) ต้องมีจำนวนและราคาต่อหน่วย */
+function checkPricedItems(items, context) {
+    items.forEach((item, index) => {
+        if (item.invi_type !== "item") return;
+        if (item.invi_quantity === null) {
+            context.addIssue({ code: "custom", path: ["items", index, "invi_quantity"], message: "กรุณากรอกจำนวน" });
+        }
+        if (item.invi_unit_price === null) {
+            context.addIssue({
+                code: "custom",
+                path: ["items", index, "invi_unit_price"],
+                message: "กรุณากรอกราคาต่อหน่วย",
+            });
+        }
+    });
+}
+
+const itemsField = z.array(itemSchema).max(MAX_INVOICE_ITEMS, `ใบแจ้งหนี้มีได้ไม่เกิน ${MAX_INVOICE_ITEMS} แถว`).default([]);
+const discountTypeField = z.enum(["amount", "percent"], { error: "ชนิดส่วนลดต้องเป็นบาทหรือ %" }).default("amount");
+const discountValueField = decimalText("ส่วนลดท้ายบิล", { minimum: "0", maximum: "9999999999999.99" }).default("0.00");
+
 /** ร่างใบแจ้งหนี้ที่สร้างเอง (ไม่อ้างใบเสนอราคา) */
 export const invoiceManualDraftSchema = z
     .object({
@@ -112,12 +133,9 @@ export const invoiceManualDraftSchema = z
         inv_rate_date: optionalDate("วันที่ของอัตรา"),
         inv_rate_override_reason: optionalText("เหตุผลที่แก้อัตรา", 500),
         inv_vat_treatment: z.enum(["standard", "zero"], { error: "การคิด VAT ต้องเป็นปกติหรือ 0%" }).default("standard"),
-        inv_discount_type: z.enum(["amount", "percent"], { error: "ชนิดส่วนลดต้องเป็นบาทหรือ %" }).default("amount"),
-        inv_discount_value: decimalText("ส่วนลดท้ายบิล", { minimum: "0", maximum: "9999999999999.99" }).default("0.00"),
-        items: z
-            .array(itemSchema)
-            .max(MAX_INVOICE_ITEMS, `ใบแจ้งหนี้มีได้ไม่เกิน ${MAX_INVOICE_ITEMS} แถว`)
-            .default([]),
+        inv_discount_type: discountTypeField,
+        inv_discount_value: discountValueField,
+        items: itemsField,
     })
     .transform((invoice) => {
         const isBaseCurrency = invoice.inv_currency === BASE_CURRENCY;
@@ -130,19 +148,7 @@ export const invoiceManualDraftSchema = z
         };
     })
     .superRefine((invoice, context) => {
-        invoice.items.forEach((item, index) => {
-            if (item.invi_type !== "item") return;
-            if (item.invi_quantity === null) {
-                context.addIssue({ code: "custom", path: ["items", index, "invi_quantity"], message: "กรุณากรอกจำนวน" });
-            }
-            if (item.invi_unit_price === null) {
-                context.addIssue({
-                    code: "custom",
-                    path: ["items", index, "invi_unit_price"],
-                    message: "กรุณากรอกราคาต่อหน่วย",
-                });
-            }
-        });
+        checkPricedItems(invoice.items, context);
         if (invoice.inv_rate_source === "manual" && !invoice.inv_rate_override_reason) {
             context.addIssue({
                 code: "custom",
@@ -151,6 +157,36 @@ export const invoiceManualDraftSchema = z
             });
         }
     });
+
+// ─── ใบเพิ่มหนี้ (2026-10-18 ขั้น N-2 — docs/plans/2026-10-18-adjustments-po.md หัวข้อ 4.2) ───────────────────────
+// ใบแจ้งหนี้ชนิด "เพิ่มหนี้" อ้างใบแจ้งหนี้ที่ออกแล้ว · ลูกค้า สาขา โปรเจกต์ สกุลเงิน การคิด VAT ภาษาเอกสาร คัดลอกจากใบเดิม (แก้ไม่ได้)
+// กรอกเฉพาะรายการที่เพิ่ม + เหตุผล (กฎหมายบังคับ) · ที่เหลือเหมือนใบแจ้งหนี้สร้างเอง (อนุมัติตามกติกา IV · รับเงิน · วางบิล · QR)
+
+/** เหตุผลที่เพิ่มหนี้ — รหัสไว้ทำรายงาน ข้อความเต็มกรอกเอง */
+export const DEBIT_NOTE_REASONS = {
+    price_increase: "ปรับราคาขึ้นจากที่ออกใบไป",
+    scope_increase: "งานหรือจำนวนเพิ่มจากที่ตกลง",
+    error: "คิดยอดต่ำกว่าที่ควร",
+    other: "อื่นๆ",
+};
+
+export const invoiceDebitNoteDraftSchema = z
+    .object({
+        inv_reference_invoice_id: requiredText("ใบแจ้งหนี้ที่อ้างอิง", 18),
+        inv_adjust_reason_code: z.enum(Object.keys(DEBIT_NOTE_REASONS), { error: "เลือกเหตุผลที่เพิ่มหนี้" }),
+        inv_adjust_reason: requiredText("รายละเอียดเหตุผล", 500),
+        inv_title: commonDraftFields.inv_title,
+        inv_credit_days: commonDraftFields.inv_credit_days,
+        inv_wht_rate: commonDraftFields.inv_wht_rate,
+        inv_notes: commonDraftFields.inv_notes,
+        inv_internal_note: commonDraftFields.inv_internal_note,
+        inv_bank_account_id: commonDraftFields.inv_bank_account_id,
+        inv_version: commonDraftFields.inv_version,
+        inv_discount_type: discountTypeField,
+        inv_discount_value: discountValueField,
+        items: itemsField,
+    })
+    .superRefine((debitNote, context) => checkPricedItems(debitNote.items, context));
 
 /** ออกใบ (ใบจากงวด) — VAT วันนี้ต่างจากใบเสนอราคา ต้องส่ง confirm_vat_change: true มายืนยัน (R-B4) */
 export const invoiceIssueSchema = z.object({

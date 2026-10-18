@@ -25,6 +25,7 @@ const { registerProductRoutes } = require("./product.routes");
 const { registerSalesSupportRoutes } = require("./sales-support.routes");
 const { registerQuotationRoutes } = require("./quotation.routes");
 const { registerInvoiceRoutes } = require("./invoice.routes");
+const { registerCreditNoteRoutes } = require("./credit-note.routes");
 const { registerBillingNoteRoutes } = require("./billing-note.routes");
 const { registerReceiptRoutes } = require("./receipt.routes");
 const { registerFinanceRoutes } = require("./finance.routes");
@@ -283,6 +284,7 @@ registerSalesSupportRoutes(router);
 // ─── ใบเสนอราคา (วงจรขาย 1A-3) ──────────────────────────────────────────────────
 registerQuotationRoutes(router);
 registerInvoiceRoutes(router);
+registerCreditNoteRoutes(router);
 registerBillingNoteRoutes(router);
 registerReceiptRoutes(router);
 registerFinanceRoutes(router);

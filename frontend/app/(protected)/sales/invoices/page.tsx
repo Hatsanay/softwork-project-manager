@@ -14,7 +14,7 @@ import { usePermission, BITS } from "@/app/components/permission-provider";
 import { formatDateOnly } from "@/app/function";
 import { apiFetch } from "@/lib/api";
 import { formatAmount } from "@/lib/shared/money.mjs";
-import { INVOICE_MESSAGES, STATUS_LABELS } from "./_messages";
+import { INVOICE_MESSAGES, PAYMENT_STATE_PILLS, STATUS_LABELS } from "./_messages";
 import type { InvoiceListRow } from "./_types";
 import { dueLabel, invoiceNumberLabel } from "./_format";
 
@@ -79,7 +79,10 @@ export default function InvoicesPage() {
                     className="grid min-w-0 gap-0.5 text-left"
                     onClick={() => router.push(`/sales/invoices/view?id=${row.inv_id}`)}
                 >
-                    <span className="text-xs text-gray-500 tabular-nums">{invoiceNumberLabel(row)}</span>
+                    <span className="flex flex-wrap items-center gap-1.5 text-xs text-gray-500 tabular-nums">
+                        {invoiceNumberLabel(row)}
+                        {row.inv_doc_type === "debit_note" && <StatusPill tone="info">ใบเพิ่มหนี้</StatusPill>}
+                    </span>
                     <span className="font-medium text-gray-800 hover:text-blue-600">{row.inv_title}</span>
                 </button>
             ),
@@ -91,7 +94,11 @@ export default function InvoicesPage() {
                 <div className="grid min-w-0 gap-0.5">
                     <span>{row.client_name}</span>
                     <span className="text-xs text-gray-500">
-                        {row.qt_number ? `ใบเสนอราคา ${row.qt_number}` : "สร้างเอง"}
+                        {row.inv_doc_type === "debit_note"
+                            ? `เพิ่มหนี้จาก ${row.reference_number ?? "-"}`
+                            : row.qt_number
+                              ? `ใบเสนอราคา ${row.qt_number}`
+                              : "สร้างเอง"}
                     </span>
                 </div>
             ),
@@ -124,8 +131,11 @@ export default function InvoicesPage() {
                                 ? ` ชั้น ${row.inv_approval_current_level}/${row.approval_level_count}`
                                 : ""}
                         </StatusPill>
-                        {row.payment_state === "paid" && <StatusPill tone="success">ชำระครบ</StatusPill>}
-                        {row.payment_state === "partial" && <StatusPill tone="wait">ชำระบางส่วน</StatusPill>}
+                        {row.payment_state && row.payment_state !== "unpaid" && (
+                            <StatusPill tone={PAYMENT_STATE_PILLS[row.payment_state].tone}>
+                                {PAYMENT_STATE_PILLS[row.payment_state].label}
+                            </StatusPill>
+                        )}
                         {due && <StatusPill tone={row.is_overdue ? "danger" : "neutral"}>{due}</StatusPill>}
                         {row.waiting_for_me && <StatusPill tone="wait">รอคุณอนุมัติ</StatusPill>}
                     </div>

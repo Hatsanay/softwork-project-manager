@@ -63,7 +63,9 @@ export default function ReceiptPrintPage() {
     const { receipt, allocations, currency } = detail;
     // ชำระบางส่วน: แสดงคอลัมน์คงค้างหลังรับชำระ (ชำระครบทุกใบไม่แสดง — ไม่มีศูนย์ซ้ำ ๆ)
     // ยอดตามใบแจ้งหนี้แสดงเฉพาะเมื่อมีใบที่ตัดไม่เต็มใบ (รับเต็มทุกใบ = ยอดเดียวกับจำนวนเงินที่ชำระ ไม่พิมพ์ซ้ำ)
-    const showInvoiceTotal = allocations.some((row) => row.rca_amount !== row.inv_total);
+    const showInvoiceTotal = allocations.some((row) => row.rca_amount !== row.invoice_total_at_receipt);
+    // ขั้น N-1: มีใบลดหนี้ก่อนใบเสร็จนี้ → คอลัมน์ยอดตามใบแจ้งหนี้เป็นยอดหลังลดหนี้ (คงค้าง = คอลัมน์นี้ − รับแล้ว)
+    const hasCreditedInvoice = allocations.some((row) => row.invoice_total_at_receipt !== row.inv_total);
     const hasBalance = allocations.some((row) => parseHundredths(row.outstanding_after_receipt, "คงค้าง") > 0n);
     const company = receipt.rc_company_snapshot;
     const client = receipt.rc_client_snapshot;
@@ -175,7 +177,10 @@ export default function ReceiptPrintPage() {
                             <th className="py-1.5 font-medium">{labels.invoiceNumber}</th>
                             <th className="w-32 py-1.5 font-medium">{labels.invoiceDate}</th>
                             {showInvoiceTotal && (
-                                <th className="w-32 py-1.5 text-right font-medium">{labels.invoiceTotal}</th>
+                                <th className="w-32 py-1.5 text-right font-medium">
+                                    {labels.invoiceTotal}
+                                    {hasCreditedInvoice ? ` ${labels.afterCredit}` : ""}
+                                </th>
                             )}
                             <th className={`w-32 py-1.5 text-right font-medium ${hasBalance ? "" : "pr-1"}`}>
                                 {labels.paidAmount}
@@ -196,7 +201,7 @@ export default function ReceiptPrintPage() {
                                 <td className="py-1">{formatDocumentDate(row.inv_issue_date, language)}</td>
                                 {showInvoiceTotal && (
                                     <td className="py-1 text-right tabular-nums">
-                                        {formatAmount(row.inv_total, decimals)}
+                                        {formatAmount(row.invoice_total_at_receipt, decimals)}
                                     </td>
                                 )}
                                 <td className={`py-1 text-right tabular-nums ${hasBalance ? "" : "pr-1"}`}>

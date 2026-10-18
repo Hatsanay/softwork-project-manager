@@ -77,6 +77,8 @@ export type BillingNoteInvoice = {
     inv_status: "draft" | "pending_approval" | "issued" | "cancelled";
     inv_currency: string;
     inv_total: string;
+    // ขั้น N-1: ยอดตามใบแจ้งหนี้หลังลดหนี้ (= inv_total ถ้าไม่มีใบลดหนี้)
+    effective_total: string;
     inv_paid_amount: string;
     inv_wht_amount: string;
     inv_issue_date: string | null;

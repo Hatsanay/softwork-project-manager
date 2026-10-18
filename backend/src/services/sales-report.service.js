@@ -7,6 +7,7 @@ const { todayBangkok } = require("../utils/bangkok-time");
 const { isRealDateText } = require("../shared/schemas/common.mjs");
 const { parseHundredths } = require("../shared/money.mjs");
 const { toDecimalText } = require("../shared/quotation-totals.mjs");
+const invoiceService = require("./invoice.service");
 
 const MAX_RANGE_MONTHS = 24;
 const TOP_CLIENT_COUNT = 10;
@@ -65,6 +66,19 @@ async function salesSummary(conn, range) {
         `SELECT ${RECEIVED_COLUMNS} FROM tb_receipts r WHERE r.rc_status = 'issued' AND r.rc_receipt_date BETWEEN ? AND ?`,
         [from, to],
     );
+    // ใบลดหนี้ที่ออกในช่วง (ขั้น N-1) — ลดยอดขายของช่วงที่ออกใบลดหนี้ · คืนเงินลูกค้าตามวันที่คืน
+    const [[credited]] = await conn.query(
+        `SELECT COUNT(*) AS credit_note_count, COALESCE(SUM(cn_base_thb), 0) AS credited_thb,
+                COALESCE(SUM(cn_total_thb), 0) AS credited_with_vat_thb
+         FROM tb_credit_notes WHERE cn_status = 'issued' AND cn_issue_date BETWEEN ? AND ?`,
+        [from, to],
+    );
+    const [[refunded]] = await conn.query(
+        `SELECT COUNT(*) AS refund_count, COALESCE(SUM(ROUND(cn_refund_amount * cn_total_thb / cn_total, 2)), 0) AS refunded_thb
+         FROM tb_credit_notes
+         WHERE cn_status = 'issued' AND cn_refunded_at IS NOT NULL AND cn_total > 0 AND cn_refund_date BETWEEN ? AND ?`,
+        [from, to],
+    );
     // ใบเสนอราคาที่ "จบผล" ในช่วง: ตอบรับ/ปฏิเสธ ตามวันที่บันทึกผล · หมดอายุตามวันหมดอายุ
     const [[quotations]] = await conn.query(
         `SELECT
@@ -78,21 +92,23 @@ async function salesSummary(conn, range) {
     const [topClients] = await conn.query(
         `SELECT c.client_id, c.client_name, c.client_company, COUNT(*) AS invoice_count,
                 SUM(i.inv_after_discount_thb) AS billed_thb,
-                (SELECT COALESCE(SUM(ROUND((o.inv_total - o.inv_paid_amount) * o.inv_total_thb / o.inv_total, 2)), 0)
+                (SELECT COALESCE(SUM(cn.cn_base_thb), 0) FROM tb_credit_notes cn
+                 WHERE cn.cn_client_id = c.client_id AND cn.cn_status = 'issued' AND cn.cn_issue_date BETWEEN ? AND ?) AS credited_thb,
+                (SELECT COALESCE(SUM(${invoiceService.outstandingThbSql("o")}), 0)
                  FROM tb_invoices o WHERE o.inv_client_id = c.client_id AND o.inv_status = 'issued'
-                   AND o.inv_paid_amount < o.inv_total AND o.inv_total > 0) AS outstanding_thb
+                   AND ${invoiceService.outstandingSql("o")} > 0) AS outstanding_thb
          FROM tb_invoices i JOIN tb_clients c ON c.client_id = i.inv_client_id
          WHERE i.inv_status = 'issued' AND i.inv_issue_date BETWEEN ? AND ?
          GROUP BY c.client_id, c.client_name, c.client_company
          ORDER BY billed_thb DESC, c.client_name
          LIMIT ${TOP_CLIENT_COUNT}`,
-        [from, to],
+        [from, to, from, to],
     );
     const [[outstanding]] = await conn.query(
         `SELECT
-            COALESCE(SUM(ROUND((inv_total - inv_paid_amount) * inv_total_thb / inv_total, 2)), 0) AS outstanding_thb,
-            COALESCE(SUM(CASE WHEN inv_due_date < ? THEN ROUND((inv_total - inv_paid_amount) * inv_total_thb / inv_total, 2) END), 0) AS overdue_thb
-         FROM tb_invoices WHERE inv_status = 'issued' AND inv_paid_amount < inv_total AND inv_total > 0`,
+            COALESCE(SUM(${invoiceService.outstandingThbSql("i")}), 0) AS outstanding_thb,
+            COALESCE(SUM(CASE WHEN i.inv_due_date < ? THEN ${invoiceService.outstandingThbSql("i")} END), 0) AS overdue_thb
+         FROM tb_invoices i WHERE i.inv_status = 'issued' AND ${invoiceService.outstandingSql("i")} > 0`,
         [today],
     );
 
@@ -108,6 +124,22 @@ async function salesSummary(conn, range) {
             invoice_count: Number(billed.invoice_count),
             amount_thb: text(billed.billed_thb),
             amount_with_vat_thb: text(billed.billed_with_vat_thb),
+        },
+        // ยอดขายสุทธิ = ออกบิล − ใบลดหนี้ของช่วง (แสดงแยกบรรทัด ไม่หักเงียบ — กติกาเงิน 3.8)
+        credited: {
+            credit_note_count: Number(credited.credit_note_count),
+            amount_thb: text(credited.credited_thb),
+            amount_with_vat_thb: text(credited.credited_with_vat_thb),
+        },
+        net_sales: {
+            amount_thb: toDecimalText(money(billed.billed_thb) - money(credited.credited_thb)),
+            amount_with_vat_thb: toDecimalText(
+                money(billed.billed_with_vat_thb) - money(credited.credited_with_vat_thb),
+            ),
+        },
+        refunds: {
+            refund_count: Number(refunded.refund_count),
+            refunded_thb: text(refunded.refunded_thb),
         },
         received: {
             receipt_count: Number(received.receipt_count),
@@ -129,6 +161,7 @@ async function salesSummary(conn, range) {
             client_company: row.client_company,
             invoice_count: Number(row.invoice_count),
             billed_thb: text(row.billed_thb),
+            credited_thb: text(row.credited_thb),
             outstanding_thb: text(row.outstanding_thb),
         })),
         outstanding_now: {
@@ -162,6 +195,12 @@ async function monthlySales(conn, monthCount = 12) {
          GROUP BY month`,
         [from, today],
     );
+    const [creditedRows] = await conn.query(
+        `SELECT DATE_FORMAT(cn_issue_date, '%Y-%m') AS month, SUM(cn_base_thb) AS credited_thb
+         FROM tb_credit_notes WHERE cn_status = 'issued' AND cn_issue_date BETWEEN ? AND ?
+         GROUP BY month`,
+        [from, today],
+    );
     const [receivedRows] = await conn.query(
         `SELECT DATE_FORMAT(r.rc_receipt_date, '%Y-%m') AS month, ${RECEIVED_COLUMNS}
          FROM tb_receipts r WHERE r.rc_status = 'issued' AND r.rc_receipt_date BETWEEN ? AND ?
@@ -169,6 +208,7 @@ async function monthlySales(conn, monthCount = 12) {
         [from, today],
     );
     const billedByMonth = new Map(billedRows.map((row) => [row.month, money(row.billed_thb)]));
+    const creditedByMonth = new Map(creditedRows.map((row) => [row.month, money(row.credited_thb)]));
     const receivedByMonth = new Map(
         receivedRows.map((row) => [
             row.month,
@@ -178,7 +218,9 @@ async function monthlySales(conn, monthCount = 12) {
     return {
         months: months.map((month) => ({
             month,
-            billed_thb: toDecimalText(billedByMonth.get(month) ?? 0n),
+            // ออกบิลสุทธิ = ใบแจ้งหนี้ − ใบลดหนี้ของเดือน (ขั้น N-1)
+            billed_thb: toDecimalText((billedByMonth.get(month) ?? 0n) - (creditedByMonth.get(month) ?? 0n)),
+            credited_thb: toDecimalText(creditedByMonth.get(month) ?? 0n),
             received_thb: toDecimalText(receivedByMonth.get(month) ?? 0n),
         })),
         today,

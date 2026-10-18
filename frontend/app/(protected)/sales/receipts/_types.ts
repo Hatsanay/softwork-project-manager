@@ -41,6 +41,9 @@ export type ReceivableInvoice = {
     vat_received: string;
     thb_received: string;
     outstanding_amount: string;
+    // ขั้น N-1: ยอดหลังลดหนี้ + หัก ณ ที่จ่ายประมาณการหลังลดหนี้
+    effective_total: string;
+    effective_wht_amount: string;
     is_overdue: boolean;
     days_overdue: number;
     client_name: string;
@@ -124,6 +127,9 @@ export type ReceiptAllocation = {
     outstanding_amount: string;
     // คงค้างของใบแจ้งหนี้หลังรับชำระด้วยใบเสร็จนี้ (ไม่เปลี่ยนตามการรับเงินครั้งหลัง)
     outstanding_after_receipt: string;
+    // ยอดตามใบแจ้งหนี้หลังลดหนี้ ณ ตอนออกใบเสร็จนี้ (ขั้น N-1)
+    invoice_total_at_receipt: string;
+    rca_credited_before: string;
 };
 
 export type ReceiptDetail = {

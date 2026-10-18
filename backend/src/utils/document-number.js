@@ -9,8 +9,8 @@
 // LAST_INSERT_ID(ค่า) จำค่าไว้เฉพาะ connection นี้ ไม่ปนกับคำขออื่นที่ทำพร้อมกัน
 
 // EX ค่าใช้จ่าย/บิลผู้ขาย · EC ใบเบิกเงินพนักงาน (เฟส 2 — ได้เลขตอนอนุมัติครบ)
-// PV ใบสำคัญจ่าย (ขั้น 2-4)
-const DOCUMENT_TYPES = ["QT", "IV", "BN", "RE", "EX", "EC", "PV"];
+// PV ใบสำคัญจ่าย (ขั้น 2-4) · CN ใบลดหนี้ (2026-10-18 — ได้เลขตอนอนุมัติครบ) · DN ใบเพิ่มหนี้ (ขั้น N-2 — ใบแจ้งหนี้ชนิดเพิ่มหนี้)
+const DOCUMENT_TYPES = ["QT", "IV", "BN", "RE", "EX", "EC", "PV", "CN", "DN"];
 const MAX_NUMBERS_PER_DAY = 999_999;
 // เลขรันต่อปี (ไม่รีเซ็ตทุกวัน): WT หนังสือรับรองหัก ณ ที่จ่าย — เล่มที่ = ปี ค.ศ. · แถวลำดับใช้ ds_date = "YYYY0000"
 const YEARLY_DOCUMENT_TYPES = ["WT"];
@@ -41,7 +41,7 @@ function toCompactDate(dateText) {
 /**
  * ออกเลขที่เอกสารถัดไปของวันนั้น
  * @param {import("mysql2/promise").PoolConnection} conn connection ที่ beginTransaction แล้ว
- * @param {"QT" | "IV" | "BN" | "RE" | "EX" | "EC"} documentType
+ * @param {"QT" | "IV" | "BN" | "RE" | "EX" | "EC" | "PV" | "CN" | "DN"} documentType
  * @param {string} documentDate วันที่เอกสาร "YYYY-MM-DD" ตามเวลาไทย (ใช้ todayBangkok())
  * @returns {Promise<string>} เช่น "QT-20261231-000001"
  */

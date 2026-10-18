@@ -192,11 +192,14 @@ export default function ReceiptForm({ options, initialInvoiceId, billingNoteId, 
         return {
             invoiceId: invoice.inv_id,
             amount: amount ?? 0n,
-            invoiceTotal: parseHundredths(invoice.inv_total, "ยอดรวม"),
+            // ขั้น N-1: ยอดหลังลดหนี้ (backend คิดให้) · รับแล้วสุทธิ = ยอดหลังลดหนี้ − คงค้าง · VAT/บาทเป็นค่าแสดงผล (backend คิดจริง)
+            invoiceTotal: parseHundredths(invoice.effective_total, "ยอดหลังลดหนี้"),
             invoiceVat: parseHundredths(invoice.inv_vat_amount, "VAT"),
             invoiceTotalThb: parseHundredths(invoice.inv_total_thb, "ยอดบาท"),
-            invoiceWithholding: parseHundredths(invoice.inv_wht_amount, "หัก ณ ที่จ่าย"),
-            paidBefore: parseHundredths(invoice.inv_paid_amount, "ยอดรับแล้ว"),
+            invoiceWithholding: parseHundredths(invoice.effective_wht_amount, "หัก ณ ที่จ่าย"),
+            paidBefore:
+                parseHundredths(invoice.effective_total, "ยอดหลังลดหนี้") -
+                parseHundredths(invoice.outstanding_amount, "คงค้าง"),
             vatBefore: parseHundredths(invoice.vat_received, "VAT ที่รับแล้ว"),
             thbBefore: parseHundredths(invoice.thb_received, "ยอดบาทที่รับแล้ว"),
         };

@@ -112,10 +112,12 @@ async function findInvoices(conn, { from, to }) {
                 i.inv_client_snapshot, c.client_name, c.client_company, c.client_tax_id, i.inv_title, i.inv_currency, i.inv_exchange_rate,
                 i.inv_after_discount, i.inv_vat_rate, i.inv_vat_amount, i.inv_total, i.inv_after_discount_thb, i.inv_total_thb,
                 i.inv_wht_amount, q.qt_number, p.project_name, i.inv_status,
-                DATE_FORMAT(i.inv_cancelled_at, '%Y-%m-%d') AS cancelled_date, i.inv_cancel_reason
+                DATE_FORMAT(i.inv_cancelled_at, '%Y-%m-%d') AS cancelled_date, i.inv_cancel_reason,
+                i.inv_doc_type, ref.inv_number AS reference_number, i.inv_adjust_reason
          FROM tb_invoices i
          JOIN tb_clients c ON c.client_id = i.inv_client_id
          LEFT JOIN tb_quotations q ON q.qt_id = i.inv_quotation_id
+         LEFT JOIN tb_invoices ref ON ref.inv_id = i.inv_reference_invoice_id
          LEFT JOIN tb_projects p ON p.project_id = i.inv_project_id
          WHERE i.inv_status IN ('issued', 'cancelled') AND i.inv_issue_date BETWEEN ? AND ?
          ORDER BY i.inv_issue_date, i.inv_number`,
@@ -123,8 +125,13 @@ async function findInvoices(conn, { from, to }) {
     );
     return rows.map((row) => {
         const client = parseJson(row.inv_client_snapshot) ?? row;
+        const isDebitNote = row.inv_doc_type === "debit_note";
         return {
             number: row.inv_number,
+            // ขั้น N-2: ใบเพิ่มหนี้อยู่ในชีตนี้ด้วย (เป็นรายการขายเพิ่ม) แยกด้วยชนิดเอกสาร + เลขใบที่อ้าง + เหตุผล
+            doc_type: isDebitNote ? "ใบเพิ่มหนี้" : "ใบแจ้งหนี้",
+            reference: isDebitNote ? row.reference_number : null,
+            adjust_reason: isDebitNote ? row.inv_adjust_reason : null,
             issue_date: dateCell(row.issue_date),
             due_date: dateCell(row.due_date),
             client: client.client_company || client.client_name,
@@ -146,6 +153,59 @@ async function findInvoices(conn, { from, to }) {
             status: INVOICE_STATUS[row.inv_status] ?? row.inv_status,
             cancelled_date: dateCell(row.cancelled_date),
             cancel_reason: row.inv_cancel_reason,
+        };
+    });
+}
+
+/**
+ * ใบลดหนี้ที่ออกในเดือน (ตามวันที่ออก) รวมที่ยกเลิกภายหลัง — ขั้น N-1 · ยอดบาทตามอัตราของใบแจ้งหนี้เดิม (A2)
+ */
+async function findCreditNotes(conn, { from, to }) {
+    const [rows] = await conn.query(
+        `SELECT cn.cn_number, DATE_FORMAT(cn.cn_issue_date, '%Y-%m-%d') AS issue_date, i.inv_number, cn.cn_client_snapshot,
+                c.client_name, c.client_company, c.client_tax_id, cn.cn_reason, cn.cn_currency, i.inv_exchange_rate,
+                cn.cn_original_total, cn.cn_subtotal, cn.cn_vat_amount, cn.cn_total, cn.cn_base_thb, cn.cn_total_thb,
+                cn.cn_refund_required, DATE_FORMAT(cn.cn_refund_date, '%Y-%m-%d') AS refund_date, cn.cn_refund_amount,
+                cn.cn_refund_wht, cn.cn_refunded_at, ba.ba_bank_name, ba.ba_account_no, p.project_name, cn.cn_status,
+                DATE_FORMAT(cn.cn_cancelled_at, '%Y-%m-%d') AS cancelled_date, cn.cn_cancel_reason
+         FROM tb_credit_notes cn
+         JOIN tb_invoices i ON i.inv_id = cn.cn_invoice_id
+         JOIN tb_clients c ON c.client_id = cn.cn_client_id
+         LEFT JOIN tb_bank_accounts ba ON ba.ba_id = cn.cn_refund_bank_account_id
+         LEFT JOIN tb_projects p ON p.project_id = cn.cn_project_id
+         WHERE cn.cn_status IN ('issued', 'cancelled') AND cn.cn_issue_date BETWEEN ? AND ?
+         ORDER BY cn.cn_issue_date, cn.cn_number`,
+        [from, to],
+    );
+    return rows.map((row) => {
+        const client = parseJson(row.cn_client_snapshot) ?? row;
+        const isRefunded = row.cn_refunded_at !== null;
+        return {
+            number: row.cn_number,
+            issue_date: dateCell(row.issue_date),
+            invoice: row.inv_number,
+            client: client.client_company || client.client_name,
+            tax_id: client.client_tax_id,
+            reason: row.cn_reason,
+            currency: row.cn_currency,
+            rate: number(row.inv_exchange_rate),
+            original_total: number(row.cn_original_total),
+            before_vat: number(row.cn_subtotal),
+            vat: number(row.cn_vat_amount),
+            total: number(row.cn_total),
+            before_vat_thb: number(row.cn_base_thb),
+            vat_thb: Math.round((Number(row.cn_total_thb) - Number(row.cn_base_thb)) * 100) / 100,
+            total_thb: number(row.cn_total_thb),
+            refund_required: number(row.cn_refund_required),
+            refund_date: isRefunded ? dateCell(row.refund_date) : null,
+            refund_amount: isRefunded ? number(row.cn_refund_amount) : null,
+            refund_wht: isRefunded ? number(row.cn_refund_wht) : null,
+            refund_bank: isRefunded ? `${row.ba_bank_name ?? ""} ${row.ba_account_no ?? ""}`.trim() : null,
+            project: row.project_name,
+            status: INVOICE_STATUS[row.cn_status] ?? row.cn_status,
+            is_issued: row.cn_status === "issued",
+            cancelled_date: dateCell(row.cancelled_date),
+            cancel_reason: row.cn_cancel_reason,
         };
     });
 }
@@ -206,7 +266,10 @@ async function findReceipts(conn, { from, to }) {
  */
 async function findAgingAsOf(conn, asOf) {
     const [rows] = await conn.query(
-        `SELECT o.*, ROUND(o.outstanding * o.inv_total_thb / o.inv_total, 2) AS outstanding_thb, DATEDIFF(?, o.due_date) AS days_overdue
+        `SELECT o.*, o.inv_total - o.credited_as_of - o.paid_as_of + o.refunded_as_of AS outstanding,
+                ROUND((o.inv_total - o.credited_as_of - o.paid_as_of + o.refunded_as_of) * (o.inv_total_thb - o.credited_thb_as_of)
+                      / (o.inv_total - o.credited_as_of), 2) AS outstanding_thb,
+                DATEDIFF(?, o.due_date) AS days_overdue
          FROM (
              SELECT i.inv_number, i.inv_client_snapshot, c.client_name, c.client_company, i.inv_currency, i.inv_total, i.inv_total_thb,
                     DATE_FORMAT(i.inv_issue_date, '%Y-%m-%d') AS issue_date, i.inv_due_date AS due_date,
@@ -214,16 +277,22 @@ async function findAgingAsOf(conn, asOf) {
                     COALESCE((SELECT SUM(a.rca_amount) FROM tb_receipt_allocations a JOIN tb_receipts r ON r.rc_id = a.rca_receipt_id
                               WHERE a.rca_invoice_id = i.inv_id AND r.rc_receipt_date <= ?
                                 AND (r.rc_status = 'issued' OR DATE(r.rc_cancelled_at) > ?)), 0) AS paid_as_of,
-                    i.inv_total - COALESCE((SELECT SUM(a.rca_amount) FROM tb_receipt_allocations a JOIN tb_receipts r ON r.rc_id = a.rca_receipt_id
-                              WHERE a.rca_invoice_id = i.inv_id AND r.rc_receipt_date <= ?
-                                AND (r.rc_status = 'issued' OR DATE(r.rc_cancelled_at) > ?)), 0) AS outstanding
+                    -- ใบลดหนี้ที่ออก ≤ วันนั้น และยังไม่ยกเลิก ณ วันนั้น · คืนเงินที่บันทึกวันที่ ≤ วันนั้น (ขั้น N-1)
+                    COALESCE((SELECT SUM(cn.cn_total) FROM tb_credit_notes cn
+                              WHERE cn.cn_invoice_id = i.inv_id AND cn.cn_issue_date <= ?
+                                AND (cn.cn_status = 'issued' OR (cn.cn_status = 'cancelled' AND DATE(cn.cn_cancelled_at) > ?))), 0) AS credited_as_of,
+                    COALESCE((SELECT SUM(cn.cn_total_thb) FROM tb_credit_notes cn
+                              WHERE cn.cn_invoice_id = i.inv_id AND cn.cn_issue_date <= ?
+                                AND (cn.cn_status = 'issued' OR (cn.cn_status = 'cancelled' AND DATE(cn.cn_cancelled_at) > ?))), 0) AS credited_thb_as_of,
+                    COALESCE((SELECT SUM(cn.cn_refund_required) FROM tb_credit_notes cn
+                              WHERE cn.cn_invoice_id = i.inv_id AND cn.cn_refunded_at IS NOT NULL AND cn.cn_refund_date <= ?), 0) AS refunded_as_of
              FROM tb_invoices i JOIN tb_clients c ON c.client_id = i.inv_client_id
              WHERE i.inv_issue_date <= ? AND i.inv_total > 0
                AND (i.inv_status = 'issued' OR (i.inv_status = 'cancelled' AND DATE(i.inv_cancelled_at) > ?))
          ) o
-         WHERE o.outstanding > 0
+         WHERE o.inv_total - o.credited_as_of - o.paid_as_of + o.refunded_as_of > 0
          ORDER BY o.due_date, o.inv_number`,
-        [asOf, asOf, asOf, asOf, asOf, asOf, asOf],
+        [asOf, asOf, asOf, asOf, asOf, asOf, asOf, asOf, asOf, asOf],
     );
     return rows.map((row) => {
         const client = parseJson(row.inv_client_snapshot) ?? row;
@@ -267,8 +336,13 @@ async function findCancellations(conn, { from, to }) {
                 r.rc_allocated_total, DATE_FORMAT(r.rc_cancelled_at, '%Y-%m-%d'), r.rc_cancel_reason, CONCAT(u.user_fname, ' ', u.user_lname)
          FROM tb_receipts r JOIN tb_clients c ON c.client_id = r.rc_client_id LEFT JOIN tb_users u ON u.user_id = r.rc_cancelled_by
          WHERE r.rc_status = 'cancelled' AND DATE(r.rc_cancelled_at) BETWEEN ? AND ?
+         UNION ALL
+         SELECT 'ใบลดหนี้', cn.cn_number, DATE_FORMAT(cn.cn_issue_date, '%Y-%m-%d'), c.client_name, c.client_company, cn.cn_currency,
+                cn.cn_total, DATE_FORMAT(cn.cn_cancelled_at, '%Y-%m-%d'), cn.cn_cancel_reason, CONCAT(u.user_fname, ' ', u.user_lname)
+         FROM tb_credit_notes cn JOIN tb_clients c ON c.client_id = cn.cn_client_id LEFT JOIN tb_users u ON u.user_id = cn.cn_cancelled_by
+         WHERE cn.cn_status = 'cancelled' AND DATE(cn.cn_cancelled_at) BETWEEN ? AND ?
          ORDER BY cancelled_date, number`,
-        [from, to, from, to, from, to],
+        [from, to, from, to, from, to, from, to],
     );
     return rows.map((row) => ({
         kind: row.kind,
@@ -460,8 +534,12 @@ async function buildAccountingExport(conn, monthText, actor) {
     const issuedReceipts = receipts.filter((row) => row.is_issued);
     const withholdingRows = issuedReceipts.filter((row) => row.withholding > 0);
     const aging = await findAgingAsOf(conn, range.to);
+    const creditNotes = await findCreditNotes(conn, range);
+    const activeCreditNotes = creditNotes.filter((row) => row.is_issued);
+    const refundedCreditNotes = activeCreditNotes.filter((row) => row.refund_date !== null);
     const cancellations = await findCancellations(conn, range);
     const activeInvoices = invoices.filter((row) => row.status === INVOICE_STATUS.issued);
+    const activeDebitNotes = activeInvoices.filter((row) => row.doc_type === "ใบเพิ่มหนี้");
     const expenseLines = await findExpenses(conn, range);
     const approvedExpenses = expenseLines.filter((row) => row.is_approved_first_line);
     const payments = await findPayments(conn, range);
@@ -484,9 +562,14 @@ async function buildAccountingExport(conn, monthText, actor) {
         ["ผู้ส่งออก", user?.full_name ?? ""],
         [],
         ["ใบแจ้งหนี้ที่ออก (ไม่นับที่ยกเลิก) — จำนวน", activeInvoices.length],
+        ["ในจำนวนนี้เป็นใบเพิ่มหนี้ — จำนวน", activeDebitNotes.length],
         ["ยอดก่อน VAT รวม (บาท)", sum(activeInvoices, "before_vat_thb")],
         ["VAT รวม (บาท)", sum(activeInvoices, "vat_thb")],
         ["ยอดรวม (บาท)", sum(activeInvoices, "total_thb")],
+        ["ใบลดหนี้ที่ออก (ไม่นับที่ยกเลิก) — จำนวน", activeCreditNotes.length],
+        ["ลดหนี้ก่อน VAT รวม (บาท)", sum(activeCreditNotes, "before_vat_thb")],
+        ["ลดหนี้รวม (บาท)", sum(activeCreditNotes, "total_thb")],
+        ["คืนเงินลูกค้าตามใบลดหนี้ (ยอดโอนคืน ในสกุลของใบ) — จำนวน", refundedCreditNotes.length],
         ["ใบเสร็จ (ไม่นับที่ยกเลิก) — จำนวน", issuedReceipts.length],
         ["เงินเข้าจริง (บาท)", sum(issuedReceipts, "received_thb")],
         ["ส่วนต่างอัตราแลกเปลี่ยน (บาท)", sum(issuedReceipts, "fx_diff_thb")],
@@ -509,7 +592,10 @@ async function buildAccountingExport(conn, monthText, actor) {
     for (const row of summaryRows) summary.addRow(row);
     summary.getColumn(2).numFmt = MONEY_FORMAT;
     summary.getRow(1).font = { bold: true, size: 13 };
-    for (const rowNumber of [8, 12, 16, 18, 20]) summary.getRow(rowNumber).getCell(2).numFmt = "0";
+    // แถวที่เป็นจำนวนใบ (ป้ายลงท้าย "— จำนวน") แสดงเป็นจำนวนเต็ม
+    summaryRows.forEach((row, index) => {
+        if (String(row[0] ?? "").endsWith("— จำนวน")) summary.getRow(index + 1).getCell(2).numFmt = "0";
+    });
 
     addTableSheet(
         workbook,
@@ -537,8 +623,44 @@ async function buildAccountingExport(conn, monthText, actor) {
             { header: "สถานะ", key: "status", width: 10 },
             { header: "วันที่ยกเลิก", key: "cancelled_date", type: "date", width: 12 },
             { header: "เหตุผลที่ยกเลิก", key: "cancel_reason", width: 30 },
+            // ขั้น N-2 ต่อท้าย (คอลัมน์เดิมไม่เลื่อน — สูตรที่นักบัญชีผูกไว้ยังใช้ได้)
+            { header: "ชนิดเอกสาร", key: "doc_type", width: 12 },
+            { header: "อ้างอิงใบแจ้งหนี้", key: "reference", width: 20 },
+            { header: "เหตุผลที่เพิ่มหนี้", key: "adjust_reason", width: 30 },
         ],
         invoices,
+    );
+
+    addTableSheet(
+        workbook,
+        "ใบลดหนี้",
+        [
+            { header: "เลขที่", key: "number", width: 20 },
+            { header: "วันที่", key: "issue_date", type: "date", width: 12 },
+            { header: "อ้างใบแจ้งหนี้", key: "invoice", width: 20 },
+            { header: "ลูกค้า", key: "client", width: 32 },
+            { header: "เลขผู้เสียภาษี", key: "tax_id", width: 16 },
+            { header: "เหตุผล", key: "reason", width: 32 },
+            { header: "สกุล", key: "currency", width: 7 },
+            { header: "อัตรา (บาท/หน่วย ของใบเดิม)", key: "rate", type: "rate" },
+            { header: "มูลค่าตามใบเดิม", key: "original_total", type: "money" },
+            { header: "ลดก่อน VAT", key: "before_vat", type: "money" },
+            { header: "VAT", key: "vat", type: "money" },
+            { header: "รวมลดหนี้", key: "total", type: "money" },
+            { header: "ลดก่อน VAT (บาท)", key: "before_vat_thb", type: "money" },
+            { header: "VAT (บาท)", key: "vat_thb", type: "money" },
+            { header: "รวมลดหนี้ (บาท)", key: "total_thb", type: "money" },
+            { header: "ต้องคืนลูกค้า", key: "refund_required", type: "money" },
+            { header: "วันที่คืน", key: "refund_date", type: "date", width: 12 },
+            { header: "ยอดโอนคืน", key: "refund_amount", type: "money" },
+            { header: "หัก ณ ที่จ่ายที่ไม่คืน", key: "refund_wht", type: "money" },
+            { header: "บัญชีที่โอนคืนออก", key: "refund_bank", width: 24 },
+            { header: "โปรเจกต์", key: "project", width: 24 },
+            { header: "สถานะ", key: "status", width: 10 },
+            { header: "วันที่ยกเลิก", key: "cancelled_date", type: "date", width: 12 },
+            { header: "เหตุผลที่ยกเลิก", key: "cancel_reason", width: 30 },
+        ],
+        creditNotes,
     );
 
     addTableSheet(

@@ -12,6 +12,8 @@ import {
     Clock,
     Banknote,
     FileCheck2,
+    FileMinus2,
+    FilePlus2,
     Pencil,
     Printer,
     RefreshCcw,
@@ -36,12 +38,20 @@ import { apiFetch, type ApiError } from "@/lib/api";
 import { formatAmount, parseHundredths } from "@/lib/shared/money.mjs";
 import { amountInWords } from "@/lib/shared/amount-in-words.mjs";
 import { displayRate } from "../../quotations/_format";
-import { INVOICE_MESSAGES, STATUS_LABELS } from "../_messages";
+import { INVOICE_MESSAGES, PAYMENT_STATE_PILLS, STATUS_LABELS } from "../_messages";
+import { DEBIT_NOTE_REASONS } from "@/lib/shared/schemas/invoice.mjs";
 import { dueLabel, invoiceNumberLabel, percentLabel } from "../_format";
 import type { InvoiceDetail } from "../_types";
 import { METHOD_LABELS } from "../../receipts/_messages";
 
 type ReasonAction = "return" | "cancel" | "reissue";
+
+const CREDIT_NOTE_STATUS_SHORT = {
+    draft: "ร่าง",
+    pending_approval: "รออนุมัติ",
+    issued: "ออกแล้ว",
+    cancelled: "ยกเลิก",
+} as const;
 type ConfirmAction = "issue" | "issueWithNewVat" | "submit" | "approve" | "send" | "delete";
 
 const REASON_DIALOGS: Record<ReasonAction, { title: string; description: string; confirmLabel: string; hint: string }> =
@@ -158,6 +168,7 @@ export default function InvoiceViewPage() {
     const base = `/invoices/${invoice.inv_id}`;
     const isReady = readiness.every((check) => check.ok);
     const hasWithholding = parseHundredths(invoice.inv_wht_amount, "หัก ณ ที่จ่าย") > 0n;
+    const hasCredits = detail.credit_notes.some((creditNote) => creditNote.cn_status === "issued");
     const due = dueLabel(invoice);
 
     const approveConsequences = approval?.canApprove
@@ -184,23 +195,21 @@ export default function InvoiceViewPage() {
         actions.can_send,
         actions.can_receive,
     ].filter(Boolean).length;
+    const isDebitNote = invoice.inv_doc_type === "debit_note";
     const paymentPill =
-        invoice.payment_state === "paid"
-            ? { tone: "success" as const, label: "ชำระครบ" }
-            : invoice.payment_state === "partial"
-              ? { tone: "wait" as const, label: "ชำระบางส่วน" }
-              : null;
+        invoice.payment_state && invoice.payment_state !== "unpaid" ? PAYMENT_STATE_PILLS[invoice.payment_state] : null;
 
     return (
         <div
             className={`mx-auto grid max-w-6xl grid-cols-1 gap-6 ${decisionCount > 1 ? "max-sm:pb-48" : hasDecisionBar ? "max-sm:pb-32" : ""}`}
         >
             <PageHeader
-                eyebrow={`ขาย · ใบแจ้งหนี้ · ${invoiceNumberLabel(invoice)}`}
+                eyebrow={`ขาย · ${isDebitNote ? "ใบเพิ่มหนี้" : "ใบแจ้งหนี้"} · ${invoiceNumberLabel(invoice)}`}
                 title={invoice.inv_title}
                 description={`${invoice.client_name} · สาขา ${invoice.branch_code} ${invoice.branch_name_th}`}
                 actions={
                     <div className="flex flex-wrap items-center gap-1.5">
+                        {isDebitNote && <StatusPill tone="info">ใบเพิ่มหนี้</StatusPill>}
                         <StatusPill tone={status.tone}>{status.label}</StatusPill>
                         {paymentPill && <StatusPill tone={paymentPill.tone}>{paymentPill.label}</StatusPill>}
                         {due && <StatusPill tone={invoice.is_overdue ? "danger" : "neutral"}>{due}</StatusPill>}
@@ -304,6 +313,24 @@ export default function InvoiceViewPage() {
                         บันทึกรับเงิน
                     </Link>
                 )}
+                {actions.can_credit && (
+                    <Link
+                        href={`/sales/credit-notes/new?invoice=${invoice.inv_id}`}
+                        className={buttonClass("secondary", "md")}
+                    >
+                        <FileMinus2 size={16} />
+                        ออกใบลดหนี้
+                    </Link>
+                )}
+                {actions.can_debit && (
+                    <Link
+                        href={`/sales/invoices/new?debit_for=${invoice.inv_id}`}
+                        className={buttonClass("secondary", "md")}
+                    >
+                        <FilePlus2 size={16} />
+                        ออกใบเพิ่มหนี้
+                    </Link>
+                )}
                 {actions.can_reissue && (
                     <button
                         type="button"
@@ -336,6 +363,10 @@ export default function InvoiceViewPage() {
                 )}
             </div>
             {actions.cancel_blocked_reason && <FieldHint>{actions.cancel_blocked_reason}</FieldHint>}
+            {actions.credit_blocked_reason && <FieldHint>ออกใบลดหนี้ไม่ได้: {actions.credit_blocked_reason}</FieldHint>}
+            {actions.debit_blocked_reason && (
+                <FieldHint>ออกใบเพิ่มหนี้ไม่ได้: {actions.debit_blocked_reason}</FieldHint>
+            )}
             {actions.can_submit && !isReady && (
                 <p className="text-xs text-amber-600">
                     ส่งขออนุมัติได้เมื่อผ่านทุกข้อในรายการ &quot;ก่อนส่งขออนุมัติ&quot;
@@ -470,7 +501,13 @@ export default function InvoiceViewPage() {
                         <p className="text-xs text-gray-500">
                             {amountInWords(invoice.inv_total, currency, invoice.inv_language)}
                         </p>
-                        {hasWithholding && (
+                        {hasCredits && (
+                            // มีใบลดหนี้: ยอดหลังหัก ณ ที่จ่ายของใบเดิมใช้ไม่ได้แล้ว — ไม่พิมพ์ซ้ำที่นี่ (กติกาเงิน 3.8)
+                            <FieldHint>
+                                ใบนี้มีใบลดหนี้ — ยอดหลังลดหนี้และยอดที่ลูกค้าต้องโอนดูในส่วน &quot;การชำระเงิน&quot;
+                            </FieldHint>
+                        )}
+                        {hasWithholding && !hasCredits && (
                             <>
                                 <TotalRow
                                     label={`หัก ณ ที่จ่าย ${percentLabel(invoice.inv_wht_rate)}% (ประมาณ)`}
@@ -505,6 +542,7 @@ export default function InvoiceViewPage() {
                 </section>
 
                 <div className="grid gap-5">
+                    <DebitComparisonCard detail={detail} />
                     <PaymentCard detail={detail} />
                     <InvoiceApprovalProgress detail={detail} />
                     <RelatedCard detail={detail} />
@@ -714,7 +752,8 @@ function ItemsList({ detail }: { detail: InvoiceDetail }) {
 
 // บัญชีรับเงิน + QR พร้อมเพย์ (ใบที่ออกแล้วใช้ข้อมูล ณ วันออก · ร่างใช้ค่าปัจจุบัน)
 function PaymentCard({ detail }: { detail: InvoiceDetail }) {
-    const { payment, invoice, currency, receipts } = detail;
+    const { payment, invoice, currency, receipts, credit_notes: creditNotes } = detail;
+    const issuedCreditNotes = creditNotes.filter((creditNote) => creditNote.cn_status === "issued");
     const account = payment.bank_account;
     const decimals = currency.cur_decimals;
     return (
@@ -722,7 +761,39 @@ function PaymentCard({ detail }: { detail: InvoiceDetail }) {
             <h2 className="text-base font-medium text-gray-900">การชำระเงิน</h2>
             {invoice.inv_status === "issued" && (
                 <div className="grid gap-1.5 rounded-xl bg-gray-50 p-3">
+                    {/* มีใบลดหนี้: ยอดใบ → ลดหนี้ทีละใบ → ยอดหลังลดหนี้ → รับแล้ว → ค้าง (อ่านบนลงล่างเป็นการคำนวณ — กติกา 3.8) */}
+                    {issuedCreditNotes.length > 0 && (
+                        <>
+                            <TotalRow label="ยอดตามใบแจ้งหนี้" value={formatAmount(invoice.inv_total, decimals)} />
+                            {issuedCreditNotes.map((creditNote) => (
+                                <div key={creditNote.cn_id} className="flex justify-between gap-3 text-gray-600">
+                                    <Link
+                                        href={`/sales/credit-notes/view?id=${creditNote.cn_id}`}
+                                        className="-my-2.5 py-2.5 text-blue-600 tabular-nums hover:underline"
+                                    >
+                                        ลดหนี้ {creditNote.cn_number}
+                                    </Link>
+                                    <span className="tabular-nums">−{formatAmount(creditNote.cn_total, decimals)}</span>
+                                </div>
+                            ))}
+                            <TotalRow label="ยอดหลังลดหนี้" value={formatAmount(payment.effective_total, decimals)} />
+                        </>
+                    )}
                     <TotalRow label="รับแล้ว" value={formatAmount(invoice.inv_paid_amount, decimals)} />
+                    {parseHundredths(invoice.inv_refunded_amount, "คืนเงิน") > 0n && (
+                        <TotalRow
+                            label="คืนเงินลูกค้าแล้ว (รวมหัก ณ ที่จ่ายที่ไม่ต้องคืน)"
+                            value={`−${formatAmount(invoice.inv_refunded_amount, decimals)}`}
+                        />
+                    )}
+                    {parseHundredths(payment.refund_due, "ต้องคืน") > 0n && (
+                        <div className="flex justify-between gap-3 font-medium text-red-600">
+                            <span>ลูกค้าจ่ายเกิน รอคืนเงิน</span>
+                            <span className="tabular-nums">
+                                {formatAmount(payment.refund_due, decimals)} {currency.cur_code}
+                            </span>
+                        </div>
+                    )}
                     <div className="flex justify-between gap-3 font-medium text-gray-900">
                         <span>ค้างชำระ</span>
                         <span className="tabular-nums">
@@ -884,14 +955,79 @@ function InvoiceApprovalProgress({ detail }: { detail: InvoiceDetail }) {
 }
 
 // เอกสารที่เกี่ยวข้อง: ใบเสนอราคา + งวดที่เรียกเก็บ · โปรเจกต์ · ใบวางบิล · ออกใหม่แทน/แทนใบไหน
+/** ใบเพิ่มหนี้: เหตุผล + เทียบกับรายการขายเดิม (มูลค่าเดิม → บวกใบนี้ → มูลค่าที่ถูกต้อง) — ตัวเลขชุดเดียวกับหน้าพิมพ์ */
+function DebitComparisonCard({ detail }: { detail: InvoiceDetail }) {
+    const { invoice, currency, debit_comparison: comparison } = detail;
+    if (invoice.inv_doc_type !== "debit_note" || !comparison) return null;
+    const decimals = currency.cur_decimals;
+    const reasonCode = invoice.inv_adjust_reason_code;
+    return (
+        <section className={`grid gap-3 p-5 text-sm ${CARD_CLASS}`}>
+            <h2 className="text-base font-medium text-gray-900">เทียบกับใบแจ้งหนี้เดิม</h2>
+            <div className="grid gap-1 rounded-lg bg-gray-50 p-3">
+                <p className="text-xs text-gray-500">เหตุผลที่เพิ่มหนี้</p>
+                <p className="text-gray-800">
+                    {reasonCode ? `${DEBIT_NOTE_REASONS[reasonCode]} · ` : ""}
+                    {invoice.inv_adjust_reason}
+                </p>
+            </div>
+            <div className="grid gap-1">
+                <TotalRow
+                    label={`มูลค่าตาม ${invoice.reference_number ?? "ใบเดิม"}`}
+                    value={formatAmount(comparison.original_total, decimals)}
+                />
+                <TotalRow label="บวก ใบเพิ่มหนี้ฉบับนี้" value={`+${formatAmount(comparison.this_total, decimals)}`} />
+                <div className="flex justify-between gap-3 border-t border-gray-200 pt-1 font-medium text-gray-900">
+                    <span>มูลค่าที่ถูกต้อง</span>
+                    <span className="tabular-nums">
+                        {formatAmount(comparison.correct_total, decimals)} {currency.cur_code}
+                    </span>
+                </div>
+            </div>
+            <FieldHint>
+                {comparison.is_snapshot
+                    ? INVOICE_MESSAGES.debitComparisonIssued
+                    : INVOICE_MESSAGES.debitComparisonDraft}
+            </FieldHint>
+        </section>
+    );
+}
+
 function RelatedCard({ detail }: { detail: InvoiceDetail }) {
-    const { invoice, milestones, billing_note: billingNote, reissued_to: reissuedTo, currency } = detail;
+    const {
+        invoice,
+        milestones,
+        billing_note: billingNote,
+        reissued_to: reissuedTo,
+        currency,
+        credit_notes: creditNotes,
+        debit_notes: debitNotes,
+    } = detail;
     const hasAnything =
-        invoice.inv_quotation_id || invoice.inv_project_id || billingNote || reissuedTo || invoice.inv_reissued_from_id;
+        invoice.inv_quotation_id ||
+        invoice.inv_project_id ||
+        billingNote ||
+        reissuedTo ||
+        invoice.inv_reissued_from_id ||
+        invoice.inv_reference_invoice_id ||
+        creditNotes.length > 0 ||
+        debitNotes.length > 0;
     if (!hasAnything) return null;
     return (
         <section className={`grid gap-2 p-5 text-sm ${CARD_CLASS}`}>
             <h2 className="text-base font-medium text-gray-900">เอกสารที่เกี่ยวข้อง</h2>
+            {invoice.inv_reference_invoice_id && (
+                <p>
+                    เพิ่มหนี้จากใบแจ้งหนี้{" "}
+                    <Link
+                        href={`/sales/invoices/view?id=${invoice.inv_reference_invoice_id}`}
+                        className="py-2 text-blue-600 hover:underline"
+                    >
+                        {invoice.reference_number}
+                    </Link>
+                    {invoice.reference_issue_date ? ` ลงวันที่ ${formatDateOnly(invoice.reference_issue_date)}` : ""}
+                </p>
+            )}
             {invoice.inv_quotation_id && (
                 <div className="grid gap-1">
                     <p>
@@ -941,6 +1077,50 @@ function RelatedCard({ detail }: { detail: InvoiceDetail }) {
                         {billingNote.bn_number ?? "ร่าง"}
                     </Link>
                 </p>
+            )}
+            {creditNotes.length > 0 && (
+                <div className="grid gap-1">
+                    <p>ใบลดหนี้</p>
+                    <ul className="grid gap-0.5 text-xs">
+                        {creditNotes.map((creditNote) => (
+                            <li key={creditNote.cn_id} className="flex justify-between gap-2">
+                                <Link
+                                    href={`/sales/credit-notes/view?id=${creditNote.cn_id}`}
+                                    className={`-my-2.5 py-2.5 tabular-nums hover:underline ${creditNote.cn_status === "cancelled" ? "text-gray-400 line-through" : "text-blue-600"}`}
+                                >
+                                    {creditNote.cn_number ?? "ร่าง"}
+                                </Link>
+                                <span className="text-gray-600 tabular-nums">
+                                    {CREDIT_NOTE_STATUS_SHORT[creditNote.cn_status]} ·{" "}
+                                    {formatAmount(creditNote.cn_total, currency.cur_decimals)}
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                    <FieldHint>{INVOICE_MESSAGES.creditNote}</FieldHint>
+                </div>
+            )}
+            {debitNotes.length > 0 && (
+                <div className="grid gap-1">
+                    <p>ใบเพิ่มหนี้</p>
+                    <ul className="grid gap-0.5 text-xs">
+                        {debitNotes.map((debitNote) => (
+                            <li key={debitNote.inv_id} className="flex justify-between gap-2">
+                                <Link
+                                    href={`/sales/invoices/view?id=${debitNote.inv_id}`}
+                                    className={`-my-2.5 py-2.5 tabular-nums hover:underline ${debitNote.inv_status === "cancelled" ? "text-gray-400 line-through" : "text-blue-600"}`}
+                                >
+                                    {debitNote.inv_number ?? "ร่าง"}
+                                </Link>
+                                <span className="text-gray-600 tabular-nums">
+                                    {STATUS_LABELS[debitNote.inv_status].label} ·{" "}
+                                    {formatAmount(debitNote.inv_total, currency.cur_decimals)}
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                    <FieldHint>{INVOICE_MESSAGES.debitNote}</FieldHint>
+                </div>
             )}
             {invoice.inv_reissued_from_id && (
                 <p>
@@ -1022,6 +1202,22 @@ function StatusGuide({ detail }: { detail: InvoiceDetail }) {
                 </StatusBanner>
             );
         case "issued":
+            if (invoice.payment_state === "refund_due") {
+                return (
+                    <StatusBanner tone="error" title="ลูกค้าจ่ายเกินหลังลดหนี้ — รอคืนเงิน">
+                        {INVOICE_MESSAGES.refundDue(
+                            `${formatAmount(detail.payment.refund_due, detail.currency.cur_decimals)} ${invoice.inv_currency}`,
+                        )}
+                    </StatusBanner>
+                );
+            }
+            if (invoice.payment_state === "credited") {
+                return (
+                    <StatusBanner tone="done" title="ปิดยอดด้วยใบลดหนี้">
+                        ใบลดหนี้ลดยอดจนลูกค้าไม่ต้องจ่ายแล้ว · ยกเลิกใบนี้ไม่ได้จนกว่าจะยกเลิกใบลดหนี้
+                    </StatusBanner>
+                );
+            }
             if (invoice.payment_state === "paid") {
                 return (
                     <StatusBanner tone="done" title="ชำระครบแล้ว">

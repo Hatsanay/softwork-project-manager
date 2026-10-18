@@ -15,6 +15,7 @@ const { todayBangkok } = require("../utils/bangkok-time");
 const { convertToBaht, divideRoundHalfUp, parseHundredths } = require("../shared/money.mjs");
 const { toDecimalText } = require("../shared/quotation-totals.mjs");
 const { estimateProjectLabor } = require("./labor-cost.service");
+const invoiceService = require("./invoice.service");
 
 // งานนำหน้าการออกบิลเกินกี่จุด (%) ถึงขึ้นข้อความเตือน
 const PROGRESS_AHEAD_THRESHOLD = 10;
@@ -34,6 +35,8 @@ function emptyTotals() {
         billed: 0n,
         billed_thb: 0n,
         billed_manual: 0n,
+        credited: 0n,
+        credited_thb: 0n,
         received: 0n,
         received_thb: 0n,
         outstanding: 0n,
@@ -109,7 +112,8 @@ async function getProjectFinance(conn, projectId) {
     );
     const [invoices] = await conn.query(
         `SELECT i.inv_id, i.inv_number, i.inv_status, i.inv_source, i.inv_quotation_id, i.inv_title, i.inv_currency, i.inv_total,
-                i.inv_total_thb, i.inv_after_discount_thb, i.inv_paid_amount, DATE_FORMAT(i.inv_due_date, '%Y-%m-%d') AS inv_due_date,
+                i.inv_total_thb, i.inv_after_discount_thb, i.inv_paid_amount, i.inv_credited_amount, i.inv_credited_thb,
+                i.inv_credited_base_thb, i.inv_refunded_amount, DATE_FORMAT(i.inv_due_date, '%Y-%m-%d') AS inv_due_date,
                 DATE_FORMAT(i.inv_issue_date, '%Y-%m-%d') AS inv_issue_date,
                 COALESCE((SELECT SUM(a.rca_amount_thb) FROM tb_receipt_allocations a JOIN tb_receipts r ON r.rc_id = a.rca_receipt_id
                           WHERE a.rca_invoice_id = i.inv_id AND r.rc_status = 'issued'), 0) AS received_thb
@@ -230,34 +234,47 @@ async function getProjectFinance(conn, projectId) {
         };
     });
 
-    // ใบแจ้งหนี้ที่ออกแล้ว: ออกบิล/รับแล้ว/ค้าง/เกินกำหนด
+    // ใบแจ้งหนี้ที่ออกแล้ว: ออกบิล/ลดหนี้/รับแล้ว/ค้าง/เกินกำหนด
+    // ขั้น N-1: ออกบิลนับเต็มใบ · ใบลดหนี้แสดงแยก (ไม่หักเงียบ) · ค้าง = สูตรกลาง · กำไรใช้ยอดหลังลดหนี้
     let billedBeforeVatThb = 0n;
+    let creditedBeforeVatThb = 0n;
     const invoiceRows = invoices.map((invoice) => {
         const isIssued = invoice.inv_status === "issued";
         const total = money(invoice.inv_total);
-        const paid = money(invoice.inv_paid_amount);
-        const outstanding = isIssued ? total - paid : 0n;
+        const balance = invoiceService.balanceOf(invoice);
+        const outstanding = isIssued ? balance.outstanding : 0n;
         const isOverdue = isIssued && outstanding > 0n && invoice.inv_due_date !== null && invoice.inv_due_date < today;
         if (isIssued) {
             const totals = totalsFor(invoice.inv_currency);
             const totalThb = money(invoice.inv_total_thb);
+            const creditedThb = money(invoice.inv_credited_thb);
             const receivedThb = money(invoice.received_thb);
+            const outstandingThb = outstanding > 0n ? totalThb - creditedThb - receivedThb : 0n;
             totals.billed += total;
             totals.billed_thb += totalThb;
+            totals.credited += money(invoice.inv_credited_amount);
+            totals.credited_thb += creditedThb;
             billedBeforeVatThb += money(invoice.inv_after_discount_thb);
+            creditedBeforeVatThb += money(invoice.inv_credited_base_thb);
             if (invoice.inv_source === "manual") totals.billed_manual += total;
-            totals.received += paid;
+            totals.received += balance.netReceived;
             totals.received_thb += receivedThb;
             totals.outstanding += outstanding;
-            totals.outstanding_thb += totalThb - receivedThb;
+            totals.outstanding_thb += outstandingThb;
             if (isOverdue) {
                 totals.overdue += outstanding;
-                totals.overdue_thb += totalThb - receivedThb;
+                totals.overdue_thb += outstandingThb;
             }
         } else if (invoice.inv_source === "manual") {
             totalsFor(invoice.inv_currency).in_draft += total;
         }
-        const { received_thb: _receivedThb, inv_after_discount_thb: _beforeVatThb, ...rest } = invoice;
+        const {
+            received_thb: _receivedThb,
+            inv_after_discount_thb: _beforeVatThb,
+            inv_credited_thb: _creditedThb,
+            inv_credited_base_thb: _creditedBaseThb,
+            ...rest
+        } = invoice;
         return { ...rest, outstanding_amount: toDecimalText(outstanding), is_overdue: isOverdue };
     });
 
@@ -266,6 +283,7 @@ async function getProjectFinance(conn, projectId) {
         for (const key of [
             "contract_thb",
             "billed_thb",
+            "credited_thb",
             "received_thb",
             "outstanding_thb",
             "overdue_thb",
@@ -278,12 +296,15 @@ async function getProjectFinance(conn, projectId) {
     const cost = await findProjectCost(conn, projectId);
     const labor = await estimateProjectLabor(conn, projectId);
     const totalCostThb = cost.totalThb + labor.costThb;
-    const grossProfitThb = billedBeforeVatThb - totalCostThb;
+    const revenueThb = billedBeforeVatThb - creditedBeforeVatThb;
+    const grossProfitThb = revenueThb - totalCostThb;
 
     return {
         // ต้นทุน + กำไรขั้นต้น (ขั้น 2-5 · ค่าแรงขั้น 4-2) — เป็นบาทเสมอ · cost_thb = ค่าใช้จ่าย + ค่าแรง
         profit: {
             billed_before_vat_thb: toDecimalText(billedBeforeVatThb),
+            credited_before_vat_thb: toDecimalText(creditedBeforeVatThb),
+            revenue_thb: toDecimalText(revenueThb),
             cost_thb: toDecimalText(totalCostThb),
             expense_cost_thb: toDecimalText(cost.totalThb),
             labor_cost_thb: toDecimalText(labor.costThb),
@@ -292,7 +313,7 @@ async function getProjectFinance(conn, projectId) {
             labor_by_month: labor.byMonth,
             labor_is_estimate: labor.isEstimate,
             gross_profit_thb: toDecimalText(grossProfitThb),
-            gross_margin_percent: percentOf(grossProfitThb, billedBeforeVatThb),
+            gross_margin_percent: percentOf(grossProfitThb, revenueThb),
             pending_cost_thb: toDecimalText(cost.pendingThb),
             by_category: cost.byCategory,
             expenses: cost.expenses,
@@ -304,6 +325,7 @@ async function getProjectFinance(conn, projectId) {
         totals_thb: {
             contract: toDecimalText(allThb.contract_thb),
             billed: toDecimalText(allThb.billed_thb),
+            credited: toDecimalText(allThb.credited_thb),
             received: toDecimalText(allThb.received_thb),
             outstanding: toDecimalText(allThb.outstanding_thb),
             overdue: toDecimalText(allThb.overdue_thb),

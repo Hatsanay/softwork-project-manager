@@ -106,3 +106,81 @@ h4 {
         animation-duration: 0s !important;
     }
 }
+
+/* ── เดโมระบบบนจอคอมจำลอง (หน้า login 18 ต.ค. 2026 — app/login/components/system-demo) ── */
+/* เมาส์เลื่อนไปหาปุ่มนุ่มๆ · กดแล้วมีวงกระเพื่อม */
+.demo-cursor {
+    transition:
+        transform 0.55s cubic-bezier(0.4, 0, 0.2, 1),
+        opacity 0.25s ease;
+}
+.demo-cursor-arrow {
+    filter: drop-shadow(0 2px 3px rgb(16 24 40 / 0.3));
+    transition: transform 0.15s ease;
+}
+.demo-cursor[data-clicking="1"] .demo-cursor-arrow {
+    transform: scale(0.85);
+}
+.demo-cursor[data-clicking="1"]::before {
+    content: "";
+    position: absolute;
+    left: -14px;
+    top: -14px;
+    width: 28px;
+    height: 28px;
+    border-radius: 9999px;
+    border: 2px solid rgb(59 130 246 / 0.6);
+    animation: demo-ripple 0.45s ease-out forwards;
+}
+@keyframes demo-ripple {
+    from {
+        transform: scale(0.6);
+        opacity: 1;
+    }
+    to {
+        transform: scale(1.8);
+        opacity: 0;
+    }
+}
+/* เปลี่ยนหน้าในจอ: ค่อยๆ ขึ้น · ของที่เพิ่งเกิด: เด้งเบาๆ · เคอร์เซอร์พิมพ์: กะพริบ */
+.demo-page-in {
+    animation: demo-page-in 0.35s ease-out both;
+}
+@keyframes demo-page-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+.demo-pop {
+    animation: demo-pop 0.35s cubic-bezier(0.2, 0.8, 0.3, 1.2) both;
+}
+@keyframes demo-pop {
+    from {
+        opacity: 0;
+        transform: scale(0.92);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+.demo-caret {
+    animation: demo-caret 1s steps(1) infinite;
+}
+@keyframes demo-caret {
+    50% {
+        opacity: 0;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .demo-page-in,
+    .demo-pop,
+    .demo-caret {
+        animation: none;
+    }
+}

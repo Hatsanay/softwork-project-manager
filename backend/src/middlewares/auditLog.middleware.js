@@ -123,6 +123,15 @@ const ENTITIES = [
     { re: /^\/invoices\/([^/]+)\/reissue$/, type: "invoice", table: "tb_invoices", pk: "inv_id", id: "response:inv_id", label: { POST: "ยกเลิกแล้วออกใบแจ้งหนี้ใหม่แทน" } },
     { re: /^\/invoices\/([^/]+)$/, type: "invoice", table: "tb_invoices", pk: "inv_id", id: "1", label: { PUT: "แก้ร่างใบแจ้งหนี้", DELETE: "ลบร่างใบแจ้งหนี้" } },
     { re: /^\/invoices$/, type: "invoice", table: "tb_invoices", pk: "inv_id", id: "response:inv_id", label: { POST: "สร้างร่างใบแจ้งหนี้" } },
+    // ใบลดหนี้ (2026-10-18 ขั้น N-1)
+    { re: /^\/credit-notes\/([^/]+)\/submit$/, type: "credit_note", table: "tb_credit_notes", pk: "cn_id", id: "1", label: { POST: "ส่งใบลดหนี้ขออนุมัติ" } },
+    { re: /^\/credit-notes\/([^/]+)\/approve$/, type: "credit_note", table: "tb_credit_notes", pk: "cn_id", id: "1", label: { POST: "อนุมัติใบลดหนี้" } },
+    { re: /^\/credit-notes\/([^/]+)\/return$/, type: "credit_note", table: "tb_credit_notes", pk: "cn_id", id: "1", label: { POST: "ตีกลับใบลดหนี้" } },
+    { re: /^\/credit-notes\/([^/]+)\/cancel$/, type: "credit_note", table: "tb_credit_notes", pk: "cn_id", id: "1", label: { POST: "ยกเลิกใบลดหนี้" } },
+    { re: /^\/credit-notes\/([^/]+)\/refund\/cancel$/, type: "credit_note", table: "tb_credit_notes", pk: "cn_id", id: "1", label: { POST: "ยกเลิกการคืนเงินลูกค้า" } },
+    { re: /^\/credit-notes\/([^/]+)\/refund$/, type: "credit_note", table: "tb_credit_notes", pk: "cn_id", id: "1", label: { POST: "บันทึกคืนเงินลูกค้า" } },
+    { re: /^\/credit-notes\/([^/]+)$/, type: "credit_note", table: "tb_credit_notes", pk: "cn_id", id: "1", label: { PUT: "แก้ร่างใบลดหนี้", DELETE: "ลบร่างใบลดหนี้" } },
+    { re: /^\/credit-notes$/, type: "credit_note", table: "tb_credit_notes", pk: "cn_id", id: "response:cn_id", label: { POST: "สร้างร่างใบลดหนี้" } },
 
     // ใบวางบิล (2026-10-15 ขั้น 1B-4) — รายการใบแจ้งหนี้ที่รวมบันทึกพร้อมหัวเอกสาร diff ดูที่หัวเอกสาร
     { re: /^\/billing-notes\/([^/]+)\/issue$/, type: "billing_note", table: "tb_billing_notes", pk: "bn_id", id: "1", label: { POST: "ออกใบวางบิล" } },

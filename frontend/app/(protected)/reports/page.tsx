@@ -24,6 +24,9 @@ type Preset = "this_month" | "last_month" | "this_quarter" | "this_year" | "cust
 type SalesSummary = {
     range: { from: string; to: string };
     billed: { invoice_count: number; amount_thb: string; amount_with_vat_thb: string };
+    credited: { credit_note_count: number; amount_thb: string; amount_with_vat_thb: string };
+    net_sales: { amount_thb: string; amount_with_vat_thb: string };
+    refunds: { refund_count: number; refunded_thb: string };
     received: {
         receipt_count: number;
         received_thb: string;
@@ -145,7 +148,7 @@ function MonthlyChart({ months }: { months: MonthlySales["months"] }) {
         <div className="grid gap-3">
             <div className="flex flex-wrap gap-4 text-xs text-gray-600">
                 <span className="flex items-center gap-1.5">
-                    <span className="h-2.5 w-2.5 rounded-sm bg-blue-500" /> ออกบิล (ก่อน VAT)
+                    <span className="h-2.5 w-2.5 rounded-sm bg-blue-500" /> ออกบิลสุทธิ (ก่อน VAT หักใบลดหนี้แล้ว)
                 </span>
                 <span className="flex items-center gap-1.5">
                     <span className="h-2.5 w-2.5 rounded-sm bg-green-500" /> รับชำระ
@@ -158,7 +161,7 @@ function MonthlyChart({ months }: { months: MonthlySales["months"] }) {
                             <div
                                 className="w-3 rounded-t bg-blue-500"
                                 style={{ height: `${heightOf(row.billed_thb)}%` }}
-                                aria-label={`ออกบิล ${formatAmount(row.billed_thb)} บาท`}
+                                aria-label={`ออกบิลสุทธิ ${formatAmount(row.billed_thb)} บาท`}
                             />
                             <div
                                 className="w-3 rounded-t bg-green-500"
@@ -182,7 +185,7 @@ function MonthlyChart({ months }: { months: MonthlySales["months"] }) {
                     <thead>
                         <tr className="border-b border-gray-200 text-left text-xs text-gray-500">
                             <th className="py-1.5 font-normal">เดือน</th>
-                            <th className="py-1.5 text-right font-normal">ออกบิล</th>
+                            <th className="py-1.5 text-right font-normal">ออกบิลสุทธิ</th>
                             <th className="py-1.5 text-right font-normal">รับชำระ</th>
                         </tr>
                     </thead>
@@ -232,7 +235,7 @@ function AccountingExportCard({ today }: { today: string }) {
         <SectionCard
             icon={FileSpreadsheet}
             title="ไฟล์ส่งนักบัญชี"
-            description="Excel 6 ชีต: สรุป · ใบแจ้งหนี้ · ใบเสร็จ · หัก ณ ที่จ่าย · ลูกหนี้ ณ สิ้นเดือน · เอกสารที่ยกเลิกในเดือน"
+            description="Excel 10 ชีต: สรุป · ใบแจ้งหนี้ · ใบลดหนี้ · ใบเสร็จ · หัก ณ ที่จ่าย · ลูกหนี้ ณ สิ้นเดือน · เอกสารที่ยกเลิกในเดือน · ค่าใช้จ่าย · ใบสำคัญจ่าย · หัก ณ ที่จ่าย (บริษัทหัก)"
         >
             <div className="flex flex-wrap items-end gap-3">
                 <FormField label="เดือน" htmlFor="export_month">
@@ -365,15 +368,24 @@ export default function ReportsPage() {
 
             {summary && (
                 <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    <SummaryCard
-                        label="ยอดขาย (ออกบิล ก่อน VAT)"
-                        value={formatAmount(summary.billed.amount_thb)}
-                        detail={`${summary.billed.invoice_count} ใบ · รวม VAT ${formatAmount(summary.billed.amount_with_vat_thb)}`}
-                    />
+                    {summary.credited.credit_note_count === 0 ? (
+                        <SummaryCard
+                            label="ยอดขาย (ออกบิล ก่อน VAT)"
+                            value={formatAmount(summary.billed.amount_thb)}
+                            detail={`${summary.billed.invoice_count} ใบ · รวม VAT ${formatAmount(summary.billed.amount_with_vat_thb)}`}
+                        />
+                    ) : (
+                        // มีใบลดหนี้ในช่วง: ยอดขายสุทธิ = ออกบิล − ลดหนี้ (แสดงทั้งสองตัวในรายละเอียด)
+                        <SummaryCard
+                            label="ยอดขายสุทธิ (ก่อน VAT)"
+                            value={formatAmount(summary.net_sales.amount_thb)}
+                            detail={`ออกบิล ${formatAmount(summary.billed.amount_thb)} (${summary.billed.invoice_count} ใบ) − ลดหนี้ ${formatAmount(summary.credited.amount_thb)} (${summary.credited.credit_note_count} ใบ)`}
+                        />
+                    )}
                     <SummaryCard
                         label="รับชำระ"
                         value={formatAmount(summary.received.settled_thb)}
-                        detail={`เงินเข้า ${formatAmount(summary.received.received_thb)} · หัก ณ ที่จ่าย ${formatAmount(summary.received.withholding_thb)} · ค่าธรรมเนียม ${formatAmount(summary.received.fee_thb)}`}
+                        detail={`เงินเข้า ${formatAmount(summary.received.received_thb)} · หัก ณ ที่จ่าย ${formatAmount(summary.received.withholding_thb)} · ค่าธรรมเนียม ${formatAmount(summary.received.fee_thb)}${summary.refunds.refund_count > 0 ? ` · คืนเงินลูกค้า ${formatAmount(summary.refunds.refunded_thb)}` : ""}`}
                     />
                     <SummaryCard
                         label="ใบเสนอราคาที่ลูกค้าตอบรับ"
@@ -410,7 +422,7 @@ export default function ReportsPage() {
             <SectionCard
                 icon={ChartColumn}
                 title="12 เดือนล่าสุด"
-                description="ออกบิล (ก่อน VAT) เทียบรับชำระ รายเดือน เป็นบาท"
+                description="ออกบิลสุทธิ (ก่อน VAT หักใบลดหนี้ของเดือนนั้น) เทียบรับชำระ รายเดือน เป็นบาท"
             >
                 <MonthlyChart months={monthly.months} />
             </SectionCard>

@@ -169,7 +169,7 @@ test.after(async () => {
     await api?.stop();
 });
 
-test("เดือนก่อน: 9 ชีต (ขาย 6 + จ่าย 3) · ใบแจ้งหนี้รวมใบที่ยกเลิกทีหลัง · ชนิดเซลล์ถูก · ชื่อที่หน้าตาเหมือนสูตรเป็นข้อความ (R-D7)", async () => {
+test("เดือนก่อน: 10 ชีต (ขาย 7 + จ่าย 3) · ใบแจ้งหนี้รวมใบที่ยกเลิกทีหลัง · ชนิดเซลล์ถูก · ชื่อที่หน้าตาเหมือนสูตรเป็นข้อความ (R-D7)", async () => {
     const { workbook, headers } = await download(previousMonth());
     assert.match(headers.get("content-type"), /spreadsheetml/);
     assert.match(headers.get("content-disposition"), /filename\*=UTF-8''softwork-/);
@@ -179,6 +179,7 @@ test("เดือนก่อน: 9 ชีต (ขาย 6 + จ่าย 3) ·
         [
             "สรุป",
             "ใบแจ้งหนี้",
+            "ใบลดหนี้",
             "ใบเสร็จ",
             "หัก ณ ที่จ่าย",
             "ลูกหนี้ ณ สิ้นเดือน",

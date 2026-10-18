@@ -86,7 +86,9 @@ export default function BillingNotePrintPage() {
     const clientName = client.client_company || client.client_name;
     const hasWithholding = parseHundredths(detail.withholding_total, "หัก ณ ที่จ่าย") > 0n;
     // ใบที่รับเงินบางส่วนก่อนวางบิล: ยอดวางบิล ≠ ยอดใบแจ้งหนี้ → แสดงทั้งสองคอลัมน์ (ใบปกติแสดงคอลัมน์เดียว ไม่ซ้ำ)
-    const hasPartialInvoice = detail.invoices.some((invoice) => invoice.bni_amount !== invoice.inv_total);
+    // ขั้น N-1: เทียบกับยอดหลังลดหนี้ (ใบที่มีใบลดหนี้ — ลูกค้าถือทั้งใบแจ้งหนี้และใบลดหนี้)
+    const hasPartialInvoice = detail.invoices.some((invoice) => invoice.bni_amount !== invoice.effective_total);
+    const hasCreditedInvoice = detail.invoices.some((invoice) => invoice.effective_total !== invoice.inv_total);
 
     return (
         <div className="min-h-screen bg-gray-100 py-6 print:bg-white print:py-0">
@@ -202,7 +204,10 @@ export default function BillingNotePrintPage() {
                             <th className="w-28 py-1.5 font-medium">{labels.invoiceDate}</th>
                             <th className="w-28 py-1.5 font-medium">{labels.dueDate}</th>
                             {hasPartialInvoice && (
-                                <th className="w-32 py-1.5 text-right font-medium">{labels.invoiceTotal}</th>
+                                <th className="w-32 py-1.5 text-right font-medium">
+                                    {labels.invoiceTotal}
+                                    {hasCreditedInvoice ? ` ${labels.afterCredit}` : ""}
+                                </th>
                             )}
                             <th className="w-32 py-1.5 pr-1 text-right font-medium">{labels.billedAmount}</th>
                         </tr>
@@ -223,7 +228,7 @@ export default function BillingNotePrintPage() {
                                 </td>
                                 {hasPartialInvoice && (
                                     <td className="py-1 text-right tabular-nums">
-                                        {formatAmount(invoice.inv_total, decimals)}
+                                        {formatAmount(invoice.effective_total, decimals)}
                                     </td>
                                 )}
                                 <td className="py-1 pr-1 text-right tabular-nums">

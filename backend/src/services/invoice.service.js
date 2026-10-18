@@ -13,6 +13,7 @@ const { calculateMilestoneInvoice, calculateWithholding } = require("../shared/i
 const { divideRoundHalfUp, parseHundredths } = require("../shared/money.mjs");
 const { evaluateApproval } = require("../shared/approval-flow.mjs");
 const { buildPromptPayPayload, normalizePromptPayId } = require("../shared/promptpay.mjs");
+const { invoiceBalance } = require("../shared/credit-note-totals.mjs");
 const { BASE_CURRENCY } = require("../shared/schemas/quotation.mjs");
 const companyService = require("./company.service");
 const quotationService = require("./quotation.service");
@@ -656,16 +657,129 @@ async function createManual(conn, draft, actor, options = {}) {
     return { inv_id: invoiceId };
 }
 
+// ─── ใบเพิ่มหนี้ (2026-10-18 ขั้น N-2 — docs/plans/2026-10-18-adjustments-po.md หัวข้อ 4.2) ─────────────────────
+// ใบแจ้งหนี้สร้างเองชนิด "เพิ่มหนี้" ที่อ้างใบแจ้งหนี้ที่ออกแล้ว · หัวเอกสารคัดลอกจากใบเดิมทุกครั้งที่บันทึก (แก้ไม่ได้)
+// ที่เหลือใช้เส้นทางเดียวกับใบสร้างเอง: อนุมัติตามกติกา IV · ได้เลข DN ตอนอนุมัติครบ · รับเงิน/วางบิล/QR/ลดหนี้ได้เหมือนใบแจ้งหนี้
+
+/**
+ * ใบแจ้งหนี้ที่ใบเพิ่มหนี้อ้างได้: ชนิดใบแจ้งหนี้ (ไม่ใช่ใบเพิ่มหนี้) ที่ออกแล้วและยังไม่ยกเลิก
+ * @param {{ forUpdate?: boolean }} [options] forUpdate = ล็อกแถว (ตอนออกใบเพิ่มหนี้ — snapshot มูลค่าเดิม)
+ */
+async function findDebitReference(conn, referenceId, { forUpdate = false } = {}) {
+    const [[reference]] = await conn.query(
+        `SELECT *, DATE_FORMAT(inv_rate_date, '%Y-%m-%d') AS inv_rate_date_text
+         FROM tb_invoices WHERE inv_id = ?${forUpdate ? " FOR UPDATE" : ""}`,
+        [referenceId],
+    );
+    if (!reference) throw validationError({ inv_reference_invoice_id: "ไม่พบใบแจ้งหนี้ที่อ้างอิง อาจถูกลบไปแล้ว" });
+    if (reference.inv_doc_type !== "invoice") {
+        throw new AppError(
+            409,
+            "DEBIT_REFERENCE_INVALID",
+            "ใบเพิ่มหนี้ต้องอ้างใบแจ้งหนี้เดิม (ไม่ใช่ใบเพิ่มหนี้) — เปิดใบแจ้งหนี้เดิมแล้วออกใบเพิ่มหนี้จากใบนั้น",
+        );
+    }
+    if (reference.inv_status !== "issued") {
+        throw new AppError(409, "DEBIT_REFERENCE_INVALID", "ออกใบเพิ่มหนี้ได้เฉพาะใบแจ้งหนี้ที่ออกแล้วและยังไม่ยกเลิก");
+    }
+    return reference;
+}
+
+/** ร่างแบบใบสร้างเองที่หัวเอกสารมาจากใบเดิม — ลูกค้า สาขา โปรเจกต์ ภาษา สกุลเงิน การคิด VAT อัตราแลกเปลี่ยน */
+function debitNoteDraftFrom(reference, draft) {
+    const isBaseCurrency = reference.inv_currency === BASE_CURRENCY;
+    return {
+        ...draft,
+        inv_client_id: reference.inv_client_id,
+        inv_branch_id: reference.inv_branch_id,
+        inv_project_id: reference.inv_project_id,
+        inv_language: reference.inv_language,
+        inv_currency: reference.inv_currency,
+        inv_vat_treatment: reference.inv_vat_treatment,
+        inv_exchange_rate: reference.inv_exchange_rate,
+        // สกุลต่างประเทศ: ร่างใช้อัตราของใบเดิม · ตอนออกระบบดึงอัตรา ธปท. ของวันที่ออกให้เอง (แบบใบสร้างเอง)
+        inv_rate_source: isBaseCurrency ? null : "manual",
+        inv_rate_date: isBaseCurrency ? null : reference.inv_rate_date_text,
+        inv_rate_override_reason: isBaseCurrency ? null : `ใช้อัตราของใบแจ้งหนี้ ${reference.inv_number}`,
+    };
+}
+
+function debitNoteValues(draft, referenceId) {
+    return {
+        inv_doc_type: "debit_note",
+        inv_reference_invoice_id: referenceId,
+        inv_adjust_reason_code: draft.inv_adjust_reason_code,
+        inv_adjust_reason: draft.inv_adjust_reason,
+    };
+}
+
+/**
+ * @param {import("mysql2/promise").PoolConnection} conn
+ * @param {object} draft ผ่าน invoiceDebitNoteDraftSchema แล้ว
+ * @param {{ user_id: string }} actor
+ * @param {{ reissuedFromId?: string }} [options]
+ */
+async function createDebitNote(conn, draft, actor, options = {}) {
+    const reference = await findDebitReference(conn, draft.inv_reference_invoice_id);
+    const merged = debitNoteDraftFrom(reference, draft);
+    const currency = await assertManualReferences(conn, merged, null);
+    const rateBot = await resolveManualRate(conn, merged);
+    const { calculation, vatRate } = await calculateManual(conn, merged, currency);
+
+    const invoiceId = await generateDailyId("tb_invoices", "inv_id", "INV");
+    await insertInvoice(conn, invoiceId, {
+        inv_status: "draft",
+        inv_version: 0,
+        inv_source: "manual",
+        inv_reissued_from_id: options.reissuedFromId ?? null,
+        inv_created_by: actor.user_id,
+        ...manualHeaderValues(merged, rateBot),
+        ...debitNoteValues(draft, reference.inv_id),
+        ...totalsValues(calculation, vatRate),
+    });
+    await replaceChildren(conn, invoiceId, calculation);
+    return { inv_id: invoiceId };
+}
+
+/**
+ * มูลค่าที่ถูกต้องเดิมของรายการขายนี้ (รวม VAT) = ใบเดิมหลังลดหนี้ + ใบเพิ่มหนี้ที่ออกแล้วก่อนหน้า (หลังลดหนี้)
+ * หน้าพิมพ์ใบเพิ่มหนี้แสดง "มูลค่าตามใบเดิม → บวกใบนี้ → มูลค่าที่ถูกต้อง" (มาตรา 86/9)
+ * @param {string} excludeId ใบเพิ่มหนี้ที่กำลังดู (ไม่นับตัวเอง)
+ */
+async function debitOriginalTotal(conn, referenceId, excludeId) {
+    const [[row]] = await conn.query(
+        `SELECT COALESCE(SUM(${effectiveTotalSql("i")}), 0) AS total
+         FROM tb_invoices i
+         WHERE i.inv_status = 'issued' AND (i.inv_id = ? OR (i.inv_reference_invoice_id = ? AND i.inv_id <> ?))`,
+        [referenceId, referenceId, excludeId],
+    );
+    return parseHundredths(row.total, "มูลค่าเดิม");
+}
+
+/** ใบเพิ่มหนี้ทั้งหมดที่อ้างใบนี้ (รวมร่าง/ยกเลิก) เรียงตามเวลาออก — ร่างอยู่ท้าย */
+async function listDebitNotesOf(conn, invoiceId) {
+    const [rows] = await conn.query(
+        `SELECT inv_id, inv_number, inv_status, inv_total, inv_adjust_reason, DATE_FORMAT(inv_issue_date, '%Y-%m-%d') AS inv_issue_date
+         FROM tb_invoices
+         WHERE inv_reference_invoice_id = ?
+         ORDER BY inv_issued_at IS NULL, inv_issued_at, inv_created_at`,
+        [invoiceId],
+    );
+    return rows;
+}
+
 // ─── แก้ / ลบร่าง ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * แหล่งของใบ — controller ใช้เลือกชุดตรวจข้อมูล (ใบจากงวดแก้ได้น้อยกว่าใบสร้างเอง)
- * @returns {Promise<"quotation" | "manual">}
+ * แหล่งของใบ — controller ใช้เลือกชุดตรวจข้อมูล (ใบจากงวดแก้ได้น้อยกว่าใบสร้างเอง · ใบเพิ่มหนี้แก้หัวเอกสารไม่ได้)
+ * @returns {Promise<"quotation" | "manual" | "debit_note">}
  */
 async function findSource(conn, invoiceId) {
-    const [[invoice]] = await conn.query("SELECT inv_source FROM tb_invoices WHERE inv_id = ?", [invoiceId]);
+    const [[invoice]] = await conn.query("SELECT inv_source, inv_doc_type FROM tb_invoices WHERE inv_id = ?", [
+        invoiceId,
+    ]);
     if (!invoice) throw notFound();
-    return invoice.inv_source;
+    return invoice.inv_doc_type === "debit_note" ? "debit_note" : invoice.inv_source;
 }
 
 function requireVersion(draft) {
@@ -686,6 +800,22 @@ async function updateDraft(conn, invoiceId, draft) {
     if (existing.inv_status !== "draft") throw wrongStatus("ใบนี้ไม่ได้เป็นร่างแล้ว แก้ไขไม่ได้");
     requireVersion(draft);
     assertVersion(existing, draft.inv_version);
+
+    if (existing.inv_doc_type === "debit_note") {
+        // ใบที่อ้างอิงเปลี่ยนไม่ได้ — ใช้ของร่างเสมอ (ไม่เชื่อค่าที่ส่งมา)
+        const reference = await findDebitReference(conn, existing.inv_reference_invoice_id);
+        const merged = debitNoteDraftFrom(reference, draft);
+        const currency = await assertManualReferences(conn, merged, existing);
+        const rateBot = await resolveManualRate(conn, merged);
+        const { calculation, vatRate } = await calculateManual(conn, merged, currency);
+        await updateInvoice(conn, invoiceId, {
+            ...manualHeaderValues(merged, rateBot),
+            ...debitNoteValues(draft, reference.inv_id),
+            ...totalsValues(calculation, vatRate),
+        });
+        await replaceChildren(conn, invoiceId, calculation);
+        return { inv_id: invoiceId };
+    }
 
     if (existing.inv_source === "manual") {
         const currency = await assertManualReferences(conn, draft, existing);
@@ -766,6 +896,40 @@ async function approvalsOfRound(conn, invoiceIds) {
     return byInvoice;
 }
 
+// ─── ยอดคงค้าง (ที่เดียวของทั้งระบบ — R-N2) ─────────────────────────────────────────────────────────
+
+/**
+ * ยอดคงค้างของใบในรูป SQL — ทุก query ที่กรอง/รวมยอดค้างต้องใช้ตัวนี้ ห้ามเขียน inv_total - inv_paid_amount เอง
+ * สูตรเดียวกับ invoiceBalance ใน shared/credit-note-totals.mjs: ยอดใบ − ลดหนี้ − (รับแล้ว − คืนเงินแล้ว)
+ * @param {string} alias ชื่อย่อของตาราง tb_invoices ใน query
+ */
+function outstandingSql(alias) {
+    return `(${alias}.inv_total - ${alias}.inv_credited_amount - ${alias}.inv_paid_amount + ${alias}.inv_refunded_amount)`;
+}
+
+/** ยอดหลังลดหนี้ (ฐานของยอดบาท/หัก ณ ที่จ่ายตามสัดส่วน) ในรูป SQL */
+function effectiveTotalSql(alias) {
+    return `(${alias}.inv_total - ${alias}.inv_credited_amount)`;
+}
+
+/**
+ * ยอดคงค้างเป็นบาทในรูป SQL = คงค้าง × ยอดบาทหลังลดหนี้ ÷ ยอดหลังลดหนี้ (อัตราของใบ) — ใช้คู่กับเงื่อนไข outstandingSql > 0 เสมอ
+ * @param {string} alias
+ */
+function outstandingThbSql(alias) {
+    return `ROUND(${outstandingSql(alias)} * (${alias}.inv_total_thb - ${alias}.inv_credited_thb) / ${effectiveTotalSql(alias)}, 2)`;
+}
+
+/** สถานะเงินของใบ (ยอดหลังลดหนี้ · รับสุทธิ · คงค้าง · ต้องคืน) จากแถวของ tb_invoices */
+function balanceOf(invoice) {
+    return invoiceBalance({
+        total: parseHundredths(invoice.inv_total, "ยอดรวม"),
+        credited: parseHundredths(invoice.inv_credited_amount ?? 0, "ลดหนี้แล้ว"),
+        paid: parseHundredths(invoice.inv_paid_amount, "ยอดรับแล้ว"),
+        refunded: parseHundredths(invoice.inv_refunded_amount ?? 0, "คืนเงินแล้ว"),
+    });
+}
+
 // ─── วันครบกำหนด ──────────────────────────────────────────────────────────────────────────────
 
 // จำนวนวันระหว่างวันที่สองวัน ("YYYY-MM-DD") — ไม่ขึ้นกับเขตเวลาเครื่อง (R-B10)
@@ -782,9 +946,7 @@ function daysBetween(fromDate, toDate) {
  * @returns {{ is_outstanding: boolean, is_overdue: boolean, days_overdue: number, days_until_due: number | null }}
  */
 function dueStatus(invoice, today) {
-    const isOutstanding =
-        invoice.inv_status === "issued" &&
-        parseHundredths(invoice.inv_paid_amount, "ยอดรับแล้ว") < parseHundredths(invoice.inv_total, "ยอดรวม");
+    const isOutstanding = invoice.inv_status === "issued" && balanceOf(invoice).outstanding > 0n;
     if (!isOutstanding || !invoice.inv_due_date) {
         return { is_outstanding: isOutstanding, is_overdue: false, days_overdue: 0, days_until_due: null };
     }
@@ -798,21 +960,18 @@ function dueStatus(invoice, today) {
 }
 
 /**
- * สถานะการชำระของใบที่ออกแล้ว (คำนวณตอนอ่าน ไม่เก็บ — ช่วง 1C): ยังไม่ชำระ / ชำระบางส่วน / ชำระครบ
- * @returns {"unpaid" | "partial" | "paid" | null} null = ใบยังไม่ออกหรือยกเลิกแล้ว
+ * สถานะการชำระของใบที่ออกแล้ว (คำนวณตอนอ่าน ไม่เก็บ): ยังไม่ชำระ / ชำระบางส่วน / ชำระครบ /
+ * ปิดยอดด้วยใบลดหนี้ (credited) / ลูกค้าจ่ายเกิน รอคืนเงิน (refund_due)
+ * @returns {"unpaid" | "partial" | "paid" | "credited" | "refund_due" | null} null = ใบยังไม่ออกหรือยกเลิกแล้ว
  */
 function paymentStateOf(invoice) {
     if (invoice.inv_status !== "issued") return null;
-    const paid = parseHundredths(invoice.inv_paid_amount, "ยอดรับแล้ว");
-    if (paid <= 0n) return "unpaid";
-    return paid >= parseHundredths(invoice.inv_total, "ยอดรวม") ? "paid" : "partial";
+    return balanceOf(invoice).state;
 }
 
 function outstandingAmountOf(invoice) {
     if (invoice.inv_status !== "issued") return "0.00";
-    return toDecimalText(
-        parseHundredths(invoice.inv_total, "ยอดรวม") - parseHundredths(invoice.inv_paid_amount, "ยอดรับแล้ว"),
-    );
+    return toDecimalText(balanceOf(invoice).outstanding);
 }
 
 // ─── อ่านรายการ ───────────────────────────────────────────────────────────────────────────────
@@ -822,9 +981,9 @@ const LIST_TABS = {
     draft: "i.inv_status = 'draft'",
     pending_approval: "i.inv_status = 'pending_approval'",
     waiting_me: "i.inv_status = 'pending_approval'",
-    outstanding: "i.inv_status = 'issued' AND i.inv_paid_amount < i.inv_total",
-    overdue: "i.inv_status = 'issued' AND i.inv_paid_amount < i.inv_total AND i.inv_due_date < ?",
-    paid: "i.inv_status = 'issued' AND i.inv_paid_amount >= i.inv_total",
+    outstanding: `i.inv_status = 'issued' AND ${outstandingSql("i")} > 0`,
+    overdue: `i.inv_status = 'issued' AND ${outstandingSql("i")} > 0 AND i.inv_due_date < ?`,
+    paid: `i.inv_status = 'issued' AND ${outstandingSql("i")} <= 0`,
     cancelled: "i.inv_status = 'cancelled'",
 };
 
@@ -858,14 +1017,16 @@ async function listInvoices(conn, { tab = "all", search = "", clientId, quotatio
     }
 
     const [rows] = await conn.query(
-        `SELECT i.inv_id, i.inv_number, i.inv_status, i.inv_source, i.inv_title, i.inv_currency, i.inv_total, i.inv_total_thb,
-                i.inv_paid_amount, i.inv_wht_amount, i.inv_client_id, c.client_name, c.client_company,
+        `SELECT i.inv_id, i.inv_number, i.inv_status, i.inv_source, i.inv_doc_type, ref.inv_number AS reference_number, i.inv_title, i.inv_currency, i.inv_total, i.inv_total_thb,
+                i.inv_paid_amount, i.inv_credited_amount, i.inv_refunded_amount, i.inv_wht_amount, i.inv_client_id,
+                c.client_name, c.client_company,
                 i.inv_quotation_id, q.qt_number, i.inv_created_by, CONCAT(u.user_fname, ' ', u.user_lname) AS created_by_name,
                 i.inv_approval_current_level, i.inv_approval_plan, i.inv_approval_round, i.inv_sent_at, i.inv_updated_at,
                 ${DATE_COLUMNS}
          FROM tb_invoices i
          JOIN tb_clients c ON c.client_id = i.inv_client_id
          LEFT JOIN tb_quotations q ON q.qt_id = i.inv_quotation_id
+         LEFT JOIN tb_invoices ref ON ref.inv_id = i.inv_reference_invoice_id
          LEFT JOIN tb_users u ON u.user_id = i.inv_created_by
          WHERE ${conditions.join(" AND ")}
          ORDER BY i.inv_updated_at DESC, i.inv_id DESC`,
@@ -963,6 +1124,19 @@ async function listBillableMilestones(conn, quotationId) {
 
 // ─── อ่านใบเดียว ─────────────────────────────────────────────────────────────────────────────
 
+/** ใบลดหนี้ทั้งหมดของใบแจ้งหนี้ (รวมร่าง/ยกเลิก) เรียงตามเวลาออก — ร่างอยู่ท้าย */
+async function listCreditNotesOf(conn, invoiceId) {
+    const [rows] = await conn.query(
+        `SELECT cn_id, cn_number, cn_status, cn_total, cn_wht_amount, cn_reason, cn_refund_required,
+                cn_refunded_at IS NOT NULL AS is_refunded, cn_issued_at, DATE_FORMAT(cn_issue_date, '%Y-%m-%d') AS cn_issue_date
+         FROM tb_credit_notes
+         WHERE cn_invoice_id = ?
+         ORDER BY cn_issued_at IS NULL, cn_issued_at, cn_created_at`,
+        [invoiceId],
+    );
+    return rows.map((row) => ({ ...row, is_refunded: Boolean(row.is_refunded) }));
+}
+
 /** ใบวางบิลที่ยังไม่ยกเลิกซึ่งมีใบแจ้งหนี้นี้อยู่ (ใบละไม่เกิน 1) */
 async function findActiveBillingNote(conn, invoiceId) {
     const [[note]] = await conn.query(
@@ -998,11 +1172,13 @@ async function buildPayment(conn, invoice) {
         promptPayId = (await companyService.findCompany(conn)).cs_promptpay_id;
     }
 
-    const total = parseHundredths(invoice.inv_total, "ยอดรวม");
-    const withholding = parseHundredths(invoice.inv_wht_amount, "หัก ณ ที่จ่าย");
+    // ฐานคือยอดหลังลดหนี้ (ขั้น N-1) · หัก ณ ที่จ่ายฐาน = ประมาณการของใบ − ส่วนที่ลดไปกับใบลดหนี้
+    const { effectiveTotal: total, outstanding } = balanceOf(invoice);
+    const withholding =
+        parseHundredths(invoice.inv_wht_amount, "หัก ณ ที่จ่าย") -
+        parseHundredths(invoice.inv_credited_wht ?? 0, "หัก ณ ที่จ่ายส่วนที่ลด");
     const netPayable = total - withholding;
     // ยอดใน QR = ส่วนที่ยังค้างหลังหัก ณ ที่จ่ายตามสัดส่วน (ช่วง 1C: รับเงินบางส่วนแล้ว ลูกค้าสแกนต้องไม่จ่ายซ้ำส่วนที่รับไปแล้ว)
-    const outstanding = total - parseHundredths(invoice.inv_paid_amount, "ยอดรับแล้ว");
     const qrAmount =
         outstanding >= total
             ? netPayable
@@ -1019,6 +1195,10 @@ async function buildPayment(conn, invoice) {
         bank_account: bankAccount,
         promptpay_id: promptPayId,
         net_payable: toDecimalText(netPayable),
+        // ขั้น N-1: ยอดหลังลดหนี้ — หน้าพิมพ์แสดงบรรทัดใบลดหนี้ทีละใบก่อนใบเสร็จ
+        effective_total: toDecimalText(total),
+        credited: toDecimalText(parseHundredths(invoice.inv_credited_amount ?? 0, "ลดหนี้แล้ว")),
+        refund_due: toDecimalText(balanceOf(invoice).refundDue),
         // รับเงินบางส่วนแล้ว — หน้าพิมพ์แสดงยอดคงค้าง · หัก ณ ที่จ่ายส่วนที่เหลือ · คงค้างสุทธิ (= ยอดในคิวอาร์)
         outstanding: toDecimalText(outstandingOrZero),
         outstanding_withholding: toDecimalText(outstandingOrZero - outstandingNet),
@@ -1041,6 +1221,8 @@ async function getInvoiceDetail(conn, invoiceId, actor) {
                 c.client_name, c.client_company, c.client_status, b.branch_code, b.branch_name_th, b.branch_status,
                 p.project_name, q.qt_number, q.qt_revision, q.qt_title, q.qt_total, q.qt_currency AS qt_currency,
                 r.inv_number AS reissued_from_number,
+                ref.inv_number AS reference_number, DATE_FORMAT(ref.inv_issue_date, '%Y-%m-%d') AS reference_issue_date,
+                ref.inv_total AS reference_total, ref.inv_title AS reference_title, ref.inv_vat_rate AS reference_vat_rate,
                 CONCAT(u.user_fname, ' ', u.user_lname) AS created_by_current_name
          FROM tb_invoices i
          JOIN tb_clients c ON c.client_id = i.inv_client_id
@@ -1048,6 +1230,7 @@ async function getInvoiceDetail(conn, invoiceId, actor) {
          LEFT JOIN tb_projects p ON p.project_id = i.inv_project_id
          LEFT JOIN tb_quotations q ON q.qt_id = i.inv_quotation_id
          LEFT JOIN tb_invoices r ON r.inv_id = i.inv_reissued_from_id
+         LEFT JOIN tb_invoices ref ON ref.inv_id = i.inv_reference_invoice_id
          LEFT JOIN tb_users u ON u.user_id = i.inv_created_by
          WHERE i.inv_id = ?`,
         [invoiceId],
@@ -1077,6 +1260,24 @@ async function getInvoiceDetail(conn, invoiceId, actor) {
          ORDER BY r.rc_receipt_date, r.rc_number`,
         [invoiceId],
     );
+    // ใบลดหนี้ของใบนี้ (รวมร่าง/ยกเลิก — หน้าเว็บแสดงสถานะ · หน้าพิมพ์ใช้เฉพาะที่ออกแล้ว) เรียงตามเวลาออก
+    const creditNotes = await listCreditNotesOf(conn, invoiceId);
+    // ใบเพิ่มหนี้ที่อ้างใบนี้ (ขั้น N-2) · ถ้าใบนี้เป็นใบเพิ่มหนี้: เทียบกับมูลค่าเดิม (ออกแล้ว = ค่าที่บันทึกตอนออก · ร่าง = ค่าปัจจุบัน)
+    const debitNotes = await listDebitNotesOf(conn, invoiceId);
+    let debitComparison = null;
+    if (invoice.inv_doc_type === "debit_note") {
+        const originalTotal =
+            invoice.inv_original_total !== null
+                ? parseHundredths(invoice.inv_original_total, "มูลค่าเดิม")
+                : await debitOriginalTotal(conn, invoice.inv_reference_invoice_id, invoiceId);
+        const thisTotal = parseHundredths(invoice.inv_total, "ยอดรวม");
+        debitComparison = {
+            original_total: toDecimalText(originalTotal),
+            this_total: toDecimalText(thisTotal),
+            correct_total: toDecimalText(originalTotal + thisTotal),
+            is_snapshot: invoice.inv_original_total !== null,
+        };
+    }
     const [[reissuedTo]] = await conn.query(
         "SELECT inv_id, inv_number, inv_status FROM tb_invoices WHERE inv_reissued_from_id = ? ORDER BY inv_created_at DESC LIMIT 1",
         [invoiceId],
@@ -1092,7 +1293,7 @@ async function getInvoiceDetail(conn, invoiceId, actor) {
             ? evaluateFor(invoice, approvalsThisRound, actor, company.cs_allow_self_approval)
             : null;
     const billingNote = await findActiveBillingNote(conn, invoiceId);
-    const actions = buildActions(invoice, actor, approval, billingNote);
+    const actions = buildActions(invoice, actor, approval, billingNote, creditNotes, debitNotes);
 
     return {
         invoice: {
@@ -1112,6 +1313,9 @@ async function getInvoiceDetail(conn, invoiceId, actor) {
         approval,
         billing_note: billingNote,
         receipts,
+        credit_notes: creditNotes,
+        debit_notes: debitNotes,
+        debit_comparison: debitComparison,
         reissued_to: reissuedTo ?? null,
         payment: await buildPayment(conn, invoice),
         actions,
@@ -1123,12 +1327,15 @@ async function getInvoiceDetail(conn, invoiceId, actor) {
 /**
  * ปุ่มที่ผู้ใช้คนนี้กดได้ตอนนี้ + เหตุผลถ้ากดไม่ได้ (หน้าเว็บซ่อนปุ่มและแสดงเหตุผลในแถบสถานะ — ห้าม tooltip)
  */
-function buildActions(invoice, actor, approval, billingNote) {
+function buildActions(invoice, actor, approval, billingNote, creditNotes = [], debitNotes = []) {
     const canCreate = hasBit(actor.role_permission, "createInvoice");
     const canCancelPermission = hasBit(actor.role_permission, "cancelInvoice");
     const status = invoice.inv_status;
     const isManual = invoice.inv_source === "manual";
     const hasPayment = parseHundredths(invoice.inv_paid_amount, "ยอดรับแล้ว") > 0n;
+    const activeCreditNote = creditNotes.find((creditNote) => creditNote.cn_status !== "cancelled");
+    const activeDebitNote = debitNotes.find((debitNote) => debitNote.inv_status !== "cancelled");
+    const balance = balanceOf(invoice);
 
     const currentLevel = (quotationService.parseJson(invoice.inv_approval_plan) ?? []).find(
         (level) => level.level === invoice.inv_approval_current_level,
@@ -1140,6 +1347,22 @@ function buildActions(invoice, actor, approval, billingNote) {
         cancelBlockedReason = `ใบนี้อยู่ในใบวางบิล ${billingNote.bn_number ?? "(ร่าง)"} — ยกเลิกหรือลบใบวางบิลก่อน แล้วค่อยยกเลิกใบนี้`;
     } else if (status === "issued" && hasPayment) {
         cancelBlockedReason = "ใบนี้รับชำระเงินแล้ว — ยกเลิกใบเสร็จก่อน แล้วค่อยยกเลิกใบนี้";
+    } else if (status === "issued" && activeCreditNote) {
+        cancelBlockedReason = `ใบนี้มีใบลดหนี้ ${activeCreditNote.cn_number ?? "(ร่าง/รออนุมัติ)"} — ยกเลิกหรือลบใบลดหนี้ก่อน แล้วค่อยยกเลิกใบนี้`;
+    } else if (status === "issued" && activeDebitNote) {
+        cancelBlockedReason = `ใบนี้มีใบเพิ่มหนี้ ${activeDebitNote.inv_number ?? "(ร่าง/รออนุมัติ)"} — ยกเลิกหรือลบใบเพิ่มหนี้ก่อน แล้วค่อยยกเลิกใบนี้`;
+    }
+    // ใบเพิ่มหนี้ (ขั้น N-2): ออกจากใบแจ้งหนี้ที่ออกแล้วเท่านั้น (ใบเพิ่มหนี้อ้างใบเพิ่มหนี้ไม่ได้)
+    let debitBlockedReason = null;
+    if (status === "issued" && invoice.inv_doc_type === "debit_note") {
+        debitBlockedReason = `ใบนี้เป็นใบเพิ่มหนี้ — ถ้าต้องเรียกเก็บเพิ่มอีก ให้ออกใบเพิ่มหนี้จากใบแจ้งหนี้เดิม ${invoice.reference_number ?? ""}`.trim();
+    }
+    // ใบลดหนี้ (ขั้น N-1): ใบที่ออกแล้ว ยังมียอดเหลือให้ลด และไม่อยู่ในใบวางบิลที่ยังไม่ยกเลิก (R-N5)
+    let creditBlockedReason = null;
+    if (status === "issued" && billingNote) {
+        creditBlockedReason = `ใบนี้อยู่ในใบวางบิล ${billingNote.bn_number ?? "(ร่าง)"} — ยกเลิกหรือลบใบวางบิลก่อน แล้วออกใบวางบิลใหม่ด้วยยอดหลังลดหนี้`;
+    } else if (status === "issued" && balance.effectiveTotal <= 0n) {
+        creditBlockedReason = "ใบนี้ลดหนี้ครบยอดแล้ว";
     }
     const canCancelNow = canCancelPermission && status === "issued" && cancelBlockedReason === null;
 
@@ -1156,10 +1379,11 @@ function buildActions(invoice, actor, approval, billingNote) {
         can_reissue: canCancelNow && canCreate,
         cancel_blocked_reason: canCancelPermission ? cancelBlockedReason : null,
         // บันทึกรับเงิน (ช่วง 1C — สิทธิ์ของใบเสร็จ ไม่ใช่ของใบแจ้งหนี้)
-        can_receive:
-            hasBit(actor.role_permission, "createReceipt") &&
-            status === "issued" &&
-            parseHundredths(invoice.inv_paid_amount, "ยอดรับแล้ว") < parseHundredths(invoice.inv_total, "ยอดรวม"),
+        can_receive: hasBit(actor.role_permission, "createReceipt") && status === "issued" && balance.outstanding > 0n,
+        can_credit: canCreate && status === "issued" && creditBlockedReason === null,
+        credit_blocked_reason: canCreate ? creditBlockedReason : null,
+        can_debit: canCreate && status === "issued" && debitBlockedReason === null,
+        debit_blocked_reason: canCreate ? debitBlockedReason : null,
     };
 }
 
@@ -1184,6 +1408,7 @@ function buildReadiness(invoice, items, currency) {
 module.exports = {
     createFromQuotation,
     createManual,
+    createDebitNote,
     updateDraft,
     deleteDraft,
     findSource,
@@ -1207,5 +1432,13 @@ module.exports = {
     evaluateFor,
     daysBetween,
     paymentStateOf,
+    balanceOf,
+    outstandingSql,
+    outstandingThbSql,
+    effectiveTotalSql,
+    listCreditNotesOf,
+    listDebitNotesOf,
+    findDebitReference,
+    debitOriginalTotal,
     DOCUMENT_NAME,
 };

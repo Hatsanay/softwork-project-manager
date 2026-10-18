@@ -20,6 +20,8 @@ const signatureService = require("./signature.service");
 const exchangeRateService = require("./exchange-rate.service");
 
 const DOCUMENT_TYPE = "IV";
+// ใบเพิ่มหนี้ (ขั้น N-2) ได้เลขชุดของตัวเอง แต่ใช้กติกาอนุมัติเดียวกับใบแจ้งหนี้สร้างเอง (IV)
+const DEBIT_NOTE_NUMBER_TYPE = "DN";
 
 async function findUserLabel(conn, userId) {
     const [[user]] = await conn.query(
@@ -103,14 +105,21 @@ function notReady(problems, verb) {
 // ─── ออกใบ (ได้เลข/วันที่/ครบกำหนด) ────────────────────────────────────────────────────────────
 
 /**
- * ขั้นสุดท้ายของการออก: เลข IV · วันที่ = วันนี้ (ย้อนไม่ได้) · ครบกำหนด · อัตรา ณ วันออก · snapshot ลูกค้า/บริษัท/บัญชี · ผู้ออก
+ * ขั้นสุดท้ายของการออก: เลข IV (ใบเพิ่มหนี้ = DN + บันทึกมูลค่าเดิม) · วันที่ = วันนี้ (ย้อนไม่ได้) · ครบกำหนด · อัตรา ณ วันออก · snapshot ลูกค้า/บริษัท/บัญชี · ผู้ออก
  * @param {object} invoice แถวที่ล็อกแล้ว (ยอดสกุลของใบถูกต้องแล้ว)
  * @param {{ rate: string, source: string | null, date: string | null, bot: string | null, reason: string | null }} freshRate
  * @param {{ user_id: string }} issuer ผู้กดออก (ใบสร้างเอง = ผู้อนุมัติชั้นสุดท้าย)
  */
 async function finalizeIssue(conn, invoice, freshRate, issuer) {
     const today = todayBangkok();
-    const documentNumber = await issueDocumentNumber(conn, DOCUMENT_TYPE, today);
+    const isDebitNote = invoice.inv_doc_type === "debit_note";
+    // ใบเพิ่มหนี้: ล็อกใบเดิม (ลำดับล็อก ใบเพิ่มหนี้ → ใบเดิม) ตรวจว่ายังออกอยู่ แล้วบันทึกมูลค่าเดิม ณ ตอนนี้ไว้พิมพ์ (มาตรา 86/9)
+    let originalTotal = null;
+    if (isDebitNote) {
+        await invoiceService.findDebitReference(conn, invoice.inv_reference_invoice_id, { forUpdate: true });
+        originalTotal = await invoiceService.debitOriginalTotal(conn, invoice.inv_reference_invoice_id, invoice.inv_id);
+    }
+    const documentNumber = await issueDocumentNumber(conn, isDebitNote ? DEBIT_NOTE_NUMBER_TYPE : DOCUMENT_TYPE, today);
     const dueDate = exchangeRateService.shiftDate(today, invoice.inv_credit_days);
 
     const [[client]] = await conn.query(
@@ -146,7 +155,7 @@ async function finalizeIssue(conn, invoice, freshRate, issuer) {
                 inv_after_discount_thb = ?, inv_total_thb = ?,
                 inv_client_snapshot = ?, inv_company_snapshot = ?, inv_bank_snapshot = ?, inv_approval_current_level = NULL,
                 inv_issued_by = ?, inv_issued_by_name = ?, inv_issued_by_title = ?, inv_issuer_signature_id = ?,
-                inv_issued_at = NOW(), inv_version = inv_version + 1
+                inv_original_total = ?, inv_issued_at = NOW(), inv_version = inv_version + 1
          WHERE inv_id = ?`,
         [
             documentNumber,
@@ -166,6 +175,7 @@ async function finalizeIssue(conn, invoice, freshRate, issuer) {
             issuerLabel.full_name,
             issuerLabel.role_name,
             issuerSignature?.sig_id ?? null,
+            originalTotal === null ? null : toDecimalText(originalTotal),
             invoice.inv_id,
         ],
     );
@@ -450,6 +460,28 @@ async function cancel(conn, invoiceId, reason, expectedVersion, actor) {
     if (parseHundredths(invoice.inv_paid_amount, "ยอดรับแล้ว") > 0n) {
         throw new AppError(409, "INVOICE_HAS_PAYMENT", "ใบนี้รับชำระเงินแล้ว — ยกเลิกใบเสร็จก่อน แล้วค่อยยกเลิกใบนี้");
     }
+    // ขั้น N-1: ใบลดหนี้ที่ยังไม่ยกเลิก (รวมร่าง/รออนุมัติ) ผูกกับใบนี้อยู่ → ยกเลิกใบเดิมไม่ได้ (R-N6)
+    const activeCreditNote = (await invoiceService.listCreditNotesOf(conn, invoiceId)).find(
+        (creditNote) => creditNote.cn_status !== "cancelled",
+    );
+    if (activeCreditNote) {
+        throw new AppError(
+            409,
+            "INVOICE_HAS_CREDIT_NOTE",
+            `ใบนี้มีใบลดหนี้ ${activeCreditNote.cn_number ?? "(ร่าง/รออนุมัติ)"} — ยกเลิกหรือลบใบลดหนี้ก่อน แล้วค่อยยกเลิกใบนี้`,
+        );
+    }
+    // ขั้น N-2: ใบเพิ่มหนี้ที่ยังไม่ยกเลิก (รวมร่าง/รออนุมัติ) อ้างใบนี้อยู่ → ยกเลิกใบเดิมไม่ได้ (R-N6)
+    const activeDebitNote = (await invoiceService.listDebitNotesOf(conn, invoiceId)).find(
+        (debitNote) => debitNote.inv_status !== "cancelled",
+    );
+    if (activeDebitNote) {
+        throw new AppError(
+            409,
+            "INVOICE_HAS_DEBIT_NOTE",
+            `ใบนี้มีใบเพิ่มหนี้ ${activeDebitNote.inv_number ?? "(ร่าง/รออนุมัติ)"} — ยกเลิกหรือลบใบเพิ่มหนี้ก่อน แล้วค่อยยกเลิกใบนี้`,
+        );
+    }
 
     await conn.query(
         `UPDATE tb_invoices SET inv_status = 'cancelled', inv_cancelled_by = ?, inv_cancelled_at = NOW(), inv_cancel_reason = ?,
@@ -496,6 +528,36 @@ async function reissue(conn, invoiceId, reason, expectedVersion, actor) {
         "SELECT * FROM tb_invoice_items WHERE invi_invoice_id = ? ORDER BY invi_order, invi_id",
         [invoiceId],
     );
+    const copiedItems = items.map((item) => ({
+        invi_type: item.invi_type,
+        invi_product_id: item.invi_product_id,
+        invi_description: item.invi_description,
+        invi_quantity: item.invi_quantity,
+        invi_unit: item.invi_unit,
+        invi_unit_price: item.invi_unit_price,
+        invi_list_price: item.invi_list_price,
+        invi_discount_type: item.invi_discount_type,
+        invi_discount_value: item.invi_discount_value,
+    }));
+
+    // ใบเพิ่มหนี้: ร่างใหม่อ้างใบเดิมใบเดียวกัน (หัวเอกสารคัดลอกจากใบเดิมอีกครั้ง)
+    if (source.inv_doc_type === "debit_note") {
+        return invoiceService.createDebitNote(
+            conn,
+            {
+                ...carryOver,
+                inv_reference_invoice_id: source.inv_reference_invoice_id,
+                inv_adjust_reason_code: source.inv_adjust_reason_code,
+                inv_adjust_reason: source.inv_adjust_reason,
+                inv_discount_type: source.inv_discount_type,
+                inv_discount_value: source.inv_discount_value,
+                items: copiedItems,
+            },
+            actor,
+            { reissuedFromId: invoiceId },
+        );
+    }
+
     return invoiceService.createManual(
         conn,
         {
@@ -511,17 +573,7 @@ async function reissue(conn, invoiceId, reason, expectedVersion, actor) {
             inv_vat_treatment: source.inv_vat_treatment,
             inv_discount_type: source.inv_discount_type,
             inv_discount_value: source.inv_discount_value,
-            items: items.map((item) => ({
-                invi_type: item.invi_type,
-                invi_product_id: item.invi_product_id,
-                invi_description: item.invi_description,
-                invi_quantity: item.invi_quantity,
-                invi_unit: item.invi_unit,
-                invi_unit_price: item.invi_unit_price,
-                invi_list_price: item.invi_list_price,
-                invi_discount_type: item.invi_discount_type,
-                invi_discount_value: item.invi_discount_value,
-            })),
+            items: copiedItems,
         },
         actor,
         { reissuedFromId: invoiceId },

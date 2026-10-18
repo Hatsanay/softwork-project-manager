@@ -1,13 +1,20 @@
 "use client";
 
 // หน้าเข้าสู่ระบบ (UI ใหม่ 16 ต.ค. 2026 — ผู้ใช้เลือก "พื้นขาวทั้งหน้า ใช้ฟ้าแค่เป็นจุดเน้น")
-// จอคอม: ซ้าย = แผงแนะนำระบบบนพื้นเทาอ่อน + สไลด์ความสามารถ (feature-carousel.tsx) · ขวา = การ์ดฟอร์ม
+// จอคอม: ซ้าย = แผงแนะนำระบบบนพื้นเทาอ่อน + เดโมหน้าจอจริงแบบเคลื่อนไหว (system-demo/ — 18 ต.ค. 2026) · ขวา = การ์ดฟอร์ม
 // มือถือ: โลโก้ + การ์ดฟอร์ม + สไลด์แบบย่อ · ทุกส่วนค่อยๆ ขึ้นตอนเปิดหน้า (ปิดเมื่อเครื่องตั้งลดการเคลื่อนไหว)
 // ใช้ทั้งหน้า "/" และ "/login" · สีตามธีม: เทา + ฟ้า blue-500/600 เฉพาะจุดเน้น (คำหลัก ไอคอน ปุ่ม)
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import Skeleton from "@/components/ui/skeleton";
 import FeatureCarousel from "./feature-carousel";
+// เดโมสร้างฝั่งเครื่องผู้ใช้อย่างเดียว: ข้อมูลตัวอย่างนับวันที่จาก "วันนี้" ของเครื่อง (ไม่ให้ HTML จากเซิร์ฟเวอร์กับเครื่องไม่ตรงกัน)
+// และโหลดแยกจากฟอร์ม login (โค้ดหน้าจริงที่เดโมใช้ไม่ทำให้ฟอร์มขึ้นช้าลง)
+const SystemDemo = dynamic(() => import("./system-demo/system-demo"), {
+    ssr: false,
+    // จองที่ไว้เท่าคำอธิบาย 2 บรรทัด + จอ (สัดส่วนจอเสมือน) หน้าจะได้ไม่กระโดดตอนเดโมโหลดเสร็จ
+    loading: () => <div className="aspect-[1024/760] w-full" aria-hidden="true" />,
+});
 
 const LoginForm = dynamic(() => import("./form-login"), {
     ssr: false,
@@ -41,9 +48,9 @@ function BrandMark() {
 
 export default function LoginScreen() {
     return (
-        <div className="grid min-h-screen bg-white lg:grid-cols-[1.05fr_1fr]">
+        <div className="grid min-h-screen bg-white lg:grid-cols-[1.35fr_1fr]">
             {/* ── จอคอม: แผงแนะนำระบบ ── */}
-            <section className="relative m-3 hidden flex-col justify-between gap-10 overflow-hidden rounded-[1.75rem] border border-gray-200/70 bg-gray-50 p-10 lg:flex xl:p-12">
+            <section className="relative m-3 hidden flex-col justify-between gap-8 overflow-hidden rounded-[1.75rem] border border-gray-200/70 bg-gray-50 p-8 lg:flex xl:p-10">
                 {/* ลายจุดจางๆ มุมขวาบน */}
                 <div
                     aria-hidden="true"
@@ -53,18 +60,12 @@ export default function LoginScreen() {
                     <BrandMark />
                 </div>
 
-                <div className="relative grid gap-8">
-                    <div className="grid gap-3 motion-safe:animate-fade-up">
-                        <h2 className="max-w-[17ch] text-4xl font-light leading-tight text-gray-900 xl:text-[2.6rem]">
-                            ติดตามโปรเจกต์ งานขาย และค่าใช้จ่าย <span className="text-blue-600">ในที่เดียว</span>
+                <div className="relative grid gap-6">
+                    <div className="grid gap-2 motion-safe:animate-fade-up">
+                        <h2 className="text-3xl font-light leading-tight text-gray-900 xl:text-[2.1rem]">
+                            ระบบงานของบริษัท <span className="text-blue-600">ในที่เดียว</span>
                         </h2>
-                        <p className="max-w-[44ch] text-gray-500">
-                            ระบบงานของบริษัท — ตั้งแต่รับงาน ทำงาน ออกเอกสาร จนรับเงินและจ่ายเงิน
-                        </p>
-                    </div>
-
-                    <div className="max-w-md motion-safe:animate-fade-up [animation-delay:150ms]">
-                        <FeatureCarousel />
+                        <SystemDemo />
                     </div>
                 </div>
 

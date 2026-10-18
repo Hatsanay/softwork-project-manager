@@ -6,32 +6,23 @@
 // - ย้ายแบบเห็นผลทันที: การ์ดไปที่ใหม่ก่อน → บันทึก → ไม่สำเร็จย้อนกลับ + แถบบอกเหตุผล (ไม่ใช้ toast สำหรับ error)
 // - มือถือ: กดค้างแล้วลาก (กันลากตอนเลื่อนจอ R-K3) หรือปุ่ม ⋯ → ย้ายไป… · คอลัมน์เลื่อนซ้าย-ขวาทีละคอลัมน์
 // - สิทธิ์ที่หน้าเว็บใช้แค่ล็อก/ซ่อน — backend ตรวจจริงเสมอ
+// - หน้าตาอยู่ที่ task-board-view.tsx (เดโมหน้า login ใช้ตัวเดียวกัน) · ไฟล์นี้ = สถานะ ตัวกรอง การลาก และการบันทึก
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-    DndContext,
-    DragOverlay,
     KeyboardSensor,
     MouseSensor,
     TouchSensor,
-    closestCorners,
     useSensor,
     useSensors,
     type DragEndEvent,
     type DragStartEvent,
 } from "@dnd-kit/core";
 import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
-import StatusBanner from "@/components/ui/guidance/status-banner";
-import FieldHint from "@/components/ui/guidance/field-hint";
-import Switch from "@/components/ui/switch";
-import ConfirmDialog from "@/components/ui/ConfirmDialog";
-import { inputClass } from "@/components/ui/form-field";
 import { toDateInputValue } from "@/app/function";
 import { apiFetch } from "@/lib/api";
-import { BOARD_COLUMNS, STATUS_LABELS, type BoardLabel, type BoardStatus, type BoardTask } from "./board-types";
-import { LABEL_COLOR_CLASSES } from "./label-colors";
-import BoardColumn, { columnDropId } from "./board-column";
-import BoardCard from "./board-card";
-import MoveToSheet from "./move-to-sheet";
+import { BOARD_COLUMNS, type BoardLabel, type BoardStatus, type BoardTask } from "./board-types";
+import { columnDropId } from "./board-column";
+import TaskBoardView, { boardColumnsOf, reorderHintOf } from "./task-board-view";
 
 const MOUSE_DRAG_DISTANCE_PX = 6;
 const TOUCH_HOLD_MS = 250;
@@ -55,12 +46,6 @@ function bySortOrder(first: BoardTask, second: BoardTask) {
 // คอลัมน์เสร็จเรียงตามวันที่เสร็จล่าสุดก่อน (K6)
 function byCompletedDesc(first: BoardTask, second: BoardTask) {
     return String(second.task_completed_at ?? "").localeCompare(String(first.task_completed_at ?? ""));
-}
-
-function reorderHintOf(canReorder: boolean, canReorderNow: boolean) {
-    if (!canReorder) return "ลำดับในคอลัมน์ตั้งได้เฉพาะผู้มีสิทธิ์แก้ไขงาน";
-    if (!canReorderNow) return "ปิดตัวกรองและโหมดรวม subtask เพื่อเรียงลำดับการ์ด";
-    return "ลากขึ้น-ลงในคอลัมน์เพื่อเรียงลำดับความสำคัญ (คอลัมน์เสร็จเรียงตามวันที่เสร็จ)";
 }
 
 function isOverdue(task: BoardTask) {
@@ -285,148 +270,47 @@ export default function TaskBoard({
     const reorderHint = reorderHintOf(canReorder, canReorderNow);
 
     return (
-        <div className="grid grid-cols-1 gap-4">
-            <FieldHint>
-                ลากการ์ดข้ามคอลัมน์เพื่อเปลี่ยนสถานะ (มือถือ: กดค้างแล้วลาก หรือกด ⋯ → ย้ายไป) · การ์ดที่มีรูปกุญแจ =
-                คุณเปลี่ยนสถานะงานนั้นไม่ได้ · {reorderHint}
-            </FieldHint>
-
-            <div className="grid gap-3">
-                <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-                    <Switch id="board-only-mine" label="เฉพาะงานของฉัน" checked={onlyMine} onChange={setOnlyMine} />
-                    <Switch id="board-overdue" label="เลยกำหนด" checked={onlyOverdue} onChange={setOnlyOverdue} />
-                    <Switch
-                        id="board-subtasks"
-                        label="แสดง subtask เป็นการ์ด"
-                        checked={includeSubtasks}
-                        onChange={setIncludeSubtasks}
-                    />
-                </div>
-                <input
-                    type="search"
-                    aria-label="ค้นหางานบนบอร์ด"
-                    placeholder="ค้นหาชื่องาน..."
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    className={`${inputClass(false)} max-w-sm`}
-                />
-                {labelsInUse.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5" role="group" aria-label="กรองตามป้าย">
-                        {labelsInUse.map((label) => {
-                            const isSelected = labelFilter.includes(label.pl_id);
-                            return (
-                                <button
-                                    key={label.pl_id}
-                                    type="button"
-                                    aria-pressed={isSelected}
-                                    onClick={() => toggleLabel(label.pl_id)}
-                                    className={`min-h-9 rounded-lg px-3 text-xs font-medium ${LABEL_COLOR_CLASSES[label.pl_color]} ${
-                                        isSelected
-                                            ? "ring-2 ring-blue-600 ring-offset-1"
-                                            : labelFilter.length > 0
-                                              ? "opacity-50"
-                                              : ""
-                                    }`}
-                                >
-                                    {label.pl_name}
-                                </button>
-                            );
-                        })}
-                    </div>
-                )}
-            </div>
-
-            {errorMessage && (
-                <StatusBanner tone="error" title="ย้ายการ์ดไม่สำเร็จ">
-                    {errorMessage}
-                </StatusBanner>
-            )}
-
-            {/* มือถือ: กระโดดไปคอลัมน์ */}
-            <nav className="flex gap-2 overflow-x-auto lg:hidden" aria-label="ไปที่คอลัมน์">
-                {BOARD_COLUMNS.map((column) => (
-                    <button
-                        key={column.status}
-                        type="button"
-                        className="min-h-9 shrink-0 rounded-full border border-gray-200 bg-white px-3 text-xs text-gray-700"
-                        onClick={() =>
-                            document
-                                .getElementById(`board-column-${column.status}`)
-                                ?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" })
-                        }
-                    >
-                        {column.label} {columnTasks(column.status, filteredTasks).length}
-                    </button>
-                ))}
-            </nav>
-
-            <DndContext
-                sensors={sensors}
-                collisionDetection={closestCorners}
-                onDragStart={handleDragStart}
-                onDragEnd={handleDragEnd}
-                onDragCancel={() => setActiveTaskId(null)}
-            >
-                <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0 lg:grid lg:grid-cols-4 lg:overflow-visible">
-                    {BOARD_COLUMNS.map((column) => (
-                        <BoardColumn
-                            key={column.status}
-                            status={column.status}
-                            label={column.label}
-                            tasks={columnTasks(column.status, filteredTasks)}
-                            parentTitles={parentTitles}
-                            permissionsOf={permissionsOf}
-                            canAddTask={canAddTask}
-                            onAddTask={onAddTask}
-                            onOpenTask={onOpenTask}
-                            onMoveTask={setMoveTarget}
-                            onClaimTask={onClaimTask}
-                        />
-                    ))}
-                </div>
-                <DragOverlay>
-                    {activeTask && (
-                        <BoardCard
-                            task={activeTask}
-                            parentTitle={
-                                activeTask.task_parent_id ? (parentTitles.get(activeTask.task_parent_id) ?? null) : null
-                            }
-                            permissions={permissionsOf(activeTask)}
-                            isOverlay
-                            onOpen={() => undefined}
-                            onMove={() => undefined}
-                            onClaim={() => undefined}
-                        />
-                    )}
-                </DragOverlay>
-            </DndContext>
-
-            <MoveToSheet
-                task={moveTarget}
-                onClose={() => setMoveTarget(null)}
-                onSelect={(status) => {
-                    const task = moveTarget;
-                    setMoveTarget(null);
-                    if (task) requestMove(task, status, null);
-                }}
-            />
-            <ConfirmDialog
-                open={Boolean(pendingDone)}
-                title="ย้ายไป 'เสร็จ' ทั้งที่ subtask ยังไม่ครบ?"
-                description={
-                    pendingDone
-                        ? `subtask ยังไม่เสร็จ ${(pendingDone.task.subtask_total ?? 0) - (pendingDone.task.subtask_done ?? 0)} จาก ${pendingDone.task.subtask_total ?? 0} — ระบบไม่บังคับ แต่ความคืบหน้าของงานนี้จะยังไม่ครบ`
-                        : undefined
-                }
-                confirmLabel={`ย้ายไป ${STATUS_LABELS.done}`}
-                variant="warning"
-                onConfirm={() => {
-                    const pending = pendingDone;
-                    setPendingDone(null);
-                    if (pending) moveTask(pending.task, "done", pending.orderIds);
-                }}
-                onCancel={() => setPendingDone(null)}
-            />
-        </div>
+        <TaskBoardView
+            reorderHint={reorderHint}
+            onlyMine={onlyMine}
+            onOnlyMineChange={setOnlyMine}
+            onlyOverdue={onlyOverdue}
+            onOnlyOverdueChange={setOnlyOverdue}
+            includeSubtasks={includeSubtasks}
+            onIncludeSubtasksChange={setIncludeSubtasks}
+            search={search}
+            onSearchChange={setSearch}
+            labelsInUse={labelsInUse}
+            labelFilter={labelFilter}
+            onToggleLabel={toggleLabel}
+            errorMessage={errorMessage}
+            columns={boardColumnsOf((status) => columnTasks(status, filteredTasks))}
+            parentTitles={parentTitles}
+            permissionsOf={permissionsOf}
+            canAddTask={canAddTask}
+            onAddTask={onAddTask}
+            onOpenTask={onOpenTask}
+            onMoveTask={setMoveTarget}
+            onClaimTask={onClaimTask}
+            sensors={sensors}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragCancel={() => setActiveTaskId(null)}
+            activeTask={activeTask ?? null}
+            moveTarget={moveTarget}
+            onMoveSelect={(status) => {
+                const task = moveTarget;
+                setMoveTarget(null);
+                if (task) requestMove(task, status, null);
+            }}
+            onMoveClose={() => setMoveTarget(null)}
+            pendingDoneTask={pendingDone?.task ?? null}
+            onConfirmDone={() => {
+                const pending = pendingDone;
+                setPendingDone(null);
+                if (pending) moveTask(pending.task, "done", pending.orderIds);
+            }}
+            onCancelDone={() => setPendingDone(null)}
+        />
     );
 }

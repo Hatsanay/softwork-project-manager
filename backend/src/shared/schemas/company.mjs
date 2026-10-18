@@ -172,6 +172,8 @@ export const APPROVAL_DOCUMENTS = {
     EC: { name: "ใบเบิกเงินพนักงาน", permission: "approveExpense", allowsThreshold: true },
     // รอบเงินเดือน (เฟส 4 ขั้น 4-4) — ทุกรอบต้องผ่านชั้น 1 (ไม่มีวงเงินอนุมัติอัตโนมัติ) · ยอดที่ใช้เทียบชั้น = ยอดจ่ายสุทธิรวม
     PR: { name: "รอบเงินเดือน", permission: "approvePayroll", allowsThreshold: false },
+    // ใบลดหนี้ (2026-10-18 N2-ก) — ทุกใบต้องผ่านชั้น 1 · ยอดที่ใช้เทียบชั้น = ยอดที่ลดก่อน VAT เป็นบาท
+    CN: { name: "ใบลดหนี้", permission: "approveInvoice", allowsThreshold: false },
 };
 export const APPROVAL_DOCUMENT_TYPES = Object.keys(APPROVAL_DOCUMENTS);
 

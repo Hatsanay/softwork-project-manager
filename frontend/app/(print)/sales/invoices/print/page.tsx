@@ -76,8 +76,15 @@ export default function InvoicePrintPage() {
     // ใบเสร็จที่ตัดใบนี้แล้ว (ไม่นับที่ยกเลิก) — ใบละบรรทัด ยอด = ยอดตัดหนี้ (รวมส่วนที่ลูกค้าหัก ณ ที่จ่าย)
     const paidReceipts = detail.receipts.filter((receipt) => receipt.rc_status !== "cancelled");
     const isFullyPaid = parseHundredths(payment.outstanding, "ยอดคงค้าง") === 0n;
+    // ใบลดหนี้ที่ออกแล้ว (ขั้น N-1) — ใบละบรรทัดต่อจากรวมทั้งสิ้น แล้วตามด้วยยอดหลังลดหนี้
+    const issuedCredits = detail.credit_notes.filter((creditNote) => creditNote.cn_status === "issued");
+    const hasCredits = issuedCredits.length > 0;
+    const isRefundDue = parseHundredths(payment.refund_due, "ชำระเกิน") > 0n;
     const language = invoice.inv_language;
     const labels = INVOICE_PRINT_LABELS[language];
+    // ใบเพิ่มหนี้ (ขั้น N-2): หัว "ใบเพิ่มหนี้" + อ้างอิงใบเดิม + เหตุผล + กล่องเทียบมูลค่าเดิม (มาตรา 86/9)
+    const isDebitNote = invoice.inv_doc_type === "debit_note";
+    const comparison = detail.debit_comparison;
     const decimals = currency.cur_decimals;
     const isIssued = invoice.inv_status === "issued" || invoice.inv_status === "cancelled";
     const isEnglish = language === "en";
@@ -92,7 +99,11 @@ export default function InvoicePrintPage() {
     const isVatZero = invoice.inv_vat_treatment === "zero";
     const hasVatLine = hasVat || isVatZero;
     const hasDiscount = parseHundredths(invoice.inv_discount_amount, "ส่วนลด") > 0n;
-    const hasWithholding = parseHundredths(invoice.inv_wht_amount, "หัก ณ ที่จ่าย") > 0n;
+    // หัก ณ ที่จ่ายประมาณการหลังลดหนี้ (= ยอดหลังลดหนี้ − ยอดชำระสุทธิ ที่ backend คิด)
+    const withholdingAfterCredit =
+        parseHundredths(invoice.inv_wht_amount, "หัก ณ ที่จ่าย") -
+        parseHundredths(invoice.inv_credited_wht, "หักที่ลด");
+    const hasWithholding = withholdingAfterCredit > 0n;
     const account = payment.bank_account;
     // ร่าง/รออนุมัติไม่พิมพ์ QR — กันลูกค้าสแกนจ่ายจากเอกสารที่ยังไม่ออก (ไม่มีเลขที่)
     const qrPayload = invoice.inv_status === "issued" ? payment.qr_payload : null;
@@ -197,7 +208,9 @@ export default function InvoicePrintPage() {
                         </div>
                     </div>
                     <div className="grid shrink-0 gap-1 text-right">
-                        <p className="text-[16pt] font-medium text-blue-600">{labels.documentTitle}</p>
+                        <p className="text-[16pt] font-medium text-blue-600">
+                            {isDebitNote ? labels.debitNoteTitle : labels.documentTitle}
+                        </p>
                         <dl className="grid grid-cols-[auto_auto] gap-x-3 text-[9.5pt]">
                             <dt className="text-gray-500">{labels.number}</dt>
                             <dd className="tabular-nums">{invoice.inv_number ?? labels.notIssued}</dd>
@@ -217,6 +230,17 @@ export default function InvoicePrintPage() {
                                 <>
                                     <dt className="text-gray-500">{labels.reference}</dt>
                                     <dd className="tabular-nums">{invoice.qt_number}</dd>
+                                </>
+                            )}
+                            {isDebitNote && invoice.reference_number && (
+                                <>
+                                    <dt className="text-gray-500">{labels.referenceInvoice}</dt>
+                                    <dd className="tabular-nums">
+                                        {invoice.reference_number}
+                                        {invoice.reference_issue_date
+                                            ? ` ${labels.referenceDate} ${formatDocumentDate(invoice.reference_issue_date, language)}`
+                                            : ""}
+                                    </dd>
                                 </>
                             )}
                         </dl>
@@ -250,6 +274,11 @@ export default function InvoicePrintPage() {
                 <p className="mt-3 text-[10pt]">
                     <span className="text-gray-500">{labels.subject}:</span> {invoice.inv_title}
                 </p>
+                {isDebitNote && invoice.inv_adjust_reason && (
+                    <p className="mt-1 text-[10pt]">
+                        <span className="text-gray-500">{labels.debitReason}:</span> {invoice.inv_adjust_reason}
+                    </p>
+                )}
 
                 <table className="mt-3 w-full border-collapse text-[9.5pt]">
                     <thead className="table-header-group">
@@ -359,13 +388,44 @@ export default function InvoicePrintPage() {
                         <dd className="border-t border-gray-300 pt-1 text-right font-medium tabular-nums">
                             {formatAmount(invoice.inv_total, decimals)} {currency.cur_code}
                         </dd>
+                        {hasCredits && (
+                            <>
+                                {issuedCredits.map((creditNote, index) => (
+                                    <Fragment key={creditNote.cn_id}>
+                                        <dt
+                                            className={`text-gray-600 ${index === 0 ? "mt-1 border-t border-gray-300 pt-1" : ""}`}
+                                        >
+                                            {labels.creditNote} {creditNote.cn_number} ·{" "}
+                                            {formatDocumentDate(creditNote.cn_issue_date, language)}
+                                        </dt>
+                                        <dd
+                                            className={`text-right tabular-nums text-gray-600 ${index === 0 ? "mt-1 border-t border-gray-300 pt-1" : ""}`}
+                                        >
+                                            −{formatAmount(creditNote.cn_total, decimals)}
+                                        </dd>
+                                    </Fragment>
+                                ))}
+                                {/* ไม่มีหักและไม่มีใบเสร็จ = บรรทัดนี้คือยอดที่ลูกค้าต้องจ่าย (ตัวหนา ไม่พิมพ์ซ้ำอีกบรรทัด) */}
+                                <dt
+                                    className={!hasWithholding && paidReceipts.length === 0 ? "font-medium" : undefined}
+                                >
+                                    {labels.afterCredit}
+                                </dt>
+                                <dd
+                                    className={`text-right tabular-nums ${!hasWithholding && paidReceipts.length === 0 ? "font-medium" : ""}`}
+                                >
+                                    {formatAmount(payment.effective_total, decimals)}
+                                    {!hasWithholding && paidReceipts.length === 0 ? ` ${currency.cur_code}` : ""}
+                                </dd>
+                            </>
+                        )}
                         {hasWithholding && paidReceipts.length === 0 && (
                             <>
                                 <dt className="text-gray-600">
                                     {labels.withholding} {percentLabel(invoice.inv_wht_rate)}% {labels.withholdingNote}
                                 </dt>
                                 <dd className="text-right tabular-nums text-gray-600">
-                                    {formatAmount(invoice.inv_wht_amount, decimals)}
+                                    {formatAmount(withholdingAfterCredit, decimals)}
                                 </dd>
                                 <dt className="font-medium">{labels.netPayable}</dt>
                                 <dd className="text-right font-medium tabular-nums">
@@ -405,14 +465,41 @@ export default function InvoicePrintPage() {
                                         </dd>
                                     </>
                                 )}
-                                <dt className="font-medium">{isFullyPaid ? labels.fullyPaid : labels.netPayable}</dt>
+                                <dt className="font-medium">
+                                    {isRefundDue
+                                        ? labels.refundDue
+                                        : isFullyPaid
+                                          ? labels.fullyPaid
+                                          : labels.netPayable}
+                                </dt>
                                 <dd className="text-right font-medium tabular-nums">
-                                    {formatAmount(payment.outstanding_net, decimals)} {currency.cur_code}
+                                    {formatAmount(isRefundDue ? payment.refund_due : payment.outstanding_net, decimals)}{" "}
+                                    {currency.cur_code}
                                 </dd>
                             </>
                         )}
                     </dl>
                 </section>
+
+                {isDebitNote && comparison && (
+                    <section className="print-row mt-4 ml-auto grid w-[90mm] gap-0.5 rounded-lg border border-gray-300 p-3 text-[9.5pt]">
+                        <p className="font-medium">{labels.comparisonTitle}</p>
+                        <div className="flex justify-between gap-4">
+                            <span>{labels.originalValue}</span>
+                            <span className="tabular-nums">{formatAmount(comparison.original_total, decimals)}</span>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                            <span>{labels.addThisNote}</span>
+                            <span className="tabular-nums">+{formatAmount(comparison.this_total, decimals)}</span>
+                        </div>
+                        <div className="flex justify-between gap-4 border-t border-gray-300 pt-0.5 font-medium">
+                            <span>{labels.correctValue}</span>
+                            <span className="tabular-nums">
+                                {formatAmount(comparison.correct_total, decimals)} {currency.cur_code}
+                            </span>
+                        </div>
+                    </section>
+                )}
 
                 {(account || qrPayload) && (
                     <section className="print-row mt-4 flex items-start justify-between gap-6 rounded-lg border border-gray-300 p-3 text-[9.5pt]">
@@ -457,7 +544,7 @@ export default function InvoicePrintPage() {
 
                 <section className="print-row mt-10 grid grid-cols-2 gap-10 text-center text-[9pt]">
                     <SignatureBox
-                        title={labels.issuer}
+                        title={isDebitNote ? labels.debitIssuer : labels.issuer}
                         name={isIssued ? invoice.inv_issued_by_name : null}
                         role={isIssued ? invoice.inv_issued_by_title : null}
                         signatureId={isIssued ? invoice.inv_issuer_signature_id : null}
@@ -465,7 +552,7 @@ export default function InvoicePrintPage() {
                         date={isIssued ? formatDocumentDate(invoice.inv_issue_date, language) : null}
                     />
                     <SignatureBox
-                        title={labels.receiver}
+                        title={isDebitNote ? labels.debitReceiver : labels.receiver}
                         name={null}
                         role={null}
                         signatureId={null}

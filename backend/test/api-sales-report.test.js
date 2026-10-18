@@ -168,7 +168,12 @@ test("รายเดือน 12 เดือน: เดือนที่ไ�
     assert.equal(monthly.months.length, 12);
     const currentMonth = todayBangkok().slice(0, 7);
     assert.equal(monthly.months[11].month, currentMonth);
-    assert.deepEqual(monthly.months[11], { month: currentMonth, billed_thb: "13550.00", received_thb: "8700.00" });
+    assert.deepEqual(monthly.months[11], {
+        month: currentMonth,
+        billed_thb: "13550.00",
+        credited_thb: "0.00",
+        received_thb: "8700.00",
+    });
     const pastMonth = monthly.months.find((row) => row.month === pastIssueDate.slice(0, 7));
     assert.equal(pastMonth.billed_thb, "10000.00");
     assert.ok(monthly.months.filter((row) => row.billed_thb === "0.00").length >= 9);

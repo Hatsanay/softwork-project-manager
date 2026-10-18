@@ -81,6 +81,7 @@ async function getCompanySettings(conn, { canEdit }) {
         expense_approval: await approvalRulesService.findApprovalRules(conn, "EX"),
         claim_approval: await approvalRulesService.findApprovalRules(conn, "EC"),
         payroll_approval: await approvalRulesService.findApprovalRules(conn, "PR"),
+        credit_note_approval: await approvalRulesService.findApprovalRules(conn, "CN"),
         roles: await approvalRulesService.findRoleChoices(conn),
         can_edit: canEdit,
     };

@@ -3,10 +3,11 @@
 // ฟอร์มร่างใบแจ้งหนี้ที่สร้างเอง (ไม่อ้างใบเสนอราคา) — ใช้ทั้งสร้างใหม่และแก้ร่าง · บันทึกแล้วไปหน้าดูเพื่อส่งขออนุมัติ
 // ใช้ส่วนประกอบรายการ/เลือกสินค้า/อัตรา/สรุปยอดชุดเดียวกับใบเสนอราคา: สถานะในฟอร์มใช้ชื่อช่องแบบใบเสนอราคา (qti_*)
 // แล้วแปลงเป็นชื่อช่องของใบแจ้งหนี้ (invi_* / inv_*) ตอนส่ง · error จาก API แปลงกลับให้ไปอยู่ใต้ช่องเดิม
+// ใบเพิ่มหนี้ (ขั้น N-2) ใช้ฟอร์มนี้ด้วย: หัวเอกสาร (ลูกค้า สาขา ภาษา สกุลเงิน VAT) ล็อกตามใบเดิม แทนที่ด้วยการ์ดอ้างอิง + เหตุผล
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Coins, FileText, ListChecks } from "lucide-react";
+import { Coins, FilePlus2, FileText, ListChecks } from "lucide-react";
 import FormField, { inputClass } from "@/components/ui/form-field";
 import SectionCard from "@/components/ui/section-card";
 import SearchableSelect, { type SelectOption } from "@/components/ui/SearchableSelect";
@@ -18,7 +19,12 @@ import { toFieldErrors, type FieldErrors } from "@/lib/form-errors";
 import { formatAmount } from "@/lib/shared/money.mjs";
 import { calculateQuotation } from "@/lib/shared/quotation-totals.mjs";
 import { calculateWithholding } from "@/lib/shared/invoice-totals.mjs";
-import { invoiceManualDraftSchema } from "@/lib/shared/schemas/invoice.mjs";
+import {
+    DEBIT_NOTE_REASONS,
+    invoiceDebitNoteDraftSchema,
+    invoiceManualDraftSchema,
+} from "@/lib/shared/schemas/invoice.mjs";
+import { formatDateOnly } from "@/app/function";
 import { emptyItem, newRowKey, type ItemForm } from "../../quotations/_form-state";
 import { vatRateForForm } from "../../quotations/_hooks/use-form-options";
 import { QUOTATION_MESSAGES } from "../../quotations/_messages";
@@ -27,6 +33,7 @@ import ItemPicker from "../../quotations/_components/item-picker";
 import RatePanel, { type RateChange } from "../../quotations/_components/rate-panel";
 import SummaryPanel from "../../quotations/_components/summary-panel";
 import { defaultBankAccountId, type InvoiceOptions } from "../_hooks/use-invoice-options";
+import { INVOICE_MESSAGES } from "../_messages";
 import type { InvoiceDetail } from "../_types";
 import BillingFields, { billingPayload, type BillingValues } from "./billing-fields";
 
@@ -55,12 +62,27 @@ type FormState = BillingValues & {
     inv_discount_type: "amount" | "percent";
     inv_discount_value: string;
     items: ItemForm[];
+    // ใบเพิ่มหนี้เท่านั้น
+    inv_adjust_reason_code: string;
+    inv_adjust_reason: string;
 };
 
 type ManualInvoiceFormProps = {
     options: InvoiceOptions;
     // ไม่ส่ง = สร้างใหม่
     detail?: InvoiceDetail;
+    // สร้างใบเพิ่มหนี้ใหม่จากใบแจ้งหนี้นี้ (ขั้น N-2)
+    debitReference?: InvoiceDetail;
+};
+
+/** ใบแจ้งหนี้ที่ใบเพิ่มหนี้อ้าง (แสดงในการ์ดอ้างอิง) */
+type DebitReferenceInfo = {
+    number: string;
+    issueDate: string | null;
+    title: string;
+    clientName: string;
+    total: string | null;
+    vatRate: string | null;
 };
 
 function defaultBranchId(options: InvoiceOptions) {
@@ -99,6 +121,36 @@ function emptyState(options: InvoiceOptions): FormState {
         inv_notes: defaultNotes(options, "th"),
         inv_internal_note: "",
         items: [emptyItem("item")],
+        inv_adjust_reason_code: "",
+        inv_adjust_reason: "",
+    };
+}
+
+/** ร่างใบเพิ่มหนี้ใหม่: หัวเอกสาร เครดิต หัก ณ ที่จ่าย บัญชีรับเงิน หมายเหตุ ตามใบเดิม · รายการเริ่มว่าง */
+function stateFromReference(reference: InvoiceDetail): FormState {
+    const invoice = reference.invoice;
+    return {
+        inv_client_id: invoice.inv_client_id,
+        inv_branch_id: invoice.inv_branch_id,
+        inv_title: `${invoice.inv_title} (เพิ่มเติม)`.slice(0, 200),
+        inv_language: invoice.inv_language,
+        inv_currency: invoice.inv_currency,
+        qt_exchange_rate: invoice.inv_exchange_rate,
+        qt_rate_source: invoice.inv_currency === "THB" ? null : "manual",
+        qt_rate_date: invoice.inv_rate_date,
+        qt_rate_bot: null,
+        qt_rate_override_reason: "",
+        inv_vat_treatment: invoice.inv_vat_treatment,
+        inv_discount_type: "amount",
+        inv_discount_value: "",
+        inv_credit_days: String(invoice.inv_credit_days),
+        inv_wht_rate: invoice.inv_wht_rate ?? "",
+        inv_bank_account_id: invoice.inv_bank_account_id,
+        inv_notes: invoice.inv_notes ?? "",
+        inv_internal_note: "",
+        items: [emptyItem("item")],
+        inv_adjust_reason_code: "",
+        inv_adjust_reason: "",
     };
 }
 
@@ -137,6 +189,8 @@ function stateFromDetail(detail: InvoiceDetail): FormState {
             qti_discount_value: blankIfZero(item.invi_discount_value),
             baht_price: null,
         })),
+        inv_adjust_reason_code: invoice.inv_adjust_reason_code ?? "",
+        inv_adjust_reason: invoice.inv_adjust_reason ?? "",
     };
 }
 
@@ -156,9 +210,16 @@ function toCalculationItems(items: ItemForm[]) {
     }));
 }
 
-/** ฟอร์ม → body ของ POST/PUT /invoices (ตรวจซ้ำด้วย invoiceManualDraftSchema ก่อนส่ง) */
-function toPayload(form: FormState, version: number | null) {
+/** ฟอร์ม → body ของ POST/PUT /invoices (ตรวจซ้ำด้วย invoiceManualDraftSchema / invoiceDebitNoteDraftSchema ก่อนส่ง) */
+function toPayload(form: FormState, version: number | null, referenceId: string | null) {
     return {
+        ...(referenceId
+            ? {
+                  inv_reference_invoice_id: referenceId,
+                  inv_adjust_reason_code: form.inv_adjust_reason_code,
+                  inv_adjust_reason: form.inv_adjust_reason,
+              }
+            : {}),
         inv_client_id: form.inv_client_id,
         inv_branch_id: form.inv_branch_id,
         inv_title: form.inv_title,
@@ -212,9 +273,33 @@ async function loadClientOptions(search: string, current: SelectOption | null): 
     return current && !hasCurrent && !search ? [current, ...found] : found;
 }
 
-export default function ManualInvoiceForm({ options, detail }: ManualInvoiceFormProps) {
+export default function ManualInvoiceForm({ options, detail, debitReference }: ManualInvoiceFormProps) {
     const router = useRouter();
-    const [form, setForm] = useState<FormState>(() => (detail ? stateFromDetail(detail) : emptyState(options)));
+    const [form, setForm] = useState<FormState>(() =>
+        detail ? stateFromDetail(detail) : debitReference ? stateFromReference(debitReference) : emptyState(options),
+    );
+    // ใบเพิ่มหนี้: สร้างใหม่ (มี debitReference) หรือแก้ร่างใบเพิ่มหนี้
+    const referenceId = debitReference?.invoice.inv_id ?? detail?.invoice.inv_reference_invoice_id ?? null;
+    const isDebitNote = referenceId !== null;
+    const reference: DebitReferenceInfo | null = debitReference
+        ? {
+              number: debitReference.invoice.inv_number ?? "",
+              issueDate: debitReference.invoice.inv_issue_date,
+              title: debitReference.invoice.inv_title,
+              clientName: debitReference.invoice.client_company || debitReference.invoice.client_name,
+              total: debitReference.invoice.inv_total,
+              vatRate: debitReference.invoice.inv_vat_rate,
+          }
+        : detail && isDebitNote
+          ? {
+                number: detail.invoice.reference_number ?? "",
+                issueDate: detail.invoice.reference_issue_date,
+                title: detail.invoice.reference_title ?? "",
+                clientName: detail.invoice.client_company || detail.invoice.client_name,
+                total: detail.invoice.reference_total,
+                vatRate: detail.invoice.reference_vat_rate,
+            }
+          : null;
     const clientOption: SelectOption | null = detail
         ? { value: detail.invoice.inv_client_id, label: detail.invoice.client_name }
         : null;
@@ -341,8 +426,8 @@ export default function ManualInvoiceForm({ options, detail }: ManualInvoiceForm
     async function handleSave(event: React.FormEvent) {
         event.preventDefault();
         setSaveError(null);
-        const payload = toPayload(form, detail?.invoice.inv_version ?? null);
-        const checked = invoiceManualDraftSchema.safeParse(payload);
+        const payload = toPayload(form, detail?.invoice.inv_version ?? null, referenceId);
+        const checked = (isDebitNote ? invoiceDebitNoteDraftSchema : invoiceManualDraftSchema).safeParse(payload);
         const liveErrors = calculation.errors;
         if (!checked.success || Object.keys(liveErrors).length > 0) {
             const schemaErrors = checked.success ? {} : toFormErrors(toFieldErrors(checked.error.issues));
@@ -383,147 +468,236 @@ export default function ManualInvoiceForm({ options, detail }: ManualInvoiceForm
                     </StatusBanner>
                 )}
 
-                <SectionCard
-                    icon={FileText}
-                    title="ลูกค้าและเอกสาร"
-                    description="ใบที่สร้างเองต้องผ่านการอนุมัติก่อนออก · ยอดทุกบรรทัดคำนวณซ้ำที่เซิร์ฟเวอร์ตอนบันทึก"
-                >
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        <FormField
-                            label="ลูกค้า"
-                            htmlFor="inv_client_id"
-                            required
-                            error={fieldErrors.inv_client_id}
-                            className="sm:col-span-2"
-                            hint="แสดงเฉพาะลูกค้าที่เปิดใช้งาน · เลือกแล้วระบบเติมสกุลเงิน ภาษา การคิด VAT เครดิตเทอม และหัก ณ ที่จ่ายตามข้อมูลลูกค้า"
-                        >
-                            <SearchableSelect
-                                loadOptions={(search) => loadClientOptions(search, clientOption)}
-                                value={form.inv_client_id}
-                                onChange={(value) => changeClient(value)}
-                                placeholder="— เลือกลูกค้า —"
-                                error={Boolean(fieldErrors.inv_client_id)}
-                            />
-                        </FormField>
-                        <FormField
-                            label="ชื่อเรื่อง"
-                            htmlFor="inv_title"
-                            required
-                            error={fieldErrors.inv_title}
-                            className="sm:col-span-2"
-                            hint="เช่น ค่าบริการดูแลระบบเดือนตุลาคม"
-                        >
-                            <input
-                                id="inv_title"
-                                value={form.inv_title}
-                                onChange={(event) => update({ inv_title: event.target.value })}
-                                className={inputClass(Boolean(fieldErrors.inv_title))}
-                            />
-                        </FormField>
-                        <FormField
-                            label="สาขาที่ออกเอกสาร"
-                            htmlFor="inv_branch_id"
-                            required
-                            hint={QUOTATION_MESSAGES.branch}
-                            error={fieldErrors.inv_branch_id}
-                        >
-                            <select
-                                id="inv_branch_id"
-                                value={form.inv_branch_id}
-                                onChange={(event) => update({ inv_branch_id: event.target.value })}
-                                className={inputClass(Boolean(fieldErrors.inv_branch_id))}
-                            >
-                                {options.branches
-                                    .filter(
-                                        (branch) =>
-                                            branch.branch_status === "active" ||
-                                            branch.branch_id === form.inv_branch_id,
-                                    )
-                                    .map((branch) => (
-                                        <option key={branch.branch_id} value={branch.branch_id}>
-                                            {branch.branch_code} · {branch.branch_name_th}
-                                        </option>
-                                    ))}
-                            </select>
-                        </FormField>
-                        <FormField label="ภาษาเอกสาร" htmlFor="inv_language" hint={QUOTATION_MESSAGES.language}>
-                            <select
-                                id="inv_language"
-                                value={form.inv_language}
-                                onChange={(event) => changeLanguage(event.target.value as "th" | "en")}
-                                className={inputClass()}
-                            >
-                                <option value="th">ไทย</option>
-                                <option value="en">อังกฤษ</option>
-                            </select>
-                        </FormField>
-                        <FormField
-                            label="การคิด VAT"
-                            htmlFor="inv_vat_treatment"
-                            hint={
-                                !isVatRegistered
-                                    ? "บริษัทยังไม่จด VAT — ใบนี้ไม่คิด VAT"
-                                    : form.inv_vat_treatment === "zero"
-                                      ? QUOTATION_MESSAGES.vatZero
-                                      : `VAT ${vatRate}% ตามวันที่ส่งขออนุมัติ`
-                            }
-                        >
-                            <select
-                                id="inv_vat_treatment"
-                                value={form.inv_vat_treatment}
-                                onChange={(event) =>
-                                    update({ inv_vat_treatment: event.target.value as FormState["inv_vat_treatment"] })
-                                }
-                                className={inputClass()}
-                            >
-                                <option value="standard">ปกติ</option>
-                                <option value="zero">0% (ส่งออกบริการ)</option>
-                            </select>
-                        </FormField>
-                    </div>
-                </SectionCard>
-
-                <SectionCard icon={Coins} title="สกุลเงิน">
-                    <div className="grid gap-4">
-                        <FormField
-                            label="สกุลเงินของเอกสาร"
-                            htmlFor="inv_currency"
-                            error={fieldErrors.inv_currency}
-                            className="sm:max-w-xs"
-                            hint="ราคาสินค้าเก็บเป็นบาท — ใส่ใบสกุลอื่นระบบแปลงตามอัตราในใบ"
-                        >
-                            <select
-                                id="inv_currency"
-                                value={form.inv_currency}
-                                onChange={(event) => changeCurrency(event.target.value)}
-                                className={inputClass(Boolean(fieldErrors.inv_currency))}
-                            >
-                                {options.currencies
-                                    .filter(
-                                        (item) => item.cur_status === "active" || item.cur_code === form.inv_currency,
-                                    )
-                                    .map((item) => (
-                                        <option key={item.cur_code} value={item.cur_code}>
-                                            {item.cur_code} · {item.cur_name_th}
-                                        </option>
-                                    ))}
-                            </select>
-                        </FormField>
-                        {isForeign && (
-                            <RatePanel
-                                currency={form.inv_currency}
-                                rate={form.qt_exchange_rate}
-                                source={form.qt_rate_source}
-                                rateDate={form.qt_rate_date}
-                                rateBot={form.qt_rate_bot}
-                                reason={form.qt_rate_override_reason}
-                                errors={fieldErrors}
-                                onRateChange={(change: RateChange) => update(change)}
-                                onReasonChange={(reason) => update({ qt_rate_override_reason: reason })}
-                            />
+                {reference ? (
+                    <SectionCard
+                        icon={FilePlus2}
+                        title="อ้างอิงและเหตุผล"
+                        description={INVOICE_MESSAGES.debitNoteForm(reference.number)}
+                    >
+                        <dl className="grid gap-x-6 gap-y-2 rounded-xl bg-gray-50 p-4 text-sm sm:grid-cols-2">
+                            <div className="grid gap-0.5">
+                                <dt className="text-xs text-gray-500">ใบแจ้งหนี้ที่อ้างอิง</dt>
+                                <dd className="text-gray-900">
+                                    {reference.number}
+                                    {reference.issueDate ? ` · ลงวันที่ ${formatDateOnly(reference.issueDate)}` : ""}
+                                </dd>
+                            </div>
+                            <div className="grid gap-0.5">
+                                <dt className="text-xs text-gray-500">ลูกค้า</dt>
+                                <dd className="text-gray-900">{reference.clientName}</dd>
+                            </div>
+                            <div className="grid gap-0.5">
+                                <dt className="text-xs text-gray-500">ชื่อเรื่องของใบเดิม</dt>
+                                <dd className="text-gray-900">{reference.title}</dd>
+                            </div>
+                            <div className="grid gap-0.5">
+                                <dt className="text-xs text-gray-500">ยอดใบเดิม</dt>
+                                <dd className="text-gray-900 tabular-nums">
+                                    {reference.total ? formatAmount(reference.total, decimals) : "-"}{" "}
+                                    {form.inv_currency}
+                                </dd>
+                            </div>
+                        </dl>
+                        {reference.vatRate !== null && Number(reference.vatRate) !== Number(vatRate) && (
+                            <StatusBanner tone="info" title="อัตรา VAT ต่างจากใบเดิม">
+                                {INVOICE_MESSAGES.debitNoteVat(reference.vatRate, vatRate)}
+                            </StatusBanner>
                         )}
-                    </div>
-                </SectionCard>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                            <FormField
+                                label="เหตุผลที่เพิ่มหนี้"
+                                htmlFor="inv_adjust_reason_code"
+                                required
+                                error={fieldErrors.inv_adjust_reason_code}
+                            >
+                                <select
+                                    id="inv_adjust_reason_code"
+                                    value={form.inv_adjust_reason_code}
+                                    onChange={(event) => update({ inv_adjust_reason_code: event.target.value })}
+                                    className={inputClass(Boolean(fieldErrors.inv_adjust_reason_code))}
+                                >
+                                    <option value="">— เลือกเหตุผล —</option>
+                                    {Object.entries(DEBIT_NOTE_REASONS).map(([code, label]) => (
+                                        <option key={code} value={code}>
+                                            {label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </FormField>
+                            <FormField label="ชื่อเรื่อง" htmlFor="inv_title" required error={fieldErrors.inv_title}>
+                                <input
+                                    id="inv_title"
+                                    value={form.inv_title}
+                                    onChange={(event) => update({ inv_title: event.target.value })}
+                                    className={inputClass(Boolean(fieldErrors.inv_title))}
+                                />
+                            </FormField>
+                            <FormField
+                                label="รายละเอียดเหตุผล"
+                                htmlFor="inv_adjust_reason"
+                                required
+                                error={fieldErrors.inv_adjust_reason}
+                                className="sm:col-span-2"
+                                hint={INVOICE_MESSAGES.debitNoteReason}
+                            >
+                                <textarea
+                                    id="inv_adjust_reason"
+                                    rows={2}
+                                    value={form.inv_adjust_reason}
+                                    onChange={(event) => update({ inv_adjust_reason: event.target.value })}
+                                    className={inputClass(Boolean(fieldErrors.inv_adjust_reason))}
+                                />
+                            </FormField>
+                        </div>
+                    </SectionCard>
+                ) : (
+                    <>
+                        <SectionCard
+                            icon={FileText}
+                            title="ลูกค้าและเอกสาร"
+                            description="ใบที่สร้างเองต้องผ่านการอนุมัติก่อนออก · ยอดทุกบรรทัดคำนวณซ้ำที่เซิร์ฟเวอร์ตอนบันทึก"
+                        >
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                <FormField
+                                    label="ลูกค้า"
+                                    htmlFor="inv_client_id"
+                                    required
+                                    error={fieldErrors.inv_client_id}
+                                    className="sm:col-span-2"
+                                    hint="แสดงเฉพาะลูกค้าที่เปิดใช้งาน · เลือกแล้วระบบเติมสกุลเงิน ภาษา การคิด VAT เครดิตเทอม และหัก ณ ที่จ่ายตามข้อมูลลูกค้า"
+                                >
+                                    <SearchableSelect
+                                        loadOptions={(search) => loadClientOptions(search, clientOption)}
+                                        value={form.inv_client_id}
+                                        onChange={(value) => changeClient(value)}
+                                        placeholder="— เลือกลูกค้า —"
+                                        error={Boolean(fieldErrors.inv_client_id)}
+                                    />
+                                </FormField>
+                                <FormField
+                                    label="ชื่อเรื่อง"
+                                    htmlFor="inv_title"
+                                    required
+                                    error={fieldErrors.inv_title}
+                                    className="sm:col-span-2"
+                                    hint="เช่น ค่าบริการดูแลระบบเดือนตุลาคม"
+                                >
+                                    <input
+                                        id="inv_title"
+                                        value={form.inv_title}
+                                        onChange={(event) => update({ inv_title: event.target.value })}
+                                        className={inputClass(Boolean(fieldErrors.inv_title))}
+                                    />
+                                </FormField>
+                                <FormField
+                                    label="สาขาที่ออกเอกสาร"
+                                    htmlFor="inv_branch_id"
+                                    required
+                                    hint={QUOTATION_MESSAGES.branch}
+                                    error={fieldErrors.inv_branch_id}
+                                >
+                                    <select
+                                        id="inv_branch_id"
+                                        value={form.inv_branch_id}
+                                        onChange={(event) => update({ inv_branch_id: event.target.value })}
+                                        className={inputClass(Boolean(fieldErrors.inv_branch_id))}
+                                    >
+                                        {options.branches
+                                            .filter(
+                                                (branch) =>
+                                                    branch.branch_status === "active" ||
+                                                    branch.branch_id === form.inv_branch_id,
+                                            )
+                                            .map((branch) => (
+                                                <option key={branch.branch_id} value={branch.branch_id}>
+                                                    {branch.branch_code} · {branch.branch_name_th}
+                                                </option>
+                                            ))}
+                                    </select>
+                                </FormField>
+                                <FormField label="ภาษาเอกสาร" htmlFor="inv_language" hint={QUOTATION_MESSAGES.language}>
+                                    <select
+                                        id="inv_language"
+                                        value={form.inv_language}
+                                        onChange={(event) => changeLanguage(event.target.value as "th" | "en")}
+                                        className={inputClass()}
+                                    >
+                                        <option value="th">ไทย</option>
+                                        <option value="en">อังกฤษ</option>
+                                    </select>
+                                </FormField>
+                                <FormField
+                                    label="การคิด VAT"
+                                    htmlFor="inv_vat_treatment"
+                                    hint={
+                                        !isVatRegistered
+                                            ? "บริษัทยังไม่จด VAT — ใบนี้ไม่คิด VAT"
+                                            : form.inv_vat_treatment === "zero"
+                                              ? QUOTATION_MESSAGES.vatZero
+                                              : `VAT ${vatRate}% ตามวันที่ส่งขออนุมัติ`
+                                    }
+                                >
+                                    <select
+                                        id="inv_vat_treatment"
+                                        value={form.inv_vat_treatment}
+                                        onChange={(event) =>
+                                            update({
+                                                inv_vat_treatment: event.target.value as FormState["inv_vat_treatment"],
+                                            })
+                                        }
+                                        className={inputClass()}
+                                    >
+                                        <option value="standard">ปกติ</option>
+                                        <option value="zero">0% (ส่งออกบริการ)</option>
+                                    </select>
+                                </FormField>
+                            </div>
+                        </SectionCard>
+
+                        <SectionCard icon={Coins} title="สกุลเงิน">
+                            <div className="grid gap-4">
+                                <FormField
+                                    label="สกุลเงินของเอกสาร"
+                                    htmlFor="inv_currency"
+                                    error={fieldErrors.inv_currency}
+                                    className="sm:max-w-xs"
+                                    hint="ราคาสินค้าเก็บเป็นบาท — ใส่ใบสกุลอื่นระบบแปลงตามอัตราในใบ"
+                                >
+                                    <select
+                                        id="inv_currency"
+                                        value={form.inv_currency}
+                                        onChange={(event) => changeCurrency(event.target.value)}
+                                        className={inputClass(Boolean(fieldErrors.inv_currency))}
+                                    >
+                                        {options.currencies
+                                            .filter(
+                                                (item) =>
+                                                    item.cur_status === "active" || item.cur_code === form.inv_currency,
+                                            )
+                                            .map((item) => (
+                                                <option key={item.cur_code} value={item.cur_code}>
+                                                    {item.cur_code} · {item.cur_name_th}
+                                                </option>
+                                            ))}
+                                    </select>
+                                </FormField>
+                                {isForeign && (
+                                    <RatePanel
+                                        currency={form.inv_currency}
+                                        rate={form.qt_exchange_rate}
+                                        source={form.qt_rate_source}
+                                        rateDate={form.qt_rate_date}
+                                        rateBot={form.qt_rate_bot}
+                                        reason={form.qt_rate_override_reason}
+                                        errors={fieldErrors}
+                                        onRateChange={(change: RateChange) => update(change)}
+                                        onReasonChange={(reason) => update({ qt_rate_override_reason: reason })}
+                                    />
+                                )}
+                            </div>
+                        </SectionCard>
+                    </>
+                )}
 
                 <SectionCard icon={ListChecks} title="รายการ">
                     <ItemsEditor
@@ -589,7 +763,13 @@ export default function ManualInvoiceForm({ options, detail }: ManualInvoiceForm
                         type="button"
                         className={buttonClass("secondary", "md")}
                         onClick={() =>
-                            router.push(detail ? `/sales/invoices/view?id=${detail.invoice.inv_id}` : "/sales/invoices")
+                            router.push(
+                                detail
+                                    ? `/sales/invoices/view?id=${detail.invoice.inv_id}`
+                                    : debitReference
+                                      ? `/sales/invoices/view?id=${debitReference.invoice.inv_id}`
+                                      : "/sales/invoices",
+                            )
                         }
                     >
                         ยกเลิก

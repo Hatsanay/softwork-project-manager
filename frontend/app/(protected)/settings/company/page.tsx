@@ -90,6 +90,7 @@ export default function CompanySettingsPage() {
                     expenseApproval={settings.expense_approval}
                     claimApproval={settings.claim_approval}
                     payrollApproval={settings.payroll_approval}
+                    creditNoteApproval={settings.credit_note_approval}
                     roles={settings.roles}
                     canEdit={canEdit}
                     onSaved={reload}

@@ -72,6 +72,8 @@ export const PERMISSION_KEYS = [
     "approveTimesheet",
     "approveLeave",
     "manageHrSettings",
+    // ใบลดหนี้ / ใบเพิ่มหนี้ / ใบสั่งซื้อ (2026-10-18) — บันทึกเงินคืนลูกค้า/รับคืนจากผู้ขาย แยกสิทธิ์จากการออกเอกสาร (R-N8)
+    "refundCustomer",
 ];
 
 /** ตำแหน่งบิตของแต่ละสิทธิ์ เช่น BIT_INDEX.createUsers = 2 */

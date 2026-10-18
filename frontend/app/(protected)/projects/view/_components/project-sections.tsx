@@ -7,9 +7,11 @@ import {
     Copy,
     History,
     Link2,
+    ListChecks,
     Mail,
     MessageCircle,
     Pencil,
+    Plus,
     RefreshCw,
     Trash2,
     Users,
@@ -417,6 +419,52 @@ export function ProjectActivityCard({ activity }: { activity: ActivityEntry[] })
                     ))}
                 </ol>
             )}
+        </SectionCard>
+    );
+}
+
+// ─── การ์ด "งาน (Task)" ─────────────────────────────────────────────────────────────────────
+// หัวการ์ด + ปุ่มเพิ่มงาน + สลับมุมมองตาราง/บอร์ด · เนื้อหา (ตารางหรือบอร์ด) มาเป็น children
+
+export type TaskView = "table" | "board";
+
+export function TasksSectionCard({
+    canAddTask,
+    onAddTask,
+    taskView,
+    onTaskViewChange,
+    children,
+}: {
+    canAddTask: boolean;
+    onAddTask: () => void;
+    taskView: TaskView;
+    onTaskViewChange: (view: TaskView) => void;
+    children: React.ReactNode;
+}) {
+    return (
+        <SectionCard
+            icon={ListChecks}
+            title="งาน (Task)"
+            description="แสดงเฉพาะงานหลัก — กดชื่องานเพื่อดู subtask ปัญหา แชท และประวัติ · ป้ายแดง = ปัญหาของงานนั้น ป้ายฟ้า = ปัญหาใน subtask"
+            actions={
+                canAddTask && (
+                    <button type="button" onClick={onAddTask} className={buttonClass("primary", "md")}>
+                        <Plus size={16} />
+                        เพิ่ม Task
+                    </button>
+                )
+            }
+        >
+            <Segmented<TaskView>
+                label="มุมมองงาน"
+                value={taskView}
+                onChange={onTaskViewChange}
+                options={[
+                    { value: "table", label: "ตาราง" },
+                    { value: "board", label: "บอร์ด" },
+                ]}
+            />
+            {children}
         </SectionCard>
     );
 }

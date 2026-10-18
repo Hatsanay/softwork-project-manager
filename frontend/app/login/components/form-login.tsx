@@ -97,7 +97,7 @@ export default function LoginForm() {
                 </div>
                 {isCapsLockOn && (
                     <p className="text-xs font-medium text-amber-600">
-                        Caps Lock เปิดอยู่ — รหัสผ่านแยกตัวพิมพ์เล็ก/ใหญ่
+                        Caps Lock เปิดอยู่ · รหัสผ่านแยกตัวพิมพ์เล็ก/ใหญ่
                     </p>
                 )}
                 <p className="text-xs leading-relaxed text-gray-500">

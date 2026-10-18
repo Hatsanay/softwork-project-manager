@@ -1,6 +1,6 @@
 "use client";
 
-// แก้ร่างใบแจ้งหนี้: ใบจากงวดแก้ได้แค่ข้อมูลประกอบ (ยอดล็อก) · ใบสร้างเองแก้ได้ทุกช่อง
+// แก้ร่างใบแจ้งหนี้: ใบจากงวดแก้ได้แค่ข้อมูลประกอบ (ยอดล็อก) · ใบสร้างเองแก้ได้ทุกช่อง · ใบเพิ่มหนี้แก้ได้ทุกช่องยกเว้นหัวเอกสาร
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import PageHeader from "@/components/ui/page-header";
@@ -34,12 +34,17 @@ export default function EditInvoicePage() {
     const error = loadError ?? optionsError;
     const isDraft = detail?.invoice.inv_status === "draft";
     const isManual = detail?.invoice.inv_source === "manual";
+    const isDebitNote = detail?.invoice.inv_doc_type === "debit_note";
 
     return (
         <div className={`mx-auto grid grid-cols-1 gap-6 ${isManual ? "max-w-6xl" : "max-w-3xl"}`}>
             <PageHeader
                 eyebrow="ขาย · ใบแจ้งหนี้"
-                title={detail ? `แก้ร่าง: ${detail.invoice.inv_title}` : "แก้ร่างใบแจ้งหนี้"}
+                title={
+                    detail
+                        ? `แก้ร่าง${isDebitNote ? "ใบเพิ่มหนี้" : ""}: ${detail.invoice.inv_title}`
+                        : "แก้ร่างใบแจ้งหนี้"
+                }
                 description={
                     detail && !isManual
                         ? `ออกจากใบเสนอราคา ${detail.invoice.qt_number ?? ""} — ยอดล็อกตามใบเสนอราคา`

@@ -19,7 +19,6 @@ import ProjectFinanceCard from "./_components/project-finance-card";
 import TaskBoard from "./_components/board/task-board";
 import TaskLabelsChecklist, { type ChecklistItem } from "./_components/board/task-labels-checklist";
 import type { BoardLabel } from "./_components/board/board-types";
-import Segmented from "@/components/ui/segmented";
 import { toast } from "sonner";
 import { buttonClass } from "@/components/ui/button";
 import { inputClass } from "@/components/ui/form-field";
@@ -28,12 +27,14 @@ import Switch from "@/components/ui/switch";
 import StatusPill from "@/components/ui/status-pill";
 import StatusBanner from "@/components/ui/guidance/status-banner";
 import { PageSkeleton } from "@/components/ui/skeleton";
-import { ListChecks, Plus, UserPlus, Users } from "lucide-react";
+import { UserPlus, Users } from "lucide-react";
 import {
     AgileOverviewCard,
     ProjectActivityCard,
     ProjectHeader,
     ShareLinkCard,
+    TasksSectionCard,
+    type TaskView,
     TASK_STATUS,
 } from "./_components/project-sections";
 
@@ -85,7 +86,6 @@ type Task = {
 };
 
 // มุมมองงาน ตาราง/บอร์ด — จำไว้ต่อเครื่อง (K5) · อ่าน localStorage ไม่ได้ (โหมดส่วนตัว) = ตาราง
-type TaskView = "table" | "board";
 const TASK_VIEW_STORAGE_KEY = "softwork.projectTaskView";
 
 function readTaskView(): TaskView {
@@ -1394,31 +1394,15 @@ export default function ViewProjectPage() {
             )}
 
             {/* งาน */}
-            <SectionCard
-                icon={ListChecks}
-                title="งาน (Task)"
-                description="แสดงเฉพาะงานหลัก — กดชื่องานเพื่อดู subtask ปัญหา แชท และประวัติ · ป้ายแดง = ปัญหาของงานนั้น ป้ายฟ้า = ปัญหาใน subtask"
-                actions={
-                    canAddTask && (
-                        <button type="button" onClick={() => openCreateTask()} className={buttonClass("primary", "md")}>
-                            <Plus size={16} />
-                            เพิ่ม Task
-                        </button>
-                    )
-                }
+            <TasksSectionCard
+                canAddTask={canAddTask}
+                onAddTask={() => openCreateTask()}
+                taskView={taskView}
+                onTaskViewChange={(view) => {
+                    setTaskView(view);
+                    saveTaskView(view);
+                }}
             >
-                <Segmented<TaskView>
-                    label="มุมมองงาน"
-                    value={taskView}
-                    onChange={(view) => {
-                        setTaskView(view);
-                        saveTaskView(view);
-                    }}
-                    options={[
-                        { value: "table", label: "ตาราง" },
-                        { value: "board", label: "บอร์ด" },
-                    ]}
-                />
                 {taskView === "board" ? (
                     <TaskBoard
                         projectId={id as string}
@@ -1470,7 +1454,7 @@ export default function ViewProjectPage() {
                 />
                 </>
                 )}
-            </SectionCard>
+            </TasksSectionCard>
 
             {/* สมาชิก */}
             <SectionCard

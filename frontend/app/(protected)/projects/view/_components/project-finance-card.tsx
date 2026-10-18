@@ -54,12 +54,14 @@ type FinanceInvoice = {
 };
 
 type CurrencyTotals = Record<
-    "contract" | "billed" | "received" | "outstanding" | "overdue" | "unbilled" | "in_draft",
+    "contract" | "billed" | "credited" | "received" | "outstanding" | "overdue" | "unbilled" | "in_draft",
     string
 > & { currency: string };
 
 type ProjectProfit = {
     billed_before_vat_thb: string;
+    credited_before_vat_thb: string;
+    revenue_thb: string;
     cost_thb: string;
     expense_cost_thb: string;
     labor_cost_thb: string;
@@ -84,7 +86,7 @@ type ProjectProfit = {
 type ProjectFinance = {
     profit: ProjectProfit;
     currencies: CurrencyTotals[];
-    totals_thb: Record<"contract" | "billed" | "received" | "outstanding" | "overdue" | "unbilled", string>;
+    totals_thb: Record<"contract" | "billed" | "credited" | "received" | "outstanding" | "overdue" | "unbilled", string>;
     quotations: FinanceQuotation[];
     invoices: FinanceInvoice[];
     progress_ahead_threshold: number;
@@ -126,7 +128,19 @@ function ProfitSection({ profit }: { profit: ProjectProfit }) {
         <div className="grid gap-3 rounded-xl border border-gray-200 p-4">
             <h3 className="text-sm font-medium text-gray-900">ต้นทุนและกำไรขั้นต้น (บาท)</h3>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                <Stat label="ออกบิลแล้ว (ก่อน VAT)" value={profit.billed_before_vat_thb} />
+                {isZero(profit.credited_before_vat_thb) ? (
+                    <Stat label="ออกบิลแล้ว (ก่อน VAT)" value={profit.billed_before_vat_thb} />
+                ) : (
+                    // มีใบลดหนี้: รายได้ = ออกบิล − ลดหนี้ (แสดงสูตรให้เห็น ไม่หักเงียบ — กติกาเงิน 3.8)
+                    <div className="grid content-start gap-0.5 rounded-xl bg-gray-50 p-3">
+                        <span className="text-xs text-gray-500">รายได้หลังลดหนี้ (ก่อน VAT)</span>
+                        <span className="text-base font-medium tabular-nums">{formatAmount(profit.revenue_thb)}</span>
+                        <span className="text-xs text-gray-500 tabular-nums">
+                            ออกบิล {formatAmount(profit.billed_before_vat_thb)} − ลดหนี้{" "}
+                            {formatAmount(profit.credited_before_vat_thb)}
+                        </span>
+                    </div>
+                )}
                 <Stat label="ต้นทุน" value={profit.cost_thb} />
                 <div className="col-span-2 grid content-start gap-0.5 rounded-xl bg-gray-50 p-3 sm:col-span-1">
                     <span className="text-xs text-gray-500">กำไรขั้นต้น</span>
@@ -259,6 +273,9 @@ export default function ProjectFinanceCard({ projectId }: { projectId: string })
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
                         <Stat label="มูลค่าตามสัญญา" value={finance.totals_thb.contract} />
                         <Stat label="ออกบิลแล้ว" value={finance.totals_thb.billed} />
+                        {!isZero(finance.totals_thb.credited) && (
+                            <Stat label="ลดหนี้" value={finance.totals_thb.credited} />
+                        )}
                         <Stat label="รับแล้ว" value={finance.totals_thb.received} tone="text-green-600" />
                         <Stat
                             label="ค้างรับ"

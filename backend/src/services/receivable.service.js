@@ -7,6 +7,7 @@
 const { todayBangkok } = require("../utils/bangkok-time");
 const { parseHundredths } = require("../shared/money.mjs");
 const { toDecimalText } = require("../shared/quotation-totals.mjs");
+const invoiceService = require("./invoice.service");
 
 // ช่วงอายุ (จำนวนวันที่เกินกำหนด รวมขอบทั้งสองข้าง · null = ไม่จำกัด) — key ใช้ทั้ง API และหน้าเว็บ · ลำดับ = ลำดับคอลัมน์
 const AGING_BUCKETS = [
@@ -39,12 +40,12 @@ function bucketOf(daysOverdue) {
 const OUTSTANDING_INVOICES = `
     SELECT i.inv_id, i.inv_number, i.inv_title, i.inv_client_id, i.inv_currency, i.inv_total, i.inv_paid_amount,
            DATE_FORMAT(i.inv_issue_date, '%Y-%m-%d') AS inv_issue_date, DATE_FORMAT(i.inv_due_date, '%Y-%m-%d') AS inv_due_date,
-           i.inv_total - i.inv_paid_amount AS outstanding_amount,
-           ROUND((i.inv_total - i.inv_paid_amount) * i.inv_total_thb / i.inv_total, 2) AS outstanding_thb,
+           ${invoiceService.outstandingSql("i")} AS outstanding_amount,
+           ${invoiceService.outstandingThbSql("i")} AS outstanding_thb,
            DATEDIFF(?, i.inv_due_date) AS days_overdue, cu.cur_decimals
     FROM tb_invoices i
     JOIN tb_currencies cu ON cu.cur_code = i.inv_currency
-    WHERE i.inv_status = 'issued' AND i.inv_paid_amount < i.inv_total AND i.inv_total > 0`;
+    WHERE i.inv_status = 'issued' AND ${invoiceService.outstandingSql("i")} > 0`;
 
 /**
  * สรุปรายลูกค้า (ยอดบาทแยกช่วงอายุ) + รวมทุกลูกค้า

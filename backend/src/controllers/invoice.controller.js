@@ -6,6 +6,7 @@ const { withTransaction } = require("../utils/with-transaction");
 const {
     invoiceFromQuotationSchema,
     invoiceManualDraftSchema,
+    invoiceDebitNoteDraftSchema,
     invoiceQuotationDraftSchema,
     invoiceIssueSchema,
     invoiceActionSchema,
@@ -50,28 +51,37 @@ async function billableMilestones(req, res, next) {
     }
 }
 
-// มี quotation_id = ร่างจากงวดของใบเสนอราคา · ไม่มี = ใบสร้างเอง
+// มี quotation_id = ร่างจากงวดของใบเสนอราคา · มี inv_reference_invoice_id = ใบเพิ่มหนี้ (ขั้น N-2) · ไม่มีทั้งคู่ = ใบสร้างเอง
 async function create(req, res, next) {
     try {
-        const isFromQuotation = Boolean(req.body?.quotation_id);
-        const created = isFromQuotation
-            ? await withTransaction((conn) =>
-                  invoiceService.createFromQuotation(conn, validate(invoiceFromQuotationSchema, req.body), req.user),
-              )
-            : await withTransaction((conn) =>
-                  invoiceService.createManual(conn, validate(invoiceManualDraftSchema, req.body), req.user),
-              );
+        let created;
+        if (req.body?.quotation_id) {
+            const input = validate(invoiceFromQuotationSchema, req.body);
+            created = await withTransaction((conn) => invoiceService.createFromQuotation(conn, input, req.user));
+        } else if (req.body?.inv_reference_invoice_id) {
+            const draft = validate(invoiceDebitNoteDraftSchema, req.body);
+            created = await withTransaction((conn) => invoiceService.createDebitNote(conn, draft, req.user));
+        } else {
+            const draft = validate(invoiceManualDraftSchema, req.body);
+            created = await withTransaction((conn) => invoiceService.createManual(conn, draft, req.user));
+        }
         res.status(201).json(created);
     } catch (err) {
         next(err);
     }
 }
 
-// ใบจากงวดแก้ได้แค่ข้อมูลประกอบ (ยอดล็อกตามใบเสนอราคา) — เลือกชุดตรวจตามแหล่งของใบ
+// ใบจากงวดแก้ได้แค่ข้อมูลประกอบ (ยอดล็อกตามใบเสนอราคา) · ใบเพิ่มหนี้แก้หัวเอกสารไม่ได้ — เลือกชุดตรวจตามแหล่งของใบ
+const DRAFT_SCHEMAS = {
+    quotation: invoiceQuotationDraftSchema,
+    manual: invoiceManualDraftSchema,
+    debit_note: invoiceDebitNoteDraftSchema,
+};
+
 async function update(req, res, next) {
     try {
         const source = await invoiceService.findSource(pool, req.params.id);
-        const schema = source === "manual" ? invoiceManualDraftSchema : invoiceQuotationDraftSchema;
+        const schema = DRAFT_SCHEMAS[source];
         const draft = validate(schema, req.body);
         res.json(await withTransaction((conn) => invoiceService.updateDraft(conn, req.params.id, draft)));
     } catch (err) {

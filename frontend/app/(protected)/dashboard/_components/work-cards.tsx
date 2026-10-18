@@ -1,14 +1,15 @@
 "use client";
 
+// การ์ดงานของแดชบอร์ด — ส่วนแสดงผลล้วน (เดโมหน้า login ใช้ตัวเดียวกัน) · เปลี่ยนหน้าผ่าน onNavigate ที่ page.tsx ส่งมา
+// ห้ามเรียก API / router / toast ในไฟล์นี้ (scripts/check-demo-imports.mjs)
+
 // การ์ดรายการของแดชบอร์ด: งานของฉัน (+ วงแหวนสถานะ) · ปัญหาที่เปิดอยู่ · แชทที่ยังไม่อ่าน · โปรเจกต์ที่กำลังทำ
-import { useRouter } from "next/navigation";
 import { FolderKanban, ListTodo, MessageCircle, TriangleAlert } from "lucide-react";
 import ProgressBar from "@/components/ui/ProgressBar";
 import Segmented from "@/components/ui/segmented";
 import StatusPill from "@/components/ui/status-pill";
 import Switch from "@/components/ui/switch";
 import formatDate, { formatDateOnly } from "@/app/function";
-import { apiFetch } from "@/lib/api";
 import { PROJECT_STATUS, TASK_STATUS, isOverdue, projectLink, taskLink } from "../_labels";
 import type { OpenIssue, SummaryProject, SummaryTask, TaskStatus, UnreadChat } from "../_types";
 import DashboardCard, { EmptyLine, ListRowButton, ListRows } from "./dashboard-card";
@@ -74,8 +75,7 @@ function StatusRing({ tasks }: { tasks: SummaryTask[] }) {
     );
 }
 
-export function MyTasksCard({ tasks }: { tasks: SummaryTask[] }) {
-    const router = useRouter();
+export function MyTasksCard({ tasks, onNavigate }: { tasks: SummaryTask[]; onNavigate: (url: string) => void }) {
     return (
         <DashboardCard
             icon={ListTodo}
@@ -93,7 +93,7 @@ export function MyTasksCard({ tasks }: { tasks: SummaryTask[] }) {
                             return (
                                 <ListRowButton
                                     key={task.task_id}
-                                    onClick={() => router.push(taskLink(task.project_id, task.task_id))}
+                                    onClick={() => onNavigate(taskLink(task.project_id, task.task_id))}
                                 >
                                     <span className="flex min-w-0 items-start gap-2.5">
                                         <span
@@ -138,22 +138,23 @@ type OpenIssuesCardProps = {
     onIssueTabChange: (tab: "task" | "subtask") => void;
     ownOnly: boolean;
     onOwnOnlyChange: (ownOnly: boolean) => void;
+    // เปิดปัญหา (หน้าแดชบอร์ด: ทำเครื่องหมายว่าอ่านคำตอบแล้ว + ไปที่งาน)
+    onOpenIssue: (issue: OpenIssue) => void;
 };
 
-export function OpenIssuesCard({ issues, issueTab, onIssueTabChange, ownOnly, onOwnOnlyChange }: OpenIssuesCardProps) {
-    const router = useRouter();
+export function OpenIssuesCard({
+    issues,
+    issueTab,
+    onIssueTabChange,
+    ownOnly,
+    onOwnOnlyChange,
+    onOpenIssue,
+}: OpenIssuesCardProps) {
     const countOf = (tab: "task" | "subtask") =>
         issues.filter((issue) => (tab === "subtask") === issue.is_subtask && isVisibleIssue(issue, ownOnly)).length;
     const visible = issues.filter(
         (issue) => (issueTab === "subtask") === issue.is_subtask && isVisibleIssue(issue, ownOnly),
     );
-
-    // เปิดปัญหาที่มีการตอบกลับใหม่ = ถือว่าอ่านแล้ว (ยิง GET replies เพื่อ mark-read เหมือนตอนเปิดเธรดในหน้าโปรเจกต์)
-    // ไม่ต้องรอผล — ปัญหาหายจากรายการตอนโหลดแดชบอร์ดครั้งถัดไป (ถ้าไม่ได้โผล่มาด้วยเหตุผลอื่น)
-    function openIssue(issue: OpenIssue) {
-        if (issue.is_unread_reply) apiFetch(`/projects/${issue.project_id}/issues/${issue.issue_id}/replies`);
-        router.push(taskLink(issue.project_id, issue.task_id));
-    }
 
     return (
         <DashboardCard
@@ -187,7 +188,7 @@ export function OpenIssuesCard({ issues, issueTab, onIssueTabChange, ownOnly, on
                     {visible.map((issue) => (
                         <ListRowButton
                             key={issue.issue_id}
-                            onClick={() => openIssue(issue)}
+                            onClick={() => onOpenIssue(issue)}
                             highlight={issue.is_tagged || issue.is_unread_reply}
                         >
                             <span className="grid min-w-0 gap-0.5">
@@ -214,8 +215,7 @@ export function OpenIssuesCard({ issues, issueTab, onIssueTabChange, ownOnly, on
 
 // ─── แชทที่ยังไม่อ่าน ──────────────────────────────────────────────────────────────────────
 
-export function UnreadChatsCard({ chats }: { chats: UnreadChat[] }) {
-    const router = useRouter();
+export function UnreadChatsCard({ chats, onNavigate }: { chats: UnreadChat[]; onNavigate: (url: string) => void }) {
     return (
         <DashboardCard
             icon={MessageCircle}
@@ -230,7 +230,7 @@ export function UnreadChatsCard({ chats }: { chats: UnreadChat[] }) {
                         <ListRowButton
                             key={`${chat.chat_type}-${chat.task_id ?? chat.project_id}`}
                             onClick={() =>
-                                router.push(
+                                onNavigate(
                                     chat.chat_type === "task"
                                         ? `${taskLink(chat.project_id, chat.task_id ?? "")}&openChat=1`
                                         : `${projectLink(chat.project_id)}&openProjectChat=1`,
@@ -268,8 +268,13 @@ export function UnreadChatsCard({ chats }: { chats: UnreadChat[] }) {
 
 // ─── โปรเจกต์ที่กำลังทำ ─────────────────────────────────────────────────────────────────────
 
-export function ActiveProjectsCard({ projects }: { projects: SummaryProject[] }) {
-    const router = useRouter();
+export function ActiveProjectsCard({
+    projects,
+    onNavigate,
+}: {
+    projects: SummaryProject[];
+    onNavigate: (url: string) => void;
+}) {
     return (
         <DashboardCard
             icon={FolderKanban}
@@ -283,7 +288,7 @@ export function ActiveProjectsCard({ projects }: { projects: SummaryProject[] })
                     {projects.map((project) => (
                         <ListRowButton
                             key={project.project_id}
-                            onClick={() => router.push(projectLink(project.project_id))}
+                            onClick={() => onNavigate(projectLink(project.project_id))}
                         >
                             <span className="grid min-w-0 flex-1 gap-1.5">
                                 <span className="flex items-center justify-between gap-3">

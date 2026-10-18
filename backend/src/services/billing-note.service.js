@@ -67,10 +67,13 @@ async function findForUpdate(conn, billingNoteId) {
 
 // ─── ใบแจ้งหนี้ที่รวมได้ ─────────────────────────────────────────────────────────────────────────
 
-/** ยอดที่ยังค้าง = ยอดรวม − รับแล้ว (ช่วง 1C รับเงินบางส่วนได้ ใบวางบิลเรียกเก็บเฉพาะส่วนที่เหลือ) */
+/** ยอดที่ยังค้าง (หลังลดหนี้ − รับสุทธิ — สูตรกลาง R-N2) · ใบวางบิลเรียกเก็บเฉพาะส่วนที่เหลือ */
 function outstandingOf(invoice) {
-    return parseHundredths(invoice.inv_total, "ยอดรวม") - parseHundredths(invoice.inv_paid_amount, "ยอดรับแล้ว");
+    return invoiceService.balanceOf(invoice).outstanding;
 }
+
+// คอลัมน์ที่สูตรยอดค้างต้องใช้ (ขั้น N-1)
+const BALANCE_COLUMNS = "i.inv_credited_amount, i.inv_credited_wht, i.inv_refunded_amount";
 
 function invoiceLabel(invoice) {
     return invoice.inv_number ?? "ใบแจ้งหนี้ร่าง";
@@ -86,7 +89,8 @@ function invoiceLabel(invoice) {
  */
 async function lockBillableInvoices(conn, invoiceIds, clientId, excludeBillingNoteId) {
     const [rows] = await conn.query(
-        `SELECT i.inv_id, i.inv_number, i.inv_status, i.inv_client_id, i.inv_currency, i.inv_total, i.inv_paid_amount
+        `SELECT i.inv_id, i.inv_number, i.inv_status, i.inv_client_id, i.inv_currency, i.inv_total, i.inv_paid_amount,
+                ${BALANCE_COLUMNS}
          FROM tb_invoices i WHERE i.inv_id IN (?) ORDER BY i.inv_id FOR UPDATE`,
         [invoiceIds],
     );
@@ -355,7 +359,7 @@ async function listBillableInvoices(conn, { clientId, billingNoteId } = {}) {
     const today = todayBangkok();
     const conditions = [
         "i.inv_status = 'issued'",
-        "i.inv_paid_amount < i.inv_total",
+        `${invoiceService.outstandingSql("i")} > 0`,
         `NOT EXISTS (
             SELECT 1 FROM tb_billing_note_invoices bi JOIN tb_billing_notes b ON b.bn_id = bi.bni_billing_note_id
             WHERE bi.bni_invoice_id = i.inv_id AND b.bn_status <> 'cancelled' AND b.bn_id <> ?
@@ -368,7 +372,7 @@ async function listBillableInvoices(conn, { clientId, billingNoteId } = {}) {
     }
     const [rows] = await conn.query(
         `SELECT i.inv_id, i.inv_number, i.inv_title, i.inv_status, i.inv_client_id, i.inv_branch_id, i.inv_language, i.inv_currency,
-                i.inv_total, i.inv_paid_amount, i.inv_wht_amount, ${INVOICE_DATE_COLUMNS},
+                i.inv_total, i.inv_paid_amount, i.inv_wht_amount, ${BALANCE_COLUMNS}, ${INVOICE_DATE_COLUMNS},
                 c.client_name, c.client_company, c.client_status
          FROM tb_invoices i JOIN tb_clients c ON c.client_id = i.inv_client_id
          WHERE ${conditions.join(" AND ")}
@@ -470,7 +474,7 @@ async function getBillingNoteDetail(conn, billingNoteId, actor) {
 
     const [invoiceRows] = await conn.query(
         `SELECT bi.bni_order, bi.bni_amount, i.inv_id, i.inv_number, i.inv_title, i.inv_status, i.inv_client_id, i.inv_currency,
-                i.inv_total, i.inv_paid_amount, i.inv_wht_amount, ${INVOICE_DATE_COLUMNS}
+                i.inv_total, i.inv_paid_amount, i.inv_wht_amount, ${BALANCE_COLUMNS}, ${INVOICE_DATE_COLUMNS}
          FROM tb_billing_note_invoices bi JOIN tb_invoices i ON i.inv_id = bi.bni_invoice_id
          WHERE bi.bni_billing_note_id = ?
          ORDER BY bi.bni_order`,
@@ -483,6 +487,8 @@ async function getBillingNoteDetail(conn, billingNoteId, actor) {
         return {
             ...row,
             bni_amount: toDecimalText(amount),
+            // ยอดตามใบแจ้งหนี้หลังลดหนี้ (หน้าพิมพ์แสดงเมื่อวางบิลไม่เต็มใบ)
+            effective_total: toDecimalText(invoiceService.balanceOf(row).effectiveTotal),
             ...dueOf(row, today),
             problem: isDraft ? describeInvoiceProblem(row, note, otherNotes.get(row.inv_id)) : null,
         };
@@ -490,11 +496,14 @@ async function getBillingNoteDetail(conn, billingNoteId, actor) {
     const total = invoices.reduce((sum, row) => sum + parseHundredths(row.bni_amount, "ยอด"), 0n);
     // หัก ณ ที่จ่าย (ประมาณ) ของยอดที่วางบิล = ยอดหักของใบแจ้งหนี้ × ยอดวางบิล ÷ ยอดใบแจ้งหนี้
     // (ใบที่รับเงินบางส่วนก่อนวางบิล หักเฉพาะส่วนที่เหลือ — ตรงกับ "ยอดชำระสุทธิ" ในหน้าพิมพ์ใบแจ้งหนี้)
+    // ขั้น N-1: ฐานคือยอดหลังลดหนี้ และหัก ณ ที่จ่ายหลังลดหนี้
     const withholdingTotal = invoices.reduce((sum, row) => {
-        const invoiceTotal = parseHundredths(row.inv_total, "ยอดใบแจ้งหนี้");
+        const invoiceTotal = invoiceService.balanceOf(row).effectiveTotal;
         if (invoiceTotal <= 0n) return sum;
         const billed = parseHundredths(row.bni_amount, "ยอดวางบิล");
-        return sum + divideRoundHalfUp(parseHundredths(row.inv_wht_amount, "หัก ณ ที่จ่าย") * billed, invoiceTotal);
+        const withholding =
+            parseHundredths(row.inv_wht_amount, "หัก ณ ที่จ่าย") - parseHundredths(row.inv_credited_wht, "หักที่ลด");
+        return sum + divideRoundHalfUp(withholding * billed, invoiceTotal);
     }, 0n);
     const currency = await quotationService.findCurrency(conn, note.bn_currency);
 
