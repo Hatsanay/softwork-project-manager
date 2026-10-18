@@ -6,7 +6,9 @@
 // /V1/employees/form-options ต้องมาก่อน /V1/employees/:id
 const { requireAuth } = require("../middlewares/auth.middleware");
 const { requirePermission } = require("../middlewares/permission.middleware");
+const { uploadImage } = require("../middlewares/upload.middleware");
 const peopleController = require("../controllers/people.controller");
+const employeeCardController = require("../controllers/employee-card.controller");
 
 /**
  * @param {import("express").Router} router
@@ -23,6 +25,32 @@ function registerPeopleRoutes(router) {
     router.delete("/V1/employees/:id", requireAuth, canManageEmployees, peopleController.deleteEmployee);
     router.post("/V1/employees/:id/terminate", requireAuth, canManageEmployees, peopleController.terminateEmployee);
     router.post("/V1/employees/:id/reinstate", requireAuth, canManageEmployees, peopleController.reinstateEmployee);
+
+    // ย้ายแผนก/สาขา (รหัสใหม่ + บัตรใหม่) · บัตรพนักงาน · รูปสำหรับบัตร (2026-10-18)
+    router.post("/V1/employees/:id/transfer", requireAuth, canManageEmployees, employeeCardController.transfer);
+    router.post("/V1/employees/:id/login-closure", requireAuth, canManageEmployees, employeeCardController.setLoginClosure);
+    router.post("/V1/employees/:id/cards", requireAuth, canManageEmployees, employeeCardController.issueCard);
+    router.post(
+        "/V1/employees/:id/cards/:cardId/printed",
+        requireAuth,
+        canManageEmployees,
+        employeeCardController.markPrinted,
+    );
+    router.post(
+        "/V1/employees/:id/cards/:cardId/returned",
+        requireAuth,
+        canManageEmployees,
+        employeeCardController.markReturned,
+    );
+    router.post(
+        "/V1/employees/:id/photo",
+        requireAuth,
+        canManageEmployees,
+        uploadImage.single("photo"),
+        employeeCardController.uploadPhoto,
+    );
+    router.delete("/V1/employees/:id/photo", requireAuth, canManageEmployees, employeeCardController.removePhoto);
+    router.get("/V1/employee-cards", requireAuth, canManageEmployees, employeeCardController.cardQueue);
 
     router.post("/V1/employees/:id/compensations", requireAuth, canManageEmployees, peopleController.addCompensation);
     router.put(

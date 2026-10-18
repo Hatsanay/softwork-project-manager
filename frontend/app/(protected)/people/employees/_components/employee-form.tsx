@@ -3,6 +3,7 @@
 // ฟอร์มพนักงาน — ใช้ทั้งหน้าเพิ่มและหน้าแก้ไข (2026-10-17 เฟส 4 ขั้น 4-1)
 // ตรวจด้วย schema ชุดเดียวกับ backend ก่อนส่ง · error จากเซิร์ฟเวอร์แสดงใต้ช่องเดียวกัน
 // เงินเดือนเริ่มงานกรอกเฉพาะตอนเพิ่ม — แก้ภายหลังผ่าน "ค่าจ้างตามวันที่มีผล" ในหน้าพนักงาน (ประวัติไม่หาย)
+// รหัสพนักงานระบบออกให้จากแผนก + วันเริ่มงาน (2026-10-18) · สาขามาจากแผนก · เข้ารอบเงินเดือนแล้วสองช่องนี้ล็อก
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -17,13 +18,13 @@ import { buttonClass } from "@/components/ui/button";
 import { apiFetch, type ApiError } from "@/lib/api";
 import { toFieldErrors, type FieldErrors } from "@/lib/form-errors";
 import { employeeCreateSchema, employeeSchema } from "@/lib/shared/schemas/people.mjs";
+import { employeeCodePrefix } from "@/lib/shared/employee-code.mjs";
 import { EMPLOYEE_MESSAGES } from "../../_messages";
 import type { Employee, EmployeeFormOptions } from "../../_types";
 
 const TITLES = ["นาย", "นาง", "นางสาว"];
 
 const EMPTY_FORM = {
-    emp_code: "",
     emp_user_id: "",
     emp_title: "นาย",
     emp_first_name_th: "",
@@ -38,7 +39,6 @@ const EMPTY_FORM = {
     emp_email: "",
     emp_department_id: "",
     emp_position: "",
-    emp_branch_id: "",
     emp_hire_date: "",
     emp_bank_name: "",
     emp_bank_account_no: "",
@@ -50,11 +50,11 @@ const EMPTY_FORM = {
 };
 
 type EmployeeFormValues = typeof EMPTY_FORM;
+type SaveResult = { emp_id: string; emp_code: string; code_changed?: boolean };
 type TextField = Exclude<keyof EmployeeFormValues, "emp_sso_enrolled">;
 
 function toForm(employee: Employee): EmployeeFormValues {
     return {
-        emp_code: employee.emp_code,
         emp_user_id: employee.emp_user_id ?? "",
         emp_title: employee.emp_title ?? "",
         emp_first_name_th: employee.emp_first_name_th,
@@ -69,7 +69,6 @@ function toForm(employee: Employee): EmployeeFormValues {
         emp_email: employee.emp_email ?? "",
         emp_department_id: employee.emp_department_id ?? "",
         emp_position: employee.emp_position ?? "",
-        emp_branch_id: employee.emp_branch_id ?? "",
         emp_hire_date: employee.emp_hire_date,
         emp_bank_name: employee.emp_bank_name ?? "",
         emp_bank_account_no: employee.emp_bank_account_no ?? "",
@@ -116,9 +115,16 @@ export default function EmployeeForm({ employee }: { employee?: Employee }) {
     const departmentChoices = options.departments.filter(
         (department) => department.dep_status === "active" || department.dep_id === employee?.emp_department_id,
     );
-    const branchChoices = options.branches.filter(
-        (branch) => branch.branch_status === "active" || branch.branch_id === employee?.emp_branch_id,
-    );
+    const selectedDepartment = options.departments.find((department) => department.dep_id === form.emp_department_id);
+    // เข้ารอบเงินเดือนแล้ว: วันเริ่มงาน/แผนกล็อก (backend ตรวจซ้ำ)
+    const lockedPeriod = employee?.code_locked_by_payroll ?? null;
+    const isCodeInputChanged =
+        isEditing &&
+        (form.emp_department_id !== (employee.emp_department_id ?? "") || form.emp_hire_date !== employee.emp_hire_date);
+    const codePrefix =
+        selectedDepartment && /^d{4}-d{2}-d{2}$/.test(form.emp_hire_date)
+            ? employeeCodePrefix(selectedDepartment.dep_code, form.emp_hire_date)
+            : null;
     // บัญชีที่ผูกกับพนักงานคนอื่นที่ยังทำงานอยู่ เลือกไม่ได้ (backend ตรวจซ้ำ)
     const userChoices = options.users.filter(
         (user) =>
@@ -146,15 +152,17 @@ export default function EmployeeForm({ employee }: { employee?: Employee }) {
         setFieldErrors({});
         setIsSaving(true);
         const { data, error } = isEditing
-            ? await apiFetch<{ emp_id: string }>(`/employees/${employee.emp_id}`, { method: "PUT", body: checked.data })
-            : await apiFetch<{ emp_id: string }>("/employees", { method: "POST", body: checked.data });
+            ? await apiFetch<SaveResult>(`/employees/${employee.emp_id}`, { method: "PUT", body: checked.data })
+            : await apiFetch<SaveResult>("/employees", { method: "POST", body: checked.data });
         setIsSaving(false);
         if (error) {
             setFieldErrors(error.fields);
             setSaveError(error);
             return;
         }
-        toast.success(isEditing ? "บันทึกข้อมูลพนักงานแล้ว" : "เพิ่มพนักงานแล้ว");
+        if (!isEditing) toast.success(`เพิ่มพนักงานแล้ว · รหัส ${data?.emp_code}`);
+        else if (data?.code_changed) toast.success(`บันทึกแล้ว · รหัสใหม่ ${data.emp_code} · บัตรใหม่รอพิมพ์`);
+        else toast.success("บันทึกข้อมูลพนักงานแล้ว");
         router.push(`/people/employees/view?id=${data?.emp_id ?? employee?.emp_id}`);
     }
 
@@ -180,15 +188,11 @@ export default function EmployeeForm({ employee }: { employee?: Employee }) {
             <SectionCard icon={UserRound} title="ข้อมูลส่วนตัว" description={EMPLOYEE_MESSAGES.notUser}>
                 <div className="grid gap-4 sm:grid-cols-2">
                     <FormField
-                        label="รหัสพนักงาน"
-                        htmlFor="emp_code"
-                        required
-                        hint={EMPLOYEE_MESSAGES.code}
-                        error={fieldErrors.emp_code}
+                        label="คำนำหน้า"
+                        htmlFor="emp_title"
+                        error={fieldErrors.emp_title}
+                        className="sm:col-span-2 sm:max-w-xs"
                     >
-                        {textInput("emp_code", { placeholder: "เช่น E001" })}
-                    </FormField>
-                    <FormField label="คำนำหน้า" htmlFor="emp_title" error={fieldErrors.emp_title}>
                         <select
                             id="emp_title"
                             value={form.emp_title}
@@ -233,7 +237,12 @@ export default function EmployeeForm({ employee }: { employee?: Employee }) {
                     <FormField label="เบอร์โทรศัพท์" htmlFor="emp_phone" error={fieldErrors.emp_phone}>
                         {textInput("emp_phone", { type: "tel", inputMode: "tel" })}
                     </FormField>
-                    <FormField label="อีเมล" htmlFor="emp_email" error={fieldErrors.emp_email}>
+                    <FormField
+                        label="อีเมลติดต่อ"
+                        htmlFor="emp_email"
+                        hint={EMPLOYEE_MESSAGES.contactEmail}
+                        error={fieldErrors.emp_email}
+                    >
                         {textInput("emp_email", { type: "email", inputMode: "email" })}
                     </FormField>
                     <FormField
@@ -255,7 +264,48 @@ export default function EmployeeForm({ employee }: { employee?: Employee }) {
             </SectionCard>
 
             <SectionCard icon={BriefcaseBusiness} title="การทำงาน">
+                {lockedPeriod && (
+                    <StatusBanner tone="info" title="รหัสพนักงานล็อกแล้ว">
+                        {EMPLOYEE_MESSAGES.codeLocked(lockedPeriod)}
+                    </StatusBanner>
+                )}
+                {!lockedPeriod && isCodeInputChanged && (
+                    <StatusBanner tone="warn" title="รหัสพนักงานจะเปลี่ยน">
+                        {EMPLOYEE_MESSAGES.codeCorrection}
+                    </StatusBanner>
+                )}
+                <EmployeeCodePreview
+                    currentCode={employee?.emp_code ?? null}
+                    prefix={codePrefix}
+                    isChanging={!isEditing || isCodeInputChanged}
+                />
                 <div className="grid gap-4 sm:grid-cols-2">
+                    <FormField
+                        label="แผนก"
+                        htmlFor="emp_department_id"
+                        required
+                        hint={
+                            selectedDepartment
+                                ? `สาขา ${selectedDepartment.branch_code} · ${selectedDepartment.branch_name_th}`
+                                : EMPLOYEE_MESSAGES.department
+                        }
+                        error={fieldErrors.emp_department_id}
+                    >
+                        <select
+                            id="emp_department_id"
+                            value={form.emp_department_id}
+                            disabled={Boolean(lockedPeriod)}
+                            onChange={(event) => updateField("emp_department_id", event.target.value)}
+                            className={inputClass(Boolean(fieldErrors.emp_department_id))}
+                        >
+                            <option value="">เลือกแผนก</option>
+                            {departmentChoices.map((department) => (
+                                <option key={department.dep_id} value={department.dep_id}>
+                                    {department.dep_code} · {department.dep_name} ({department.branch_name_th})
+                                </option>
+                            ))}
+                        </select>
+                    </FormField>
                     <FormField
                         label="วันเริ่มงาน"
                         htmlFor="emp_hire_date"
@@ -263,7 +313,14 @@ export default function EmployeeForm({ employee }: { employee?: Employee }) {
                         hint={EMPLOYEE_MESSAGES.hireDate}
                         error={fieldErrors.emp_hire_date}
                     >
-                        {textInput("emp_hire_date", { type: "date" })}
+                        <input
+                            id="emp_hire_date"
+                            type="date"
+                            value={form.emp_hire_date}
+                            disabled={Boolean(lockedPeriod)}
+                            onChange={(event) => updateField("emp_hire_date", event.target.value)}
+                            className={inputClass(Boolean(fieldErrors.emp_hire_date))}
+                        />
                     </FormField>
                     {!isEditing && (
                         <FormField
@@ -276,21 +333,6 @@ export default function EmployeeForm({ employee }: { employee?: Employee }) {
                             {textInput("ecm_base_salary", { inputMode: "decimal", placeholder: "เช่น 30000" })}
                         </FormField>
                     )}
-                    <FormField label="แผนก" htmlFor="emp_department_id" error={fieldErrors.emp_department_id}>
-                        <select
-                            id="emp_department_id"
-                            value={form.emp_department_id}
-                            onChange={(event) => updateField("emp_department_id", event.target.value)}
-                            className={inputClass(Boolean(fieldErrors.emp_department_id))}
-                        >
-                            <option value="">— ไม่ระบุ —</option>
-                            {departmentChoices.map((department) => (
-                                <option key={department.dep_id} value={department.dep_id}>
-                                    {department.dep_name}
-                                </option>
-                            ))}
-                        </select>
-                    </FormField>
                     <FormField
                         label="ตำแหน่งงาน"
                         htmlFor="emp_position"
@@ -298,21 +340,6 @@ export default function EmployeeForm({ employee }: { employee?: Employee }) {
                         error={fieldErrors.emp_position}
                     >
                         {textInput("emp_position", { placeholder: "เช่น นักพัฒนาซอฟต์แวร์" })}
-                    </FormField>
-                    <FormField label="สาขา" htmlFor="emp_branch_id" error={fieldErrors.emp_branch_id}>
-                        <select
-                            id="emp_branch_id"
-                            value={form.emp_branch_id}
-                            onChange={(event) => updateField("emp_branch_id", event.target.value)}
-                            className={inputClass(Boolean(fieldErrors.emp_branch_id))}
-                        >
-                            <option value="">— ไม่ระบุ —</option>
-                            {branchChoices.map((branch) => (
-                                <option key={branch.branch_id} value={branch.branch_id}>
-                                    {branch.branch_code} · {branch.branch_name_th}
-                                </option>
-                            ))}
-                        </select>
                     </FormField>
                     <FormField
                         label="บัญชีผู้ใช้ในระบบ"
@@ -418,5 +445,39 @@ export default function EmployeeForm({ employee }: { employee?: Employee }) {
                 </button>
             </div>
         </form>
+    );
+}
+
+// แถบรหัสพนักงาน: รหัสปัจจุบัน หรือรหัสที่จะได้ (4 หลักท้ายระบบออกตอนบันทึก)
+function EmployeeCodePreview({
+    currentCode,
+    prefix,
+    isChanging,
+}: {
+    currentCode: string | null;
+    prefix: string | null;
+    isChanging: boolean;
+}) {
+    if (!isChanging && currentCode) {
+        return (
+            <div className="grid gap-1 rounded-xl bg-gray-50 p-4">
+                <span className="text-xs text-gray-500">รหัสพนักงาน</span>
+                <span className="text-lg font-medium tracking-wider break-all text-gray-900 tabular-nums">{currentCode}</span>
+                <span className="text-xs text-gray-500">{EMPLOYEE_MESSAGES.code}</span>
+            </div>
+        );
+    }
+    return (
+        <div className="grid gap-1 rounded-xl bg-gray-50 p-4">
+            <span className="text-xs text-gray-500">{currentCode ? "รหัสใหม่ที่จะได้" : "รหัสพนักงานที่จะได้"}</span>
+            <span className="text-lg font-medium tracking-wider break-all text-gray-900 tabular-nums">
+                {prefix ?? "-"}
+                {prefix && <span className="text-gray-400">XXXX</span>}
+            </span>
+            {currentCode && <span className="text-xs text-gray-500 tabular-nums">รหัสเดิม {currentCode} เก็บในประวัติ</span>}
+            <span className="text-xs text-gray-500">
+                {prefix ? EMPLOYEE_MESSAGES.code : "เลือกแผนกและวันเริ่มงานก่อน ระบบจะแสดงรหัสที่จะได้"}
+            </span>
+        </div>
     );
 }

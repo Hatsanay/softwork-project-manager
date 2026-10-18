@@ -4,6 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const bcrypt = require("bcryptjs");
 const { startTestServer } = require("./support/test-server");
+const { createTestDepartment } = require("./support/test-department");
 const { PERMISSION_KEYS } = require("../src/shared/permissions.mjs");
 const { todayBangkok } = require("../src/utils/bangkok-time");
 const {
@@ -25,6 +26,9 @@ const DEVELOPER_POSITION_ID = "POS209901010000002";
 const PROJECT_POSITION_BIT_COUNT = 29;
 
 let api;
+let departmentId;
+// ชื่อที่เทสต์ใช้เรียกพนักงาน → รหัสที่ระบบออกให้
+const codes = {};
 const people = {};
 // สัปดาห์ที่แล้วทั้งสัปดาห์อยู่ในอดีตและอยู่ในระยะลงย้อนหลัง 14 วันเสมอ (ไม่ว่าวันนี้เป็นวันอะไร)
 const lastWeek = addDays(weekStartOf(todayBangkok()), -7);
@@ -60,7 +64,7 @@ async function addMember(projectId, userId, positionId, memberNumber) {
 async function createEmployee(code, userId, salary) {
     const response = await api.callApi("POST", "/V1/employees", {
         body: {
-            emp_code: code,
+            emp_department_id: departmentId,
             emp_first_name_th: code,
             emp_last_name_th: "ทดสอบ",
             emp_hire_date: "2026-01-01",
@@ -69,6 +73,8 @@ async function createEmployee(code, userId, salary) {
         },
     });
     assert.equal(response.status, 201, JSON.stringify(response.body));
+    // รหัสพนักงานระบบออกให้ (2026-10-18) — เก็บไว้เทียบกับข้อมูลที่อ้างรหัส
+    codes[code] = response.body.emp_code;
     return response.body.emp_id;
 }
 
@@ -93,6 +99,7 @@ const entry = (date, hours, overrides = {}) => ({
 test.before(async () => {
     api = await startTestServer("timesheet");
     await api.loginAsAdmin();
+    departmentId = await createTestDepartment(api);
     people.developer = await createPerson("ts.dev", ["dashboard"], 161);
     people.manager = await createPerson("ts.pm", ["dashboard"], 162);
     people.hr = await createPerson("ts.hr", ["dashboard", "approveTimesheet"], 163);
@@ -223,7 +230,7 @@ test("อนุมัติตามขอบเขต: ผู้จัดกา
     assert.equal(developerView.can_approve, false);
 
     const managerView = expectStatus(await as(people.manager, "GET", "/V1/timesheet/approvals"), 200);
-    const managerWeek = managerView.weeks.find((week) => week.emp_code === "TS-DEV");
+    const managerWeek = managerView.weeks.find((week) => week.emp_code === codes["TS-DEV"]);
     assert.equal(managerWeek.entries.length, 2, "ผู้จัดการโปรเจกต์เห็นเฉพาะแถวของโปรเจกต์ตัวเอง (ไม่เห็นงานภายใน)");
 
     const approvedByManager = expectStatus(
@@ -257,7 +264,7 @@ test("อนุมัติตามขอบเขต: ผู้จัดกา
     assert.equal(finance.profit.cost_thb, finance.profit.labor_cost_thb, "ยังไม่มีค่าใช้จ่าย ต้นทุนรวม = ค่าแรง");
 
     const hrView = expectStatus(await as(people.hr, "GET", "/V1/timesheet/approvals"), 200);
-    const hrWeek = hrView.weeks.find((week) => week.emp_code === "TS-DEV");
+    const hrWeek = hrView.weeks.find((week) => week.emp_code === codes["TS-DEV"]);
     assert.equal(hrWeek.entries.filter((row) => !row.is_approved).length, 1, "เหลืองานภายใน 1 แถว");
     const approvedByHr = expectStatus(
         await as(people.hr, "POST", `/V1/timesheet/weeks/${hrWeek.tsw_id}/approve`, { tsw_version: hrWeek.tsw_version }),
@@ -347,7 +354,7 @@ test("ตีกลับระหว่างรออนุมัติ: ล้
     );
     assert.equal(self.code, "SELF_APPROVAL_NOT_ALLOWED");
     const hrList = expectStatus(await as(people.hr, "GET", "/V1/timesheet/approvals"), 200);
-    assert.ok(!hrList.weeks.some((week) => week.emp_code === "TS-HR"), "ไม่เห็นของตัวเองในรายการรออนุมัติ");
+    assert.ok(!hrList.weeks.some((week) => week.emp_code === codes["TS-HR"]), "ไม่เห็นของตัวเองในรายการรออนุมัติ");
 
     const outOfScope = expectStatus(
         await as(people.manager, "POST", `/V1/timesheet/weeks/${hrSubmitted.week.tsw_id}/return`, {

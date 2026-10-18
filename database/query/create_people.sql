@@ -13,7 +13,7 @@
 -- เลขประจำตัวประชาชน/บัญชีผู้ใช้ ห้ามซ้ำกับพนักงานที่ยังไม่พ้นสภาพ (ตรวจใน backend — คนเดิมกลับมาทำงานใหม่ใช้เลขเดิมได้)
 CREATE TABLE `tb_employees` (
   `emp_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `emp_code` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'รหัสพนักงาน ห้ามซ้ำ',
+  `emp_code` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'รหัสพนักงาน ระบบออกให้: รหัสแผนก 8 + วันเริ่มงาน yymmdd + ลำดับ 4 (2026-10-18) — ย้ายแผนก/สาขา = รหัสใหม่ (ประวัติใน tb_employee_codes)',
   `emp_user_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'บัญชีผู้ใช้ที่ผูก — ใช้ลงเวลา/ขอลา/ดูสลิปของตัวเอง',
   `emp_title` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'คำนำหน้า นาย/นาง/นางสาว — ใช้บน 50 ทวิ/ภ.ง.ด.1',
   `emp_first_name_th` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -26,7 +26,7 @@ CREATE TABLE `tb_employees` (
   `emp_address` text COLLATE utf8mb4_unicode_ci COMMENT 'ที่อยู่สำหรับ 50 ทวิ ประจำปี',
   `emp_phone` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `emp_email` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `emp_department_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `emp_department_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'บังคับ (ประกอบรหัสพนักงาน) — สาขาของพนักงาน = สาขาของแผนก',
   `emp_position` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ตำแหน่งงาน (ข้อความ) — คนละเรื่องกับตำแหน่งในโปรเจกต์',
   `emp_branch_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `emp_hire_date` date NOT NULL COMMENT 'วันเริ่มงาน = วันที่มีผลของค่าจ้างแถวแรก',
@@ -38,6 +38,8 @@ CREATE TABLE `tb_employees` (
   `emp_sso_enrolled` tinyint(1) NOT NULL DEFAULT '1' COMMENT '0 = ไม่เข้าประกันสังคม (เช่น อายุเกิน 60 ปีตอนเริ่มงาน) — ไม่หักทั้งสองฝ่าย',
   `emp_sso_number` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ว่าง = ใช้เลขประจำตัวประชาชน',
   `emp_notes` text COLLATE utf8mb4_unicode_ci,
+  `emp_photo_url` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'รูปพนักงานสำหรับบัตร (/uploads/employees/...) — ว่าง = ใช้รูปโปรไฟล์บัญชีผู้ใช้ที่ผูก',
+  `emp_close_login_on_termination` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'ปิดการเข้าระบบของบัญชีที่ผูกหลังวันทำงานวันสุดท้าย (1 = ปิด · 2026-10-18)',
   `emp_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `emp_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `emp_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -58,6 +60,64 @@ CREATE TABLE `tb_employees` (
 
 -- เงินเดือนฐานตามวันที่มีผล — ขึ้นเงินเดือน = เพิ่มแถวใหม่ (ประวัติไม่หาย) · ค่าจ้าง ณ วันใด = แถวล่าสุดที่วันที่มีผล <= วันนั้น
 -- แถวแรกมีผลวันเริ่มงานเสมอ (ลบไม่ได้) · ขั้น 4-4 จะล็อกแถวที่อยู่ในรอบเงินเดือนที่อนุมัติแล้ว
+-- ประวัติรหัสพนักงาน (2026-10-18) — ทุกรหัสที่เคยออกให้ใคร ช่วงวันที่ใช้ และเหตุผล · รหัสใช้ซ้ำไม่ได้ตลอดไป
+-- ค้นหาพนักงานด้วยรหัสเก่าได้ · ecd_valid_to ว่าง = รหัสที่ใช้อยู่ (คนละ 1 แถว)
+CREATE TABLE `tb_employee_codes` (
+  `ecd_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `ecd_employee_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ecd_code` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ecd_department_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'แผนกตอนใช้รหัสนี้ (รหัสเดิมก่อนระบบใหม่อาจไม่มี)',
+  `ecd_branch_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ecd_valid_from` date NOT NULL,
+  `ecd_valid_to` date DEFAULT NULL COMMENT 'วันสุดท้ายที่ใช้รหัสนี้ · ว่าง = ใช้อยู่',
+  `ecd_reason` enum('hire','correction','transfer','migration') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ecd_note` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ecd_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ecd_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`ecd_id`),
+  UNIQUE KEY `uq_ecd_code` (`ecd_code`),
+  KEY `idx_ecd_employee` (`ecd_employee_id`,`ecd_valid_to`),
+  KEY `fk_ecd_department` (`ecd_department_id`),
+  KEY `fk_ecd_branch` (`ecd_branch_id`),
+  KEY `fk_ecd_created_by` (`ecd_created_by`),
+  CONSTRAINT `fk_ecd_employee` FOREIGN KEY (`ecd_employee_id`) REFERENCES `tb_employees` (`emp_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_ecd_department` FOREIGN KEY (`ecd_department_id`) REFERENCES `tb_department` (`dep_id`),
+  CONSTRAINT `fk_ecd_branch` FOREIGN KEY (`ecd_branch_id`) REFERENCES `tb_branches` (`branch_id`),
+  CONSTRAINT `fk_ecd_created_by` FOREIGN KEY (`ecd_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- บัตรพนักงาน (2026-10-18) — ใช้ได้ทีละใบต่อคน (ec_voided_at ว่าง) · ข้อมูลบนบัตร snapshot ตอนออก พิมพ์ซ้ำได้หน้าตาเดิม
+-- ออกใหม่เมื่อ: เข้างาน · รหัสเปลี่ยน · หาย · ชำรุด · ข้อมูลบนบัตรเปลี่ยน · หมดอายุ (อายุบัตรตั้งที่ tb_payroll_settings) — ใบเดิมยกเลิกใน transaction เดียวกัน
+CREATE TABLE `tb_employee_cards` (
+  `ec_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `ec_employee_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ec_seq` smallint unsigned NOT NULL COMMENT 'บัตรใบที่ N ของพนักงานคนนี้',
+  `ec_emp_code` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ec_name_th` varchar(250) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ec_name_en` varchar(250) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ec_position` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ec_department_name` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ec_branch_name` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ec_photo_url` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ec_reason` enum('first_issue','code_change','lost','damaged','info_change','expired') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ec_note` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ec_issued_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ec_issued_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `ec_expires_on` date NOT NULL COMMENT 'ใช้ได้ถึงวันนี้ = วันออก + อายุบัตรตามตั้งค่า ณ ตอนออก (snapshot)',
+  `ec_printed_at` datetime DEFAULT NULL COMMENT 'พิมพ์ครั้งแรกเมื่อไร · ว่าง = รอพิมพ์',
+  `ec_voided_at` datetime DEFAULT NULL COMMENT 'ยกเลิกเมื่อไร · ว่าง = ใบที่ใช้อยู่',
+  `ec_void_reason` varchar(200) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ec_returned_at` datetime DEFAULT NULL COMMENT 'เก็บบัตรคืนแล้วเมื่อไร (บัตรที่ยกเลิก)',
+  PRIMARY KEY (`ec_id`),
+  UNIQUE KEY `uq_ec_employee_seq` (`ec_employee_id`,`ec_seq`),
+  KEY `idx_ec_voided` (`ec_voided_at`,`ec_returned_at`),
+  KEY `idx_ec_printed` (`ec_printed_at`),
+  KEY `idx_ec_expires` (`ec_expires_on`),
+  KEY `fk_ec_issued_by` (`ec_issued_by`),
+  CONSTRAINT `fk_ec_employee` FOREIGN KEY (`ec_employee_id`) REFERENCES `tb_employees` (`emp_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_ec_issued_by` FOREIGN KEY (`ec_issued_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `tb_employee_compensations` (
   `ecm_employee_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
   `ecm_effective_from` date NOT NULL,
@@ -144,6 +204,7 @@ CREATE TABLE `tb_payroll_settings` (
   `ps_pay_day` tinyint unsigned NOT NULL DEFAULT '25' COMMENT 'วันจ่ายเงินเดือน 1–31 — เดือนที่สั้นกว่าใช้วันสุดท้าย',
   `ps_unpaid_leave_divisor` enum('days_30','working_days') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'days_30' COMMENT 'หักลาไม่รับค่าจ้างต่อวัน = เงินเดือน ÷ 30 หรือ ÷ วันทำงานของเดือน (Y3)',
   `ps_timesheet_backdate_days` smallint unsigned NOT NULL DEFAULT '14' COMMENT 'ลงเวลาย้อนหลังได้กี่วัน (ขั้น 4-2)',
+  `ps_card_valid_years` tinyint unsigned NOT NULL DEFAULT '3' COMMENT 'บัตรพนักงานใช้ได้กี่ปีนับจากวันออก (2026-10-18) — เปลี่ยนแล้วมีผลกับบัตรที่ออกหลังจากนั้น',
   `ps_updated_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `ps_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`ps_id`),

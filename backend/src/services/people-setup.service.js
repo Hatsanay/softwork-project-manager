@@ -23,7 +23,8 @@ function validationError(fields, message = "ข้อมูลบางอย่
 async function getPeopleSetup(conn) {
     const today = todayBangkok();
     const [[settings]] = await conn.query(
-        `SELECT ps_working_weekdays, ps_hours_per_day, ps_pay_day, ps_unpaid_leave_divisor, ps_timesheet_backdate_days
+        `SELECT ps_working_weekdays, ps_hours_per_day, ps_pay_day, ps_unpaid_leave_divisor, ps_timesheet_backdate_days,
+                ps_card_valid_years
          FROM tb_payroll_settings WHERE ps_id = ?`,
         [PAYROLL_SETTINGS_ID],
     );
@@ -100,7 +101,7 @@ async function updateSettings(conn, settings, actor) {
     await conn.query(
         `UPDATE tb_payroll_settings
          SET ps_working_weekdays = ?, ps_hours_per_day = ?, ps_pay_day = ?, ps_unpaid_leave_divisor = ?,
-             ps_timesheet_backdate_days = ?, ps_updated_by = ?
+             ps_timesheet_backdate_days = ?, ps_card_valid_years = ?, ps_updated_by = ?
          WHERE ps_id = ?`,
         [
             settings.ps_working_weekdays,
@@ -108,6 +109,7 @@ async function updateSettings(conn, settings, actor) {
             settings.ps_pay_day,
             settings.ps_unpaid_leave_divisor,
             settings.ps_timesheet_backdate_days,
+            settings.ps_card_valid_years,
             actor.user_id,
             PAYROLL_SETTINGS_ID,
         ],

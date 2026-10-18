@@ -34,11 +34,16 @@ SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS `tb_department` (
   `dep_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
   `dep_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `dep_branch_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'สาขาที่แผนกสังกัด',
+  `dep_abbr` char(3) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ตัวย่อ 3 ตัว A-Z 0-9 — แก้ได้เฉพาะตอนแผนกยังไม่มีพนักงาน',
+  `dep_code` char(8) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'รหัสแผนก = รหัสสาขา + ตัวย่อ (ส่วนหน้าของรหัสพนักงาน)',
   `dep_status` enum('active','inactive') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
   `dep_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `dep_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`dep_id`),
-  UNIQUE KEY `uq_dep_name` (`dep_name`)
+  UNIQUE KEY `uq_dep_code` (`dep_code`),
+  UNIQUE KEY `uq_dep_branch_name` (`dep_branch_id`,`dep_name`),
+  KEY `fk_dep_branch` (`dep_branch_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `tb_roles` (
@@ -1482,7 +1487,7 @@ CREATE TABLE IF NOT EXISTS `tb_wht_certificate_lines` (
 -- เลขประจำตัวประชาชน/บัญชีผู้ใช้ ห้ามซ้ำกับพนักงานที่ยังไม่พ้นสภาพ (ตรวจใน backend — คนเดิมกลับมาทำงานใหม่ใช้เลขเดิมได้)
 CREATE TABLE IF NOT EXISTS `tb_employees` (
   `emp_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `emp_code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'รหัสพนักงาน ห้ามซ้ำ',
+  `emp_code` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'รหัสพนักงาน ระบบออกให้: รหัสแผนก 8 + วันเริ่มงาน yymmdd + ลำดับ 4 (2026-10-18) — ย้ายแผนก/สาขา = รหัสใหม่ (ประวัติใน tb_employee_codes)',
   `emp_user_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'บัญชีผู้ใช้ที่ผูก — ใช้ลงเวลา/ขอลา/ดูสลิปของตัวเอง',
   `emp_title` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'คำนำหน้า นาย/นาง/นางสาว — ใช้บน 50 ทวิ/ภ.ง.ด.1',
   `emp_first_name_th` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -1495,7 +1500,7 @@ CREATE TABLE IF NOT EXISTS `tb_employees` (
   `emp_address` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT 'ที่อยู่สำหรับ 50 ทวิ ประจำปี',
   `emp_phone` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `emp_email` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `emp_department_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `emp_department_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'บังคับ (ประกอบรหัสพนักงาน) — สาขาของพนักงาน = สาขาของแผนก',
   `emp_position` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ตำแหน่งงาน (ข้อความ) — คนละเรื่องกับตำแหน่งในโปรเจกต์',
   `emp_branch_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `emp_hire_date` date NOT NULL COMMENT 'วันเริ่มงาน = วันที่มีผลของค่าจ้างแถวแรก',
@@ -1507,6 +1512,8 @@ CREATE TABLE IF NOT EXISTS `tb_employees` (
   `emp_sso_enrolled` tinyint(1) NOT NULL DEFAULT '1' COMMENT '0 = ไม่เข้าประกันสังคม (เช่น อายุเกิน 60 ปีตอนเริ่มงาน) — ไม่หักทั้งสองฝ่าย',
   `emp_sso_number` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ว่าง = ใช้เลขประจำตัวประชาชน',
   `emp_notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `emp_photo_url` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'รูปพนักงานสำหรับบัตร (/uploads/employees/...) — ว่าง = ใช้รูปโปรไฟล์บัญชีผู้ใช้ที่ผูก',
+  `emp_close_login_on_termination` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'ปิดการเข้าระบบของบัญชีที่ผูกหลังวันทำงานวันสุดท้าย (1 = ปิด · 2026-10-18)',
   `emp_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `emp_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `emp_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -1527,6 +1534,61 @@ CREATE TABLE IF NOT EXISTS `tb_employees` (
 
 -- เงินเดือนฐานตามวันที่มีผล — ขึ้นเงินเดือน = เพิ่มแถวใหม่ (ประวัติไม่หาย) · ค่าจ้าง ณ วันใด = แถวล่าสุดที่วันที่มีผล <= วันนั้น
 -- แถวแรกมีผลวันเริ่มงานเสมอ (ลบไม่ได้) · ขั้น 4-4 จะล็อกแถวที่อยู่ในรอบเงินเดือนที่อนุมัติแล้ว
+-- ประวัติรหัสพนักงาน + บัตรพนักงาน (2026-10-18)
+CREATE TABLE IF NOT EXISTS `tb_employee_codes` (
+  `ecd_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `ecd_employee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ecd_code` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ecd_department_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'แผนกตอนใช้รหัสนี้ (รหัสเดิมก่อนระบบใหม่อาจไม่มี)',
+  `ecd_branch_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ecd_valid_from` date NOT NULL,
+  `ecd_valid_to` date DEFAULT NULL COMMENT 'วันสุดท้ายที่ใช้รหัสนี้ · ว่าง = ใช้อยู่',
+  `ecd_reason` enum('hire','correction','transfer','migration') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ecd_note` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ecd_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ecd_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`ecd_id`),
+  UNIQUE KEY `uq_ecd_code` (`ecd_code`),
+  KEY `idx_ecd_employee` (`ecd_employee_id`,`ecd_valid_to`),
+  KEY `fk_ecd_department` (`ecd_department_id`),
+  KEY `fk_ecd_branch` (`ecd_branch_id`),
+  KEY `fk_ecd_created_by` (`ecd_created_by`),
+  CONSTRAINT `fk_ecd_branch` FOREIGN KEY (`ecd_branch_id`) REFERENCES `tb_branches` (`branch_id`),
+  CONSTRAINT `fk_ecd_created_by` FOREIGN KEY (`ecd_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_ecd_department` FOREIGN KEY (`ecd_department_id`) REFERENCES `tb_department` (`dep_id`),
+  CONSTRAINT `fk_ecd_employee` FOREIGN KEY (`ecd_employee_id`) REFERENCES `tb_employees` (`emp_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `tb_employee_cards` (
+  `ec_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `ec_employee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ec_seq` smallint unsigned NOT NULL COMMENT 'บัตรใบที่ N ของพนักงานคนนี้',
+  `ec_emp_code` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ec_name_th` varchar(250) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ec_name_en` varchar(250) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ec_position` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ec_department_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ec_branch_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ec_photo_url` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ec_reason` enum('first_issue','code_change','lost','damaged','info_change','expired') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ec_note` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ec_issued_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ec_issued_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `ec_expires_on` date NOT NULL COMMENT 'ใช้ได้ถึงวันนี้ = วันออก + อายุบัตรตามตั้งค่า ณ ตอนออก (snapshot)',
+  `ec_printed_at` datetime DEFAULT NULL COMMENT 'พิมพ์ครั้งแรกเมื่อไร · ว่าง = รอพิมพ์',
+  `ec_voided_at` datetime DEFAULT NULL COMMENT 'ยกเลิกเมื่อไร · ว่าง = ใบที่ใช้อยู่',
+  `ec_void_reason` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ec_returned_at` datetime DEFAULT NULL COMMENT 'เก็บบัตรคืนแล้วเมื่อไร (บัตรที่ยกเลิก)',
+  PRIMARY KEY (`ec_id`),
+  UNIQUE KEY `uq_ec_employee_seq` (`ec_employee_id`,`ec_seq`),
+  KEY `idx_ec_voided` (`ec_voided_at`,`ec_returned_at`),
+  KEY `idx_ec_printed` (`ec_printed_at`),
+  KEY `idx_ec_expires` (`ec_expires_on`),
+  KEY `fk_ec_issued_by` (`ec_issued_by`),
+  CONSTRAINT `fk_ec_employee` FOREIGN KEY (`ec_employee_id`) REFERENCES `tb_employees` (`emp_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_ec_issued_by` FOREIGN KEY (`ec_issued_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `tb_employee_compensations` (
   `ecm_employee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `ecm_effective_from` date NOT NULL,
@@ -1613,6 +1675,7 @@ CREATE TABLE IF NOT EXISTS `tb_payroll_settings` (
   `ps_pay_day` tinyint unsigned NOT NULL DEFAULT '25' COMMENT 'วันจ่ายเงินเดือน 1–31 — เดือนที่สั้นกว่าใช้วันสุดท้าย',
   `ps_unpaid_leave_divisor` enum('days_30','working_days') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'days_30' COMMENT 'หักลาไม่รับค่าจ้างต่อวัน = เงินเดือน ÷ 30 หรือ ÷ วันทำงานของเดือน (Y3)',
   `ps_timesheet_backdate_days` smallint unsigned NOT NULL DEFAULT '14' COMMENT 'ลงเวลาย้อนหลังได้กี่วัน (ขั้น 4-2)',
+  `ps_card_valid_years` tinyint unsigned NOT NULL DEFAULT '3' COMMENT 'บัตรพนักงานใช้ได้กี่ปีนับจากวันออก (2026-10-18) — เปลี่ยนแล้วมีผลกับบัตรที่ออกหลังจากนั้น',
   `ps_updated_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `ps_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`ps_id`),
@@ -2856,6 +2919,8 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA 
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_settings' AND COLUMN_NAME = 'ps_pay_day') = 0, 'ALTER TABLE `tb_payroll_settings` ADD COLUMN `ps_pay_day` tinyint unsigned NOT NULL DEFAULT ''25'' COMMENT ''วันจ่ายเงินเดือน 1–31 — เดือนที่สั้นกว่าใช้วันสุดท้าย'' AFTER `ps_hours_per_day`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_settings' AND COLUMN_NAME = 'ps_unpaid_leave_divisor') = 0, 'ALTER TABLE `tb_payroll_settings` ADD COLUMN `ps_unpaid_leave_divisor` enum(''days_30'',''working_days'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''days_30'' COMMENT ''หักลาไม่รับค่าจ้างต่อวัน = เงินเดือน ÷ 30 หรือ ÷ วันทำงานของเดือน (Y3)'' AFTER `ps_pay_day`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_settings' AND COLUMN_NAME = 'ps_timesheet_backdate_days') = 0, 'ALTER TABLE `tb_payroll_settings` ADD COLUMN `ps_timesheet_backdate_days` smallint unsigned NOT NULL DEFAULT ''14'' COMMENT ''ลงเวลาย้อนหลังได้กี่วัน (ขั้น 4-2)'' AFTER `ps_unpaid_leave_divisor`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- 2026-10-18 อายุบัตรพนักงาน
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_settings' AND COLUMN_NAME = 'ps_card_valid_years') = 0, 'ALTER TABLE `tb_payroll_settings` ADD COLUMN `ps_card_valid_years` tinyint unsigned NOT NULL DEFAULT ''3'' COMMENT ''บัตรพนักงานใช้ได้กี่ปีนับจากวันออก (2026-10-18) — เปลี่ยนแล้วมีผลกับบัตรที่ออกหลังจากนั้น'' AFTER `ps_timesheet_backdate_days`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_settings' AND COLUMN_NAME = 'ps_updated_by') = 0, 'ALTER TABLE `tb_payroll_settings` ADD COLUMN `ps_updated_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ps_timesheet_backdate_days`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_settings' AND COLUMN_NAME = 'ps_updated_at') = 0, 'ALTER TABLE `tb_payroll_settings` ADD COLUMN `ps_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `ps_updated_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
@@ -3184,6 +3249,136 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA 
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_adjust_reason_code') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_adjust_reason_code` enum(''price_increase'',''scope_increase'',''error'',''other'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''ใบเพิ่มหนี้: รหัสเหตุผล'' AFTER `inv_original_total`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_adjust_reason') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_adjust_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''ใบเพิ่มหนี้: เหตุผล (กฎหมายบังคับ)'' AFTER `inv_adjust_reason_code`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- ════ รหัสแผนก/รหัสพนักงาน + ประวัติรหัส + บัตรพนักงาน (2026-10-18 — docs/plans/2026-10-18-employee-department-codes.md)
+-- tb_department: สาขา · ตัวย่อ · รหัส (ให้ว่างได้ก่อน — ข้อมูลเดิมเติมด้านล่าง แล้วค่อยบังคับ NOT NULL)
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_department' AND COLUMN_NAME = 'dep_branch_id') = 0, 'ALTER TABLE `tb_department` ADD COLUMN `dep_branch_id` varchar(18) COLLATE utf8mb4_unicode_ci NULL COMMENT ''สาขาที่แผนกสังกัด'' AFTER `dep_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_department' AND COLUMN_NAME = 'dep_abbr') = 0, 'ALTER TABLE `tb_department` ADD COLUMN `dep_abbr` char(3) COLLATE utf8mb4_unicode_ci NULL COMMENT ''ตัวย่อ 3 ตัว A-Z 0-9 — แก้ได้เฉพาะตอนแผนกยังไม่มีพนักงาน'' AFTER `dep_branch_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_department' AND COLUMN_NAME = 'dep_code') = 0, 'ALTER TABLE `tb_department` ADD COLUMN `dep_code` char(8) COLLATE utf8mb4_unicode_ci NULL COMMENT ''รหัสแผนก = รหัสสาขา + ตัวย่อ (ส่วนหน้าของรหัสพนักงาน)'' AFTER `dep_abbr`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- tb_employees: รูปสำหรับบัตร
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employees' AND COLUMN_NAME = 'emp_photo_url') = 0, 'ALTER TABLE `tb_employees` ADD COLUMN `emp_photo_url` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''รูปพนักงานสำหรับบัตร (/uploads/employees/...) — ว่าง = ใช้รูปโปรไฟล์บัญชีผู้ใช้ที่ผูก'' AFTER `emp_notes`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- 2026-10-18 บัญชีเข้าระบบ ↔ พนักงาน (docs/plans/2026-10-18-user-employee-link.md)
+SET @close_login_added = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employees' AND COLUMN_NAME = 'emp_close_login_on_termination') = 0;
+SET @q = IF(@close_login_added, 'ALTER TABLE `tb_employees` ADD COLUMN `emp_close_login_on_termination` tinyint(1) NOT NULL DEFAULT ''1'' COMMENT ''ปิดการเข้าระบบของบัญชีที่ผูกหลังวันทำงานวันสุดท้าย (1 = ปิด · 2026-10-18)'' AFTER `emp_photo_url`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- K3: คนที่ตั้งพ้นสภาพไว้แล้วก่อนมีคอลัมน์นี้ ไม่ปิดบัญชีให้เอง (ฝ่ายบุคคลเลือกปิดทีละคนที่หน้าพนักงาน) · รันเฉพาะรอบที่เพิ่งเพิ่มคอลัมน์
+UPDATE tb_employees SET emp_close_login_on_termination = 0 WHERE @close_login_added AND emp_termination_date IS NOT NULL;
+-- tb_employee_codes
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_codes' AND COLUMN_NAME = 'ecd_id') = 0, 'ALTER TABLE `tb_employee_codes` ADD COLUMN `ecd_id` int unsigned NOT NULL AUTO_INCREMENT FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_codes' AND COLUMN_NAME = 'ecd_employee_id') = 0, 'ALTER TABLE `tb_employee_codes` ADD COLUMN `ecd_employee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `ecd_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_codes' AND COLUMN_NAME = 'ecd_code') = 0, 'ALTER TABLE `tb_employee_codes` ADD COLUMN `ecd_code` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `ecd_employee_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_codes' AND COLUMN_NAME = 'ecd_department_id') = 0, 'ALTER TABLE `tb_employee_codes` ADD COLUMN `ecd_department_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''แผนกตอนใช้รหัสนี้ (รหัสเดิมก่อนระบบใหม่อาจไม่มี)'' AFTER `ecd_code`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_codes' AND COLUMN_NAME = 'ecd_branch_id') = 0, 'ALTER TABLE `tb_employee_codes` ADD COLUMN `ecd_branch_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ecd_department_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_codes' AND COLUMN_NAME = 'ecd_valid_from') = 0, 'ALTER TABLE `tb_employee_codes` ADD COLUMN `ecd_valid_from` date NOT NULL AFTER `ecd_branch_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_codes' AND COLUMN_NAME = 'ecd_valid_to') = 0, 'ALTER TABLE `tb_employee_codes` ADD COLUMN `ecd_valid_to` date DEFAULT NULL COMMENT ''วันสุดท้ายที่ใช้รหัสนี้ · ว่าง = ใช้อยู่'' AFTER `ecd_valid_from`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_codes' AND COLUMN_NAME = 'ecd_reason') = 0, 'ALTER TABLE `tb_employee_codes` ADD COLUMN `ecd_reason` enum(''hire'',''correction'',''transfer'',''migration'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `ecd_valid_to`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_codes' AND COLUMN_NAME = 'ecd_note') = 0, 'ALTER TABLE `tb_employee_codes` ADD COLUMN `ecd_note` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ecd_reason`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_codes' AND COLUMN_NAME = 'ecd_created_by') = 0, 'ALTER TABLE `tb_employee_codes` ADD COLUMN `ecd_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ecd_note`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_codes' AND COLUMN_NAME = 'ecd_created_at') = 0, 'ALTER TABLE `tb_employee_codes` ADD COLUMN `ecd_created_at` datetime DEFAULT CURRENT_TIMESTAMP AFTER `ecd_created_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- tb_employee_cards
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND COLUMN_NAME = 'ec_id') = 0, 'ALTER TABLE `tb_employee_cards` ADD COLUMN `ec_id` int unsigned NOT NULL AUTO_INCREMENT FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND COLUMN_NAME = 'ec_employee_id') = 0, 'ALTER TABLE `tb_employee_cards` ADD COLUMN `ec_employee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `ec_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND COLUMN_NAME = 'ec_seq') = 0, 'ALTER TABLE `tb_employee_cards` ADD COLUMN `ec_seq` smallint unsigned NOT NULL COMMENT ''บัตรใบที่ N ของพนักงานคนนี้'' AFTER `ec_employee_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND COLUMN_NAME = 'ec_emp_code') = 0, 'ALTER TABLE `tb_employee_cards` ADD COLUMN `ec_emp_code` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `ec_seq`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND COLUMN_NAME = 'ec_name_th') = 0, 'ALTER TABLE `tb_employee_cards` ADD COLUMN `ec_name_th` varchar(250) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `ec_emp_code`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND COLUMN_NAME = 'ec_name_en') = 0, 'ALTER TABLE `tb_employee_cards` ADD COLUMN `ec_name_en` varchar(250) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ec_name_th`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND COLUMN_NAME = 'ec_position') = 0, 'ALTER TABLE `tb_employee_cards` ADD COLUMN `ec_position` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ec_name_en`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND COLUMN_NAME = 'ec_department_name') = 0, 'ALTER TABLE `tb_employee_cards` ADD COLUMN `ec_department_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ec_position`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND COLUMN_NAME = 'ec_branch_name') = 0, 'ALTER TABLE `tb_employee_cards` ADD COLUMN `ec_branch_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ec_department_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND COLUMN_NAME = 'ec_photo_url') = 0, 'ALTER TABLE `tb_employee_cards` ADD COLUMN `ec_photo_url` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ec_branch_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND COLUMN_NAME = 'ec_reason') = 0, 'ALTER TABLE `tb_employee_cards` ADD COLUMN `ec_reason` enum(''first_issue'',''code_change'',''lost'',''damaged'',''info_change'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `ec_photo_url`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND COLUMN_NAME = 'ec_note') = 0, 'ALTER TABLE `tb_employee_cards` ADD COLUMN `ec_note` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ec_reason`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND COLUMN_NAME = 'ec_issued_by') = 0, 'ALTER TABLE `tb_employee_cards` ADD COLUMN `ec_issued_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ec_note`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND COLUMN_NAME = 'ec_issued_at') = 0, 'ALTER TABLE `tb_employee_cards` ADD COLUMN `ec_issued_at` datetime DEFAULT CURRENT_TIMESTAMP AFTER `ec_issued_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND COLUMN_NAME = 'ec_printed_at') = 0, 'ALTER TABLE `tb_employee_cards` ADD COLUMN `ec_printed_at` datetime DEFAULT NULL COMMENT ''พิมพ์ครั้งแรกเมื่อไร · ว่าง = รอพิมพ์'' AFTER `ec_issued_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND COLUMN_NAME = 'ec_voided_at') = 0, 'ALTER TABLE `tb_employee_cards` ADD COLUMN `ec_voided_at` datetime DEFAULT NULL COMMENT ''ยกเลิกเมื่อไร · ว่าง = ใบที่ใช้อยู่'' AFTER `ec_printed_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND COLUMN_NAME = 'ec_void_reason') = 0, 'ALTER TABLE `tb_employee_cards` ADD COLUMN `ec_void_reason` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ec_voided_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND COLUMN_NAME = 'ec_returned_at') = 0, 'ALTER TABLE `tb_employee_cards` ADD COLUMN `ec_returned_at` datetime DEFAULT NULL COMMENT ''เก็บบัตรคืนแล้วเมื่อไร (บัตรที่ยกเลิก)'' AFTER `ec_void_reason`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- 2026-10-18 วันหมดอายุบัตร + เหตุผล 'expired' (ต่ออายุ)
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND COLUMN_NAME = 'ec_expires_on') = 0, 'ALTER TABLE `tb_employee_cards` ADD COLUMN `ec_expires_on` date DEFAULT NULL COMMENT ''ใช้ได้ถึงวันนี้ = วันออก + อายุบัตรตามตั้งค่า ณ ตอนออก (snapshot)'' AFTER `ec_issued_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND COLUMN_NAME = 'ec_reason' AND COLUMN_TYPE NOT LIKE '%''expired''%') > 0, 'ALTER TABLE `tb_employee_cards` MODIFY COLUMN `ec_reason` enum(''first_issue'',''code_change'',''lost'',''damaged'',''info_change'',''expired'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- ย้ายข้อมูลเดิม (รันซ้ำได้ — ทำเฉพาะแถวที่ยังไม่ครบ)
+SET @codes_today = DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+07:00'));
+SET @codes_hq = (SELECT branch_id FROM tb_branches WHERE branch_code = '00000' LIMIT 1);
+-- 1) แผนกเดิมที่ยังไม่มีสาขา = สำนักงานใหญ่
+UPDATE tb_department SET dep_branch_id = @codes_hq WHERE dep_branch_id IS NULL AND @codes_hq IS NOT NULL;
+-- 2) แผนกเดิมที่ยังไม่มีตัวย่อ = D01, D02 ... ตามลำดับวันที่สร้าง (ผู้ดูแลเปลี่ยนเป็นตัวย่อจริงได้ตราบที่แผนกยังไม่มีพนักงาน)
+SET @codes_used = (SELECT COUNT(*) FROM tb_department WHERE dep_abbr REGEXP '^D[0-9]{2}$');
+UPDATE tb_department d
+JOIN (SELECT ranked.dep_id, ranked.n FROM (
+        SELECT dep_id, ROW_NUMBER() OVER (ORDER BY dep_created_at, dep_id) AS n FROM tb_department WHERE dep_abbr IS NULL OR dep_abbr = ''
+     ) ranked) x ON x.dep_id = d.dep_id
+SET d.dep_abbr = CONCAT('D', LPAD(x.n + @codes_used, 2, '0'));
+-- 3) รหัสแผนก = รหัสสาขา + ตัวย่อ
+UPDATE tb_department d JOIN tb_branches b ON b.branch_id = d.dep_branch_id
+SET d.dep_code = CONCAT(b.branch_code, d.dep_abbr)
+WHERE d.dep_code IS NULL OR d.dep_code <> CONCAT(b.branch_code, d.dep_abbr);
+-- 4) พนักงานที่ไม่มีแผนก → แผนก "ทั่วไป" (GEN) ที่สำนักงานใหญ่ (สร้างเฉพาะเมื่อมีพนักงานแบบนี้)
+SET @codes_need_general = (SELECT COUNT(*) FROM tb_employees WHERE emp_department_id IS NULL);
+INSERT INTO tb_department (dep_id, dep_name, dep_branch_id, dep_abbr, dep_code)
+SELECT CONCAT('DEP', DATE_FORMAT(@codes_today, '%Y%m%d'), '9000001'), 'ทั่วไป', @codes_hq, 'GEN', '00000GEN'
+FROM DUAL
+WHERE @codes_need_general > 0 AND @codes_hq IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM tb_department WHERE dep_code = '00000GEN' OR (dep_name = 'ทั่วไป' AND dep_branch_id = @codes_hq));
+SET @codes_general = (SELECT dep_id FROM tb_department WHERE dep_code = '00000GEN' OR (dep_name = 'ทั่วไป' AND dep_branch_id = @codes_hq) ORDER BY dep_code = '00000GEN' DESC LIMIT 1);
+UPDATE tb_employees SET emp_department_id = @codes_general WHERE emp_department_id IS NULL AND @codes_general IS NOT NULL;
+-- 5) สาขาของพนักงาน = สาขาของแผนกเสมอ
+UPDATE tb_employees e JOIN tb_department d ON d.dep_id = e.emp_department_id
+SET e.emp_branch_id = d.dep_branch_id
+WHERE NOT (e.emp_branch_id <=> d.dep_branch_id);
+-- 6) รหัสพนักงานรูปแบบเดิม → เก็บเข้าประวัติ แล้วออกรหัสใหม่ (รหัสแผนก + วันเริ่มงาน yymmdd + ลำดับ 4 หลักของวันนั้น ต่อจากเลขที่ออกไปแล้ว)
+INSERT INTO tb_employee_codes (ecd_employee_id, ecd_code, ecd_department_id, ecd_branch_id, ecd_valid_from, ecd_valid_to, ecd_reason, ecd_note)
+SELECT e.emp_id, e.emp_code, e.emp_department_id, e.emp_branch_id,
+       LEAST(e.emp_hire_date, DATE_SUB(@codes_today, INTERVAL 1 DAY)), DATE_SUB(@codes_today, INTERVAL 1 DAY), 'migration', 'รหัสก่อนปรับระบบรหัส'
+FROM tb_employees e
+WHERE e.emp_code NOT REGEXP '^[0-9]{5}[A-Z0-9]{3}[0-9]{10}$'
+  AND NOT EXISTS (SELECT 1 FROM tb_employee_codes c WHERE c.ecd_code = e.emp_code);
+DROP TEMPORARY TABLE IF EXISTS tmp_employee_new_codes;
+CREATE TEMPORARY TABLE tmp_employee_new_codes AS
+SELECT e.emp_id, d.dep_code, DATE_FORMAT(e.emp_hire_date, '%y%m%d') AS code_date, DATE_FORMAT(e.emp_hire_date, '%Y%m%d') AS sequence_date,
+       ROW_NUMBER() OVER (PARTITION BY e.emp_hire_date ORDER BY e.emp_created_at, e.emp_id) AS n
+FROM tb_employees e JOIN tb_department d ON d.dep_id = e.emp_department_id
+WHERE e.emp_code NOT REGEXP '^[0-9]{5}[A-Z0-9]{3}[0-9]{10}$';
+UPDATE tmp_employee_new_codes t
+LEFT JOIN tb_document_sequences s ON s.ds_doc_type = 'EMP' AND s.ds_date = t.sequence_date
+SET t.n = t.n + COALESCE(s.ds_last, 0);
+UPDATE tb_employees e JOIN tmp_employee_new_codes t ON t.emp_id = e.emp_id
+SET e.emp_code = CONCAT(t.dep_code, t.code_date, LPAD(t.n, 4, '0'));
+INSERT INTO tb_document_sequences (ds_doc_type, ds_date, ds_last)
+SELECT 'EMP', t.sequence_date, MAX(t.n) FROM tmp_employee_new_codes t GROUP BY t.sequence_date
+ON DUPLICATE KEY UPDATE ds_last = GREATEST(ds_last, VALUES(ds_last));
+INSERT INTO tb_employee_codes (ecd_employee_id, ecd_code, ecd_department_id, ecd_branch_id, ecd_valid_from, ecd_valid_to, ecd_reason, ecd_note)
+SELECT e.emp_id, e.emp_code, e.emp_department_id, e.emp_branch_id, @codes_today, NULL, 'migration', 'ออกรหัสรูปแบบใหม่ตอนปรับระบบรหัส'
+FROM tb_employees e JOIN tmp_employee_new_codes t ON t.emp_id = e.emp_id;
+DROP TEMPORARY TABLE tmp_employee_new_codes;
+-- 7) พนักงานรูปแบบใหม่ที่ยังไม่มีประวัติรหัส (กันข้อมูลที่ใส่ตรงๆ) = แถวรหัสปัจจุบัน
+INSERT INTO tb_employee_codes (ecd_employee_id, ecd_code, ecd_department_id, ecd_branch_id, ecd_valid_from, ecd_valid_to, ecd_reason)
+SELECT e.emp_id, e.emp_code, e.emp_department_id, e.emp_branch_id, e.emp_hire_date, NULL, 'hire'
+FROM tb_employees e
+WHERE NOT EXISTS (SELECT 1 FROM tb_employee_codes c WHERE c.ecd_code = e.emp_code);
+-- 8) พนักงานที่ยังไม่พ้นสภาพและยังไม่มีบัตร = บัตรใบที่ 1 รอพิมพ์
+INSERT INTO tb_employee_cards (ec_employee_id, ec_seq, ec_emp_code, ec_name_th, ec_name_en, ec_position, ec_department_name, ec_branch_name, ec_photo_url, ec_reason, ec_note, ec_expires_on)
+SELECT e.emp_id, 1, e.emp_code,
+       CONCAT(COALESCE(e.emp_title, ''), e.emp_first_name_th, ' ', e.emp_last_name_th),
+       NULLIF(TRIM(CONCAT(COALESCE(e.emp_first_name_en, ''), ' ', COALESCE(e.emp_last_name_en, ''))), ''),
+       e.emp_position, d.dep_name, b.branch_name_th, COALESCE(e.emp_photo_url, u.user_avatar_url), 'first_issue', 'ออกตอนปรับระบบรหัส',
+       DATE_ADD(@codes_today, INTERVAL COALESCE((SELECT ps_card_valid_years FROM tb_payroll_settings WHERE ps_id = 1), 3) YEAR)
+FROM tb_employees e
+JOIN tb_department d ON d.dep_id = e.emp_department_id
+LEFT JOIN tb_branches b ON b.branch_id = e.emp_branch_id
+LEFT JOIN tb_users u ON u.user_id = e.emp_user_id
+WHERE (e.emp_termination_date IS NULL OR e.emp_termination_date >= @codes_today)
+  AND NOT EXISTS (SELECT 1 FROM tb_employee_cards c WHERE c.ec_employee_id = e.emp_id);
+-- บัตรที่ออกก่อนมีวันหมดอายุ: นับจากวันออก + อายุบัตรตามตั้งค่า (รันซ้ำได้ แตะเฉพาะแถวที่ยังว่าง)
+UPDATE tb_employee_cards SET ec_expires_on = DATE_ADD(DATE(ec_issued_at), INTERVAL COALESCE((SELECT ps_card_valid_years FROM tb_payroll_settings WHERE ps_id = 1), 3) YEAR) WHERE ec_expires_on IS NULL;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND COLUMN_NAME = 'ec_expires_on' AND IS_NULLABLE = 'YES') > 0, 'ALTER TABLE `tb_employee_cards` MODIFY COLUMN `ec_expires_on` date NOT NULL COMMENT ''ใช้ได้ถึงวันนี้ = วันออก + อายุบัตรตามตั้งค่า ณ ตอนออก (snapshot)''', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- บังคับตามโครงสร้างใหม่ (หลังเติมข้อมูลครบแล้ว)
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_department' AND COLUMN_NAME = 'dep_branch_id' AND IS_NULLABLE = 'YES') > 0, 'ALTER TABLE `tb_department` MODIFY COLUMN `dep_branch_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT ''สาขาที่แผนกสังกัด''', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_department' AND COLUMN_NAME = 'dep_abbr' AND IS_NULLABLE = 'YES') > 0, 'ALTER TABLE `tb_department` MODIFY COLUMN `dep_abbr` char(3) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT ''ตัวย่อ 3 ตัว A-Z 0-9 — แก้ได้เฉพาะตอนแผนกยังไม่มีพนักงาน''', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_department' AND COLUMN_NAME = 'dep_code' AND IS_NULLABLE = 'YES') > 0, 'ALTER TABLE `tb_department` MODIFY COLUMN `dep_code` char(8) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT ''รหัสแผนก = รหัสสาขา + ตัวย่อ (ส่วนหน้าของรหัสพนักงาน)''', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employees' AND COLUMN_NAME = 'emp_department_id' AND IS_NULLABLE = 'YES') > 0, 'ALTER TABLE `tb_employees` MODIFY COLUMN `emp_department_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT ''บังคับ (ประกอบรหัสพนักงาน) — สาขาของพนักงาน = สาขาของแผนก''', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employees' AND COLUMN_NAME = 'emp_code' AND CHARACTER_MAXIMUM_LENGTH <> 18) > 0, 'ALTER TABLE `tb_employees` MODIFY COLUMN `emp_code` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT ''รหัสพนักงาน ระบบออกให้: รหัสแผนก 8 + วันเริ่มงาน yymmdd + ลำดับ 4 (2026-10-18) — ย้ายแผนก/สาขา = รหัสใหม่ (ประวัติใน tb_employee_codes)''', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
 -- ── การเปลี่ยนชนิด/เงื่อนไขของคอลัมน์ที่มีอยู่แล้ว (เรียงตามเวลา) ──────────────────────────────────
 -- 2026-10-07 onboarding: ผู้ใช้เดิมได้ชื่อผู้ใช้ = user_id (ยัง login ด้วยอีเมลได้เหมือนเดิม) — UPDATE นี้รันซ้ำได้ แตะเฉพาะแถวที่ยังว่าง
 UPDATE tb_users SET user_username = user_id WHERE user_username IS NULL OR user_username = '';
@@ -3203,12 +3398,30 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA 
 -- 2026-10-16 เฟส 2: สิทธิ์ใกล้เต็ม 64 บิต → ขยายเป็น 255 (ข้อมูลเดิมไม่เปลี่ยน)
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_roles' AND COLUMN_NAME = 'role_permission' AND CHARACTER_MAXIMUM_LENGTH < 255) > 0, 'ALTER TABLE `tb_roles` MODIFY COLUMN `role_permission` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''''', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- 2026-10-18 K2: บัญชีที่ผูกกับพนักงานปัจจุบัน ใช้ชื่อ เบอร์ สาขาตามทะเบียนพนักงาน (รันซ้ำได้ · ค่าเดิมซ้ำ = ไม่เปลี่ยน)
+-- วางท้ายส่วนที่ 2: ต้องรอให้ทุกคอลัมน์ที่ใช้ (user_branch_id ฯลฯ) ถูกเติมครบก่อน — ฐานเก่ามาก (12 ต.ค.) ยังไม่มี
+-- ดูรายการที่จะเปลี่ยนก่อน deploy:
+--   SELECT u.user_username, u.user_fname, u.user_lname, e.emp_first_name_th, e.emp_last_name_th FROM tb_users u
+--   JOIN tb_employees e ON e.emp_user_id = u.user_id
+--   WHERE (e.emp_termination_date IS NULL OR e.emp_termination_date >= CURDATE()) AND (u.user_fname <> e.emp_first_name_th OR u.user_lname <> e.emp_last_name_th);
+SET @link_today = DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+07:00'));
+-- เบอร์ของพนักงานที่ยังว่าง: เติมจากบัญชีก่อน (ไม่ลบเบอร์ที่ผู้ใช้กรอกไว้ทิ้ง)
+UPDATE tb_employees e JOIN tb_users u ON u.user_id = e.emp_user_id
+SET e.emp_phone = u.user_phone
+WHERE e.emp_phone IS NULL AND u.user_phone IS NOT NULL AND (e.emp_termination_date IS NULL OR e.emp_termination_date >= @link_today);
+UPDATE tb_users u JOIN tb_employees e ON e.emp_user_id = u.user_id
+SET u.user_fname = e.emp_first_name_th, u.user_lname = e.emp_last_name_th, u.user_phone = e.emp_phone, u.user_branch_id = e.emp_branch_id
+WHERE (e.emp_termination_date IS NULL OR e.emp_termination_date >= @link_today);
+
 -- ─── ส่วนที่ 3: เติม index ที่ยังขาด ──────────────────────────────────────────────────────────
 -- index ทั่วไป: ถ้ามีชื่อนี้อยู่แต่คอลัมน์ไม่ตรง (เช่น index ของเวอร์ชันเก่า) → ลบแล้วสร้างใหม่ให้ถูก
 -- index ที่ชื่อขึ้นต้นด้วย fk_ (MySQL สร้างให้ foreign key) เช็คแค่ว่ามีหรือไม่ เพราะลบขณะ FK ใช้อยู่ไม่ได้
 -- tb_department
-SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_department' AND INDEX_NAME = 'uq_dep_name') <> 'dep_name', 'ALTER TABLE `tb_department` DROP INDEX `uq_dep_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
-SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_department' AND INDEX_NAME = 'uq_dep_name') = 0, 'ALTER TABLE `tb_department` ADD UNIQUE KEY `uq_dep_name` (`dep_name`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- ชื่อแผนกซ้ำได้ข้ามสาขาแล้ว (2026-10-18): ลบ uq_dep_name เดิม แทนด้วย uq_dep_branch_name
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_department' AND INDEX_NAME = 'uq_dep_name') > 0, 'ALTER TABLE `tb_department` DROP INDEX `uq_dep_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_department' AND INDEX_NAME = 'uq_dep_code') = 0, 'ALTER TABLE `tb_department` ADD UNIQUE KEY `uq_dep_code` (`dep_code`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_department' AND INDEX_NAME = 'uq_dep_branch_name') = 0, 'ALTER TABLE `tb_department` ADD UNIQUE KEY `uq_dep_branch_name` (`dep_branch_id`,`dep_name`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_department' AND INDEX_NAME = 'fk_dep_branch') = 0, 'ALTER TABLE `tb_department` ADD KEY `fk_dep_branch` (`dep_branch_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 -- tb_roles
 SET @q = IF((SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_roles' AND INDEX_NAME = 'uq_role_name') <> 'role_name', 'ALTER TABLE `tb_roles` DROP INDEX `uq_role_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_roles' AND INDEX_NAME = 'uq_role_name') = 0, 'ALTER TABLE `tb_roles` ADD UNIQUE KEY `uq_role_name` (`role_name`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
@@ -3645,6 +3858,19 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHE
 -- tb_invoices (ใบเพิ่มหนี้ ขั้น N-2)
 SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND INDEX_NAME = 'fk_inv_reference') = 0, 'ALTER TABLE `tb_invoices` ADD KEY `fk_inv_reference` (`inv_reference_invoice_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- tb_employee_codes
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_codes' AND INDEX_NAME = 'uq_ecd_code') = 0, 'ALTER TABLE `tb_employee_codes` ADD UNIQUE KEY `uq_ecd_code` (`ecd_code`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_codes' AND INDEX_NAME = 'idx_ecd_employee') = 0, 'ALTER TABLE `tb_employee_codes` ADD KEY `idx_ecd_employee` (`ecd_employee_id`,`ecd_valid_to`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_codes' AND INDEX_NAME = 'fk_ecd_department') = 0, 'ALTER TABLE `tb_employee_codes` ADD KEY `fk_ecd_department` (`ecd_department_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_codes' AND INDEX_NAME = 'fk_ecd_branch') = 0, 'ALTER TABLE `tb_employee_codes` ADD KEY `fk_ecd_branch` (`ecd_branch_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_codes' AND INDEX_NAME = 'fk_ecd_created_by') = 0, 'ALTER TABLE `tb_employee_codes` ADD KEY `fk_ecd_created_by` (`ecd_created_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- tb_employee_cards
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND INDEX_NAME = 'uq_ec_employee_seq') = 0, 'ALTER TABLE `tb_employee_cards` ADD UNIQUE KEY `uq_ec_employee_seq` (`ec_employee_id`,`ec_seq`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND INDEX_NAME = 'idx_ec_voided') = 0, 'ALTER TABLE `tb_employee_cards` ADD KEY `idx_ec_voided` (`ec_voided_at`,`ec_returned_at`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND INDEX_NAME = 'idx_ec_printed') = 0, 'ALTER TABLE `tb_employee_cards` ADD KEY `idx_ec_printed` (`ec_printed_at`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND INDEX_NAME = 'idx_ec_expires') = 0, 'ALTER TABLE `tb_employee_cards` ADD KEY `idx_ec_expires` (`ec_expires_on`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND INDEX_NAME = 'fk_ec_issued_by') = 0, 'ALTER TABLE `tb_employee_cards` ADD KEY `fk_ec_issued_by` (`ec_issued_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
 -- ─── ส่วนที่ 4: เติม foreign key ที่ยังขาด (รวม FK ย้อนกลับ tb_roles -> tb_users ที่สร้างพร้อมตารางไม่ได้) ──
 -- สกุลเงินเริ่มต้น THB + USD (2026-10-13) — ต้องมีก่อนเพิ่ม FK สกุลเงินของลูกค้า (ลูกค้าเดิมทุกรายได้ค่าเริ่มต้น THB)
 -- ใส่เฉพาะตอนตารางยังว่าง · ข้อมูลเริ่มต้นอื่นอยู่ส่วนที่ 5
@@ -3940,6 +4166,17 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CON
 -- tb_invoices (ใบเพิ่มหนี้ ขั้น N-2)
 SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND CONSTRAINT_NAME = 'fk_inv_reference' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_invoices` ADD CONSTRAINT `fk_inv_reference` FOREIGN KEY (`inv_reference_invoice_id`) REFERENCES `tb_invoices` (`inv_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- tb_department (แผนกผูกสาขา 2026-10-18)
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_department' AND CONSTRAINT_NAME = 'fk_dep_branch' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_department` ADD CONSTRAINT `fk_dep_branch` FOREIGN KEY (`dep_branch_id`) REFERENCES `tb_branches` (`branch_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- tb_employee_codes
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_codes' AND CONSTRAINT_NAME = 'fk_ecd_branch' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_employee_codes` ADD CONSTRAINT `fk_ecd_branch` FOREIGN KEY (`ecd_branch_id`) REFERENCES `tb_branches` (`branch_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_codes' AND CONSTRAINT_NAME = 'fk_ecd_created_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_employee_codes` ADD CONSTRAINT `fk_ecd_created_by` FOREIGN KEY (`ecd_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_codes' AND CONSTRAINT_NAME = 'fk_ecd_department' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_employee_codes` ADD CONSTRAINT `fk_ecd_department` FOREIGN KEY (`ecd_department_id`) REFERENCES `tb_department` (`dep_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_codes' AND CONSTRAINT_NAME = 'fk_ecd_employee' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_employee_codes` ADD CONSTRAINT `fk_ecd_employee` FOREIGN KEY (`ecd_employee_id`) REFERENCES `tb_employees` (`emp_id`) ON DELETE CASCADE', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- tb_employee_cards
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND CONSTRAINT_NAME = 'fk_ec_employee' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_employee_cards` ADD CONSTRAINT `fk_ec_employee` FOREIGN KEY (`ec_employee_id`) REFERENCES `tb_employees` (`emp_id`) ON DELETE CASCADE', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND CONSTRAINT_NAME = 'fk_ec_issued_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_employee_cards` ADD CONSTRAINT `fk_ec_issued_by` FOREIGN KEY (`ec_issued_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
 -- ─── ส่วนที่ 5: ข้อมูลเริ่มต้น (ใส่เฉพาะตอนตารางยังว่างเท่านั้น) ─────────────────────────────────
 -- ตั้งใจเช็ค "ตารางว่าง" ไม่ใช่ "ไม่มีแถวนี้" — ถ้าแอดมินลบ/เปลี่ยนบัญชีเริ่มต้นไปแล้วบน production
 -- ห้ามสร้างบัญชีที่รู้รหัสผ่านกลับขึ้นมาใหม่เองตอน deploy
@@ -4124,7 +4361,7 @@ SELECT e.table_name,
        e.expected_columns, a.actual_columns,
        e.expected_indexes, a.actual_indexes
 FROM (
-              SELECT 'tb_department' AS table_name, 'dep_created_at,dep_id,dep_name,dep_status,dep_updated_at' AS expected_columns, 'primary(dep_id),uq_dep_name(dep_name)' AS expected_indexes
+              SELECT 'tb_department' AS table_name, 'dep_abbr,dep_branch_id,dep_code,dep_created_at,dep_id,dep_name,dep_status,dep_updated_at' AS expected_columns, 'fk_dep_branch(dep_branch_id),primary(dep_id),uq_dep_branch_name(dep_branch_id+dep_name),uq_dep_code(dep_code)' AS expected_indexes
     UNION ALL SELECT 'tb_roles' AS table_name, 'role_department,role_granted_at,role_granted_by_id,role_id,role_name,role_permission,role_type,role_update_at' AS expected_columns, 'fk_role_department(role_department),fk_role_granted_by(role_granted_by_id),primary(role_id),uq_role_name(role_name)' AS expected_indexes
     UNION ALL SELECT 'tb_users' AS table_name, 'user_avatar_url,user_branch_id,user_created_at,user_email,user_fname,user_id,user_last_login_at,user_line_uid,user_lname,user_must_change_password,user_password,user_phone,user_role_id,user_status,user_updated_at,user_username,user_whatsapp_no' AS expected_columns, 'fk_user_branch(user_branch_id),idx_user_role(user_role_id),primary(user_id),uq_user_email(user_email),uq_user_username(user_username)' AS expected_indexes
     UNION ALL SELECT 'tb_maxID' AS table_name, 'max_id,max_table' AS expected_columns, 'primary(max_table)' AS expected_indexes
@@ -4190,13 +4427,13 @@ FROM (
     UNION ALL SELECT 'tb_payment_allocations' AS table_name, 'pva_amount,pva_amount_thb,pva_base_amount,pva_expense_id,pva_order,pva_payment_id,pva_wht_income_type' AS expected_columns, 'fk_pva_expense(pva_expense_id),primary(pva_payment_id+pva_expense_id)' AS expected_indexes
     UNION ALL SELECT 'tb_wht_certificates' AS table_name, 'wt_book_no,wt_cancelled_at,wt_created_at,wt_form,wt_id,wt_number,wt_payee_snapshot,wt_payer_snapshot,wt_payment_date,wt_payment_id,wt_sequence,wt_status,wt_total_paid,wt_total_tax' AS expected_columns, 'idx_wt_form_date(wt_form+wt_payment_date),primary(wt_id),uq_wt_number(wt_number),uq_wt_payment(wt_payment_id)' AS expected_indexes
     UNION ALL SELECT 'tb_wht_certificate_lines' AS table_name, 'wtl_certificate_id,wtl_form_label,wtl_form_row,wtl_id,wtl_income_type,wtl_paid_amount,wtl_rate,wtl_tax_amount' AS expected_columns, 'fk_wtl_income_type(wtl_income_type),idx_wtl_certificate(wtl_certificate_id),primary(wtl_id)' AS expected_indexes
-    UNION ALL SELECT 'tb_employees' AS table_name, 'emp_address,emp_bank_account_name,emp_bank_account_no,emp_bank_name,emp_birth_date,emp_branch_id,emp_code,emp_created_at,emp_created_by,emp_department_id,emp_email,emp_first_name_en,emp_first_name_th,emp_hire_date,emp_id,emp_last_name_en,emp_last_name_th,emp_national_id,emp_nickname,emp_notes,emp_phone,emp_position,emp_sso_enrolled,emp_sso_number,emp_termination_date,emp_termination_reason,emp_title,emp_updated_at,emp_user_id' AS expected_columns, 'fk_emp_branch(emp_branch_id),fk_emp_created_by(emp_created_by),fk_emp_department(emp_department_id),fk_emp_user(emp_user_id),idx_emp_name(emp_first_name_th+emp_last_name_th),idx_emp_national_id(emp_national_id),idx_emp_termination(emp_termination_date),primary(emp_id),uq_emp_code(emp_code)' AS expected_indexes
+    UNION ALL SELECT 'tb_employees' AS table_name, 'emp_address,emp_bank_account_name,emp_bank_account_no,emp_bank_name,emp_birth_date,emp_branch_id,emp_close_login_on_termination,emp_code,emp_created_at,emp_created_by,emp_department_id,emp_email,emp_first_name_en,emp_first_name_th,emp_hire_date,emp_id,emp_last_name_en,emp_last_name_th,emp_national_id,emp_nickname,emp_notes,emp_phone,emp_photo_url,emp_position,emp_sso_enrolled,emp_sso_number,emp_termination_date,emp_termination_reason,emp_title,emp_updated_at,emp_user_id' AS expected_columns, 'fk_emp_branch(emp_branch_id),fk_emp_created_by(emp_created_by),fk_emp_department(emp_department_id),fk_emp_user(emp_user_id),idx_emp_name(emp_first_name_th+emp_last_name_th),idx_emp_national_id(emp_national_id),idx_emp_termination(emp_termination_date),primary(emp_id),uq_emp_code(emp_code)' AS expected_indexes
     UNION ALL SELECT 'tb_employee_compensations' AS table_name, 'ecm_base_salary,ecm_created_at,ecm_created_by,ecm_effective_from,ecm_employee_id,ecm_note' AS expected_columns, 'fk_ecm_created_by(ecm_created_by),primary(ecm_employee_id+ecm_effective_from)' AS expected_indexes
     UNION ALL SELECT 'tb_employee_recurring_items' AS table_name, 'eri_amount,eri_created_at,eri_created_by,eri_effective_from,eri_effective_to,eri_employee_id,eri_id,eri_is_sso_wage,eri_is_taxable,eri_kind,eri_label,eri_note' AS expected_columns, 'fk_eri_created_by(eri_created_by),idx_eri_employee(eri_employee_id+eri_effective_from),primary(eri_id)' AS expected_indexes
     UNION ALL SELECT 'tb_sso_rates' AS table_name, 'sr_created_at,sr_created_by,sr_effective_from,sr_employee_rate,sr_employer_rate,sr_note,sr_wage_ceiling,sr_wage_floor' AS expected_columns, 'fk_sr_created_by(sr_created_by),primary(sr_effective_from)' AS expected_indexes
     UNION ALL SELECT 'tb_income_tax_years' AS table_name, 'ity_created_at,ity_created_by,ity_expense_cap,ity_expense_rate,ity_note,ity_personal_allowance,ity_tax_year,ity_updated_at' AS expected_columns, 'fk_ity_created_by(ity_created_by),primary(ity_tax_year)' AS expected_indexes
     UNION ALL SELECT 'tb_income_tax_brackets' AS table_name, 'itb_from_amount,itb_rate,itb_tax_year' AS expected_columns, 'primary(itb_tax_year+itb_from_amount)' AS expected_indexes
-    UNION ALL SELECT 'tb_payroll_settings' AS table_name, 'ps_hours_per_day,ps_id,ps_pay_day,ps_timesheet_backdate_days,ps_unpaid_leave_divisor,ps_updated_at,ps_updated_by,ps_working_weekdays' AS expected_columns, 'fk_ps_updated_by(ps_updated_by),primary(ps_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_payroll_settings' AS table_name, 'ps_card_valid_years,ps_hours_per_day,ps_id,ps_pay_day,ps_timesheet_backdate_days,ps_unpaid_leave_divisor,ps_updated_at,ps_updated_by,ps_working_weekdays' AS expected_columns, 'fk_ps_updated_by(ps_updated_by),primary(ps_id)' AS expected_indexes
     UNION ALL SELECT 'tb_company_holidays' AS table_name, 'hd_created_at,hd_created_by,hd_date,hd_name' AS expected_columns, 'fk_hd_created_by(hd_created_by),primary(hd_date)' AS expected_indexes
     UNION ALL SELECT 'tb_leave_types' AS table_name, 'lt_attachment_from_days,lt_carry_over_days,lt_created_at,lt_days_per_year,lt_id,lt_is_paid,lt_min_service_days,lt_name_en,lt_name_th,lt_sort_order,lt_status,lt_updated_at' AS expected_columns, 'primary(lt_id),uq_lt_name_th(lt_name_th)' AS expected_indexes
     UNION ALL SELECT 'tb_timesheet_weeks' AS table_name, 'tsw_approved_at,tsw_created_at,tsw_employee_id,tsw_id,tsw_return_reason,tsw_returned_at,tsw_returned_by,tsw_status,tsw_submitted_at,tsw_total_hours,tsw_updated_at,tsw_version,tsw_week_start' AS expected_columns, 'fk_tsw_returned_by(tsw_returned_by),idx_tsw_status(tsw_status+tsw_week_start),primary(tsw_id),uq_tsw_employee_week(tsw_employee_id+tsw_week_start)' AS expected_indexes
@@ -4215,6 +4452,8 @@ FROM (
     UNION ALL SELECT 'tb_credit_notes' AS table_name, 'cn_approval_current_level,cn_approval_plan,cn_approval_round,cn_base_thb,cn_branch_id,cn_cancel_reason,cn_cancelled_at,cn_cancelled_by,cn_client_id,cn_client_snapshot,cn_company_snapshot,cn_created_at,cn_created_by,cn_created_by_name,cn_currency,cn_id,cn_internal_note,cn_invoice_id,cn_issue_date,cn_issued_at,cn_issued_by,cn_issued_by_name,cn_issued_by_title,cn_issuer_signature_id,cn_language,cn_notes,cn_number,cn_original_total,cn_outstanding_before,cn_project_id,cn_reason,cn_reason_code,cn_refund_amount,cn_refund_bank_account_id,cn_refund_date,cn_refund_note,cn_refund_reference,cn_refund_required,cn_refund_wht,cn_refunded_at,cn_refunded_by,cn_returned_reason,cn_status,cn_submitted_at,cn_subtotal,cn_total,cn_total_thb,cn_updated_at,cn_vat_amount,cn_vat_rate,cn_version,cn_wht_amount' AS expected_columns, 'fk_cn_branch(cn_branch_id),fk_cn_cancelled_by(cn_cancelled_by),fk_cn_client(cn_client_id),fk_cn_created_by(cn_created_by),fk_cn_currency(cn_currency),fk_cn_issued_by(cn_issued_by),fk_cn_issuer_signature(cn_issuer_signature_id),fk_cn_project(cn_project_id),fk_cn_refund_bank_account(cn_refund_bank_account_id),fk_cn_refunded_by(cn_refunded_by),idx_cn_invoice_status(cn_invoice_id+cn_status),idx_cn_status_issue_date(cn_status+cn_issue_date),primary(cn_id),uq_cn_number(cn_number)' AS expected_indexes
     UNION ALL SELECT 'tb_credit_note_lines' AS table_name, 'cnl_amount,cnl_credit_note_id,cnl_description,cnl_id,cnl_order' AS expected_columns, 'idx_cnl_credit_note(cnl_credit_note_id+cnl_order),primary(cnl_id)' AS expected_indexes
     UNION ALL SELECT 'tb_credit_note_approvals' AS table_name, 'cna_action,cna_created_at,cna_credit_note_id,cna_id,cna_level,cna_reason,cna_role_id,cna_role_name,cna_round,cna_user_id,cna_user_name' AS expected_columns, 'fk_cna_user(cna_user_id),idx_cna_credit_note(cna_credit_note_id+cna_round+cna_level),primary(cna_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_employee_codes' AS table_name, 'ecd_branch_id,ecd_code,ecd_created_at,ecd_created_by,ecd_department_id,ecd_employee_id,ecd_id,ecd_note,ecd_reason,ecd_valid_from,ecd_valid_to' AS expected_columns, 'fk_ecd_branch(ecd_branch_id),fk_ecd_created_by(ecd_created_by),fk_ecd_department(ecd_department_id),idx_ecd_employee(ecd_employee_id+ecd_valid_to),primary(ecd_id),uq_ecd_code(ecd_code)' AS expected_indexes
+    UNION ALL SELECT 'tb_employee_cards' AS table_name, 'ec_branch_name,ec_department_name,ec_emp_code,ec_employee_id,ec_expires_on,ec_id,ec_issued_at,ec_issued_by,ec_name_en,ec_name_th,ec_note,ec_photo_url,ec_position,ec_printed_at,ec_reason,ec_returned_at,ec_seq,ec_void_reason,ec_voided_at' AS expected_columns, 'fk_ec_issued_by(ec_issued_by),idx_ec_expires(ec_expires_on),idx_ec_printed(ec_printed_at),idx_ec_voided(ec_voided_at+ec_returned_at),primary(ec_id),uq_ec_employee_seq(ec_employee_id+ec_seq)' AS expected_indexes
 ) e
 LEFT JOIN (
     SELECT LOWER(c.TABLE_NAME) AS table_name,

@@ -17,6 +17,7 @@
         "request": "GET /V1/users/me",
         "status": 200,
         "body": {
+            "linked_employee": "null",
             "role_name": "string",
             "role_permission": "string",
             "user_avatar_url": "null",
@@ -115,8 +116,8 @@
         "request": "POST /V1/departments",
         "status": 201,
         "body": {
-            "dep_id": "string",
-            "dep_name": "string"
+            "dep_code": "string",
+            "dep_id": "string"
         }
     },
     "รายการแผนก": {
@@ -125,11 +126,18 @@
         "body": {
             "data": [
                 {
+                    "branch_code": "string",
+                    "branch_name_th": "string",
+                    "branch_status": "string",
+                    "dep_abbr": "string",
+                    "dep_branch_id": "string",
+                    "dep_code": "string",
                     "dep_created_at": "string",
                     "dep_id": "string",
                     "dep_name": "string",
                     "dep_status": "string",
-                    "dep_updated_at": "string"
+                    "dep_updated_at": "string",
+                    "employee_count": "number"
                 }
             ],
             "total": "number"
@@ -139,18 +147,26 @@
         "request": "GET /V1/departments/:id",
         "status": 200,
         "body": {
+            "branch_code": "string",
+            "branch_name_th": "string",
+            "branch_status": "string",
+            "dep_abbr": "string",
+            "dep_branch_id": "string",
+            "dep_code": "string",
             "dep_created_at": "string",
             "dep_id": "string",
             "dep_name": "string",
             "dep_status": "string",
-            "dep_updated_at": "string"
+            "dep_updated_at": "string",
+            "employee_count": "number"
         }
     },
     "แก้แผนก": {
         "request": "PUT /V1/departments/:id",
         "status": 200,
         "body": {
-            "message": "string"
+            "dep_code": "string",
+            "dep_id": "string"
         }
     },
     "สร้างตำแหน่ง": {
@@ -224,6 +240,8 @@
                 {
                     "by_fullname": "string",
                     "can_manage": "boolean",
+                    "is_login_closed": "boolean",
+                    "linked_emp_code": "null",
                     "role_name": "string",
                     "role_type": "string",
                     "user_avatar_url": "null",
@@ -245,6 +263,8 @@
         "body": {
             "can_manage": "boolean",
             "is_self": "boolean",
+            "linked_employee": "null",
+            "login_closed_after": "null",
             "role_name": "string",
             "user_avatar_url": "null",
             "user_branch_id": "null",

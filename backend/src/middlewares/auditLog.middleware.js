@@ -189,6 +189,14 @@ const ENTITIES = [
     { re: /^\/employees\/([^/]+)\/recurring-items(\/[^/]+)?(\/end)?$/, type: "employee", id: "1", label: { POST: "เพิ่ม/หยุดรายการประจำของพนักงาน", DELETE: "ลบรายการประจำของพนักงาน" } },
     { re: /^\/employees\/([^/]+)\/terminate$/, type: "employee", table: "tb_employees", pk: "emp_id", id: "1", label: { POST: "ตั้งพนักงานพ้นสภาพ" } },
     { re: /^\/employees\/([^/]+)\/reinstate$/, type: "employee", table: "tb_employees", pk: "emp_id", id: "1", label: { POST: "ยกเลิกการพ้นสภาพของพนักงาน" } },
+    // ย้ายแผนก/สาขา (รหัสใหม่) · บัตร · รูป (2026-10-18) — table/pk ทำให้ log เก็บค่าก่อน-หลังของพนักงาน (รหัสเดิม → ใหม่)
+    { re: /^\/employees\/([^/]+)\/transfer$/, type: "employee", table: "tb_employees", pk: "emp_id", id: "1", label: { POST: "ย้ายแผนก/สาขาพนักงาน (ออกรหัสใหม่ + บัตรใหม่)" } },
+    { re: /^\/employees\/([^/]+)\/cards\/[^/]+\/printed$/, type: "employee", id: "1", label: { POST: "บันทึกว่าพิมพ์บัตรพนักงานแล้ว" } },
+    { re: /^\/employees\/([^/]+)\/cards\/[^/]+\/returned$/, type: "employee", id: "1", label: { POST: "บันทึกว่าเก็บบัตรพนักงานคืนแล้ว" } },
+    { re: /^\/employees\/([^/]+)\/cards$/, type: "employee", id: "1", label: { POST: "ออกบัตรพนักงานใบใหม่" } },
+    // เปิด/ปิดการเข้าระบบหลังพ้นสภาพ (2026-10-18) — table/pk ทำให้ log เก็บค่าก่อน-หลัง
+    { re: /^\/employees\/([^/]+)\/login-closure$/, type: "employee", table: "tb_employees", pk: "emp_id", id: "1", label: { POST: "เปลี่ยนการปิดการเข้าระบบหลังพ้นสภาพ" } },
+    { re: /^\/employees\/([^/]+)\/photo$/, type: "employee", table: "tb_employees", pk: "emp_id", id: "1", label: { POST: "อัปโหลดรูปพนักงาน", DELETE: "ลบรูปพนักงาน" } },
     { re: /^\/employees\/(?!form-options$)([^/]+)$/, type: "employee", table: "tb_employees", pk: "emp_id", id: "1", label: { GET: "เปิดข้อมูลพนักงาน", PUT: "แก้ไขข้อมูลพนักงาน", DELETE: "ลบพนักงาน" } },
     { re: /^\/employees$/, type: "employee", table: "tb_employees", pk: "emp_id", id: "response:emp_id", label: { POST: "เพิ่มพนักงาน" } },
     { re: /^\/people\/settings$/, type: "hr_setting", table: "tb_payroll_settings", pk: "ps_id", id: "fixed:1", label: { PUT: "แก้ตั้งค่าเวลาทำงาน/เงินเดือน" } },

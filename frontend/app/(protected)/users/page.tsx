@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import Button from "@/components/ui/Button/Button";
 import PageHeader from "@/components/ui/page-header";
 import PersonCell from "@/components/ui/person-cell";
-import { ActiveStatusPill } from "@/components/ui/status-pill";
+import StatusPill, { ActiveStatusPill } from "@/components/ui/status-pill";
 import { Plus } from "lucide-react";
 
 type User = {
@@ -32,6 +32,9 @@ type User = {
     by_fullname: string;
     role_name: string;
     role_type: string;
+    // พนักงานปัจจุบันที่ผูก · ปิดการเข้าระบบเพราะพ้นสภาพ (2026-10-18)
+    linked_emp_code: string | null;
+    is_login_closed: boolean;
 };
 
 async function fetchUsers(params: { limit: number; offset: number; search: string }) {
@@ -70,7 +73,11 @@ export default function UsersPage() {
             key: "by_fullname",
             header: "ผู้ใช้งาน",
             render: (_, row) => (
-                <PersonCell name={row.by_fullname} subtitle={`@${row.user_username}`} avatarPath={row.user_avatar_url} />
+                <PersonCell
+                    name={row.by_fullname}
+                    subtitle={row.linked_emp_code ? `@${row.user_username} · พนักงาน ${row.linked_emp_code}` : `@${row.user_username}`}
+                    avatarPath={row.user_avatar_url}
+                />
             ),
         },
         // ยังไม่มีอีเมล = แอดมินสร้างไว้โดยไม่ใส่อีเมล และผู้ใช้ยังไม่ได้เข้าระบบครั้งแรกไปยืนยัน
@@ -84,7 +91,17 @@ export default function UsersPage() {
                 </span>
             ),
         },
-        { key: "user_status", header: "สถานะ", render: (v) => <ActiveStatusPill isActive={v === "active"} /> },
+        {
+            key: "user_status",
+            header: "สถานะ",
+            // ปิดเพราะพ้นสภาพ (ตั้งที่หน้าพนักงาน) แยกจากปิดใช้งานด้วยมือ (user_status)
+            render: (v, row) =>
+                v === "active" && row.is_login_closed ? (
+                    <StatusPill tone="neutral">ปิดเพราะพ้นสภาพ</StatusPill>
+                ) : (
+                    <ActiveStatusPill isActive={v === "active"} />
+                ),
+        },
         // { key: "role_type", header: "ประเภทสิทธิ์" },
         { key: "user_phone", header: "เบอร์โทรศัพท์", render: (v) => (v as string) || "-" },
         { key: "user_updated_at", header: "อัปเดตเมื่อ", render: (v) => formatDate(v) },

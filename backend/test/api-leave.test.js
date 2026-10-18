@@ -4,6 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const bcrypt = require("bcryptjs");
 const { startTestServer } = require("./support/test-server");
+const { createTestDepartment } = require("./support/test-department");
 const { PERMISSION_KEYS } = require("../src/shared/permissions.mjs");
 const { todayBangkok } = require("../src/utils/bangkok-time");
 const { addDays, weekStartOf, weekdayIndex } = require("../src/shared/payroll-math.mjs");
@@ -12,6 +13,9 @@ const PASSWORD = "Staff@2026";
 const PDF_BYTES = Buffer.from("%PDF-1.4\n%ใบรับรองแพทย์\n", "utf8");
 
 let api;
+let departmentId;
+// ชื่อที่เทสต์ใช้เรียกพนักงาน → รหัสที่ระบบออกให้
+const codes = {};
 const people = {};
 const leaveTypes = {};
 const today = todayBangkok();
@@ -42,7 +46,7 @@ async function createPerson(name, permissionKeys, userNumber) {
 async function createEmployee(code, userId, hireDate = "2026-01-01") {
     const response = await api.callApi("POST", "/V1/employees", {
         body: {
-            emp_code: code,
+            emp_department_id: departmentId,
             emp_first_name_th: code,
             emp_last_name_th: "ทดสอบ",
             emp_nickname: code === "LV-DEV" ? "เดฟ" : null,
@@ -52,6 +56,8 @@ async function createEmployee(code, userId, hireDate = "2026-01-01") {
         },
     });
     assert.equal(response.status, 201, JSON.stringify(response.body));
+    // รหัสพนักงานระบบออกให้ (2026-10-18) — เก็บไว้เทียบกับข้อมูลที่อ้างรหัส
+    codes[code] = response.body.emp_code;
     return response.body.emp_id;
 }
 
@@ -106,6 +112,7 @@ async function attachFile(person, requestId) {
 test.before(async () => {
     api = await startTestServer("leave");
     await api.loginAsAdmin();
+    departmentId = await createTestDepartment(api);
     people.developer = await createPerson("lv.dev", ["dashboard"], 181);
     people.hr = await createPerson("lv.hr", ["dashboard", "approveLeave"], 182);
     people.newcomer = await createPerson("lv.new", ["dashboard"], 183);

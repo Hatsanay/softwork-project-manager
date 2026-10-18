@@ -84,6 +84,10 @@ CREATE TABLE `tb_branches` (
   UNIQUE KEY `uq_branch_code` (`branch_code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- แผนกผูกสาขา (tb_department สร้างใน create_users_roles.sql ก่อนตารางนี้ — 2026-10-18)
+ALTER TABLE tb_department
+  ADD CONSTRAINT fk_dep_branch FOREIGN KEY (dep_branch_id) REFERENCES tb_branches(branch_id);
+
 -- บัญชีธนาคารรับเงิน (แสดงบนใบแจ้งหนี้ ช่วง 1B) — บัญชีหลักมีได้ 1 บัญชีต่อสกุลเงิน (ตรวจใน backend)
 CREATE TABLE `tb_bank_accounts` (
   `ba_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,

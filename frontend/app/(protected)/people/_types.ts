@@ -18,6 +18,7 @@ export type EmployeeListRow = {
     emp_hire_date: string;
     emp_termination_date: string | null;
     department_name: string | null;
+    department_code: string | null;
     branch_name: string | null;
     user_username: string | null;
     employment_status: EmploymentStatus;
@@ -48,6 +49,65 @@ export type RecurringItem = {
     item_status: RecurringItemStatus;
 };
 
+// รหัสพนักงาน · บัตรพนักงาน (2026-10-18 · docs/plans/2026-10-18-employee-department-codes.md)
+export type EmployeeCodeReason = "hire" | "correction" | "transfer" | "migration";
+
+export type EmployeeCodeHistory = {
+    ecd_id: number;
+    ecd_code: string;
+    ecd_reason: EmployeeCodeReason;
+    ecd_note: string | null;
+    ecd_valid_from: string;
+    ecd_valid_to: string | null;
+    dep_name: string | null;
+    dep_code: string | null;
+    branch_name_th: string | null;
+    created_by_name: string | null;
+    ecd_created_at: string;
+};
+
+export type EmployeeCardReason = "first_issue" | "code_change" | "lost" | "damaged" | "info_change" | "expired";
+
+export type EmployeeCard = {
+    ec_id: number;
+    ec_employee_id: string;
+    ec_seq: number;
+    ec_emp_code: string;
+    ec_name_th: string;
+    ec_name_en: string | null;
+    ec_position: string | null;
+    ec_department_name: string | null;
+    ec_branch_name: string | null;
+    ec_photo_url: string | null;
+    ec_reason: EmployeeCardReason;
+    ec_note: string | null;
+    ec_issued_at: string;
+    // ใช้ได้ถึง (YYYY-MM-DD) = วันออก + อายุบัตรตามตั้งค่า ณ ตอนออก
+    ec_expires_on: string;
+    ec_printed_at: string | null;
+    ec_voided_at: string | null;
+    ec_void_reason: string | null;
+    ec_returned_at: string | null;
+    issued_by_name: string | null;
+};
+
+export type CardQueueRow = Pick<
+    EmployeeCard,
+    | "ec_id"
+    | "ec_employee_id"
+    | "ec_seq"
+    | "ec_emp_code"
+    | "ec_name_th"
+    | "ec_department_name"
+    | "ec_branch_name"
+    | "ec_reason"
+    | "ec_issued_at"
+    | "ec_expires_on"
+    | "ec_printed_at"
+    | "ec_voided_at"
+    | "ec_void_reason"
+> & { emp_termination_date: string | null };
+
 export type Employee = {
     emp_id: string;
     emp_code: string;
@@ -75,12 +135,27 @@ export type Employee = {
     emp_sso_enrolled: boolean;
     emp_sso_number: string | null;
     emp_notes: string | null;
+    emp_photo_url: string | null;
     department_name: string | null;
+    department_code: string | null;
     branch_name: string | null;
+    branch_code: string | null;
     user_username: string | null;
     user_fullname: string | null;
     user_status: ActiveStatus | null;
+    user_avatar_url: string | null;
     employment_status: EmploymentStatus;
+    // ปิดการเข้าระบบของบัญชีที่ผูกหลังวันทำงานวันสุดท้าย (2026-10-18 · docs/plans/2026-10-18-user-employee-link.md)
+    emp_close_login_on_termination: boolean;
+    login_access: {
+        state: "not_linked" | "inactive" | "open" | "closes_after" | "closed" | "kept_open";
+        last_day: string | null;
+    };
+    // งวดเงินเดือนล่าสุดที่พนักงานคนนี้อยู่ (เช่น "2026-09") · มีค่า = แก้วันเริ่มงาน/แผนกในฟอร์มไม่ได้
+    code_locked_by_payroll: string | null;
+    code_history: EmployeeCodeHistory[];
+    cards: EmployeeCard[];
+    transfer_range: { minDate: string; maxDate: string; latestPeriod: string | null };
     compensations: Compensation[];
     current_compensation: Compensation | null;
     recurring_items: RecurringItem[];
@@ -88,7 +163,15 @@ export type Employee = {
 };
 
 export type EmployeeFormOptions = {
-    departments: { dep_id: string; dep_name: string; dep_status: ActiveStatus }[];
+    departments: {
+        dep_id: string;
+        dep_name: string;
+        dep_status: ActiveStatus;
+        dep_code: string;
+        dep_branch_id: string;
+        branch_code: string;
+        branch_name_th: string;
+    }[];
     branches: { branch_id: string; branch_code: string; branch_name_th: string; branch_status: ActiveStatus }[];
     users: {
         user_id: string;
@@ -109,6 +192,7 @@ export type PayrollSettings = {
     ps_pay_day: number;
     ps_unpaid_leave_divisor: UnpaidLeaveDivisor;
     ps_timesheet_backdate_days: number;
+    ps_card_valid_years: number;
 };
 
 export type SsoRate = {

@@ -5,6 +5,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const bcrypt = require("bcryptjs");
 const { startTestServer } = require("./support/test-server");
+const { createTestDepartment } = require("./support/test-department");
 const { PERMISSION_KEYS } = require("../src/shared/permissions.mjs");
 
 const PASSWORD = "Staff@2026";
@@ -13,6 +14,9 @@ const APRIL = "2026-04";
 const PROJECT_ID = "PRO209901040000001";
 
 let api;
+let departmentId;
+// ชื่อที่เทสต์ใช้เรียกพนักงาน → รหัสที่ระบบออกให้
+const codes = {};
 const people = {};
 const employees = {};
 let marchRunId;
@@ -33,7 +37,7 @@ async function createPerson(name, permissionKeys, userNumber) {
 async function createEmployee(code, { hireDate, salary, userId = null, nationalId = null }) {
     const response = await api.callApi("POST", "/V1/employees", {
         body: {
-            emp_code: code,
+            emp_department_id: departmentId,
             emp_first_name_th: code,
             emp_last_name_th: "ทดสอบ",
             emp_hire_date: hireDate,
@@ -43,6 +47,8 @@ async function createEmployee(code, { hireDate, salary, userId = null, nationalI
         },
     });
     assert.equal(response.status, 201, JSON.stringify(response.body));
+    // รหัสพนักงานระบบออกให้ (2026-10-18) — เก็บไว้เทียบกับข้อมูลที่อ้างรหัส
+    codes[code] = response.body.emp_code;
     return response.body.emp_id;
 }
 
@@ -69,6 +75,7 @@ const itemOf = (run, employeeId) => run.items.find((item) => item.pri_employee_i
 test.before(async () => {
     api = await startTestServer("payroll");
     await api.loginAsAdmin();
+    departmentId = await createTestDepartment(api);
     people.hr = await createPerson("pr.hr", ["dashboard", "viewPayroll", "runPayroll", "manageEmployees"], 191);
     people.approver = await createPerson("pr.approver", ["dashboard", "viewPayroll", "approvePayroll"], 192);
     people.dev = await createPerson("pr.dev", ["dashboard"], 193);
@@ -142,8 +149,8 @@ test("สร้างรอบ มี.ค.: เฉพาะคนที่เป
     const run = await getRun(marchRunId);
     assert.equal(run.pr_number, "PR-2026-03");
     assert.deepEqual(
-        run.items.map((item) => item.pri_emp_code),
-        ["PR-A", "PR-B", "PR-C"],
+        run.items.map((item) => item.pri_emp_code).sort(),
+        [codes["PR-A"], codes["PR-B"], codes["PR-C"]].sort(),
         "PR-D เริ่มงาน เม.ย. ไม่อยู่ในรอบ",
     );
 
@@ -178,7 +185,10 @@ test("สร้างรอบ มี.ค.: เฉพาะคนที่เป
     assert.ok(run.readiness.warnings.some((warning) => warning.includes("เลขประจำตัวประชาชน")));
     const priorWarning = run.readiness.warnings.find((warning) => warning.includes("ยอดยกมาของปี"));
     assert.ok(priorWarning, "รอบแรกของปี (มี.ค.) ไม่มียอดยกมา — ต้องเตือน");
-    assert.ok(priorWarning.includes("PR-A") && !priorWarning.includes("PR-B"), "PR-B เริ่มงาน มี.ค. ไม่ต้องมียอดยกมา");
+    assert.ok(
+        priorWarning.includes(codes["PR-A"]) && !priorWarning.includes(codes["PR-B"]),
+        "PR-B เริ่มงาน มี.ค. ไม่ต้องมียอดยกมา",
+    );
 });
 
 test("ลำดับรอบ: เดือนซ้ำไม่ได้ · รอบก่อนยังไม่อนุมัติสร้างเดือนถัดไปไม่ได้", async () => {
@@ -390,13 +400,14 @@ test("แบบยื่น (4-5): ภ.ง.ด.1 / สปส.1-10 นับเ�
     assert.deepEqual(
         pnd1.rows.map((row) => [row.emp_code, row.income, row.tax]),
         [
-            ["PR-A", "31000.00", "1.25"],
-            ["PR-B", "16000.00", "0.00"],
-            ["PR-C", "10000.00", "0.00"],
+            // เรียงตามรหัส (รหัสแผนก + วันเริ่มงาน + ลำดับ): A, C เริ่ม 1 ม.ค. ก่อน B ที่เริ่ม 16 มี.ค.
+            [codes["PR-A"], "31000.00", "1.25"],
+            [codes["PR-C"], "10000.00", "0.00"],
+            [codes["PR-B"], "16000.00", "0.00"],
         ],
     );
     assert.equal(pnd1.total_income, "57000.00");
-    assert.deepEqual(pnd1.missing_national_id, ["PR-A", "PR-C"]);
+    assert.deepEqual(pnd1.missing_national_id, [codes["PR-A"], codes["PR-C"]]);
 
     const sso = expectStatus(await as(people.hr, "GET", `/V1/payroll/reports/sso?month=${MARCH}`), 200);
     assert.equal(sso.rows.length, 3);
@@ -419,7 +430,7 @@ test("แบบยื่น (4-5): ภ.ง.ด.1 / สปส.1-10 นับเ�
     );
     let pnd1a = expectStatus(await as(people.hr, "GET", "/V1/payroll/reports/pnd1a?year=2026"), 200);
     assert.equal(pnd1a.due_date, "2027-02-28");
-    assert.equal(pnd1a.rows.find((row) => row.emp_code === "PR-A").income, "31000.00");
+    assert.equal(pnd1a.rows.find((row) => row.emp_code === codes["PR-A"]).income, "31000.00");
 
     expectStatus(
         await as(people.hr, "PUT", `/V1/employees/${employees.full}/tax-profiles/2026`, {
@@ -430,20 +441,20 @@ test("แบบยื่น (4-5): ภ.ง.ด.1 / สปส.1-10 นับเ�
         200,
     );
     pnd1a = expectStatus(await as(people.hr, "GET", "/V1/payroll/reports/pnd1a?year=2026"), 200);
-    const full = pnd1a.rows.find((row) => row.emp_code === "PR-A");
+    const full = pnd1a.rows.find((row) => row.emp_code === codes["PR-A"]);
     assert.deepEqual([full.income, full.tax], ["81000.00", "1001.25"], "ยอดยกมาของบริษัทนี้รวมในแบบรายปี");
 
     const certificates = expectStatus(
         await as(people.hr, "GET", `/V1/payroll/reports/certificates?year=2026&employee_id=${employees.full}`),
         200,
     );
-    assert.equal(certificates.certificates[0].reference, "2026/PR-A");
+    assert.equal(certificates.certificates[0].reference, `2026/${codes["PR-A"]}`);
     assert.equal(certificates.certificates[0].sso, "875.00");
 
     const mine = expectStatus(await as(people.dev, "GET", "/V1/payroll/my-certificates?year=2026"), 200);
     assert.deepEqual(
         mine.certificates.map((certificate) => certificate.emp_code),
-        ["PR-A"],
+        [codes["PR-A"]],
     );
     const outsider = expectStatus(await as(people.outsider, "GET", "/V1/payroll/my-certificates?year=2026"), 200);
     assert.equal(outsider.certificates.length, 0);

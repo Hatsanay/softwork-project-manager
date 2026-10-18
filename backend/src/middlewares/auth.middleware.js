@@ -1,4 +1,5 @@
 const pool = require("../config/db");
+const accountLinkService = require("../services/account-link.service");
 const { verifyToken } = require("../utils/jwt");
 const { effectiveRolePermission } = require("../utils/permissions");
 
@@ -52,6 +53,12 @@ async function requireAuth(req, res, next) {
         const user = rows[0];
         if (!user || user.user_status !== "active") {
             return res.status(401).json({ message: "บัญชีผู้ใช้งานถูกระงับหรือไม่พบผู้ใช้งาน" });
+        }
+        // พ้นสภาพพนักงานแล้วและติ๊กปิดการเข้าระบบ — token ที่ออกก่อนหน้าใช้ต่อไม่ได้ (docs/plans/2026-10-18-user-employee-link.md R2)
+        const closedLastDay = await accountLinkService.findLoginClosure(pool, payload.user_id);
+        if (closedLastDay) {
+            const error = accountLinkService.loginClosedError(closedLastDay);
+            return res.status(401).json({ code: error.code, message: error.message });
         }
         if (needsOnboarding(user) && !isOnboardingRoute(req)) {
             return res.status(403).json({

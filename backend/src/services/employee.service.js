@@ -6,16 +6,19 @@
 // - เลขประจำตัวประชาชน/บัญชีผู้ใช้ ห้ามซ้ำกับพนักงานที่ยังทำงานอยู่ (คนเดิมกลับมาทำงานใหม่ = พนักงานใหม่ ใช้เลขเดิมได้)
 // - ค่าจ้างแถวแรกมีผลวันเริ่มงานเสมอ — เปลี่ยนวันเริ่มงานแล้วแถวแรกเลื่อนตาม
 // - ขั้น 4-2/4-4 จะเพิ่มการล็อก: ลบพนักงานที่มีลงเวลา/รอบเงินเดือนไม่ได้ · ค่าจ้าง/รายการที่อยู่ในรอบเงินเดือนที่อนุมัติแล้วแก้ไม่ได้
+// - รหัสพนักงานระบบออกให้ · แผนกบังคับ · สาขา = สาขาของแผนก · ย้ายแผนก/บัตร อยู่ที่ employee-code.service.js
+//   (2026-10-18 — docs/plans/2026-10-18-employee-department-codes.md)
 const { AppError } = require("../utils/app-error");
 const { generateDailyId } = require("../utils/generateDailyId");
 const { todayBangkok } = require("../utils/bangkok-time");
+const employeeCodeService = require("./employee-code.service");
+const accountLinkService = require("./account-link.service");
 
 const MAX_LIST_LIMIT = 200;
 const VISIBLE_NATIONAL_ID_DIGITS = 4;
 
-// คอลัมน์ที่บันทึกจากฟอร์ม (ลำดับเดียวกับ toColumnValues)
+// คอลัมน์ที่บันทึกจากฟอร์ม (ลำดับเดียวกับ toColumnValues) — รหัสพนักงาน/สาขา ระบบตั้งเอง ไม่อยู่ในรายการนี้
 const EDITABLE_COLUMNS = [
-    "emp_code",
     "emp_user_id",
     "emp_title",
     "emp_first_name_th",
@@ -30,7 +33,6 @@ const EDITABLE_COLUMNS = [
     "emp_email",
     "emp_department_id",
     "emp_position",
-    "emp_branch_id",
     "emp_hire_date",
     "emp_bank_name",
     "emp_bank_account_no",
@@ -86,9 +88,11 @@ async function listEmployees(conn, { limit = 25, offset = 0, search = "", status
     const like = `%${search}%`;
     const conditions = [
         `(e.emp_code LIKE ? OR e.emp_first_name_th LIKE ? OR e.emp_last_name_th LIKE ? OR e.emp_nickname LIKE ?
-          OR CONCAT(e.emp_first_name_th, ' ', e.emp_last_name_th) LIKE ? OR e.emp_position LIKE ?)`,
+          OR CONCAT(e.emp_first_name_th, ' ', e.emp_last_name_th) LIKE ? OR e.emp_position LIKE ?
+          OR EXISTS (SELECT 1 FROM tb_employee_codes c WHERE c.ecd_employee_id = e.emp_id AND c.ecd_code LIKE ?))`,
     ];
-    const params = [like, like, like, like, like, like];
+    // ค้นด้วยรหัสเก่าก็เจอ (รหัสเปลี่ยนเมื่อย้ายแผนก — R9)
+    const params = [like, like, like, like, like, like, like];
     if (status === "employed") {
         conditions.push("(e.emp_termination_date IS NULL OR e.emp_termination_date >= ?)");
         params.push(today);
@@ -101,7 +105,8 @@ async function listEmployees(conn, { limit = 25, offset = 0, search = "", status
     const [rows] = await conn.query(
         `SELECT e.emp_id, e.emp_code, e.emp_title, e.emp_first_name_th, e.emp_last_name_th, e.emp_nickname,
                 e.emp_national_id, e.emp_position, e.emp_user_id, ${DATE_COLUMNS},
-                d.dep_name AS department_name, b.branch_name_th AS branch_name, u.user_username AS user_username,
+                d.dep_name AS department_name, d.dep_code AS department_code, b.branch_name_th AS branch_name,
+                u.user_username AS user_username,
                 ${EMPLOYMENT_STATUS_SQL} AS employment_status
          FROM tb_employees e
          LEFT JOIN tb_department d ON d.dep_id = e.emp_department_id
@@ -129,7 +134,8 @@ async function getEmployee(conn, employeeId) {
     const today = todayBangkok();
     const [[employee]] = await conn.query(
         `SELECT e.*, ${DATE_COLUMNS},
-                d.dep_name AS department_name, b.branch_name_th AS branch_name,
+                d.dep_name AS department_name, d.dep_code AS department_code, b.branch_name_th AS branch_name,
+                b.branch_code, u.user_avatar_url,
                 u.user_username AS user_username, CONCAT(u.user_fname, ' ', u.user_lname) AS user_fullname,
                 u.user_status AS user_status,
                 ${EMPLOYMENT_STATUS_SQL} AS employment_status
@@ -143,8 +149,17 @@ async function getEmployee(conn, employeeId) {
     if (!employee) throw notFound();
     const compensations = await findCompensations(conn, employeeId);
     const recurringItems = await findRecurringItems(conn, employeeId);
+    // รหัสล็อกเมื่อเข้ารอบเงินเดือนแล้ว (แก้วันเริ่มงาน/แผนกในฟอร์มไม่ได้ · ย้ายแผนกยังทำได้)
+    const latestPayrollPeriod = await employeeCodeService.latestPayrollPeriod(conn, employeeId);
     return {
         ...employee,
+        code_locked_by_payroll: latestPayrollPeriod,
+        code_history: await employeeCodeService.listCodeHistory(conn, employeeId),
+        cards: await employeeCodeService.listCards(conn, employeeId),
+        transfer_range: await employeeCodeService.transferDateRange(conn, employee),
+        // การเข้าระบบของบัญชีที่ผูก (ปิดเมื่อพ้นสภาพ · docs/plans/2026-10-18-user-employee-link.md ข้อ 2)
+        login_access: await accountLinkService.loginAccessOf(conn, employee),
+        emp_close_login_on_termination: employee.emp_close_login_on_termination === 1,
         emp_sso_enrolled: employee.emp_sso_enrolled === 1,
         compensations,
         current_compensation: compensationOn(compensations, today),
@@ -205,7 +220,11 @@ function recurringItemStatus(item, today) {
  */
 async function getFormOptions(conn) {
     const today = todayBangkok();
-    const [departments] = await conn.query("SELECT dep_id, dep_name, dep_status FROM tb_department ORDER BY dep_name");
+    const [departments] = await conn.query(
+        `SELECT d.dep_id, d.dep_name, d.dep_status, d.dep_code, d.dep_branch_id, b.branch_code, b.branch_name_th
+         FROM tb_department d JOIN tb_branches b ON b.branch_id = d.dep_branch_id
+         ORDER BY d.dep_code`,
+    );
     const [branches] = await conn.query(
         "SELECT branch_id, branch_code, branch_name_th, branch_status FROM tb_branches ORDER BY branch_code",
     );
@@ -230,18 +249,31 @@ async function getFormOptions(conn) {
  */
 async function createEmployee(conn, employee, actor) {
     await assertEmployeeReferences(conn, employee, null);
+    const department = await employeeCodeService.findDepartment(conn, employee.emp_department_id, true);
+    const code = await employeeCodeService.issueCodeForNewEmployee(conn, department, employee.emp_hire_date);
     const employeeId = await generateDailyId("tb_employees", "emp_id", "EMP");
     await conn.query(
-        `INSERT INTO tb_employees (emp_id, ${EDITABLE_COLUMNS.join(", ")}, emp_created_by)
-         VALUES (?, ${EDITABLE_COLUMNS.map(() => "?").join(", ")}, ?)`,
-        [employeeId, ...toColumnValues(employee), actor.user_id],
+        `INSERT INTO tb_employees (emp_id, emp_code, emp_branch_id, ${EDITABLE_COLUMNS.join(", ")}, emp_created_by)
+         VALUES (?, ?, ?, ${EDITABLE_COLUMNS.map(() => "?").join(", ")}, ?)`,
+        [employeeId, code, department.dep_branch_id, ...toColumnValues(employee), actor.user_id],
     );
+    await employeeCodeService.recordCode(conn, {
+        employeeId,
+        code,
+        department,
+        validFrom: employee.emp_hire_date,
+        reason: "hire",
+        actorId: actor.user_id,
+    });
+    await employeeCodeService.issueCard(conn, employeeId, "first_issue", { actorId: actor.user_id });
     await conn.query(
         `INSERT INTO tb_employee_compensations (ecm_employee_id, ecm_effective_from, ecm_base_salary, ecm_note, ecm_created_by)
          VALUES (?, ?, ?, 'เงินเดือนเริ่มงาน', ?)`,
         [employeeId, employee.emp_hire_date, employee.ecm_base_salary, actor.user_id],
     );
-    return { emp_id: employeeId, emp_code: employee.emp_code };
+    // บัญชีที่ผูก: ชื่อ เบอร์ สาขา ตามพนักงาน (ข้อมูลตัวจริงที่เดียว)
+    await accountLinkService.syncAccountFromEmployee(conn, employeeId);
+    return { emp_id: employeeId, emp_code: code };
 }
 
 /**
@@ -249,17 +281,84 @@ async function createEmployee(conn, employee, actor) {
  * @param {string} employeeId
  * @param {object} employee ผ่าน employeeSchema แล้ว
  */
-async function updateEmployee(conn, employeeId, employee) {
+async function updateEmployee(conn, employeeId, employee, actor) {
     const existing = await lockEmployee(conn, employeeId);
     await assertEmployeeReferences(conn, employee, existing);
+    const department = await employeeCodeService.findDepartment(
+        conn,
+        employee.emp_department_id,
+        employee.emp_department_id !== existing.emp_department_id,
+    );
+    // วันเริ่มงาน/แผนกเปลี่ยน: ก่อนเข้ารอบเงินเดือนแรก = รหัสใหม่ · หลังจากนั้นทำไม่ได้ (ย้ายแผนกต้องใช้ปุ่มย้าย)
+    const newCode = await employeeCodeService.prepareCorrection(conn, existing, employee, department);
     if (employee.emp_hire_date !== existing.emp_hire_date) {
         await moveFirstCompensation(conn, existing, employee.emp_hire_date);
     }
     await conn.query(
-        `UPDATE tb_employees SET ${EDITABLE_COLUMNS.map((column) => `${column} = ?`).join(", ")} WHERE emp_id = ?`,
-        [...toColumnValues(employee), employeeId],
+        `UPDATE tb_employees SET ${EDITABLE_COLUMNS.map((column) => `${column} = ?`).join(", ")}, emp_branch_id = ?, emp_code = ?
+         WHERE emp_id = ?`,
+        [...toColumnValues(employee), department.dep_branch_id, newCode ?? existing.emp_code, employeeId],
     );
-    return { emp_id: employeeId };
+    if (newCode) {
+        await employeeCodeService.recordCode(conn, {
+            employeeId,
+            code: newCode,
+            department,
+            validFrom: employee.emp_hire_date,
+            reason: "correction",
+            note: "แก้วันเริ่มงาน/แผนกก่อนเข้ารอบเงินเดือนแรก",
+            actorId: actor?.user_id ?? null,
+        });
+        await employeeCodeService.issueCard(conn, employeeId, "code_change", {
+            voidReason: "แก้ข้อมูล รหัสพนักงานเปลี่ยน",
+            actorId: actor?.user_id ?? null,
+        });
+    }
+    await accountLinkService.syncAccountFromEmployee(conn, employeeId);
+    return { emp_id: employeeId, emp_code: newCode ?? existing.emp_code, code_changed: Boolean(newCode) };
+}
+
+/** ย้ายแผนก/สาขา = รหัสใหม่ + บัตรใหม่ (ข้อ 3.3) */
+async function transferEmployee(conn, employeeId, transfer, actor) {
+    const existing = await lockEmployee(conn, employeeId);
+    const result = await employeeCodeService.transferEmployee(conn, existing, transfer, actor);
+    // สาขาของบัญชีที่ผูกเปลี่ยนตามแผนกใหม่
+    await accountLinkService.syncAccountFromEmployee(conn, employeeId);
+    return result;
+}
+
+/** ออกบัตรใหม่เอง (หาย/ชำรุด/ข้อมูลบนบัตรเปลี่ยน/หมดอายุ) — รหัสเดิม · ใบเดิมยกเลิก */
+async function issueEmployeeCard(conn, employeeId, request, actor) {
+    const existing = await lockEmployee(conn, employeeId);
+    if (existing.emp_termination_date && existing.emp_termination_date < todayBangkok()) {
+        throw new AppError(409, "EMPLOYEE_TERMINATED", "พนักงานคนนี้พ้นสภาพแล้ว ออกบัตรใหม่ไม่ได้");
+    }
+    const voidReasons = { lost: "บัตรหาย", damaged: "บัตรชำรุด", info_change: "ข้อมูลบนบัตรเปลี่ยน", expired: "บัตรหมดอายุ" };
+    return employeeCodeService.issueCard(conn, employeeId, request.ec_reason, {
+        note: request.ec_note,
+        voidReason: voidReasons[request.ec_reason],
+        actorId: actor.user_id,
+    });
+}
+
+/**
+ * ตั้ง/ลบรูปพนักงาน
+ * - บัตรใบที่ใช้อยู่ที่ยังไม่ได้พิมพ์ เปลี่ยนรูปตามไปด้วย (บัตรใบแรกออกตอนเพิ่มพนักงาน ก่อนมีรูป)
+ * - บัตรที่พิมพ์แล้วเก็บรูปของตอนออก · อยากได้รูปใหม่บนบัตร = ออกบัตรใหม่ (ข้อมูลบนบัตรเปลี่ยน)
+ */
+async function setEmployeePhoto(conn, employeeId, photoUrl) {
+    await lockEmployee(conn, employeeId);
+    await conn.query("UPDATE tb_employees SET emp_photo_url = ? WHERE emp_id = ?", [photoUrl, employeeId]);
+    // ลบรูป = กลับไปใช้รูปโปรไฟล์บัญชีผู้ใช้ที่ผูก (ถ้ามี) เหมือนตอนออกบัตร
+    const [result] = await conn.query(
+        `UPDATE tb_employee_cards c
+         JOIN tb_employees e ON e.emp_id = c.ec_employee_id
+         LEFT JOIN tb_users u ON u.user_id = e.emp_user_id
+         SET c.ec_photo_url = COALESCE(e.emp_photo_url, u.user_avatar_url)
+         WHERE c.ec_employee_id = ? AND c.ec_voided_at IS NULL AND c.ec_printed_at IS NULL`,
+        [employeeId],
+    );
+    return { emp_id: employeeId, emp_photo_url: photoUrl, is_pending_card_updated: result.affectedRows > 0 };
 }
 
 /**
@@ -317,11 +416,14 @@ async function terminateEmployee(conn, employeeId, termination) {
     if (termination.emp_termination_date < existing.emp_hire_date) {
         throw validationError({ emp_termination_date: "วันทำงานวันสุดท้ายต้องไม่ก่อนวันเริ่มงาน" });
     }
-    await conn.query("UPDATE tb_employees SET emp_termination_date = ?, emp_termination_reason = ? WHERE emp_id = ?", [
-        termination.emp_termination_date,
-        termination.emp_termination_reason,
-        employeeId,
-    ]);
+    // ปิดการเข้าระบบหลังวันสุดท้าย (ค่าเริ่ม = ปิด · K4) — ห้ามปิดผู้ดูแลระบบคนสุดท้าย (R4)
+    const closeLogin = termination.emp_close_login_on_termination;
+    if (closeLogin) await accountLinkService.assertNotLastAdmin(conn, existing.emp_user_id);
+    await conn.query(
+        `UPDATE tb_employees SET emp_termination_date = ?, emp_termination_reason = ?, emp_close_login_on_termination = ?
+         WHERE emp_id = ?`,
+        [termination.emp_termination_date, termination.emp_termination_reason, closeLogin ? 1 : 0, employeeId],
+    );
     return { emp_id: employeeId };
 }
 
@@ -349,7 +451,27 @@ async function reinstateEmployee(conn, employeeId) {
         "UPDATE tb_employees SET emp_termination_date = NULL, emp_termination_reason = NULL WHERE emp_id = ?",
         [employeeId],
     );
+    // กลับเป็นพนักงานปัจจุบัน → บัญชีเข้าได้อีก และชื่อ เบอร์ สาขากลับมาตามพนักงาน
+    await accountLinkService.syncAccountFromEmployee(conn, employeeId);
     return { emp_id: employeeId };
+}
+
+/**
+ * เปิด/ปิดการเข้าระบบหลังพ้นสภาพ (ติ๊กที่หน้าพนักงาน) — มีผลตามวันทำงานวันสุดท้าย ไม่ได้ปิดทันที
+ * @param {{ emp_close_login_on_termination: boolean }} request
+ */
+async function setLoginClosure(conn, employeeId, request) {
+    const existing = await lockEmployee(conn, employeeId);
+    if (!existing.emp_termination_date) {
+        throw new AppError(409, "EMPLOYEE_NOT_TERMINATED", "ยังไม่ได้ตั้งวันพ้นสภาพ · ตั้งพ้นสภาพก่อน แล้วค่อยเลือกปิดการเข้าระบบ");
+    }
+    const closeLogin = request.emp_close_login_on_termination;
+    if (closeLogin) await accountLinkService.assertNotLastAdmin(conn, existing.emp_user_id);
+    await conn.query("UPDATE tb_employees SET emp_close_login_on_termination = ? WHERE emp_id = ?", [
+        closeLogin ? 1 : 0,
+        employeeId,
+    ]);
+    return { emp_id: employeeId, emp_close_login_on_termination: closeLogin };
 }
 
 // ─── ค่าจ้างตามวันที่มีผล ──────────────────────────────────────────────────────────────────────
@@ -503,7 +625,7 @@ async function deleteRecurringItem(conn, employeeId, itemId) {
 // ล็อกแถวพนักงานก่อนอ่านอย่างอื่นใน transaction (snapshot ของ REPEATABLE READ เริ่มที่การอ่านครั้งแรก)
 async function lockEmployee(conn, employeeId) {
     const [[employee]] = await conn.query(
-        `SELECT emp_id, emp_national_id, emp_user_id,
+        `SELECT emp_id, emp_code, emp_national_id, emp_user_id, emp_department_id,
                 DATE_FORMAT(emp_hire_date, '%Y-%m-%d') AS emp_hire_date,
                 DATE_FORMAT(emp_termination_date, '%Y-%m-%d') AS emp_termination_date
          FROM tb_employees WHERE emp_id = ? FOR UPDATE`,
@@ -564,30 +686,8 @@ async function findIdentityConflicts(conn, employee, employeeId) {
 async function assertEmployeeReferences(conn, employee, existing) {
     const employeeId = existing?.emp_id ?? null;
     const fields = await findIdentityConflicts(conn, employee, employeeId);
-    const isChanged = (column) => !existing || String(existing[column] ?? "") !== String(employee[column] ?? "");
 
-    const [[duplicateCode]] = await conn.query("SELECT emp_id FROM tb_employees WHERE emp_code = ? AND emp_id <> ?", [
-        employee.emp_code,
-        employeeId ?? "",
-    ]);
-    if (duplicateCode) fields.emp_code = "รหัสนี้มีพนักงานใช้แล้ว";
-
-    if (employee.emp_department_id) {
-        const [[department]] = await conn.query("SELECT dep_status FROM tb_department WHERE dep_id = ?", [
-            employee.emp_department_id,
-        ]);
-        if (!department) fields.emp_department_id = "ไม่พบแผนกนี้";
-        else if (department.dep_status !== "active" && isChanged("emp_department_id"))
-            fields.emp_department_id = "แผนกนี้ถูกปิดใช้งาน";
-    }
-    if (employee.emp_branch_id) {
-        const [[branch]] = await conn.query("SELECT branch_status FROM tb_branches WHERE branch_id = ?", [
-            employee.emp_branch_id,
-        ]);
-        if (!branch) fields.emp_branch_id = "ไม่พบสาขานี้";
-        else if (branch.branch_status !== "active" && isChanged("emp_branch_id"))
-            fields.emp_branch_id = "สาขานี้ถูกปิดใช้งาน";
-    }
+    // แผนก/สาขา ตรวจที่ employeeCodeService.findDepartment (รหัสพนักงานประกอบจากรหัสแผนก)
     if (employee.emp_user_id && !fields.emp_user_id) {
         const [[user]] = await conn.query("SELECT user_id FROM tb_users WHERE user_id = ?", [employee.emp_user_id]);
         if (!user) fields.emp_user_id = "ไม่พบบัญชีผู้ใช้นี้";
@@ -628,8 +728,12 @@ module.exports = {
     createEmployee,
     updateEmployee,
     deleteEmployee,
+    transferEmployee,
+    issueEmployeeCard,
+    setEmployeePhoto,
     terminateEmployee,
     reinstateEmployee,
+    setLoginClosure,
     addCompensation,
     updateCompensation,
     deleteCompensation,

@@ -227,6 +227,9 @@
             "cur_updated_at"
         ],
         "tb_department": [
+            "dep_abbr",
+            "dep_branch_id",
+            "dep_code",
             "dep_created_at",
             "dep_id",
             "dep_name",
@@ -248,6 +251,40 @@
             "otp_purpose",
             "otp_used_at",
             "otp_user_id"
+        ],
+        "tb_employee_cards": [
+            "ec_branch_name",
+            "ec_department_name",
+            "ec_emp_code",
+            "ec_employee_id",
+            "ec_expires_on",
+            "ec_id",
+            "ec_issued_at",
+            "ec_issued_by",
+            "ec_name_en",
+            "ec_name_th",
+            "ec_note",
+            "ec_photo_url",
+            "ec_position",
+            "ec_printed_at",
+            "ec_reason",
+            "ec_returned_at",
+            "ec_seq",
+            "ec_void_reason",
+            "ec_voided_at"
+        ],
+        "tb_employee_codes": [
+            "ecd_branch_id",
+            "ecd_code",
+            "ecd_created_at",
+            "ecd_created_by",
+            "ecd_department_id",
+            "ecd_employee_id",
+            "ecd_id",
+            "ecd_note",
+            "ecd_reason",
+            "ecd_valid_from",
+            "ecd_valid_to"
         ],
         "tb_employee_compensations": [
             "ecm_base_salary",
@@ -296,6 +333,7 @@
             "emp_bank_name",
             "emp_birth_date",
             "emp_branch_id",
+            "emp_close_login_on_termination",
             "emp_code",
             "emp_created_at",
             "emp_created_by",
@@ -311,6 +349,7 @@
             "emp_nickname",
             "emp_notes",
             "emp_phone",
+            "emp_photo_url",
             "emp_position",
             "emp_sso_enrolled",
             "emp_sso_number",
@@ -770,6 +809,7 @@
             "pr_working_days"
         ],
         "tb_payroll_settings": [
+            "ps_card_valid_years",
             "ps_hours_per_day",
             "ps_id",
             "ps_pay_day",

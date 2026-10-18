@@ -1,5 +1,6 @@
 const bcrypt = require("bcryptjs");
 const pool = require("../config/db");
+const accountLinkService = require("../services/account-link.service");
 const { signToken } = require("../utils/jwt");
 const { generateDailyId } = require("../utils/generateDailyId");
 
@@ -41,6 +42,13 @@ async function login(req, res, next) {
         if (!passwordOk) {
             await writeLoginLog({ user_id: user.user_id, email: login, fullname, action: "login_failed", req });
             return res.status(401).json({ message: "อีเมล/ชื่อผู้ใช้ หรือรหัสผ่านไม่ถูกต้อง" });
+        }
+        // ปิดเพราะพ้นสภาพ: บอกเหตุผลตรงๆ (หลังตรวจรหัสผ่านแล้ว — คนเดารหัสไม่รู้ว่าบัญชีนี้มีอยู่จริง)
+        const closedLastDay = await accountLinkService.findLoginClosure(pool, user.user_id);
+        if (closedLastDay) {
+            await writeLoginLog({ user_id: user.user_id, email: login, fullname, action: "login_failed", req });
+            const error = accountLinkService.loginClosedError(closedLastDay);
+            return res.status(401).json({ code: error.code, message: error.message });
         }
 
         await pool.query("UPDATE tb_users SET user_last_login_at = NOW() WHERE user_id = ?", [

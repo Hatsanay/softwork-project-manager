@@ -69,7 +69,7 @@ async function createEmployee(req, res, next) {
 async function updateEmployee(req, res, next) {
     try {
         const employee = validate(employeeSchema, req.body);
-        res.json(await withTransaction((conn) => employeeService.updateEmployee(conn, req.params.id, employee)));
+        res.json(await withTransaction((conn) => employeeService.updateEmployee(conn, req.params.id, employee, req.user)));
     } catch (err) {
         next(err);
     }

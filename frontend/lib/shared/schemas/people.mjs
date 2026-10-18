@@ -36,10 +36,9 @@ const employmentDate = (label) =>
 
 const monthlyAmount = (label, minimum = "0.01") => decimalText(label, { minimum, maximum: MAX_MONTHLY_AMOUNT });
 
+// รหัสพนักงานระบบออกให้ (รหัสแผนก + วันเริ่มงาน + ลำดับ — shared/employee-code.mjs) · สาขา = สาขาของแผนก
+// ทั้งสองจึงไม่อยู่ในฟอร์ม (2026-10-18 — docs/plans/2026-10-18-employee-department-codes.md)
 const employeeFields = z.object({
-    emp_code: requiredText("รหัสพนักงาน", 20).refine((value) => /^[A-Za-z0-9_-]+$/.test(value), {
-        message: "รหัสพนักงานใช้ได้เฉพาะตัวอักษรอังกฤษ ตัวเลข - และ _",
-    }),
     emp_user_id: optionalId("บัญชีผู้ใช้"),
     emp_title: optionalText("คำนำหน้า", 30),
     emp_first_name_th: requiredText("ชื่อ", 100),
@@ -56,9 +55,10 @@ const employeeFields = z.object({
     emp_address: optionalText("ที่อยู่", 1000),
     emp_phone: optionalText("เบอร์โทร", 20),
     emp_email: optionalEmail(),
-    emp_department_id: optionalId("แผนก"),
+    emp_department_id: requiredText("แผนก", 18).refine((value) => /^[A-Za-z0-9]+$/.test(value), {
+        message: "แผนกไม่ถูกต้อง กรุณาเลือกจากรายการ",
+    }),
     emp_position: optionalText("ตำแหน่งงาน", 100),
-    emp_branch_id: optionalId("สาขา"),
     emp_hire_date: employmentDate("วันเริ่มงาน"),
     emp_bank_name: optionalText("ธนาคาร", 100),
     emp_bank_account_no: optionalText("เลขที่บัญชี", 30).transform((value) =>
@@ -98,6 +98,35 @@ export const employeeCreateSchema = employeeFields
 export const employeeTerminateSchema = z.object({
     emp_termination_date: employmentDate("วันทำงานวันสุดท้าย"),
     emp_termination_reason: requiredText("เหตุผล", 500),
+    // ปิดการเข้าระบบของบัญชีที่ผูกหลังวันสุดท้าย (2026-10-18 · ค่าเริ่ม = ปิด · หน้าเก่าที่ไม่ส่งมา = ปิด)
+    emp_close_login_on_termination: z.boolean({ error: "เลือกว่าจะปิดการเข้าระบบหรือไม่" }).default(true),
+});
+
+/** เปิด/ปิดการเข้าระบบหลังพ้นสภาพ (หน้าพนักงาน) */
+export const employeeLoginClosureSchema = z.object({
+    emp_close_login_on_termination: z.boolean({ error: "เลือกว่าจะปิดการเข้าระบบหรือไม่" }),
+});
+
+/** ย้ายแผนก/สาขา = รหัสใหม่ + บัตรใหม่ (ข้อ 3.3) — วันที่มีผล: วันนี้หรือย้อนได้ในเดือนที่ยังไม่ทำเงินเดือน (ตรวจใน backend) */
+export const employeeTransferSchema = z.object({
+    emp_department_id: requiredText("แผนกใหม่", 18),
+    effective_date: employmentDate("วันที่มีผล"),
+    reason: requiredText("เหตุผลที่ย้าย", 500),
+});
+
+/** ออกบัตรใหม่เอง (บัตรหาย/ชำรุด/ข้อมูลบนบัตรเปลี่ยน/หมดอายุ) — รหัสเปลี่ยนระบบออกบัตรให้เอง (ข้อ 3.4) */
+export const EMPLOYEE_CARD_REASONS = {
+    first_issue: "ออกบัตรครั้งแรก",
+    code_change: "รหัสพนักงานเปลี่ยน",
+    lost: "บัตรหาย",
+    damaged: "บัตรชำรุด",
+    info_change: "ข้อมูลบนบัตรเปลี่ยน (ชื่อ ตำแหน่ง รูป)",
+    expired: "บัตรหมดอายุ (ต่ออายุ)",
+};
+
+export const employeeCardIssueSchema = z.object({
+    ec_reason: z.enum(["lost", "damaged", "info_change", "expired"], { error: "เลือกเหตุผลที่ออกบัตรใหม่" }),
+    ec_note: optionalText("หมายเหตุ", 500),
 });
 
 /** ค่าจ้างอัตราใหม่ */
@@ -214,6 +243,7 @@ export const payrollSettingsSchema = z.object({
     ps_pay_day: integerInRange("วันจ่ายเงินเดือน", 1, 31),
     ps_unpaid_leave_divisor: z.enum(["days_30", "working_days"], { error: "กรุณาเลือกวิธีหักลาไม่รับค่าจ้าง" }),
     ps_timesheet_backdate_days: integerInRange("ลงเวลาย้อนหลังได้ (วัน)", 0, 90),
+    ps_card_valid_years: integerInRange("อายุบัตรพนักงาน (ปี)", 1, 10),
 });
 
 /** วันหยุดบริษัท */

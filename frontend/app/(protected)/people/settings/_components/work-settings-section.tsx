@@ -1,6 +1,6 @@
 "use client";
 
-// เวลาทำงาน/เงินเดือนของบริษัท — วันทำงานในสัปดาห์ · ชั่วโมงต่อวัน · วันจ่ายเงินเดือน · วิธีหักลาไม่รับค่าจ้าง · ลงเวลาย้อนหลัง
+// เวลาทำงาน/เงินเดือนของบริษัท — วันทำงานในสัปดาห์ · ชั่วโมงต่อวัน · วันจ่ายเงินเดือน · วิธีหักลาไม่รับค่าจ้าง · ลงเวลาย้อนหลัง · อายุบัตรพนักงาน
 import { useState } from "react";
 import { toast } from "sonner";
 import { Clock } from "lucide-react";
@@ -21,6 +21,7 @@ function toForm(settings: PayrollSettings) {
         ps_pay_day: String(settings.ps_pay_day),
         ps_unpaid_leave_divisor: settings.ps_unpaid_leave_divisor,
         ps_timesheet_backdate_days: String(settings.ps_timesheet_backdate_days),
+        ps_card_valid_years: String(settings.ps_card_valid_years),
     };
 }
 
@@ -50,6 +51,7 @@ export default function WorkSettingsSection({
             ...form,
             ps_pay_day: Number(form.ps_pay_day),
             ps_timesheet_backdate_days: Number(form.ps_timesheet_backdate_days),
+            ps_card_valid_years: Number(form.ps_card_valid_years),
         });
         if (!checked.success) {
             setErrors(toFieldErrors(checked.error.issues));
@@ -165,6 +167,21 @@ export default function WorkSettingsSection({
                             setForm((current) => ({ ...current, ps_timesheet_backdate_days: event.target.value }))
                         }
                         className={inputClass(Boolean(errors.ps_timesheet_backdate_days))}
+                    />
+                </FormField>
+                <FormField
+                    label="อายุบัตรพนักงาน (ปี)"
+                    htmlFor="ps_card_valid_years"
+                    hint={SETUP_MESSAGES.cardValidYears}
+                    error={errors.ps_card_valid_years}
+                >
+                    <input
+                        id="ps_card_valid_years"
+                        inputMode="numeric"
+                        disabled={!canEdit}
+                        value={form.ps_card_valid_years}
+                        onChange={(event) => setForm((current) => ({ ...current, ps_card_valid_years: event.target.value }))}
+                        className={inputClass(Boolean(errors.ps_card_valid_years))}
                     />
                 </FormField>
                 {canEdit && (

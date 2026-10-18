@@ -61,14 +61,22 @@ CREATE TABLE tb_maxID (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ─── 5) แผนก (department) ──────────────────────────────────────────────────────
+-- แผนกผูกกับสาขาเดียว (2026-10-18 — docs/plans/2026-10-18-employee-department-codes.md)
+-- dep_code = รหัสสาขา 5 หลัก + ตัวย่อ 3 ตัว (เช่น 00000ACC) · ชื่อซ้ำได้ข้ามสาขา (IT สำนักงานใหญ่ / IT เชียงใหม่)
+-- FK ของ dep_branch_id อยู่ใน create_sales.sql (tb_branches สร้างทีหลังไฟล์นี้)
 CREATE TABLE tb_department (
   dep_id            VARCHAR(18) NOT NULL,
   dep_name          VARCHAR(100) NOT NULL,
+  dep_branch_id     VARCHAR(18) NOT NULL COMMENT 'สาขาที่แผนกสังกัด',
+  dep_abbr          CHAR(3) NOT NULL COMMENT 'ตัวย่อ 3 ตัว A-Z 0-9 — แก้ได้เฉพาะตอนแผนกยังไม่มีพนักงาน',
+  dep_code          CHAR(8) NOT NULL COMMENT 'รหัสแผนก = รหัสสาขา + ตัวย่อ (ส่วนหน้าของรหัสพนักงาน)',
   dep_status         ENUM('active','inactive') NOT NULL DEFAULT 'active',
   dep_created_at     DATETIME           DEFAULT CURRENT_TIMESTAMP,
   dep_updated_at     DATETIME           DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (dep_id),
-  UNIQUE KEY uq_dep_name (dep_name)
+  UNIQUE KEY uq_dep_code (dep_code),
+  UNIQUE KEY uq_dep_branch_name (dep_branch_id, dep_name),
+  KEY fk_dep_branch (dep_branch_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ผูก FK ของ tb_roles.role_department ที่รอ tb_department ถูกสร้างก่อน (เหมือน fk_role_granted_by)

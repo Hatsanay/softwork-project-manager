@@ -11,6 +11,7 @@ import EmailOtpForm from "@/app/components/email-otp-form";
 import { toast } from "sonner";
 import PageHeader from "@/components/ui/page-header";
 import MySignatureCard from "./_components/my-signature-card";
+import StatusBanner from "@/components/ui/guidance/status-banner";
 
 // อีเมลไม่อยู่ในฟอร์มนี้แล้ว — เปลี่ยนได้ทางเดียวคือยืนยันด้วย OTP (ส่วน "อีเมล" ด้านล่าง) backend ก็ไม่รับอีเมลจาก PUT /users/me แล้ว
 type FormState = {
@@ -27,8 +28,10 @@ function authHeader() {
     return { Authorization: `Bearer ${localStorage.getItem("token")}` };
 }
 
-function validate(form: FormState): FormErrors {
+// isLinked: ผูกกับพนักงาน → ชื่อ/เบอร์มาจากทะเบียนพนักงาน (backend ไม่รับค่าที่ส่งมา) ไม่ต้องตรวจ
+function validate(form: FormState, isLinked: boolean): FormErrors {
     const errors: FormErrors = {};
+    if (isLinked) return errors;
 
     if (!form.user_fname.trim()) errors.user_fname = "กรุณากรอกชื่อ";
     if (!form.user_lname.trim()) errors.user_lname = "กรุณากรอกนามสกุล";
@@ -94,6 +97,9 @@ export default function ProfilePage() {
     const [username, setUsername] = useState("");
     const [email, setEmail] = useState("");
     const [changingEmail, setChangingEmail] = useState(false);
+    // พนักงานปัจจุบันที่ผูกบัญชีนี้ (2026-10-18) — ชื่อ เบอร์แก้โดยฝ่ายบุคคลที่ทะเบียนพนักงาน
+    const [linkedEmployeeCode, setLinkedEmployeeCode] = useState<string | null>(null);
+    const isLinked = linkedEmployeeCode !== null;
     const [form, setForm] = useState<FormState>(EMPTY_FORM);
     const [errors, setErrors] = useState<FormErrors>({});
     const [submitError, setSubmitError] = useState<string | null>(null);
@@ -117,6 +123,7 @@ export default function ProfilePage() {
                 user_whatApp_no: data.user_whatsapp_no ?? "",
             });
             setRoleName(data.role_name ?? "");
+            setLinkedEmployeeCode(data.linked_employee?.emp_code ?? null);
             if (data.user_avatar_url) setCurrentAvatar(`${SERVER_BASE}${data.user_avatar_url}`);
         });
     }, []);
@@ -133,7 +140,7 @@ export default function ProfilePage() {
     function handleSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
         e.preventDefault();
         setSubmitError(null);
-        const fieldErrors = validate(form);
+        const fieldErrors = validate(form, isLinked);
         if (Object.keys(fieldErrors).length > 0) { setErrors(fieldErrors); return; }
 
         startTransition(async () => {
@@ -181,6 +188,14 @@ export default function ProfilePage() {
                         <AvatarCrop key={currentAvatar ?? "loading"} value={currentAvatar} onChange={setAvatarFile} disabled={isPending} />
                     </div>
 
+                    {linkedEmployeeCode && (
+                        <div className="col-span-full">
+                            <StatusBanner tone="info" title={`ชื่อและเบอร์โทรมาจากทะเบียนพนักงาน ${linkedEmployeeCode}`}>
+                                ถ้าต้องการเปลี่ยนชื่อ นามสกุล หรือเบอร์โทร ติดต่อฝ่ายบุคคล · รูป LINE WhatsApp และอีเมลเปลี่ยนเองที่หน้านี้ได้
+                            </StatusBanner>
+                        </div>
+                    )}
+
                     {roleName && (
                         <div className="flex flex-col gap-1 col-span-full">
                             <label className="text-sm font-medium text-gray-700">สิทธิ์</label>
@@ -190,14 +205,14 @@ export default function ProfilePage() {
 
                     <div className="flex flex-col gap-1">
                         <label className="text-sm font-medium text-gray-700">ชื่อ</label>
-                        <Input name="user_fname" value={form.user_fname} onChange={handleChange}
+                        <Input name="user_fname" value={form.user_fname} onChange={handleChange} disabled={isLinked}
                             placeholder="ชื่อ" error={!!errors.user_fname} />
                         {errors.user_fname && <p className="text-xs text-red-600">{errors.user_fname}</p>}
                     </div>
 
                     <div className="flex flex-col gap-1">
                         <label className="text-sm font-medium text-gray-700">นามสกุล</label>
-                        <Input name="user_lname" value={form.user_lname} onChange={handleChange}
+                        <Input name="user_lname" value={form.user_lname} onChange={handleChange} disabled={isLinked}
                             placeholder="นามสกุล" error={!!errors.user_lname} />
                         {errors.user_lname && <p className="text-xs text-red-600">{errors.user_lname}</p>}
                     </div>
@@ -223,7 +238,7 @@ export default function ProfilePage() {
 
                     <div className="flex flex-col gap-1">
                         <label className="text-sm font-medium text-gray-700">เบอร์โทรศัพท์</label>
-                        <Input name="user_phone" value={form.user_phone} onChange={handleChange}
+                        <Input name="user_phone" value={form.user_phone} onChange={handleChange} disabled={isLinked}
                             placeholder="0812345678" error={!!errors.user_phone} />
                         {errors.user_phone && <p className="text-xs text-red-600">{errors.user_phone}</p>}
                     </div>

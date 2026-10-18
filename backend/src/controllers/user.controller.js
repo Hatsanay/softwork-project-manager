@@ -3,6 +3,8 @@ const { compressImage } = require("../utils/imageCompress");
 const fs = require("fs/promises");
 const path = require("path");
 const pool = require("../config/db");
+const accountLinkService = require("../services/account-link.service");
+const { todayBangkok } = require("../utils/bangkok-time");
 const { generateDailyId } = require("../utils/generateDailyId");
 const { generateTempPassword } = require("../utils/generatePassword");
 const { issueOtp, consumeOtp, markOtpUsed, OTP_TTL_MINUTES } = require("../utils/emailOtp");
@@ -73,6 +75,8 @@ async function me(req, res, next) {
             [req.user.user_id]
         );
         if (!rows[0]) return res.status(404).json({ message: "ไม่พบผู้ใช้งาน" });
+        // ผูกกับพนักงานปัจจุบัน = ชื่อ เบอร์ สาขาแก้ที่ทะเบียนพนักงาน (หน้าโปรไฟล์ปิดช่องไว้)
+        rows[0].linked_employee = await accountLinkService.describeLinkedEmployee(pool, req.user.user_id);
         // สิทธิ์ ณ ตอนนี้ (role ระบบได้ครบ) — หน้าเว็บใช้ซ่อน/แสดงเมนูให้ตรงกับสิทธิ์ล่าสุด (2026-10-13)
         // เดิมใช้ค่าที่จำไว้ตอน login: แอดมินเปลี่ยนสิทธิ์ หรือระบบเพิ่มบิตใหม่ ผู้ใช้ต้องออกแล้วเข้าใหม่ถึงจะเห็นเมนูถูก
         res.json({ ...rows[0], role_permission: req.user.role_permission });
@@ -90,13 +94,19 @@ async function updateMyProfile(req, res, next) {
             return res.status(400).json({ message: "กรอกข้อมูลไม่ครบ" });
         }
 
+        // ผูกกับพนักงานปัจจุบัน: ชื่อ/เบอร์ใช้ของพนักงาน ไม่รับค่าที่ส่งมา (docs/plans/2026-10-18-user-employee-link.md ข้อ 1)
+        const owned = await accountLinkService.applyEmployeeOwnedFields(pool, req.user.user_id, {
+            user_fname,
+            user_lname,
+            user_phone: user_phone || null,
+        });
         await pool.query(
             `UPDATE tb_users SET
                 user_fname = ?, user_lname = ?, user_phone = ?,
                 user_line_uid = ?, user_whatsapp_no = ?
              WHERE user_id = ?`,
             [
-                user_fname, user_lname, user_phone || null,
+                owned.user_fname, owned.user_lname, owned.user_phone,
                 user_line_id || null, user_whatApp_no || null,
                 req.user.user_id,
             ]
@@ -185,21 +195,28 @@ async function getAll(req, res, next) {
         const offset = Number(req.query.offset) || 0;
         const search = `%${req.query.search ?? ""}%`;
 
+        const today = todayBangkok();
         const [rows] = await pool.query(
             `SELECT u.user_id, u.user_username, CONCAT(u.user_fname, ' ', u.user_lname) AS by_fullname,
                     u.user_email, u.user_phone, u.user_status, u.user_avatar_url,
                     u.user_created_at, u.user_updated_at, u.user_role_id,
-                    r.role_name, r.role_type, r.role_permission
+                    r.role_name, r.role_type, r.role_permission,
+                    -- พนักงานปัจจุบันที่ผูก · ปิดการเข้าระบบเพราะพ้นสภาพ (docs/plans/2026-10-18-user-employee-link.md)
+                    (SELECT e.emp_code FROM tb_employees e
+                     WHERE e.emp_user_id = u.user_id AND (e.emp_termination_date IS NULL OR e.emp_termination_date >= ?)
+                     ORDER BY e.emp_hire_date DESC LIMIT 1) AS linked_emp_code,
+                    ${accountLinkService.loginClosedSql("u.user_id")} AS is_login_closed
              FROM tb_users u
              LEFT JOIN tb_roles r ON r.role_id = u.user_role_id
              WHERE u.user_fname LIKE ? OR u.user_lname LIKE ? OR u.user_email LIKE ? OR u.user_username LIKE ?
              ORDER BY u.user_id DESC
              LIMIT ? OFFSET ?`,
-            [search, search, search, search, limit, offset]
+            [today, today, today, search, search, search, search, limit, offset]
         );
         // can_manage: คนที่ดูอยู่จัดการผู้ใช้คนนี้ได้ไหม (สิทธิ์ไม่เกินตัวเอง — risk-fixes R25) ไม่ส่งสตริงสิทธิ์ดิบออกไป
         const data = rows.map(({ role_permission, user_role_id, ...user }) => ({
             ...user,
+            is_login_closed: user.is_login_closed === 1,
             can_manage: canActOn(req.user.role_permission, userPermission(user_role_id, user.role_type, role_permission)),
         }));
         const [[{ total }]] = await pool.query(
@@ -239,6 +256,9 @@ async function getOne(req, res, next) {
         const { role_type, role_permission, ...user } = rows[0];
         res.json({
             ...user,
+            // ผูกกับพนักงานปัจจุบัน (ชื่อ เบอร์ สาขาล็อก) · ปิดการเข้าระบบเพราะพ้นสภาพเมื่อไร (null = ไม่ได้ปิด)
+            linked_employee: await accountLinkService.describeLinkedEmployee(pool, user.user_id),
+            login_closed_after: await accountLinkService.findLoginClosure(pool, user.user_id),
             // หน้าแก้ไขผู้ใช้ใช้แสดงแถบแจ้งและซ่อนปุ่มที่ทำไม่ได้ (risk-fixes R25)
             can_manage: canActOn(req.user.role_permission, userPermission(user.user_role_id, role_type, role_permission)),
             is_self: user.user_id === req.user.user_id,
@@ -375,6 +395,13 @@ async function update(req, res, next) {
         const [[current]] = await pool.query("SELECT user_branch_id FROM tb_users WHERE user_id = ?", [req.params.id]);
         const branch = await resolveBranchId(req.body.user_branch_id, current?.user_branch_id ?? null);
         if (branch.error) return res.status(400).json({ message: branch.error });
+        // ผูกกับพนักงานปัจจุบัน: ชื่อ เบอร์ สาขาใช้ของพนักงาน ไม่รับค่าที่ส่งมา (docs/plans/2026-10-18-user-employee-link.md ข้อ 1)
+        const owned = await accountLinkService.applyEmployeeOwnedFields(pool, req.params.id, {
+            user_fname,
+            user_lname,
+            user_phone: user_phone || null,
+            user_branch_id: branch.value,
+        });
 
         await pool.query(
             `UPDATE tb_users SET
@@ -384,8 +411,8 @@ async function update(req, res, next) {
              WHERE user_id = ?`,
             [
                 username.value,
-                user_fname, user_lname, email.value, user_phone || null,
-                user_line_id || null, user_whatApp_no || null, newRoleId, newStatus, branch.value,
+                owned.user_fname, owned.user_lname, email.value, owned.user_phone,
+                user_line_id || null, user_whatApp_no || null, newRoleId, newStatus, owned.user_branch_id,
                 req.params.id,
             ]
         );

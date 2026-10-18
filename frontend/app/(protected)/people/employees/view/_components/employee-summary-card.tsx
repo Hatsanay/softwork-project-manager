@@ -6,6 +6,7 @@ import SectionCard from "@/components/ui/section-card";
 import StatusBanner from "@/components/ui/guidance/status-banner";
 import { formatDateOnly } from "@/app/function";
 import type { Employee } from "../../../_types";
+import LoginAccessBanner from "./login-access-banner";
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
     return (
@@ -22,9 +23,8 @@ function formatNationalId(nationalId: string | null) {
     return `${nationalId[0]}-${nationalId.slice(1, 5)}-${nationalId.slice(5, 10)}-${nationalId.slice(10, 12)}-${nationalId[12]}`;
 }
 
-export default function EmployeeSummaryCard({ employee }: { employee: Employee }) {
+export default function EmployeeSummaryCard({ employee, onChanged }: { employee: Employee; onChanged: () => void }) {
     const englishName = [employee.emp_first_name_en, employee.emp_last_name_en].filter(Boolean).join(" ");
-    const isUserStillActive = employee.employment_status === "terminated" && employee.user_status === "active";
     const missingForPayroll = [
         !employee.emp_national_id && "เลขประจำตัวประชาชน",
         !employee.emp_address && "ที่อยู่",
@@ -33,12 +33,7 @@ export default function EmployeeSummaryCard({ employee }: { employee: Employee }
 
     return (
         <SectionCard icon={IdCard} title="ข้อมูลพนักงาน">
-            {isUserStillActive && (
-                <StatusBanner tone="warn" title="บัญชีผู้ใช้ยังเข้าระบบได้">
-                    พนักงานพ้นสภาพแล้ว แต่บัญชี {employee.user_username} ยังเปิดใช้งานอยู่ —
-                    ปิดที่หน้าจัดการผู้ใช้ถ้าไม่ให้เข้าระบบแล้ว
-                </StatusBanner>
-            )}
+            <LoginAccessBanner employee={employee} onChanged={onChanged} />
             {missingForPayroll.length > 0 && employee.employment_status !== "terminated" && (
                 <StatusBanner tone="info" title="ข้อมูลยังไม่ครบสำหรับรอบเงินเดือน">
                     ยังขาด: {missingForPayroll.join(" · ")} — ใช้บน ภ.ง.ด.1 / 50 ทวิ และการโอนเงินเดือน

@@ -25,7 +25,11 @@ export default function TerminateDialog({
     const [form, setForm] = useState({
         emp_termination_date: employee.emp_termination_date ?? employee.today,
         emp_termination_reason: employee.emp_termination_reason ?? "",
+        // ตั้งครั้งแรก = ปิด (K4) · แก้วันพ้นสภาพ = คงค่าที่ตั้งไว้
+        emp_close_login_on_termination: employee.emp_termination_date ? employee.emp_close_login_on_termination : true,
     });
+    // ติ๊กได้เฉพาะเมื่อผูกบัญชีที่ยังเปิดใช้งาน
+    const hasActiveAccount = Boolean(employee.emp_user_id) && employee.user_status === "active";
     const [errors, setErrors] = useState<FieldErrors>({});
     const [isSaving, setIsSaving] = useState(false);
 
@@ -116,6 +120,22 @@ export default function TerminateDialog({
                         className={inputClass(Boolean(errors.emp_termination_reason))}
                     />
                 </FormField>
+                {hasActiveAccount && (
+                    <label className="flex min-h-11 items-start gap-3 rounded-xl border border-gray-200 px-4 py-3 text-sm">
+                        <input
+                            type="checkbox"
+                            className="mt-0.5 h-4 w-4"
+                            checked={form.emp_close_login_on_termination}
+                            onChange={(event) =>
+                                setForm((current) => ({ ...current, emp_close_login_on_termination: event.target.checked }))
+                            }
+                        />
+                        <span className="grid gap-0.5">
+                            <span>ปิดการเข้าระบบของบัญชี {employee.user_username} หลังวันทำงานวันสุดท้าย</span>
+                            <FieldHint error={errors.emp_close_login_on_termination}>{EMPLOYEE_MESSAGES.closeLogin}</FieldHint>
+                        </span>
+                    </label>
+                )}
                 {errors.form && <FieldHint error={errors.form} />}
                 <div className="flex flex-wrap justify-end gap-2">
                     <button

@@ -48,7 +48,6 @@ function expectStatus(response, status) {
 }
 
 const employeeBody = (overrides = {}) => ({
-    emp_code: "E001",
     emp_title: "นาย",
     emp_first_name_th: "สมชาย",
     emp_last_name_th: "ตั้งใจงาน",
@@ -65,7 +64,11 @@ const employeeBody = (overrides = {}) => ({
 test.before(async () => {
     api = await startTestServer("people");
     await api.loginAsAdmin();
-    await api.pool.query("INSERT INTO tb_department (dep_id, dep_name) VALUES (?, 'วิศวกรรม')", [DEPARTMENT_ID]);
+    await api.pool.query(
+        `INSERT INTO tb_department (dep_id, dep_name, dep_branch_id, dep_abbr, dep_code)
+         VALUES (?, 'วิศวกรรม', 'BRA202601010000001', 'ENG', '00000ENG')`,
+        [DEPARTMENT_ID],
+    );
     people.hr = await createPerson("pp.hr", ["dashboard", "manageEmployees"], 151);
     people.hrAdmin = await createPerson("pp.hradmin", ["dashboard", "manageHrSettings"], 152);
     people.staff = await createPerson("pp.staff", ["dashboard", "viewExpenses", "loginLogs"], 153);
@@ -115,16 +118,15 @@ test("เพิ่มพนักงาน: เงินเดือนเริ
     assert.equal(list.data[0].emp_national_id, undefined, "รายการไม่ส่งเลขเต็ม");
     assert.match(list.data[0].national_id_masked, /^•{9}\d{4}$/);
 
-    const duplicateCode = expectStatus(
-        await as(people.hr, "POST", "/V1/employees", employeeBody({ emp_national_id: null })),
-        400,
-    );
-    assert.ok(duplicateCode.fields.emp_code);
+    // รหัสระบบออกให้ (2026-10-18): รหัสแผนก 00000ENG + วันเริ่มงาน 260105 + ลำดับ 0001 · ส่ง emp_code มาเองไม่มีผล
+    assert.equal(created.emp_code, "00000ENG2601050001");
+    assert.equal(detail.emp_code, created.emp_code);
+    assert.equal(detail.department_code, "00000ENG");
     const duplicateId = expectStatus(
         await as(people.hr, "POST", "/V1/employees", employeeBody({ emp_code: "E002" })),
         400,
     );
-    assert.match(duplicateId.fields.emp_national_id, /E001/);
+    assert.match(duplicateId.fields.emp_national_id, new RegExp(created.emp_code));
 
     const badId = expectStatus(
         await as(
@@ -290,7 +292,9 @@ test("พ้นสภาพ: ไม่ก่อนวันเริ่มงา
         200,
     );
     const terminated = expectStatus(await as(people.hr, "GET", "/V1/employees?status=terminated"), 200);
-    assert.ok(terminated.data.some((row) => row.emp_code === "T001" && row.employment_status === "terminated"));
+    assert.ok(
+        terminated.data.some((row) => row.emp_id === first.emp_id && row.employment_status === "terminated"),
+    );
 
     expectStatus(
         await as(

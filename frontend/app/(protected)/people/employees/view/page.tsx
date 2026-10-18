@@ -1,6 +1,7 @@
 "use client";
 
 // หน้าพนักงาน (2026-10-17 เฟส 4 ขั้น 4-1) — ข้อมูล · เงินเดือนตามวันที่มีผล · รายการประจำ · พ้นสภาพ/ยกเลิก · ลบ
+// + รหัสพนักงาน/ย้ายแผนก และบัตรพนักงาน (2026-10-18)
 // เปิดหน้านี้ = เปิดดูเงินเดือนและเลขประจำตัว → backend บันทึก audit ทุกครั้ง (R-H1/R-H8)
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
@@ -17,6 +18,8 @@ import { apiFetch, type ApiError } from "@/lib/api";
 import { EMPLOYEE_MESSAGES, EMPLOYMENT_STATUS } from "../../_messages";
 import type { Employee } from "../../_types";
 import EmployeeSummaryCard from "./_components/employee-summary-card";
+import EmployeeCodeCard from "./_components/employee-code-card";
+import EmployeeCardsCard from "./_components/employee-cards-card";
 import CompensationCard from "./_components/compensation-card";
 import RecurringItemsCard from "./_components/recurring-items-card";
 import LeaveBalanceCard from "./_components/leave-balance-card";
@@ -154,7 +157,9 @@ export default function EmployeeViewPage() {
                 }
             />
 
-            <EmployeeSummaryCard employee={employee} />
+            <EmployeeSummaryCard employee={employee} onChanged={reload} />
+            <EmployeeCodeCard employee={employee} onChanged={reload} />
+            <EmployeeCardsCard employee={employee} onChanged={reload} />
             <CompensationCard employee={employee} onChanged={reload} />
             <RecurringItemsCard employee={employee} onChanged={reload} />
             <LeaveBalanceCard employeeId={employee.emp_id} currentYear={currentYearBangkok()} />

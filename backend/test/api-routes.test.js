@@ -84,11 +84,11 @@ test("ตั้งค่า: role, แผนก, ตำแหน่งในโ�
         body: { role_name: "พนักงานทดสอบ (แก้)", role_permission: "1" + "0".repeat(ROLE_BIT_COUNT - 1) },
     });
 
-    const department = await step("สร้างแผนก", "POST", "/V1/departments", { body: { dep_name: "แผนกทดสอบ" } });
+    const department = await step("สร้างแผนก", "POST", "/V1/departments", { body: { dep_name: "แผนกทดสอบ", dep_branch_id: "BRA202601010000001", dep_abbr: "RTE" } });
     ids.departmentId = department.body.dep_id;
     await step("รายการแผนก", "GET", "/V1/departments");
     await step("ดูแผนก", "GET", `/V1/departments/${ids.departmentId}`);
-    await step("แก้แผนก", "PUT", `/V1/departments/${ids.departmentId}`, { body: { dep_name: "แผนกทดสอบ (แก้)", dep_status: "active" } });
+    await step("แก้แผนก", "PUT", `/V1/departments/${ids.departmentId}`, { body: { dep_name: "แผนกทดสอบ (แก้)", dep_branch_id: "BRA202601010000001", dep_abbr: "RTE", dep_status: "active" } });
 
     const position = await step("สร้างตำแหน่ง", "POST", "/V1/project-positions", {
         body: { position_name: "Developer ทดสอบ", position_permission: "1".repeat(POSITION_BIT_COUNT) },

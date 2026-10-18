@@ -16,6 +16,12 @@ import BranchSelect from "../_components/branch-select";
 import UserSignaturePanel from "../_components/user-signature-panel";
 import { KeyRound } from "lucide-react";
 import { inputClass } from "@/components/ui/form-field";
+import Link from "next/link";
+import StatusBanner from "@/components/ui/guidance/status-banner";
+import { formatDateOnly } from "@/app/function";
+
+// พนักงานปัจจุบันที่ผูกบัญชีนี้ (2026-10-18) — ชื่อ เบอร์ สาขาแก้ที่ทะเบียนพนักงาน (docs/plans/2026-10-18-user-employee-link.md)
+type LinkedEmployee = { emp_id: string; emp_code: string; full_name: string };
 
 type FormState = {
     user_fname: string;
@@ -35,14 +41,20 @@ type FormErrors = Partial<Record<keyof FormState, string>>;
 // ต้องตรงกับ USERNAME_PATTERN ใน backend/src/controllers/user.controller.js — ห้ามมี @ (ช่อง login รับทั้งอีเมลและชื่อผู้ใช้)
 const USERNAME_PATTERN = /^[A-Za-z0-9._-]{3,50}$/;
 
-function validate(form: FormState): FormErrors {
+// isLinked: ผูกพนักงาน → ชื่อ นามสกุล เบอร์มาจากทะเบียนพนักงาน (backend ไม่รับค่าที่ส่งมา) ไม่ต้องตรวจ
+function validate(form: FormState, isLinked: boolean): FormErrors {
     const errors: FormErrors = {};
 
-    if (!form.user_fname.trim()) errors.user_fname = "กรุณากรอกชื่อ";
-    else if (form.user_fname.trim().length < 2) errors.user_fname = "ชื่อต้องมีอย่างน้อย 2 ตัวอักษร";
+    if (!isLinked) {
+        if (!form.user_fname.trim()) errors.user_fname = "กรุณากรอกชื่อ";
+        else if (form.user_fname.trim().length < 2) errors.user_fname = "ชื่อต้องมีอย่างน้อย 2 ตัวอักษร";
 
-    if (!form.user_lname.trim()) errors.user_lname = "กรุณากรอกนามสกุล";
-    else if (form.user_lname.trim().length < 2) errors.user_lname = "นามสกุลต้องมีอย่างน้อย 2 ตัวอักษร";
+        if (!form.user_lname.trim()) errors.user_lname = "กรุณากรอกนามสกุล";
+        else if (form.user_lname.trim().length < 2) errors.user_lname = "นามสกุลต้องมีอย่างน้อย 2 ตัวอักษร";
+
+        if (form.user_phone && !/^[0-9]{9,10}$/.test(form.user_phone.replace(/-/g, "")))
+            errors.user_phone = "เบอร์โทรต้องเป็นตัวเลข 9-10 หลัก";
+    }
 
     if (!form.user_username.trim())
         errors.user_username = "กรุณากรอกชื่อผู้ใช้";
@@ -52,9 +64,6 @@ function validate(form: FormState): FormErrors {
     // อีเมลไม่บังคับ — ล้างทิ้ง = ผู้ใช้จะถูกขอให้ยืนยันอีเมลใหม่ด้วย OTP ตอนเข้าระบบครั้งถัดไป
     if (form.user_email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.user_email.trim()))
         errors.user_email = "รูปแบบอีเมลไม่ถูกต้อง";
-
-    if (form.user_phone && !/^[0-9]{9,10}$/.test(form.user_phone.replace(/-/g, "")))
-        errors.user_phone = "เบอร์โทรต้องเป็นตัวเลข 9-10 หลัก";
 
     return errors;
 }
@@ -144,6 +153,9 @@ export default function EditUserPage() {
     const [isSelf, setIsSelf] = useState(false);
     const [currentRoleId, setCurrentRoleId] = useState<string | null>(null);
     const [savedBranchId, setSavedBranchId] = useState("");
+    const [linkedEmployee, setLinkedEmployee] = useState<LinkedEmployee | null>(null);
+    const [loginClosedAfter, setLoginClosedAfter] = useState<string | null>(null);
+    const isLinked = linkedEmployee !== null;
 
     useEffect(() => {
         if (!id) return;
@@ -167,6 +179,8 @@ export default function EditUserPage() {
             setCanManage(data.can_manage !== false);
             setIsSelf(data.is_self === true);
             setCurrentRoleId(String(data.user_role_id ?? ""));
+            setLinkedEmployee(data.linked_employee ?? null);
+            setLoginClosedAfter(data.login_closed_after ?? null);
         });
     }, [id]);
 
@@ -186,7 +200,7 @@ export default function EditUserPage() {
     function handleSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
         e.preventDefault();
         setSubmitError(null);
-        const fieldErrors = validate(form);
+        const fieldErrors = validate(form, isLinked);
         if (Object.keys(fieldErrors).length > 0) { setErrors(fieldErrors); return; }
 
         startTransition(async () => {
@@ -259,6 +273,26 @@ export default function EditUserPage() {
                     </div>
                 )}
 
+                {loginClosedAfter && (
+                    <div className="col-span-full">
+                        <StatusBanner tone="warn" title="ปิดการเข้าระบบแล้วเพราะพ้นสภาพพนักงาน">
+                            วันทำงานวันสุดท้าย {formatDateOnly(loginClosedAfter)} · เปิดให้เข้าระบบต่อได้ที่หน้าพนักงาน (ฝ่ายบุคคล) ·
+                            สถานะใช้งานด้านล่างไม่ต้องเปลี่ยน
+                        </StatusBanner>
+                    </div>
+                )}
+                {linkedEmployee && (
+                    <div className="col-span-full">
+                        <StatusBanner tone="info" title={`ผูกกับพนักงาน ${linkedEmployee.emp_code} · ${linkedEmployee.full_name}`}>
+                            ชื่อ นามสกุล เบอร์โทร และสาขามาจากทะเบียนพนักงาน แก้ที่{" "}
+                            <Link href={`/people/employees/view?id=${linkedEmployee.emp_id}`} className="text-blue-600 underline">
+                                หน้าพนักงาน
+                            </Link>{" "}
+                            (ฝ่ายบุคคล) · อีเมล รูป LINE และ WhatsApp ของบัญชีแก้ที่นี่ได้
+                        </StatusBanner>
+                    </div>
+                )}
+
                 <div className="flex flex-col gap-1 col-span-full">
                     <label className="text-sm font-medium text-gray-700">รูปโปรไฟล์</label>
                     {/* key เปลี่ยนตาม currentAvatar เพื่อ remount ใหม่เมื่อ fetch เสร็จ — AvatarCrop เก็บ preview เป็น internal state ที่ตั้งค่าแค่ตอน mount */}
@@ -267,14 +301,14 @@ export default function EditUserPage() {
 
                 <div className="flex flex-col gap-1">
                     <label className="text-sm font-medium text-gray-700">ชื่อ</label>
-                    <Input name="user_fname" value={form.user_fname} onChange={handleChange}
+                    <Input name="user_fname" value={form.user_fname} onChange={handleChange} disabled={isLinked}
                         placeholder="ชื่อ" error={!!errors.user_fname} />
                     {errors.user_fname && <p className="text-xs text-red-600">{errors.user_fname}</p>}
                 </div>
 
                 <div className="flex flex-col gap-1">
                     <label className="text-sm font-medium text-gray-700">นามสกุล</label>
-                    <Input name="user_lname" value={form.user_lname} onChange={handleChange}
+                    <Input name="user_lname" value={form.user_lname} onChange={handleChange} disabled={isLinked}
                         placeholder="นามสกุล" error={!!errors.user_lname} />
                     {errors.user_lname && <p className="text-xs text-red-600">{errors.user_lname}</p>}
                 </div>
@@ -297,7 +331,7 @@ export default function EditUserPage() {
 
                 <div className="flex flex-col gap-1">
                     <label className="text-sm font-medium text-gray-700">เบอร์โทรศัพท์</label>
-                    <Input name="user_phone" value={form.user_phone} onChange={handleChange}
+                    <Input name="user_phone" value={form.user_phone} onChange={handleChange} disabled={isLinked}
                         placeholder="0812345678" error={!!errors.user_phone} />
                     {errors.user_phone && <p className="text-xs text-red-600">{errors.user_phone}</p>}
                 </div>
@@ -353,7 +387,7 @@ export default function EditUserPage() {
                     value={form.user_branch_id}
                     onChange={(branchId) => setField("user_branch_id", branchId)}
                     savedBranchId={savedBranchId}
-                    disabled={isPending || !canManage}
+                    disabled={isPending || !canManage || isLinked}
                 />
 
                 {submitError && <p className="col-span-full text-sm text-red-600">{submitError}</p>}
