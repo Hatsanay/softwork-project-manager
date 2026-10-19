@@ -57,6 +57,14 @@ async function getEmployeeFormOptions(req, res, next) {
     }
 }
 
+async function findFormerEmployee(req, res, next) {
+    try {
+        res.json({ former: await employeeService.findFormerByNationalId(pool, req.query.national_id) });
+    } catch (err) {
+        next(err);
+    }
+}
+
 async function createEmployee(req, res, next) {
     try {
         const employee = validate(employeeCreateSchema, req.body);
@@ -282,6 +290,7 @@ module.exports = {
     listEmployees,
     getEmployee,
     getEmployeeFormOptions,
+    findFormerEmployee,
     createEmployee,
     updateEmployee,
     deleteEmployee,

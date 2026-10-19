@@ -9,6 +9,7 @@ const { requirePermission } = require("../middlewares/permission.middleware");
 const { uploadImage } = require("../middlewares/upload.middleware");
 const peopleController = require("../controllers/people.controller");
 const employeeCardController = require("../controllers/employee-card.controller");
+const overviewController = require("../controllers/people-overview.controller");
 
 /**
  * @param {import("express").Router} router
@@ -19,6 +20,8 @@ function registerPeopleRoutes(router) {
 
     router.get("/V1/employees", requireAuth, canManageEmployees, peopleController.listEmployees);
     router.get("/V1/employees/form-options", requireAuth, canManageEmployees, peopleController.getEmployeeFormOptions);
+    // คนเดิมกลับมาทำงาน: ?national_id= → พนักงานที่พ้นสภาพแล้ว (ฟอร์มเพิ่มพนักงานเติมข้อมูลเดิม)
+    router.get("/V1/employees/former", requireAuth, canManageEmployees, peopleController.findFormerEmployee);
     router.get("/V1/employees/:id", requireAuth, canManageEmployees, peopleController.getEmployee);
     router.post("/V1/employees", requireAuth, canManageEmployees, peopleController.createEmployee);
     router.put("/V1/employees/:id", requireAuth, canManageEmployees, peopleController.updateEmployee);
@@ -84,6 +87,14 @@ function registerPeopleRoutes(router) {
         peopleController.deleteRecurringItem,
     );
 
+    // หน้าของฉัน (ทุกคน) · ภาพรวมบุคคล (ผู้มีสิทธิ์ด้านบุคคลข้อใดข้อหนึ่ง — ตัวเลขแต่ละส่วนตัดตามสิทธิ์อีกชั้นใน service) 2026-10-19
+    router.get("/V1/people/me", requireAuth, overviewController.getMyProfile);
+    router.get(
+        "/V1/people/overview",
+        requireAuth,
+        requirePermission(["manageEmployees", "viewPayroll", "runPayroll", "approvePayroll", "approveLeave", "approveTimesheet", "manageHrSettings"]),
+        overviewController.getOverview,
+    );
     router.get("/V1/people/setup", requireAuth, peopleController.getSetup);
     router.get("/V1/people/holidays", requireAuth, peopleController.listHolidays);
     router.put("/V1/people/settings", requireAuth, canEditSetup, peopleController.updateSettings);

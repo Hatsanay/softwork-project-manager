@@ -3,12 +3,14 @@
 // รายการพนักงาน (2026-10-17 เฟส 4 ขั้น 4-1) — แท็บ ทำงานอยู่/พ้นสภาพ · ค้นหารหัส ชื่อ ชื่อเล่น ตำแหน่ง
 // + แท็บคิวบัตร "บัตรรอพิมพ์" / "บัตรที่ยังไม่ได้คืน" · ค้นด้วยรหัสเก่าก็เจอ · เรียงตามรหัส = จัดกลุ่มสาขา/แผนกเอง (2026-10-18)
 // เลขประจำตัวประชาชนแสดงแบบปิดบางส่วน (R-H8) · เงินเดือนดูได้ในหน้าพนักงาน (บันทึกการเปิดทุกครั้ง)
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import DataTable, { type Column } from "@/components/ui/datatable/datatable";
 import PageHeader from "@/components/ui/page-header";
 import Segmented from "@/components/ui/segmented";
+import { PageSkeleton } from "@/components/ui/skeleton";
 import StatusPill from "@/components/ui/status-pill";
 import { buttonClass } from "@/components/ui/button";
 import { formatDateOnly } from "@/app/function";
@@ -43,8 +45,20 @@ async function fetchCardQueues() {
     };
 }
 
+const TABS: Tab[] = ["employed", "terminated", "all", "pending_print", "not_returned", "expiring"];
+
+// ?tab= เปิดแท็บตรงๆ (ลิงก์จากภาพรวมบุคคล) · useSearchParams ต้องอยู่ใน Suspense (Next.js 16)
 export default function EmployeesPage() {
-    const [tab, setTab] = useState<Tab>("employed");
+    return (
+        <Suspense fallback={<PageSkeleton />}>
+            <EmployeesContent />
+        </Suspense>
+    );
+}
+
+function EmployeesContent() {
+    const requestedTab = useSearchParams().get("tab") as Tab | null;
+    const [tab, setTab] = useState<Tab>(requestedTab && TABS.includes(requestedTab) ? requestedTab : "employed");
     const [cardQueues, setCardQueues] = useState<Record<CardQueueKind, CardQueueRow[] | null>>({
         pending_print: null,
         not_returned: null,

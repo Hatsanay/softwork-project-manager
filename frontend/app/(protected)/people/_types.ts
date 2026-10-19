@@ -179,7 +179,25 @@ export type EmployeeFormOptions = {
         fullname: string;
         user_status: ActiveStatus;
         linked_employee_id: string | null;
+        // เติมฟอร์มเพิ่มพนักงานเมื่อเลือกบัญชี (2026-10-19)
+        user_fname: string;
+        user_lname: string;
+        user_phone: string | null;
+        user_email: string | null;
+        user_avatar_url: string | null;
+        user_branch_id: string | null;
     }[];
+    // พนักงานที่พ้นสภาพแล้วที่มีบัญชี (ใหม่สุดก่อน) — คนเดิมกลับมาทำงาน ฟอร์มเติมข้อมูลเดิมให้
+    former_employees: FormerEmployee[];
+};
+
+// พนักงานที่พ้นสภาพแล้ว (ไม่ส่งเลขประจำตัว · หาจากเลขใช้ GET /employees/former?national_id=)
+export type FormerEmployee = {
+    emp_id: string;
+    emp_code: string;
+    emp_user_id: string | null;
+    full_name: string;
+    emp_termination_date: string;
 };
 
 // ─── ตั้งค่าบุคคล ───────────────────────────────────────────────────────────────────────────────
@@ -575,4 +593,47 @@ export type AnnualCertificates = {
     company: ReportCompany;
     unpaid_runs: string[];
     certificates: (AnnualEmployeeTotal & { reference: string })[];
+};
+
+// ─── หน้าของฉัน / ภาพรวมบุคคล (2026-10-19 · docs/plans/2026-10-19-people-ux-redesign.md) ─────────────
+
+export type MyProfile = {
+    today: string;
+    employee: {
+        emp_id: string;
+        emp_code: string;
+        emp_title: string | null;
+        emp_first_name_th: string;
+        emp_last_name_th: string;
+        emp_nickname: string | null;
+        emp_position: string | null;
+        emp_hire_date: string;
+        emp_termination_date: string | null;
+        photo_url: string | null;
+        department_name: string | null;
+        department_code: string | null;
+        branch_name: string | null;
+    } | null;
+    card: { ec_id: number; ec_seq: number; ec_emp_code: string; ec_expires_on: string; ec_printed_at: string | null } | null;
+};
+
+export type PeopleOverview = {
+    today: string;
+    headcount: { working: number; upcoming: number; joined_this_month: number; leaving_this_month: number } | null;
+    pending: { leave: number | null; timesheet: number | null };
+    cards: { pending_print: number; not_returned: number; expiring: number } | null;
+    incomplete_employees: { emp_id: string; emp_code: string; full_name: string; missing: string[] }[] | null;
+    payroll: {
+        latest_run: {
+            pr_id: number;
+            pr_number: string;
+            pr_period: string;
+            pr_status: PayrollStatus;
+            pr_total_net: string;
+            pr_employee_count: number;
+            pr_pay_date: string;
+        } | null;
+        missing_period: string | null;
+    } | null;
+    on_leave_today: { lr_id: number; full_name: string; nickname: string | null; leave_type: string; half_day: HalfDay }[];
 };

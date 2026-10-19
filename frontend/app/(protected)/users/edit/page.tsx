@@ -19,6 +19,7 @@ import { inputClass } from "@/components/ui/form-field";
 import Link from "next/link";
 import StatusBanner from "@/components/ui/guidance/status-banner";
 import { formatDateOnly } from "@/app/function";
+import { usePermission, BITS } from "@/app/components/permission-provider";
 
 // พนักงานปัจจุบันที่ผูกบัญชีนี้ (2026-10-18) — ชื่อ เบอร์ สาขาแก้ที่ทะเบียนพนักงาน (docs/plans/2026-10-18-user-employee-link.md)
 type LinkedEmployee = { emp_id: string; emp_code: string; full_name: string };
@@ -156,6 +157,10 @@ export default function EditUserPage() {
     const [linkedEmployee, setLinkedEmployee] = useState<LinkedEmployee | null>(null);
     const [loginClosedAfter, setLoginClosedAfter] = useState<string | null>(null);
     const isLinked = linkedEmployee !== null;
+    // ยังไม่ใช่พนักงาน: ฝ่ายบุคคลกด "เพิ่มเป็นพนักงาน" แล้วฟอร์มเติมชื่อ เบอร์ อีเมลจากบัญชีนี้ให้ (2026-10-19)
+    const hasBit = usePermission();
+    const isLoaded = currentRoleId !== null;
+    const canAddAsEmployee = isLoaded && !isLinked && hasBit(BITS.manageEmployees);
 
     useEffect(() => {
         if (!id) return;
@@ -289,6 +294,17 @@ export default function EditUserPage() {
                                 หน้าพนักงาน
                             </Link>{" "}
                             (ฝ่ายบุคคล) · อีเมล รูป LINE และ WhatsApp ของบัญชีแก้ที่นี่ได้
+                        </StatusBanner>
+                    </div>
+                )}
+
+                {canAddAsEmployee && (
+                    <div className="col-span-full">
+                        <StatusBanner tone="info" title="บัญชีนี้ยังไม่ได้เป็นพนักงาน">
+                            ถ้าเป็นพนักงานบริษัท เพิ่มเข้าทะเบียนได้เลย ระบบเติมชื่อ เบอร์ และอีเมลจากบัญชีนี้ให้ ·{" "}
+                            <Link href={`/people/employees/new?user=${id}`} className="text-blue-600 underline">
+                                เพิ่มเป็นพนักงาน
+                            </Link>
                         </StatusBanner>
                     </div>
                 )}

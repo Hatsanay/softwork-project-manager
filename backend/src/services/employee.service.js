@@ -229,7 +229,9 @@ async function getFormOptions(conn) {
         "SELECT branch_id, branch_code, branch_name_th, branch_status FROM tb_branches ORDER BY branch_code",
     );
     const [users] = await conn.query(
+        // ชื่อ เบอร์ อีเมล: ฟอร์มเพิ่มพนักงานเติมให้เองเมื่อเลือกบัญชี (2026-10-19 ผู้ใช้สั่ง — ไม่ต้องกรอกซ้ำ)
         `SELECT u.user_id, u.user_username, CONCAT(u.user_fname, ' ', u.user_lname) AS fullname, u.user_status,
+                u.user_fname, u.user_lname, u.user_phone, u.user_email, u.user_avatar_url, u.user_branch_id,
                 (SELECT e.emp_id FROM tb_employees e
                  WHERE e.emp_user_id = u.user_id AND (e.emp_termination_date IS NULL OR e.emp_termination_date >= ?)
                  LIMIT 1) AS linked_employee_id
@@ -237,7 +239,37 @@ async function getFormOptions(conn) {
          ORDER BY u.user_fname, u.user_lname`,
         [today],
     );
-    return { departments, branches, users };
+    // คนเดิมกลับมาทำงาน: ฟอร์มหาแถวที่พ้นสภาพแล้วของบัญชีที่เลือก แล้วเติมข้อมูลเดิมให้ (ใหม่สุดก่อน)
+    // ไม่ส่งเลขประจำตัว (หน้ารายชื่อปิดบังไว้) — หาจากเลขประจำตัวใช้ findFormerByNationalId ทีละเลข
+    const [formerEmployees] = await conn.query(
+        `SELECT emp_id, emp_code, emp_user_id,
+                CONCAT(emp_first_name_th, ' ', emp_last_name_th) AS full_name, emp_termination_date
+         FROM tb_employees
+         WHERE emp_termination_date < ? AND emp_user_id IS NOT NULL
+         ORDER BY emp_termination_date DESC, emp_id DESC`,
+        [today],
+    );
+    return { departments, branches, users, former_employees: formerEmployees };
+}
+
+/**
+ * คนเดิมกลับมาทำงาน (ไม่มีบัญชีก็ได้): หาพนักงานที่พ้นสภาพแล้วจากเลขประจำตัว 13 หลัก — แถวใหม่สุด
+ * @param {import("mysql2/promise").PoolConnection} conn
+ * @param {unknown} nationalIdText
+ */
+async function findFormerByNationalId(conn, nationalIdText) {
+    const digits = String(nationalIdText ?? "").replace(/\D/g, "");
+    if (digits.length !== 13) return null;
+    const [rows] = await conn.query(
+        `SELECT emp_id, emp_code, emp_user_id,
+                CONCAT(emp_first_name_th, ' ', emp_last_name_th) AS full_name, emp_termination_date
+         FROM tb_employees
+         WHERE emp_national_id = ? AND emp_termination_date < ?
+         ORDER BY emp_termination_date DESC, emp_id DESC
+         LIMIT 1`,
+        [digits, todayBangkok()],
+    );
+    return rows[0] ?? null;
 }
 
 // ─── เพิ่ม / แก้ / ลบ ─────────────────────────────────────────────────────────────────────────
@@ -725,6 +757,7 @@ module.exports = {
     listEmployees,
     getEmployee,
     getFormOptions,
+    findFormerByNationalId,
     createEmployee,
     updateEmployee,
     deleteEmployee,

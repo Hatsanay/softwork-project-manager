@@ -3,11 +3,14 @@
 // ฟอร์มพนักงาน — ใช้ทั้งหน้าเพิ่มและหน้าแก้ไข (2026-10-17 เฟส 4 ขั้น 4-1)
 // ตรวจด้วย schema ชุดเดียวกับ backend ก่อนส่ง · error จากเซิร์ฟเวอร์แสดงใต้ช่องเดียวกัน
 // เงินเดือนเริ่มงานกรอกเฉพาะตอนเพิ่ม — แก้ภายหลังผ่าน "ค่าจ้างตามวันที่มีผล" ในหน้าพนักงาน (ประวัติไม่หาย)
+// เพิ่มพนักงาน: ดึงข้อมูลที่ระบบมีอยู่แล้วมาเติมให้ (2026-10-19 ผู้ใช้สั่ง) — ช่องที่พิมพ์เองแล้วไม่ทับ
+//   บัญชีผู้ใช้ → ชื่อ เบอร์ อีเมล · สาขาของบัญชีมีแผนกเดียว → แผนก
+//   เคยเป็นพนักงาน (หาจากบัญชีหรือเลขประจำตัว) → ข้อมูลเดิมทั้งหมด + เงินเดือนล่าสุด ยกเว้นวันเริ่มงานและหมายเหตุ
 // รหัสพนักงานระบบออกให้จากแผนก + วันเริ่มงาน (2026-10-18) · สาขามาจากแผนก · เข้ารอบเงินเดือนแล้วสองช่องนี้ล็อก
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { BriefcaseBusiness, Landmark, UserRound } from "lucide-react";
+import { BriefcaseBusiness, KeyRound, Landmark, UserRound } from "lucide-react";
 import FormField, { inputClass } from "@/components/ui/form-field";
 import SectionCard from "@/components/ui/section-card";
 import StatusBanner from "@/components/ui/guidance/status-banner";
@@ -19,8 +22,9 @@ import { apiFetch, type ApiError } from "@/lib/api";
 import { toFieldErrors, type FieldErrors } from "@/lib/form-errors";
 import { employeeCreateSchema, employeeSchema } from "@/lib/shared/schemas/people.mjs";
 import { employeeCodePrefix } from "@/lib/shared/employee-code.mjs";
+import { formatDateOnly } from "@/app/function";
 import { EMPLOYEE_MESSAGES } from "../../_messages";
-import type { Employee, EmployeeFormOptions } from "../../_types";
+import type { Employee, EmployeeFormOptions, FormerEmployee } from "../../_types";
 
 const TITLES = ["นาย", "นาง", "นางสาว"];
 
@@ -80,7 +84,35 @@ function toForm(employee: Employee): EmployeeFormValues {
     };
 }
 
-export default function EmployeeForm({ employee }: { employee?: Employee }) {
+type FillValues = Partial<EmployeeFormValues>;
+type AccountOption = EmployeeFormOptions["users"][number];
+// nationalId = เลขที่ใช้หาพนักงานเดิม (null = หาจากบัญชี)
+type FillSource = { accountName: string | null; former: FormerEmployee | null; nationalId: string | null };
+
+// ชื่อช่องที่แสดงในแถบ "เติมข้อมูลให้แล้ว"
+const FIELD_LABELS: Partial<Record<keyof EmployeeFormValues, string>> = {
+    emp_title: "คำนำหน้า",
+    emp_first_name_th: "ชื่อ",
+    emp_last_name_th: "นามสกุล",
+    emp_first_name_en: "ชื่ออังกฤษ",
+    emp_last_name_en: "นามสกุลอังกฤษ",
+    emp_nickname: "ชื่อเล่น",
+    emp_national_id: "เลขประจำตัวประชาชน",
+    emp_birth_date: "วันเกิด",
+    emp_address: "ที่อยู่",
+    emp_phone: "เบอร์",
+    emp_email: "อีเมล",
+    emp_department_id: "แผนก",
+    emp_position: "ตำแหน่ง",
+    emp_sso_enrolled: "ประกันสังคม",
+    emp_sso_number: "เลขประกันสังคม",
+    emp_bank_name: "ธนาคาร",
+    emp_bank_account_no: "เลขบัญชี",
+    emp_bank_account_name: "ชื่อบัญชี",
+    ecm_base_salary: "เงินเดือนล่าสุด",
+};
+
+export default function EmployeeForm({ employee, initialUserId }: { employee?: Employee; initialUserId?: string | null }) {
     const router = useRouter();
     const isEditing = employee !== undefined;
     const [form, setForm] = useState<EmployeeFormValues>(() => (employee ? toForm(employee) : EMPTY_FORM));
@@ -89,6 +121,43 @@ export default function EmployeeForm({ employee }: { employee?: Employee }) {
     const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
     const [saveError, setSaveError] = useState<ApiError | null>(null);
     const [isSaving, setIsSaving] = useState(false);
+    // ค่าที่ระบบเติมรอบล่าสุด: ref ใช้ตอนเติม (ค่าล่าสุดเสมอ แม้รอโหลดประวัติเดิม) · state ใช้แสดงผล
+    const autoFilledRef = useRef<FillValues>({});
+    const [autoFilled, setAutoFilled] = useState<FillValues>({});
+    const [fillSource, setFillSource] = useState<FillSource | null>(null);
+    // เปลี่ยนบัญชีเร็ว ๆ: ผลโหลดประวัติเดิมของบัญชีก่อนหน้าที่มาช้าต้องทิ้ง
+    const fillRequestRef = useRef(0);
+    // เลขประจำตัวล่าสุดที่พิมพ์ — ผลค้นพนักงานเดิมที่กลับมาหลังพิมพ์เลขอื่นแล้วต้องทิ้ง
+    const nationalIdRef = useRef("");
+
+    const applyFill = useCallback((values: FillValues, source: FillSource) => {
+        const previous = autoFilledRef.current;
+        autoFilledRef.current = values;
+        setForm((current) => mergeFill(current, previous, values));
+        setAutoFilled(values);
+        setFillSource(source);
+    }, []);
+
+    /** เติมจากบัญชีทันที แล้วถ้าเคยเป็นพนักงาน โหลดข้อมูลเดิมมาเติมเพิ่ม */
+    const fillFrom = useCallback(
+        async (
+            formOptions: EmployeeFormOptions,
+            user: AccountOption | undefined,
+            former: FormerEmployee | null,
+            nationalId: string | null = null,
+        ) => {
+            fillRequestRef.current += 1;
+            const requestId = fillRequestRef.current;
+            const accountName = user?.fullname ?? null;
+            applyFill(buildFill(formOptions, user, null), { accountName, former: null, nationalId: null });
+            if (!former) return;
+            const { data } = await apiFetch<Employee>(`/employees/${former.emp_id}`);
+            const isOutdated = requestId !== fillRequestRef.current;
+            if (isOutdated || !data) return;
+            applyFill(buildFill(formOptions, user, data), { accountName, former, nationalId });
+        },
+        [applyFill],
+    );
 
     useEffect(() => {
         let isLeftPage = false;
@@ -96,11 +165,16 @@ export default function EmployeeForm({ employee }: { employee?: Employee }) {
             if (isLeftPage) return;
             setOptions(data);
             setOptionsError(error);
+            // มาจากปุ่ม "เพิ่มเป็นพนักงาน" ในหน้าผู้ใช้ (?user=) — เลือกบัญชีและเติมให้เลย
+            const preselected = data?.users.find((user) => user.user_id === initialUserId && !user.linked_employee_id);
+            if (isEditing || !data || !preselected) return;
+            setForm((current) => ({ ...current, emp_user_id: preselected.user_id }));
+            void fillFrom(data, preselected, findFormer(data, preselected.user_id));
         });
         return () => {
             isLeftPage = true;
         };
-    }, []);
+    }, [isEditing, initialUserId, fillFrom]);
 
     if (optionsError)
         return (
@@ -122,7 +196,7 @@ export default function EmployeeForm({ employee }: { employee?: Employee }) {
         isEditing &&
         (form.emp_department_id !== (employee.emp_department_id ?? "") || form.emp_hire_date !== employee.emp_hire_date);
     const codePrefix =
-        selectedDepartment && /^d{4}-d{2}-d{2}$/.test(form.emp_hire_date)
+        selectedDepartment && /^\d{4}-\d{2}-\d{2}$/.test(form.emp_hire_date)
             ? employeeCodePrefix(selectedDepartment.dep_code, form.emp_hire_date)
             : null;
     // บัญชีที่ผูกกับพนักงานคนอื่นที่ยังทำงานอยู่ เลือกไม่ได้ (backend ตรวจซ้ำ)
@@ -132,11 +206,53 @@ export default function EmployeeForm({ employee }: { employee?: Employee }) {
             (user.user_status === "active" &&
                 (!user.linked_employee_id || user.linked_employee_id === employee?.emp_id)),
     );
+    const selectedUserHint = form.emp_user_id
+        ? EMPLOYEE_MESSAGES.userLink
+        : isEditing
+          ? undefined
+          : "ไม่มีบัญชี เช่น แม่บ้าน คนขับรถ · เพิ่มบัญชีทีหลังได้ที่หน้าแก้ไขพนักงาน";
+    // ช่องที่ยังเป็นค่าที่ระบบเติม (ผู้ใช้แก้แล้วหายจากรายการ)
+    const filledLabels = (Object.keys(autoFilled) as (keyof EmployeeFormValues)[])
+        .filter((field) => form[field] === autoFilled[field] && FIELD_LABELS[field])
+        .map((field) => FIELD_LABELS[field]);
+    const matchedFormer =
+        fillSource?.former && fillSource.nationalId === onlyDigits(form.emp_national_id) ? fillSource.former : null;
+
     const isBankChanged =
         isEditing && form.emp_bank_account_no.replace(/[\s-]+/g, "") !== (employee.emp_bank_account_no ?? "");
 
     function updateField<Field extends keyof EmployeeFormValues>(field: Field, value: EmployeeFormValues[Field]) {
         setForm((current) => ({ ...current, [field]: value }));
+    }
+
+    /** เลือกบัญชี: ตอนเพิ่มพนักงานเติมข้อมูลที่มีให้ (บัญชี แผนก ประวัติเดิม) */
+    function chooseAccount(userId: string) {
+        updateField("emp_user_id", userId);
+        if (isEditing || !options) return;
+        const user = options.users.find((item) => item.user_id === userId);
+        const accountFormer = findFormer(options, userId);
+        if (accountFormer) {
+            void fillFrom(options, user, accountFormer);
+            return;
+        }
+        // บัญชีนี้ไม่มีประวัติเดิม แต่เลขประจำตัวที่พิมพ์ไว้ตรงกับพนักงานเดิม → ใช้อันนั้นต่อ
+        const nationalId = matchedFormer ? (fillSource?.nationalId ?? null) : null;
+        void fillFrom(options, user, matchedFormer, nationalId);
+    }
+
+    /** เลขประจำตัวครบ 13 หลักและตรงกับพนักงานเดิม → เติมข้อมูลเดิมให้ (คนที่ไม่มีบัญชีก็ได้) */
+    async function changeNationalId(value: string) {
+        updateField("emp_national_id", value);
+        const digits = onlyDigits(value);
+        nationalIdRef.current = digits;
+        if (isEditing || !options || digits.length !== 13) return;
+        // บัญชีที่เลือกมีประวัติเดิมแล้ว หรือเลขนี้ค้นไปแล้ว ไม่ต้องค้นซ้ำ
+        if (findFormer(options, form.emp_user_id) || digits === fillSource?.nationalId) return;
+        const { data } = await apiFetch<{ former: FormerEmployee | null }>(`/employees/former?national_id=${digits}`);
+        const isOutdated = nationalIdRef.current !== digits;
+        if (isOutdated || !data?.former) return;
+        const user = options.users.find((item) => item.user_id === form.emp_user_id);
+        void fillFrom(options, user, data.former, digits);
     }
 
     async function handleSubmit(event: React.FormEvent) {
@@ -185,6 +301,42 @@ export default function EmployeeForm({ employee }: { employee?: Employee }) {
 
     return (
         <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-5" noValidate>
+            <SectionCard
+                icon={KeyRound}
+                title="บัญชีผู้ใช้ในระบบ"
+                description={isEditing ? EMPLOYEE_MESSAGES.userLink : EMPLOYEE_MESSAGES.chooseAccount}
+            >
+                <FormField label="บัญชีผู้ใช้" htmlFor="emp_user_id" error={fieldErrors.emp_user_id} hint={selectedUserHint}>
+                    <select
+                        id="emp_user_id"
+                        value={form.emp_user_id}
+                        onChange={(event) => chooseAccount(event.target.value)}
+                        className={inputClass(Boolean(fieldErrors.emp_user_id))}
+                    >
+                        <option value="">ไม่มีบัญชี (กรอกข้อมูลเอง)</option>
+                        {userChoices.map((user) => (
+                            <option key={user.user_id} value={user.user_id}>
+                                {user.fullname} ({user.user_username})
+                                {!isEditing && findFormer(options, user.user_id) ? " · เคยเป็นพนักงาน" : ""}
+                            </option>
+                        ))}
+                    </select>
+                </FormField>
+                {!isEditing && filledLabels.length > 0 && (
+                    <StatusBanner tone="done" title={`เติมข้อมูลให้แล้ว ${filledLabels.length} ช่อง · แก้ได้ทุกช่อง`}>
+                        <span className="block">
+                            {describeSource(fillSource)}: {filledLabels.join(" ")}
+                        </span>
+                        {fillSource?.former && (
+                            <span className="block">
+                                วันเริ่มงานกรอกใหม่ (เริ่มช่วงทำงานใหม่ ได้รหัสพนักงานใหม่) · เงินเดือนเป็นอัตราล่าสุดก่อนออก
+                                ตรวจก่อนบันทึก
+                            </span>
+                        )}
+                    </StatusBanner>
+                )}
+            </SectionCard>
+
             <SectionCard icon={UserRound} title="ข้อมูลส่วนตัว" description={EMPLOYEE_MESSAGES.notUser}>
                 <div className="grid gap-4 sm:grid-cols-2">
                     <FormField
@@ -228,11 +380,22 @@ export default function EmployeeForm({ employee }: { employee?: Employee }) {
                     <FormField
                         label="เลขประจำตัวประชาชน"
                         htmlFor="emp_national_id"
-                        hint={EMPLOYEE_MESSAGES.nationalId}
+                        hint={
+                            matchedFormer
+                                ? `ตรงกับพนักงานเดิม ${matchedFormer.emp_code} ${matchedFormer.full_name} · เติมข้อมูลเดิมให้แล้ว`
+                                : EMPLOYEE_MESSAGES.nationalId
+                        }
                         error={fieldErrors.emp_national_id}
                         className="sm:col-span-2"
                     >
-                        {textInput("emp_national_id", { inputMode: "numeric", placeholder: "13 หลัก" })}
+                        <input
+                            id="emp_national_id"
+                            inputMode="numeric"
+                            placeholder="13 หลัก"
+                            value={form.emp_national_id}
+                            onChange={(event) => void changeNationalId(event.target.value)}
+                            className={inputClass(Boolean(fieldErrors.emp_national_id))}
+                        />
                     </FormField>
                     <FormField label="เบอร์โทรศัพท์" htmlFor="emp_phone" error={fieldErrors.emp_phone}>
                         {textInput("emp_phone", { type: "tel", inputMode: "tel" })}
@@ -340,26 +503,6 @@ export default function EmployeeForm({ employee }: { employee?: Employee }) {
                         error={fieldErrors.emp_position}
                     >
                         {textInput("emp_position", { placeholder: "เช่น นักพัฒนาซอฟต์แวร์" })}
-                    </FormField>
-                    <FormField
-                        label="บัญชีผู้ใช้ในระบบ"
-                        htmlFor="emp_user_id"
-                        hint={EMPLOYEE_MESSAGES.userLink}
-                        error={fieldErrors.emp_user_id}
-                    >
-                        <select
-                            id="emp_user_id"
-                            value={form.emp_user_id}
-                            onChange={(event) => updateField("emp_user_id", event.target.value)}
-                            className={inputClass(Boolean(fieldErrors.emp_user_id))}
-                        >
-                            <option value="">— ไม่ผูก —</option>
-                            {userChoices.map((user) => (
-                                <option key={user.user_id} value={user.user_id}>
-                                    {user.fullname} ({user.user_username})
-                                </option>
-                            ))}
-                        </select>
                     </FormField>
                     <label className="flex items-start gap-2 text-sm sm:col-span-2">
                         <input
@@ -480,4 +623,104 @@ function EmployeeCodePreview({
             </span>
         </div>
     );
+}
+
+// ─── เติมข้อมูลที่ระบบมีอยู่แล้ว ─────────────────────────────────────────────────────────────
+
+function onlyDigits(text: string): string {
+    return text.replace(/\D/g, "");
+}
+
+/** ตัดช่องที่ไม่มีค่าออก (ไม่เติมค่าว่างทับ) · true/false ของประกันสังคมเก็บไว้ */
+function withoutEmpty(values: FillValues): FillValues {
+    return Object.fromEntries(Object.entries(values).filter(([, value]) => value !== "" && value !== undefined));
+}
+
+/** พนักงานเดิมของบัญชีนี้ (ใหม่สุด) */
+function findFormer(options: EmployeeFormOptions, userId: string): FormerEmployee | null {
+    if (!userId) return null;
+    return options.former_employees.find((former) => former.emp_user_id === userId) ?? null;
+}
+
+/** ค่าที่จะเติม: ประวัติเดิม < บัญชี (บัญชีใหม่กว่า) · แผนกจากสาขาของบัญชีถ้าสาขามีแผนกเดียว */
+function buildFill(options: EmployeeFormOptions, user: AccountOption | undefined, former: Employee | null): FillValues {
+    const values: FillValues = {};
+    if (former) Object.assign(values, formerValues(options, former));
+    if (user) Object.assign(values, accountValues(user));
+    const branchId = user?.user_branch_id;
+    if (!values.emp_department_id && branchId) {
+        const branchDepartments = options.departments.filter(
+            (department) => department.dep_status === "active" && department.dep_branch_id === branchId,
+        );
+        if (branchDepartments.length === 1) values.emp_department_id = branchDepartments[0].dep_id;
+    }
+    return values;
+}
+
+/** ค่าจากบัญชีผู้ใช้ */
+function accountValues(user: AccountOption): FillValues {
+    return withoutEmpty({
+        emp_first_name_th: user.user_fname,
+        emp_last_name_th: user.user_lname,
+        emp_phone: user.user_phone ?? "",
+        emp_email: user.user_email ?? "",
+    });
+}
+
+/** ค่าจากพนักงานเดิม: ทุกอย่างยกเว้นบัญชี วันเริ่มงาน หมายเหตุ · แผนกที่ปิดแล้วไม่เติม · เงินเดือน = อัตราล่าสุด */
+function formerValues(options: EmployeeFormOptions, former: Employee): FillValues {
+    const old = toForm(former);
+    const isDepartmentActive = options.departments.some(
+        (department) => department.dep_id === old.emp_department_id && department.dep_status === "active",
+    );
+    return withoutEmpty({
+        emp_title: old.emp_title,
+        emp_first_name_th: old.emp_first_name_th,
+        emp_last_name_th: old.emp_last_name_th,
+        emp_first_name_en: old.emp_first_name_en,
+        emp_last_name_en: old.emp_last_name_en,
+        emp_nickname: old.emp_nickname,
+        emp_national_id: old.emp_national_id,
+        emp_birth_date: old.emp_birth_date,
+        emp_address: old.emp_address,
+        emp_phone: old.emp_phone,
+        emp_email: old.emp_email,
+        emp_department_id: isDepartmentActive ? old.emp_department_id : "",
+        emp_position: old.emp_position,
+        emp_sso_enrolled: old.emp_sso_enrolled,
+        emp_sso_number: old.emp_sso_number,
+        emp_bank_name: old.emp_bank_name,
+        emp_bank_account_no: old.emp_bank_account_no,
+        emp_bank_account_name: old.emp_bank_account_name,
+        ecm_base_salary: former.compensations[0]?.ecm_base_salary ?? "",
+    });
+}
+
+/**
+ * เติมค่าใหม่ลงฟอร์ม: ช่องที่ยังเป็นค่าเริ่มต้นหรือยังเป็นค่าที่ระบบเติมรอบก่อนเท่านั้น (ที่ผู้ใช้พิมพ์เองไม่ทับ)
+ * ค่ารอบก่อนที่รอบนี้ไม่มี (เช่น เปลี่ยนบัญชี) ล้างกลับเป็นค่าเริ่มต้น
+ */
+function mergeFill(current: EmployeeFormValues, previous: FillValues, values: FillValues): EmployeeFormValues {
+    const defaults: Record<string, string | boolean> = EMPTY_FORM;
+    const before: Record<string, string | boolean> = current;
+    const next: Record<string, string | boolean> = { ...current };
+    for (const [field, value] of Object.entries(previous)) {
+        if (before[field] === value) next[field] = defaults[field];
+    }
+    for (const [field, value] of Object.entries(values)) {
+        const isUntouched = before[field] === defaults[field] || before[field] === previous[field as keyof FillValues];
+        if (isUntouched && value !== undefined) next[field] = value;
+    }
+    return next as EmployeeFormValues;
+}
+
+function describeSource(source: FillSource | null): string {
+    const parts: string[] = [];
+    if (source?.accountName) parts.push(`บัญชี ${source.accountName}`);
+    if (source?.former) {
+        const lastDay = formatDateOnly(source.former.emp_termination_date);
+        parts.push(`ประวัติพนักงานเดิม ${source.former.emp_code} (ทำงานวันสุดท้าย ${lastDay})`);
+    }
+    if (parts.length === 0) return "จากข้อมูลในระบบ";
+    return `จาก${parts.join(" และ")}`;
 }

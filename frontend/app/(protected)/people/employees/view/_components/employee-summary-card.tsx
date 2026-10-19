@@ -12,7 +12,8 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
     return (
         <div className="grid min-w-0 gap-0.5">
             <dt className="text-xs text-gray-500">{label}</dt>
-            <dd className="text-sm break-words text-gray-900">{value || "—"}</dd>
+            {/* overflow-wrap:anywhere = อีเมล/รหัสยาวตัดบรรทัดได้ ไม่ดันคอลัมน์จนล้นจอมือถือ */}
+            <dd className="text-sm wrap-anywhere text-gray-900">{value || "-"}</dd>
         </div>
     );
 }

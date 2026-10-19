@@ -296,6 +296,18 @@ test("พ้นสภาพ: ไม่ก่อนวันเริ่มงา
         terminated.data.some((row) => row.emp_id === first.emp_id && row.employment_status === "terminated"),
     );
 
+    // คนเดิมกลับมาทำงาน: ฟอร์มหาแถวเดิมจากบัญชี (form-options ไม่ส่งเลขประจำตัว) หรือจากเลขประจำตัวทีละเลข
+    const options = expectStatus(await as(people.hr, "GET", "/V1/employees/form-options"), 200);
+    const formerOfStaff = options.former_employees.find((row) => row.emp_user_id === people.staff.userId);
+    assert.equal(formerOfStaff?.emp_id, first.emp_id);
+    assert.equal("emp_national_id" in formerOfStaff, false, "รายการพนักงานเดิมไม่ส่งเลขประจำตัว");
+    const dashed = `${nationalId.slice(0, 1)}-${nationalId.slice(1, 5)}-${nationalId.slice(5)}`;
+    const byNationalId = expectStatus(await as(people.hr, "GET", `/V1/employees/former?national_id=${dashed}`), 200);
+    assert.equal(byNationalId.former?.emp_id, first.emp_id);
+    const tooShort = expectStatus(await as(people.hr, "GET", "/V1/employees/former?national_id=12345"), 200);
+    assert.equal(tooShort.former, null);
+    expectStatus(await as(people.hrAdmin, "GET", `/V1/employees/former?national_id=${nationalId}`), 403);
+
     expectStatus(
         await as(
             people.hr,

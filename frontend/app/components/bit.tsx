@@ -92,18 +92,26 @@ export const MENU_DEFS: MenuItem[] = [
             { key: "companySettings", label: "ตั้งค่าจัดซื้อ", href: "/purchasing/settings" },
         ],
     },
-    // บุคคล เฟส 4 (4-1 พนักงาน + ตั้งค่า · 4-2 ลงเวลา · 4-3 ลา · 4-4 รอบเงินเดือน/สลิป)
+    // บุคคล — เรียงตามคนใช้ (2026-10-19 docs/plans/2026-10-19-people-ux-redesign.md ข้อ 2.1 · ผู้ใช้สั่งเอาหัวข้อย่อยออก)
+    // ของฉัน (ทุกคน · ผูกกับ dashboard ที่ทุก role มี) → รออนุมัติ (ผู้อนุมัติลา/ลงเวลา) → งานฝ่ายบุคคล
+    // ผู้จัดการโปรเจกต์ที่ไม่มีบิตอนุมัติลงเวลา อนุมัติของโปรเจกต์ตัวเองได้จากแท็บในหน้าลงเวลา (backend ตัดสินขอบเขต)
     {
         key: "people",
         label: "บุคคล",
         href: "/people",
         children: [
-            // ลงเวลา: ทุกคนลงของตัวเองได้ (ไม่มีบิตเฉพาะ) — ผูกกับ dashboard ที่ทุก role มี · แท็บอนุมัติขึ้นตามขอบเขตจาก backend
+            { key: "dashboard", label: "ภาพรวมของฉัน", href: "/people/me" },
             { key: "dashboard", label: "ลงเวลาทำงาน", href: "/people/timesheet" },
-            // การลา: ทุกคนขอลาของตัวเองได้ · แท็บอนุมัติขึ้นเมื่อมีสิทธิ์ approveLeave
             { key: "dashboard", label: "การลา", href: "/people/leave" },
-            // สลิปของฉัน: ทุกคน (เห็นเฉพาะของตัวเองหลังบันทึกจ่าย)
             { key: "dashboard", label: "สลิปเงินเดือน", href: "/people/payslips" },
+            { key: "approveLeave", label: "รออนุมัติ", href: "/people/approvals" },
+            { key: "approveTimesheet", label: "รออนุมัติ", href: "/people/approvals", hidden: true },
+            // ภาพรวมบุคคล: เห็นเมื่อมีสิทธิ์ด้านบุคคลข้อใดข้อหนึ่ง (ตัวเลขแต่ละส่วนตัดตามสิทธิ์ใน backend)
+            { key: "manageEmployees", label: "ภาพรวมบุคคล", href: "/people/overview" },
+            { key: "viewPayroll", label: "ภาพรวมบุคคล", href: "/people/overview", hidden: true },
+            { key: "runPayroll", label: "ภาพรวมบุคคล", href: "/people/overview", hidden: true },
+            { key: "approvePayroll", label: "ภาพรวมบุคคล", href: "/people/overview", hidden: true },
+            { key: "manageHrSettings", label: "ภาพรวมบุคคล", href: "/people/overview", hidden: true },
             { key: "manageEmployees", label: "พนักงาน", href: "/people/employees" },
             // รอบเงินเดือน: เห็นเมื่อมีสิทธิ์ดู/สร้าง/อนุมัติข้อใดข้อหนึ่ง (แถวซ่อนช่วยเปิดเมนูเดียวกัน)
             { key: "viewPayroll", label: "รอบเงินเดือน", href: "/people/payroll" },
