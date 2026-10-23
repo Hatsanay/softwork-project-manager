@@ -3,6 +3,7 @@
 // หน้าต่างขอลา/แก้ร่าง — บนมือถือเลื่อนขึ้นจากล่าง (CODING_GUIDELINES 5.1)
 // บันทึกร่าง = สร้าง/แก้ → แนบไฟล์ที่เลือก · ส่งขออนุมัติ = บันทึกร่างแล้วส่งต่อทันที
 // ตรวจด้วย leaveRequestSchema ชุดเดียวกับ backend ก่อนส่ง · จำนวนวันจริงคิดใน backend (ไม่นับวันหยุด)
+// U-2 (2026-10-19): เลือกวัน/ประเภทแล้วเห็นทันทีว่าใช้กี่วัน ไม่นับวันไหน และเหลือเท่าไรหลังลา (GET /leave/preview)
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Paperclip, X } from "lucide-react";
@@ -14,8 +15,9 @@ import { buttonClass } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
 import { toFieldErrors, type FieldErrors } from "@/lib/form-errors";
 import { leaveRequestSchema } from "@/lib/shared/schemas/leave.mjs";
+import { isRealDateText } from "@/lib/shared/schemas/common.mjs";
 import { HALF_DAY_LABEL, LEAVE_MESSAGES } from "../../_messages";
-import type { HalfDay, LeaveBalance, LeaveRequest } from "../../_types";
+import type { HalfDay, LeaveBalance, LeavePreview, LeaveRequest } from "../../_types";
 
 type FormState = {
     lr_leave_type_id: string;
@@ -59,6 +61,33 @@ export default function LeaveFormSheet({
     const [bannerError, setBannerError] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const fileInput = useRef<HTMLInputElement>(null);
+    const [preview, setPreview] = useState<{ query: string; data: LeavePreview } | null>(null);
+
+    // ตัวอย่างวันลา: ช่วงวันถูกต้องแล้วค่อยถาม backend (รอพิมพ์เสร็จ 250 ms) · ผลเก่าที่ไม่ตรงค่าปัจจุบันไม่แสดง
+    const isRangeReady =
+        isRealDateText(form.lr_start_date) && isRealDateText(form.lr_end_date) && form.lr_start_date <= form.lr_end_date;
+    const previewQuery = isRangeReady
+        ? new URLSearchParams({
+              start_date: form.lr_start_date,
+              end_date: form.lr_end_date,
+              half_day: form.lr_half_day,
+              leave_type_id: form.lr_leave_type_id,
+          }).toString()
+        : null;
+
+    useEffect(() => {
+        if (!open || !previewQuery) return;
+        let isCancelled = false;
+        const timer = setTimeout(async () => {
+            const { data } = await apiFetch<LeavePreview>(`/leave/preview?${previewQuery}`);
+            if (!isCancelled && data) setPreview({ query: previewQuery, data });
+        }, 250);
+        return () => {
+            isCancelled = true;
+            clearTimeout(timer);
+        };
+    }, [open, previewQuery]);
+    const currentPreview = preview?.query === previewQuery ? preview.data : null;
 
     useEffect(() => {
         if (!open) return;
@@ -256,6 +285,8 @@ export default function LeaveFormSheet({
                     </div>
                 )}
 
+                {currentPreview && <LeavePreviewBox preview={currentPreview} />}
+
                 <FormField
                     label="เหตุผล"
                     htmlFor="lr_reason"
@@ -344,6 +375,57 @@ export default function LeaveFormSheet({
                     </button>
                 </div>
             </div>
+        </div>
+    );
+}
+
+// "2026-10-23" → "23 ต.ค."
+function shortDate(dateText: string) {
+    return new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short", timeZone: "UTC" }).format(
+        new Date(`${dateText}T00:00:00Z`),
+    );
+}
+
+// กล่องตัวอย่าง: จำนวนวันที่ใช้ · วันที่ไม่นับ · ยอดหลังลา (คิดจากบนลงล่าง ตัวเลขเดียวต่อความหมาย)
+function LeavePreviewBox({ preview }: { preview: LeavePreview }) {
+    const days = Number(preview.days);
+    const balance = preview.balance;
+    const skippedParts: string[] = [];
+    if (preview.weekly_off_days > 0) skippedParts.push(`วันหยุดประจำสัปดาห์ ${preview.weekly_off_days} วัน`);
+    for (const holiday of preview.holidays) skippedParts.push(`${holiday.hd_name} (${shortDate(holiday.hd_date)})`);
+
+    if (days === 0) {
+        return (
+            <StatusBanner tone="warn" title="ช่วงนี้ไม่มีวันทำงาน">
+                ไม่ต้องขอลา{skippedParts.length > 0 ? ` · ${skippedParts.join(" · ")}` : ""}
+            </StatusBanner>
+        );
+    }
+
+    return (
+        <div className="grid gap-1.5 rounded-xl border border-blue-100 bg-blue-50/60 p-3 text-sm text-gray-700">
+            <span className="font-medium text-gray-900">
+                ใช้ {days} วันทำงาน
+                {preview.calendar_days > 1 && (
+                    <span className="font-normal text-gray-500"> จาก {preview.calendar_days} วันในช่วงที่เลือก</span>
+                )}
+            </span>
+            {skippedParts.length > 0 && <span className="text-xs text-gray-600">ไม่นับ: {skippedParts.join(" · ")}</span>}
+            {balance && balance.remaining_after === null && (
+                <span className="text-xs text-gray-600">{balance.lt_name_th}ไม่จำกัดจำนวนวัน</span>
+            )}
+            {balance && balance.remaining !== null && balance.remaining_after !== null && (
+                <span className="tabular-nums">
+                    {balance.lt_name_th} ปี {balance.year + 543}: คงเหลือ {Number(balance.remaining)}
+                    {Number(balance.pending) > 0 ? ` − รออนุมัติ ${Number(balance.pending)}` : ""} − ใบนี้ {days} ={" "}
+                    <span className={`font-medium ${balance.is_over_quota ? "text-red-600" : "text-gray-900"}`}>
+                        {balance.is_over_quota
+                            ? `เกินโควตา ${-Number(balance.remaining_after)} วัน`
+                            : `เหลือ ${Number(balance.remaining_after)} วัน`}
+                    </span>
+                </span>
+            )}
+            {balance?.is_over_quota && <span className="text-xs text-red-600">{LEAVE_MESSAGES.overQuota}</span>}
         </div>
     );
 }

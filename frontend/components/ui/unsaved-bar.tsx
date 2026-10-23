@@ -16,7 +16,10 @@ type UnsavedBarProps = {
     onDiscard: () => void;
 };
 
-export default function UnsavedBar({ isDirty, isSaving, saveLabel = "บันทึก", onSave, onDiscard }: UnsavedBarProps) {
+/**
+ * เตือนก่อนออกจากหน้าเมื่อมีการแก้ค้าง (ปิดแท็บ/รีเฟรช/กดลิงก์ในระบบ) — ใช้เองได้ในหน้าที่มีแถบบันทึกของตัวเอง (เช่น ลงเวลา)
+ */
+export function useLeaveWarning(isDirty: boolean) {
     useEffect(() => {
         if (!isDirty) return;
 
@@ -41,6 +44,10 @@ export default function UnsavedBar({ isDirty, isSaving, saveLabel = "บัน�
             document.removeEventListener("click", warnBeforeLinkClick, true);
         };
     }, [isDirty]);
+}
+
+export default function UnsavedBar({ isDirty, isSaving, saveLabel = "บันทึก", onSave, onDiscard }: UnsavedBarProps) {
+    useLeaveWarning(isDirty);
 
     if (!isDirty) return null;
 

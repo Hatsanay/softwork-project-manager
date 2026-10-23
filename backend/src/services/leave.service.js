@@ -12,8 +12,9 @@ const { AppError } = require("../utils/app-error");
 const { todayBangkok } = require("../utils/bangkok-time");
 const { hasBit } = require("../shared/permissions.mjs");
 const { formatHundredths, parseHundredths } = require("../shared/money.mjs");
-const { addDays, workingDatesBetween } = require("../shared/payroll-math.mjs");
-const { MAX_LEAVE_ATTACHMENTS } = require("../shared/schemas/leave.mjs");
+const { addDays, daysBetween, weekdayIndex, workingDatesBetween } = require("../shared/payroll-math.mjs");
+const { HALF_DAY_OPTIONS, MAX_LEAVE_ATTACHMENTS } = require("../shared/schemas/leave.mjs");
+const { isRealDateText } = require("../shared/schemas/common.mjs");
 const { findLinkedEmployee } = require("./linked-employee.service");
 const { assertPeriodsOpen } = require("./payroll.service");
 
@@ -71,6 +72,70 @@ async function leaveDaysOf(conn, request) {
     const isHalfDay = request.lr_half_day && request.lr_half_day !== "none";
     const dayCount = isHalfDay && dates.length > 0 ? HALF_DAY_HUNDREDTHS : BigInt(dates.length) * DAY_HUNDREDTHS;
     return { dates, dayCount };
+}
+
+const MAX_PREVIEW_SPAN_DAYS = 366;
+
+/**
+ * ตัวอย่างก่อนขอลา (ฟอร์มขอลาแสดงทันทีที่เลือกวัน — U-2 · 2026-10-19)
+ * จำนวนวันคิดด้วย leaveDaysOf ตัวเดียวกับตอนบันทึก ตัวเลขบนฟอร์มจึงตรงกับที่บันทึกจริง
+ * @param {{ start_date?: unknown, end_date?: unknown, half_day?: unknown, leave_type_id?: unknown }} query
+ */
+async function preview(conn, userId, query) {
+    const startDate = String(query.start_date ?? "");
+    const endDate = String(query.end_date ?? "");
+    const isValidRange = isRealDateText(startDate) && isRealDateText(endDate) && startDate <= endDate;
+    if (!isValidRange) {
+        throw new AppError(400, "VALIDATION", "เลือกวันเริ่มลาและวันสุดท้ายให้ถูกต้องก่อน");
+    }
+    if (daysBetween(startDate, endDate) >= MAX_PREVIEW_SPAN_DAYS) {
+        throw new AppError(400, "VALIDATION", "ช่วงลายาวเกิน 1 ปี");
+    }
+    const requestedHalf = HALF_DAY_OPTIONS.includes(query.half_day) ? query.half_day : "none";
+    const halfDay = startDate === endDate ? requestedHalf : "none";
+    const { dates, dayCount } = await leaveDaysOf(conn, {
+        lr_start_date: startDate,
+        lr_end_date: endDate,
+        lr_half_day: halfDay,
+    });
+
+    // วันที่ไม่นับ: วันหยุดบริษัทที่ตรงวันทำงาน (พร้อมชื่อ) + วันหยุดประจำสัปดาห์
+    const calendar = await loadWorkCalendar(conn, startDate, endDate);
+    const [holidayRows] = await conn.query(
+        `SELECT DATE_FORMAT(hd_date, '%Y-%m-%d') AS hd_date, hd_name FROM tb_company_holidays
+         WHERE hd_date BETWEEN ? AND ? ORDER BY hd_date`,
+        [startDate, endDate],
+    );
+    const holidays = holidayRows.filter((row) => calendar.workingWeekdays[weekdayIndex(row.hd_date)] === "1");
+    const calendarDays = daysBetween(startDate, endDate) + 1;
+
+    return {
+        days: formatHundredths(dayCount),
+        working_dates: dates,
+        calendar_days: calendarDays,
+        weekly_off_days: calendarDays - dates.length - holidays.length,
+        holidays,
+        balance: await previewBalance(conn, userId, query.leave_type_id, startDate, dayCount),
+    };
+}
+
+// ยอดของประเภทที่เลือกในปีที่ลา: คงเหลือ − รออนุมัติ − ใบนี้ (ร่างไม่ถูกนับในยอด จึงไม่ต้องหักใบเดิม)
+async function previewBalance(conn, userId, leaveTypeId, startDate, dayCount) {
+    const typeId = Number(leaveTypeId);
+    if (!Number.isInteger(typeId) || typeId <= 0) return null;
+    const employee = await findLinkedEmployee(conn, userId);
+    if (!employee) return null;
+    const balances = await balancesOf(conn, employee, Number(startDate.slice(0, 4)));
+    const balance = balances.find((row) => row.lt_id === typeId);
+    if (!balance) return null;
+    const remainingAfter =
+        balance.remaining === null ? null : days(balance.remaining) - days(balance.pending) - dayCount;
+    return {
+        ...balance,
+        year: Number(startDate.slice(0, 4)),
+        remaining_after: remainingAfter === null ? null : formatHundredths(remainingAfter),
+        is_over_quota: remainingAfter !== null && remainingAfter < 0n,
+    };
 }
 
 // ─── โควตา / ยอดคงเหลือ ──────────────────────────────────────────────────────────────────────
@@ -717,6 +782,7 @@ async function approvedLeaveDays(conn, employeeId, fromDate, toDate) {
 
 module.exports = {
     getMine,
+    preview,
     getEmployeeBalances,
     getCalendar,
     listPending,

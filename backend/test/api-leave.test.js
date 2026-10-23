@@ -229,6 +229,55 @@ test("จำนวนวัน: ข้ามเสาร์-อาทิตย�
     );
 });
 
+test("ตัวอย่างก่อนขอลา: จำนวนวันตรงกับตอนบันทึก · บอกวันหยุดที่ไม่นับ · ยอดหลังลา = คงเหลือ − รออนุมัติ − ใบนี้", async () => {
+    const nextMonday = addDays(futureMonday, 7);
+    const url = (query) => `/V1/leave/preview?${new URLSearchParams(query)}`;
+    const week = expectStatus(
+        await as(
+            people.developer,
+            "GET",
+            url({ start_date: futureMonday, end_date: nextMonday, leave_type_id: leaveTypes.personal }),
+        ),
+        200,
+    );
+    assert.equal(week.days, "5.00", "เท่ากับ lr_days ของคำขอช่วงเดียวกันในเทสต์ก่อนหน้า");
+    assert.equal(week.calendar_days, 8);
+    assert.equal(week.weekly_off_days, 2);
+    assert.deepEqual(week.holidays, [{ hd_date: addDays(futureMonday, 2), hd_name: "วันหยุดทดสอบ" }]);
+    assert.equal(week.balance.lt_id, leaveTypes.personal);
+    const expectedAfter = Number(week.balance.remaining) - Number(week.balance.pending) - 5;
+    assert.equal(Number(week.balance.remaining_after), expectedAfter);
+    assert.equal(week.balance.is_over_quota, expectedAfter < 0);
+
+    const half = expectStatus(
+        await as(people.developer, "GET", url({ start_date: futureMonday, end_date: futureMonday, half_day: "morning" })),
+        200,
+    );
+    assert.equal(half.days, "0.50");
+    assert.equal(half.balance, null, "ยังไม่เลือกประเภท = ไม่มียอด");
+    const halfIgnored = expectStatus(
+        await as(
+            people.developer,
+            "GET",
+            url({ start_date: futureMonday, end_date: addDays(futureMonday, 1), half_day: "morning" }),
+        ),
+        200,
+    );
+    assert.equal(halfIgnored.days, "2.00", "หลายวัน = ไม่มีครึ่งวัน");
+
+    expectStatus(await as(people.developer, "GET", url({ start_date: nextMonday, end_date: futureMonday })), 400);
+    expectStatus(await as(people.developer, "GET", url({ start_date: "2026-02-30", end_date: "2026-03-01" })), 400);
+    const guest = expectStatus(
+        await as(
+            people.guest,
+            "GET",
+            url({ start_date: futureMonday, end_date: futureMonday, leave_type_id: leaveTypes.personal }),
+        ),
+        200,
+    );
+    assert.equal(guest.balance, null, "ไม่ได้ผูกพนักงาน = ไม่มียอด");
+});
+
 test("อนุมัติ: ผู้อนุมัติเห็นเกินโควตา · อนุมัติของตัวเองไม่ได้ · ไม่มีสิทธิ์อนุมัติไม่ได้ · ไม่อนุมัติต้องมีเหตุผล · ยอดคงเหลือ", async () => {
     // ลากิจโควตา 3 วัน: มีรออนุมัติ 1 วัน (เช้า+บ่าย) ขออีก 4 วัน (จ–พฤ สัปดาห์ที่ไม่มีวันหยุด) = เกิน
     const start = addDays(futureMonday, 21);

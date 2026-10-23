@@ -8,6 +8,10 @@ const nextConfig: NextConfig = {
   },
   // ไม่บอกคนนอกว่าใช้ Next.js (ลดข้อมูลที่ช่วยเล็งช่องโหว่ตามเวอร์ชัน)
   poweredByHeader: false,
+  // `next upgrade --agent` อัปเกรดเฉพาะเมื่อมีช่องโหว่ที่ประกาศแล้ว (2026-10-23 อัปจาก 16.4.0 → 16.4.3 เพราะ RCE/DoS)
+  experimental: {
+    agentUpgrade: "security",
+  },
   async headers() {
     return [
       {

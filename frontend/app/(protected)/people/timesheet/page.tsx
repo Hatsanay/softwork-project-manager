@@ -47,7 +47,7 @@ function TimesheetContent() {
     const canApprove = approvals?.can_approve ?? false;
 
     return (
-        <div className="mx-auto grid w-full max-w-4xl grid-cols-1 gap-6">
+        <div className="mx-auto grid w-full max-w-5xl grid-cols-1 gap-6">
             <PageHeader eyebrow="บุคคล" title="ลงเวลาทำงาน" description={TIMESHEET_MESSAGES.description} />
             {canApprove && (
                 <Segmented<Tab>

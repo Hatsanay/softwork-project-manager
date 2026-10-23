@@ -46,6 +46,15 @@ async function getMine(req, res, next) {
     }
 }
 
+// ตัวอย่างก่อนขอลา: จำนวนวัน · วันที่ไม่นับ · ยอดคงเหลือหลังลา (ฟอร์มเรียกทุกครั้งที่เปลี่ยนวัน/ประเภท)
+async function preview(req, res, next) {
+    try {
+        res.json(await leaveService.preview(pool, req.user.user_id, req.query));
+    } catch (err) {
+        next(err);
+    }
+}
+
 async function getCalendar(req, res, next) {
     try {
         res.json(await leaveService.getCalendar(pool, requestedMonth(req.query)));
@@ -206,6 +215,7 @@ async function downloadAttachment(req, res, next) {
 
 module.exports = {
     getMine,
+    preview,
     getCalendar,
     listPending,
     getEmployeeBalances,

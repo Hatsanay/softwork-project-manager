@@ -16,6 +16,7 @@ function registerLeaveRoutes(router) {
     const canApprove = requirePermission("approveLeave");
 
     router.get("/V1/leave/me", requireAuth, leaveController.getMine);
+    router.get("/V1/leave/preview", requireAuth, leaveController.preview);
     router.get("/V1/leave/calendar", requireAuth, leaveController.getCalendar);
     router.get("/V1/leave/approvals", requireAuth, canApprove, leaveController.listPending);
     router.get(

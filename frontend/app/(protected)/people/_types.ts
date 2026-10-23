@@ -378,6 +378,16 @@ export type LeaveRequest = {
     attachments: LeaveAttachment[];
 };
 
+// ตัวอย่างก่อนขอลา (GET /leave/preview · U-2) — คิดด้วยฟังก์ชันเดียวกับตอนบันทึก
+export type LeavePreview = {
+    days: string;
+    working_dates: string[];
+    calendar_days: number;
+    weekly_off_days: number;
+    holidays: { hd_date: string; hd_name: string }[];
+    balance: (LeaveBalance & { year: number; remaining_after: string | null; is_over_quota: boolean }) | null;
+};
+
 export type MyLeave = {
     year: number;
     today: string;

@@ -1,157 +1,211 @@
 "use client";
 
-// การ์ดหนึ่งวันในสัปดาห์ — แถวชั่วโมง (โปรเจกต์ · งาน · ชั่วโมง · รายละเอียด) · มือถือเรียงเป็นแนวตั้ง
-import { Plus, Trash2 } from "lucide-react";
+// ลงเวลารายวัน (มือถือ/จอแคบ · U-2 2026-10-19) — ข้อมูลชุดเดียวกับตารางสัปดาห์ (week-lines)
+// วันนี้เด่นสุด · วันที่ยังไม่มีชั่วโมงย่อเหลือบรรทัดเดียว · วันที่ยังไม่ถึงที่ติดกันรวมเป็นบรรทัดเดียว
+import { CalendarCheck, Plus, Trash2 } from "lucide-react";
 import FieldHint from "@/components/ui/guidance/field-hint";
 import { inputClass } from "@/components/ui/form-field";
 import { buttonClass } from "@/components/ui/button";
-import type { FieldErrors } from "@/lib/form-errors";
 import type { TimesheetDay, TimesheetProjectOption } from "../../_types";
+import { LineFields } from "./week-grid";
+import {
+    dayHours,
+    dayLabel,
+    dayNoteOf,
+    type CellErrors,
+    type LineErrors,
+    type WeekCell,
+    type WeekLine,
+} from "./week-lines";
 
-export type TimesheetRow = {
-    key: string;
-    tse_date: string;
-    tse_project_id: string;
-    tse_task_id: string;
-    tse_hours: string;
-    tse_note: string;
-};
+// หน้าอนุมัติลงเวลาใช้ชื่อวันชุดเดียวกัน
+export { dayLabel } from "./week-lines";
 
-// "2026-10-19" → "จ. 19 ต.ค." (วันที่ล้วน ไม่ผ่านเขตเวลาเครื่อง)
-const HALF_DAY_LEAVE_NOTE = { morning: "ลาครึ่งวันเช้า", afternoon: "ลาครึ่งวันบ่าย" };
 
-export function dayLabel(dateText: string) {
-    return new Intl.DateTimeFormat("th-TH", {
-        weekday: "short",
-        day: "numeric",
-        month: "short",
-        timeZone: "UTC",
-    }).format(new Date(`${dateText}T00:00:00Z`));
-}
-
-export default function DayCard({
-    day,
-    rows,
-    rowIndexes,
-    projects,
-    isEditable,
-    dayTotal,
-    errors,
-    onAdd,
-    onChange,
-    onRemove,
-}: {
-    day: TimesheetDay;
-    rows: TimesheetRow[];
-    rowIndexes: number[];
+type DayListProps = {
+    days: TimesheetDay[];
+    today: string;
+    lines: WeekLine[];
     projects: TimesheetProjectOption[];
     isEditable: boolean;
-    dayTotal: string;
-    errors: FieldErrors;
-    onAdd: () => void;
-    onChange: (key: string, field: keyof TimesheetRow, value: string) => void;
-    onRemove: (key: string) => void;
-}) {
+    cellErrors: Map<string, CellErrors>;
+    lineErrors: Map<string, LineErrors>;
+    fillLabel: string | null;
+    onCellChange: (lineKey: string, date: string, patch: Partial<WeekCell>) => void;
+    onEntryLineChange: (lineKey: string, date: string, field: "project_id" | "task_id", value: string) => void;
+    onAddEntry: (date: string) => void;
+    onRemoveEntry: (lineKey: string, date: string) => void;
+    onFillLine: (lineKey: string) => void;
+};
+
+type DayBlock = { kind: "day"; day: TimesheetDay } | { kind: "future"; days: TimesheetDay[] };
+
+export default function DayList(props: DayListProps) {
+    const { days, today, lines } = props;
+    // วันที่ยังไม่ถึงและยังว่าง ที่อยู่ติดกัน → บรรทัดเดียว
+    const blocks: DayBlock[] = [];
+    for (const day of days) {
+        const isEmptyFuture = day.date > today && !lines.some((line) => line.cells[day.date]);
+        const previous = blocks[blocks.length - 1];
+        if (isEmptyFuture && previous?.kind === "future") {
+            previous.days.push(day);
+            continue;
+        }
+        blocks.push(isEmptyFuture ? { kind: "future", days: [day] } : { kind: "day", day });
+    }
+
+    return (
+        <div className="grid gap-2">
+            {blocks.map((block) =>
+                block.kind === "future" ? (
+                    <FutureDays key={block.days[0].date} days={block.days} />
+                ) : (
+                    <DayCard key={block.day.date} {...props} day={block.day} />
+                ),
+            )}
+        </div>
+    );
+}
+
+function FutureDays({ days }: { days: TimesheetDay[] }) {
+    const first = dayLabel(days[0].date);
+    const range = days.length === 1 ? first : `${first} - ${dayLabel(days[days.length - 1].date)}`;
+    return (
+        <p className="flex flex-wrap items-baseline justify-between gap-x-3 rounded-xl border border-dashed border-gray-200 px-4 py-2.5 text-sm text-gray-500">
+            <span>{range}</span>
+            <span className="text-xs">ยังไม่ถึงวัน ลงล่วงหน้าไม่ได้</span>
+        </p>
+    );
+}
+
+function DayCard({
+    day,
+    today,
+    lines,
+    projects,
+    isEditable,
+    cellErrors,
+    lineErrors,
+    fillLabel,
+    onCellChange,
+    onEntryLineChange,
+    onAddEntry,
+    onRemoveEntry,
+    onFillLine,
+}: DayListProps & { day: TimesheetDay }) {
+    const entries = lines.filter((line) => line.cells[day.date]);
     const canAdd = isEditable && day.blocked_reason === null;
-    const leaveNote = day.leave && day.leave !== "full" ? HALF_DAY_LEAVE_NOTE[day.leave] : null;
-    const dayNote = day.holiday_name ?? (day.is_working_day ? leaveNote : "วันหยุดประจำสัปดาห์");
+    const isToday = day.date === today;
+    const note = [dayNoteOf(day), day.blocked_reason && `ลงไม่ได้: ${day.blocked_reason}`].filter(Boolean).join(" · ");
+    const total = dayHours(lines, day.date);
+
+    // วันที่ยังว่าง: บรรทัดเดียว + ปุ่มเพิ่ม (ถ้าลงได้)
+    if (entries.length === 0) {
+        return (
+            <section
+                aria-label={dayLabel(day.date)}
+                className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-4 py-2 ${
+                    isToday ? "border-blue-500 bg-blue-50/40" : "border-gray-200 bg-white"
+                }`}
+            >
+                <span className="grid gap-0.5 py-0.5">
+                    <span className="text-sm font-medium text-gray-900">
+                        {dayLabel(day.date)}
+                        {isToday && <span className="ml-1.5 text-xs font-normal text-blue-600">วันนี้</span>}
+                    </span>
+                    {note && <span className="text-xs text-gray-500">{note}</span>}
+                </span>
+                {canAdd && (
+                    <button type="button" className={buttonClass("secondary", "sm")} onClick={() => onAddEntry(day.date)}>
+                        <Plus size={14} />
+                        ลงเวลา
+                    </button>
+                )}
+            </section>
+        );
+    }
 
     return (
         <section
-            className={`grid gap-3 rounded-2xl border p-4 ${day.is_working_day ? "border-gray-200 bg-white" : "border-gray-200 bg-gray-50"}`}
             aria-label={dayLabel(day.date)}
+            className={`grid gap-3 rounded-2xl border p-4 ${isToday ? "border-blue-500 bg-white shadow-sm" : "border-gray-200 bg-white"}`}
         >
             <header className="flex flex-wrap items-baseline justify-between gap-2">
                 <span className="grid gap-0.5">
-                    <span className="text-sm font-medium text-gray-900">{dayLabel(day.date)}</span>
-                    {(dayNote || day.blocked_reason) && (
-                        <span className="text-xs text-gray-500">
-                            {[dayNote, day.blocked_reason && `ลงไม่ได้: ${day.blocked_reason}`]
-                                .filter(Boolean)
-                                .join(" · ")}
-                        </span>
-                    )}
+                    <span className="text-sm font-medium text-gray-900">
+                        {dayLabel(day.date)}
+                        {isToday && <span className="ml-1.5 text-xs font-normal text-blue-600">วันนี้</span>}
+                    </span>
+                    {note && <span className="text-xs text-gray-500">{note}</span>}
                 </span>
-                <span className="text-sm text-gray-600 tabular-nums">{dayTotal} ชม.</span>
+                <span className="text-sm font-medium text-gray-900 tabular-nums">{total} ชม.</span>
             </header>
 
-            {rows.map((row, position) => {
-                const index = rowIndexes[position];
-                const project = projects.find((option) => option.project_id === row.tse_project_id);
-                const projectChoices = projects.filter(
-                    (option) => option.can_log || option.project_id === row.tse_project_id,
-                );
-                const fieldError = (field: string) => errors[`entries.${index}.${field}`];
+            {entries.map((line) => {
+                const cell = line.cells[day.date];
+                const errorsOfCell = cellErrors.get(`${line.key}|${day.date}`) ?? {};
+                const isLocked = !isEditable || day.blocked_reason !== null;
                 return (
-                    <div
-                        key={row.key}
-                        className="grid grid-cols-[1fr_auto] gap-2 rounded-xl bg-gray-50 p-3 sm:grid-cols-[1fr_1fr_6rem_auto]"
-                    >
-                        <div className="col-span-2 grid gap-1 sm:col-span-1">
-                            <select
-                                aria-label="โปรเจกต์"
-                                disabled={!isEditable}
-                                value={row.tse_project_id}
-                                onChange={(event) => onChange(row.key, "tse_project_id", event.target.value)}
-                                className={inputClass(Boolean(fieldError("tse_project_id")))}
-                            >
-                                <option value="">งานภายใน (ไม่ใช่โปรเจกต์)</option>
-                                {projectChoices.map((option) => (
-                                    <option key={option.project_id} value={option.project_id}>
-                                        {option.project_name}
-                                    </option>
-                                ))}
-                            </select>
-                            <FieldHint error={fieldError("tse_project_id") ?? fieldError("tse_date")} />
-                        </div>
-                        <div className="col-span-2 grid gap-1 sm:col-span-1">
-                            <select
-                                aria-label="งาน"
-                                disabled={!isEditable || !project}
-                                value={row.tse_task_id}
-                                onChange={(event) => onChange(row.key, "tse_task_id", event.target.value)}
-                                className={inputClass(Boolean(fieldError("tse_task_id")))}
-                            >
-                                <option value="">{project ? "— ไม่ระบุงาน —" : "— เลือกโปรเจกต์ก่อน —"}</option>
-                                {project?.tasks.map((task) => (
-                                    <option key={task.task_id} value={task.task_id}>
-                                        {task.task_parent_id ? "↳ " : ""}
-                                        {task.task_title}
-                                    </option>
-                                ))}
-                            </select>
-                            <FieldHint error={fieldError("tse_task_id")} />
-                        </div>
+                    <div key={line.key} className="grid grid-cols-[1fr_5.5rem_auto] items-start gap-2 rounded-xl bg-gray-50 p-3">
+                        <LineFields
+                            line={line}
+                            projects={projects}
+                            isEditable={!isLocked}
+                            errors={lineErrors.get(line.key) ?? {}}
+                            onChange={(field, value) => onEntryLineChange(line.key, day.date, field, value)}
+                        />
                         <div className="grid gap-1">
                             <input
                                 aria-label="ชั่วโมง"
                                 inputMode="decimal"
                                 placeholder="ชม."
-                                disabled={!isEditable}
-                                value={row.tse_hours}
-                                onChange={(event) => onChange(row.key, "tse_hours", event.target.value)}
-                                className={inputClass(Boolean(fieldError("tse_hours")))}
+                                disabled={isLocked}
+                                value={cell.hours}
+                                onChange={(event) => onCellChange(line.key, day.date, { hours: event.target.value })}
+                                className={`${inputClass(Boolean(errorsOfCell.hours))} text-center tabular-nums`}
                             />
-                            <FieldHint error={fieldError("tse_hours")} />
                         </div>
-                        {isEditable && (
+                        {isLocked ? (
+                            <span />
+                        ) : (
                             <button
                                 type="button"
                                 aria-label="ลบแถวนี้"
-                                className={`${buttonClass("ghost", "md")} justify-self-end`}
-                                onClick={() => onRemove(row.key)}
+                                className={buttonClass("ghost", "md")}
+                                onClick={() => onRemoveEntry(line.key, day.date)}
                             >
                                 <Trash2 size={16} />
                             </button>
                         )}
+                        {(errorsOfCell.hours ?? errorsOfCell.date) && (
+                            <div className="col-span-3">
+                                <FieldHint error={errorsOfCell.hours ?? errorsOfCell.date} />
+                            </div>
+                        )}
                         <input
                             aria-label="รายละเอียดงาน"
                             placeholder="รายละเอียด (ไม่บังคับ)"
-                            disabled={!isEditable}
-                            value={row.tse_note}
-                            onChange={(event) => onChange(row.key, "tse_note", event.target.value)}
-                            className={`${inputClass(Boolean(fieldError("tse_note")))} col-span-2 sm:col-span-4`}
+                            disabled={isLocked}
+                            maxLength={255}
+                            value={cell.note}
+                            onChange={(event) => onCellChange(line.key, day.date, { note: event.target.value })}
+                            className={`${inputClass(Boolean(errorsOfCell.note))} col-span-3`}
                         />
+                        {errorsOfCell.note && (
+                            <div className="col-span-3">
+                                <FieldHint error={errorsOfCell.note} />
+                            </div>
+                        )}
+                        {!isLocked && fillLabel && (
+                            <button
+                                type="button"
+                                className="col-span-3 inline-flex min-h-9 w-fit items-center gap-1 text-xs text-blue-600"
+                                onClick={() => onFillLine(line.key)}
+                            >
+                                <CalendarCheck size={14} />
+                                {fillLabel}
+                            </button>
+                        )}
                     </div>
                 );
             })}
@@ -160,7 +214,7 @@ export default function DayCard({
                 <button
                     type="button"
                     className={`${buttonClass("secondary", "sm")} justify-self-start`}
-                    onClick={onAdd}
+                    onClick={() => onAddEntry(day.date)}
                 >
                     <Plus size={14} />
                     เพิ่มแถว

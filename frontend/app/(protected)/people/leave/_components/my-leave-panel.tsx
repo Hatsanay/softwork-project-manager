@@ -1,6 +1,7 @@
 "use client";
 
 // ลาของฉัน — ยอดคงเหลือรายปี · คำขอทั้งปี · ปุ่มตามสถานะ (แก้/ส่ง/ลบร่าง · ดึงกลับ · ยกเลิก)
+// U-2 (2026-10-19): ยอดเป็นแถบ · คำขอแยก รอดำเนินการ / กำลังจะถึง / ที่ผ่านมา
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
@@ -14,6 +15,7 @@ import { LEAVE_MESSAGES } from "../../_messages";
 import type { LeaveRequest, MyLeave } from "../../_types";
 import LeaveFormSheet from "./leave-form-sheet";
 import LeaveRequestCard from "./leave-request-card";
+import LeaveBalanceBars from "./leave-balance-bars";
 
 type PendingAction = { request: LeaveRequest; kind: "delete" | "cancel" };
 
@@ -211,28 +213,7 @@ export default function MyLeavePanel() {
                 </button>
             </div>
 
-            <section aria-label="วันลาคงเหลือ" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {data.balances.map((balance) => (
-                    <div
-                        key={balance.lt_id}
-                        className="grid content-start gap-0.5 rounded-xl border border-gray-200 bg-white p-3"
-                    >
-                        <span className="text-xs text-gray-500">{balance.lt_name_th}</span>
-                        <span className="text-lg font-medium text-gray-900 tabular-nums">
-                            {balance.remaining === null ? "ไม่จำกัด" : `เหลือ ${Number(balance.remaining)}`}
-                        </span>
-                        <span className="text-xs text-gray-500 tabular-nums">
-                            ใช้ {Number(balance.used)}
-                            {balance.quota !== null ? ` / ${Number(balance.quota)}` : ""} วัน
-                            {Number(balance.carried) > 0 ? ` · ยกยอด ${Number(balance.carried)}` : ""}
-                            {Number(balance.pending) > 0 ? ` · รออนุมัติ ${Number(balance.pending)}` : ""}
-                        </span>
-                        {balance.remaining !== null && Number(balance.remaining) < 0 && (
-                            <span className="text-xs text-red-600">เกินโควตา</span>
-                        )}
-                    </div>
-                ))}
-            </section>
+            <LeaveBalanceBars balances={data.balances} />
             <FieldHint>
                 {LEAVE_MESSAGES.balanceHint} · {LEAVE_MESSAGES.cancelApprovedHint}
             </FieldHint>
@@ -245,14 +226,19 @@ export default function MyLeavePanel() {
 
             {data.requests.length === 0 ? (
                 <p className="rounded-2xl border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
-                    ยังไม่มีคำขอลาในปีนี้
+                    ยังไม่มีคำขอลาในปีนี้ · กด ขอลา เพื่อเริ่ม
                 </p>
             ) : (
-                <div className="grid gap-3">
-                    {data.requests.map((request) => (
-                        <LeaveRequestCard key={request.lr_id} request={request} actions={actionsOf(request)} />
-                    ))}
-                </div>
+                groupRequests(data.requests, data.today).map((group) => (
+                    <section key={group.title} aria-label={group.title} className="grid gap-3">
+                        <h2 className="text-sm font-medium text-gray-700">
+                            {group.title} <span className="font-normal text-gray-500">({group.requests.length})</span>
+                        </h2>
+                        {group.requests.map((request) => (
+                            <LeaveRequestCard key={request.lr_id} request={request} actions={actionsOf(request)} />
+                        ))}
+                    </section>
+                ))
             )}
 
             <LeaveFormSheet
@@ -279,4 +265,21 @@ export default function MyLeavePanel() {
             />
         </div>
     );
+}
+
+/**
+ * แยกคำขอเป็นกลุ่ม (กลุ่มที่ว่างไม่แสดง)
+ * รอดำเนินการ = ร่าง/รออนุมัติ (ใกล้สุดก่อน) · กำลังจะถึง = อนุมัติแล้วยังไม่จบ (ใกล้สุดก่อน) · ที่ผ่านมา = ที่เหลือ (ล่าสุดก่อน)
+ */
+function groupRequests(requests: LeaveRequest[], today: string) {
+    const byStartAscending = (first: LeaveRequest, second: LeaveRequest) =>
+        first.lr_start_date.localeCompare(second.lr_start_date);
+    const waiting = requests.filter((request) => request.lr_status === "draft" || request.lr_status === "pending");
+    const upcoming = requests.filter((request) => request.lr_status === "approved" && request.lr_end_date >= today);
+    const past = requests.filter((request) => !waiting.includes(request) && !upcoming.includes(request));
+    return [
+        { title: "รอดำเนินการ", requests: [...waiting].sort(byStartAscending) },
+        { title: "กำลังจะถึง", requests: [...upcoming].sort(byStartAscending) },
+        { title: "ที่ผ่านมา", requests: past },
+    ].filter((group) => group.requests.length > 0);
 }
