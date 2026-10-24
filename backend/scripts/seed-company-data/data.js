@@ -133,6 +133,7 @@ const EMPLOYEES = [
         firstEn: "Kamonchanok", lastEn: "Boonma", nickname: "แพร", dept: "ACC", position: "นักบัญชี",
         hire: "2026-01-05", salary: "28000", birth: "1993-11-02", bank: "ไทยพาณิชย์", account: "4120987654",
         phone: "0834567123", address: "88/14 ถนนอุตรกิจ ตำบลปากน้ำ อำเภอเมืองกระบี่ จังหวัดกระบี่ 81000",
+        recurring: [{ kind: "earning", label: "ค่าวิชาชีพบัญชี", amount: "1500", taxable: true, ssoWage: true, from: "2026-06-01" }],
     },
     {
         key: "wannipa", username: "wannipa", role: "hr", title: "นาง", first: "วรรณิภา", last: "จันทร์เพ็ญ",
@@ -171,6 +172,7 @@ const EMPLOYEES = [
         firstEn: "Kittisak", lastEn: "Jaisue", nickname: "กิต", dept: "QAT", position: "เจ้าหน้าที่ทดสอบระบบ",
         hire: "2026-03-02", salary: "26000", birth: "1997-08-27", bank: "ออมสิน", account: "020345678912",
         phone: "0893456712", address: "14/7 หมู่ 4 ตำบลไสไทย อำเภอเมืองกระบี่ จังหวัดกระบี่ 81000",
+        recurring: [{ kind: "deduction", label: "ผ่อนชำระเงินยืมสวัสดิการ", amount: "1000", taxable: false, ssoWage: false, from: "2026-07-01", to: "2026-12-31" }],
     },
     {
         key: "weerayut", username: "weerayut", role: "staff", title: "นาย", first: "วีรยุทธ", last: "ปานแก้ว",
@@ -187,13 +189,21 @@ const EMPLOYEES = [
     },
     {
         key: "somporn", username: null, title: "นาง", first: "สมพร", last: "ศรีนวล", nickname: "พร", dept: "ADM",
-        position: "แม่บ้าน", hire: "2026-01-05", salary: "12000", birth: "1978-10-05", bank: "ออมสิน", account: "020311223344",
+        position: "แม่บ้าน", attendance: false, hire: "2026-01-05", salary: "12000", birth: "1978-10-05", bank: "ออมสิน", account: "020311223344",
         phone: "0836712345", address: "3 หมู่ 3 ตำบลคลองพน อำเภอคลองท่อม จังหวัดกระบี่ 81170",
+        recurring: [{ kind: "earning", label: "เบี้ยขยัน", amount: "500", taxable: true, ssoWage: false, from: "2026-05-01" }],
     },
     {
         key: "sombat", username: null, title: "นาย", first: "สมบัติ", last: "เพชรรัตน์", nickname: "บัติ", dept: "ADM",
-        position: "พนักงานขับรถและธุรการ", hire: "2026-01-05", salary: "15000", birth: "1982-03-21", bank: "กรุงไทย",
+        position: "พนักงานขับรถและธุรการ", attendance: false, hire: "2026-01-05", salary: "15000", birth: "1982-03-21", bank: "กรุงไทย",
         account: "6794432109", phone: "0847123456", address: "21 หมู่ 3 ตำบลคลองพน อำเภอคลองท่อม จังหวัดกระบี่ 81170",
+    },
+    // สาขาภูเก็ต (เปิด ก.ย. 2026 · ข้อมูลจำลองชุด 24 ต.ค.)
+    {
+        key: "pawinee", username: "pawinee", role: "sales", title: "นางสาว", first: "ปวีณา", last: "ทองคำ",
+        firstEn: "Pawinee", lastEn: "Thongkham", nickname: "ปาล์ม", dept: "PSL", position: "พนักงานขาย สาขาภูเก็ต",
+        hire: "2026-09-01", hireAt: "2026-08-25", salary: "24000", birth: "1997-05-19", bank: "กรุงเทพ", account: "2369087123",
+        phone: "0861239876", address: "77/12 ถนนเยาวราช ตำบลตลาดใหญ่ อำเภอเมืองภูเก็ต จังหวัดภูเก็ต 83000",
     },
 ];
 EMPLOYEES.forEach((employee, index) => {
@@ -326,7 +336,86 @@ const HOLIDAYS_2026 = [
     ["2026-12-31", "วันสิ้นปี"],
 ];
 
+// ─── ข้อมูลจำลองชุดเต็ม (2026-10-24 · docs/plans/2026-10-24-mock-data.md) ─────────────────────────
+
+// สาขาภูเก็ต: ทีมขายดูแลลูกค้าฝั่งภูเก็ต (เปิด 1 ก.ย. 2026)
+const PHUKET_BRANCH = {
+    branch_code: "00001",
+    branch_name_th: "สาขาภูเก็ต",
+    branch_name_en: "Phuket Branch",
+    branch_address_th: "45/9 ถนนเทพกระษัตรี ตำบลรัษฎา อำเภอเมืองภูเก็ต จังหวัดภูเก็ต 83000",
+    branch_address_en: "45/9 Thepkrasattri Rd., Ratsada, Mueang Phuket, Phuket 83000",
+    branch_phone: "076234500",
+    branch_status: "active",
+};
+const PHUKET_DEPARTMENTS = { PSL: "ฝ่ายขาย สาขาภูเก็ต" };
+
+// บัญชีธนาคารเพิ่ม: บัญชีออมทรัพย์สำรองเงินเดือน · บัญชีรับเงินดอลลาร์จากลูกค้าต่างประเทศ
+const EXTRA_BANK_ACCOUNTS = [
+    {
+        ba_bank_name: "ไทยพาณิชย์", ba_account_name: "หัสนัย หม้อยา", ba_account_no: "4250883194", ba_bank_branch: "สาขากระบี่",
+        ba_swift_code: "SICOTHBK", ba_currency: "THB", ba_is_default: false, ba_status: "active",
+    },
+    {
+        ba_bank_name: "กสิกรไทย (บัญชีเงินตราต่างประเทศ)", ba_account_name: "Hatsanai Moya", ba_account_no: "0018845521",
+        ba_bank_branch: "สาขาถนนมหาราช กระบี่", ba_swift_code: "KASITHBK", ba_currency: "USD", ba_is_default: false, ba_status: "active",
+    },
+];
+
+// กะทำงาน (กะ "ออฟฟิศ 09:00-18:00" มีจากค่าเริ่มต้นของระบบแล้ว)
+const EXTRA_SCHEDULES = {
+    early: {
+        ws_name: "กะเช้า 08:00-17:00", ws_start_time: "08:00", ws_end_time: "17:00", ws_break_minutes: 60,
+        ws_working_weekdays: "1111100", ws_late_grace_minutes: 10, ws_checkin_open_minutes: 120,
+    },
+    saturday: {
+        ws_name: "ขายหน้าร้าน จ.-ส. 09:00-17:00", ws_start_time: "09:00", ws_end_time: "17:00", ws_break_minutes: 60,
+        ws_working_weekdays: "1111110", ws_late_grace_minutes: 5, ws_checkin_open_minutes: 60,
+    },
+};
+
+// จุดลงเวลา (พิกัดสมมติแถวที่อยู่บริษัท)
+const LOCATIONS = {
+    headOffice: { al_name: "สำนักงานใหญ่ คลองพน", al_latitude: 7.92658, al_longitude: 99.14621, al_radius_m: 150 },
+    siamPalmSite: { al_name: "โรงงานสยามปาล์ม (หน้างานลูกค้า)", al_latitude: 7.98412, al_longitude: 99.18837, al_radius_m: 300 },
+    phuket: { al_name: "สาขาภูเก็ต ถนนเทพกระษัตรี", al_latitude: 7.88915, al_longitude: 98.39238, al_radius_m: 150 },
+};
+// บ้านของคนที่ WFH (นอกรัศมีทุกจุด)
+const HOMES = {
+    piyapong: { latitude: 8.06312, longitude: 98.91684 },
+    chonthicha: { latitude: 8.07845, longitude: 98.90812 },
+    supawadee: { latitude: 8.21407, longitude: 99.05531 },
+};
+
+// ค่าลดหย่อนภาษีปี 2026 (กรอกโดยฝ่ายบุคคลจากแบบ ล.ย.01) · thanawat มีเงินได้ยกมาจากที่ทำงานเดิม ม.ค.-ก.พ.
+const TAX_PROFILES = {
+    nattapon: { etp_spouse_allowance: "60000", etp_child_allowance: "30000", etp_insurance_allowance: "25000", etp_home_loan_interest: "48000", etp_note: "คู่สมรสไม่มีเงินได้ · บุตร 1 คน" },
+    siriporn: { etp_parent_allowance: "60000", etp_fund_allowance: "36000", etp_note: "อุปการะบิดามารดา · กองทุนสำรองเลี้ยงชีพ/RMF" },
+    piyapong: { etp_insurance_allowance: "18000", etp_fund_allowance: "50000" },
+    wannipa: { etp_spouse_allowance: "60000", etp_child_allowance: "60000", etp_note: "บุตร 2 คน" },
+    thanawat: {
+        etp_prior_income: "38000", etp_prior_tax: "0", etp_prior_sso: "1500", etp_prior_from_other_employer: true,
+        etp_note: "เงินได้ ม.ค.-ก.พ. 2026 จากบริษัทเดิม (ตามหนังสือรับรอง 50 ทวิ)",
+    },
+    kamonchanok: { etp_insurance_allowance: "12000", etp_other_allowance: "10000", etp_note: "ลดหย่อนอื่น: Easy E-Receipt" },
+};
+
+// ผู้ที่มีลายเซ็นไว้ใช้บนเอกสาร (เซ็นอนุมัติใบเสนอราคา/ใบแจ้งหนี้/ใบสำคัญจ่าย/สลิป)
+const SIGNERS = ["hatsanai", "siriporn", "kamonchanok", "wannipa"];
+
+// อัตรากลาง USD (ธปท.) ที่บันทึกไว้ — ระบบดึงจาก ธปท. ทุกวันทำการ (สคริปต์ปิดการเรียกจริง จึงใส่เอง)
+const USD_RATE_BASE = 35.6;
+
 module.exports = {
+    PHUKET_BRANCH,
+    PHUKET_DEPARTMENTS,
+    EXTRA_BANK_ACCOUNTS,
+    EXTRA_SCHEDULES,
+    LOCATIONS,
+    HOMES,
+    TAX_PROFILES,
+    SIGNERS,
+    USD_RATE_BASE,
     thaiId,
     COMPANY,
     COMPANY_LOGO,

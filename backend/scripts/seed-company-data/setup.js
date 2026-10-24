@@ -1,10 +1,43 @@
 // ตั้งค่าเริ่มต้นของบริษัท (ก่อนเริ่มใช้ระบบจริง 1 พ.ค. 2026) — ข้อมูลบริษัท แผนก สิทธิ์ ผู้ใช้ พนักงาน ลูกค้า ผู้ขาย สินค้า วันหยุด
 const bcrypt = require("bcryptjs");
+const sharp = require("sharp");
 const { as } = require("./api");
 const data = require("./data");
 
 const HEAD_OFFICE_ID = "BRA202601010000001";
 const EMAIL_DOMAIN = "softwork.fasttiw.com";
+const HR = "wannipa";
+// ช่องตั้งค่าบุคคลทั้งหมด (PUT /V1/people/settings ต้องส่งครบทุกช่อง · ตรงกับ payrollSettingsSchema)
+const SETTINGS_FIELDS = [
+    "ps_working_weekdays", "ps_hours_per_day", "ps_pay_day", "ps_unpaid_leave_divisor", "ps_timesheet_backdate_days",
+    "ps_card_valid_years", "ps_default_schedule_id", "ps_timesheet_enabled", "ps_attendance_start_date", "ps_ot_rate_workday",
+    "ps_ot_rate_holiday_work", "ps_ot_rate_holiday_ot", "ps_ot_weekly_cap_hours", "ps_ot_is_sso_wage",
+];
+
+/** แก้ตั้งค่าบุคคลบางช่อง (ช่องอื่นส่งค่าเดิมกลับไป) */
+async function updatePeopleSettings(changes) {
+    const setup = await as(HR, "GET", "/V1/people/setup");
+    const settings = Object.fromEntries(SETTINGS_FIELDS.map((field) => [field, setup.settings[field]]));
+    await as(HR, "PUT", "/V1/people/settings", { ...settings, ...changes });
+}
+
+/** ลายเซ็นลายมือ (PNG) — เส้นโค้งต่างกันตามชื่อ ไม่ใช่ลายเซ็นของใครจริง */
+async function signatureImage(seedText) {
+    const codes = [...seedText].map((character) => character.charCodeAt(0));
+    let path = "M 20 70";
+    codes.forEach((code, index) => {
+        const x = 40 + index * 34;
+        const high = 20 + (code % 30);
+        const low = 80 + (code % 25);
+        path += ` C ${x - 10} ${high}, ${x + 6} ${low}, ${x + 18} ${50 + (code % 20)}`;
+    });
+    const width = 60 + codes.length * 34;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="120">
+        <path d="${path}" fill="none" stroke="#1e3a8a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M 30 100 Q ${width / 2} 88 ${width - 20} 98" fill="none" stroke="#1e3a8a" stroke-width="2"/>
+    </svg>`;
+    return sharp(Buffer.from(svg)).png().toBuffer();
+}
 
 function bitsFor(permissionKeys, keys) {
     if (keys === "ALL") return permissionKeys.map(() => "1").join("");
@@ -164,6 +197,25 @@ async function setupCompany({ pool, permissionKeys, generateDailyId, password })
     for (const employee of data.EMPLOYEES.filter((item) => !item.hireAt)) {
         await addEmployee(employee, ids);
     }
+
+    // ── ข้อมูลจำลองชุดเต็ม (2026-10-24): บัญชีธนาคารเพิ่ม · ลายเซ็น · ลงชั่วโมงต่อโปรเจกต์ · ค่าลดหย่อน
+    ids.bankAccounts = { main: bank.ba_id };
+    for (const account of data.EXTRA_BANK_ACCOUNTS) {
+        const created = await as("admin", "POST", "/V1/company/bank-accounts", account);
+        ids.bankAccounts[account.ba_currency === "USD" ? "usd" : "savings"] = created.ba_id;
+    }
+    for (const username of data.SIGNERS) {
+        const form = new FormData();
+        form.append("signature", new Blob([await signatureImage(username)], { type: "image/png" }), "signature.png");
+        form.append("method", "draw");
+        form.append("password", password);
+        await as(username, "PUT", "/V1/users/me/signature", form);
+    }
+    // บริษัทลงชั่วโมงต่อโปรเจกต์ตั้งแต่ พ.ค. (คิดต้นทุนค่าแรงโปรเจกต์) · ลงเวลาเข้า-ออกงานเริ่ม 1 มิ.ย. (ตั้งใน timeline)
+    await updatePeopleSettings({ ps_timesheet_enabled: true });
+    for (const [key, profile] of Object.entries(data.TAX_PROFILES)) {
+        await as(HR, "PUT", `/V1/employees/${ids.employees[key]}/tax-profiles/2026`, profile);
+    }
     return ids;
 }
 
@@ -189,6 +241,8 @@ async function addEmployee(employee, ids) {
         emp_bank_account_no: employee.account,
         emp_bank_account_name: `${employee.first} ${employee.last}`,
         emp_sso_enrolled: true,
+        // ไม่มีบัญชีเข้าระบบ = กดเข้า/ออกงานไม่ได้ จึงไม่ต้องลงเวลา (ไม่งั้นทุกวันขึ้นขาดและถูกหักเงิน)
+        emp_attendance_required: employee.attendance ?? Boolean(employee.username),
         ecm_base_salary: employee.salary,
     });
     ids.employees[employee.key] = created.emp_id;
@@ -200,6 +254,7 @@ async function addEmployee(employee, ids) {
             eri_is_taxable: item.taxable,
             eri_is_sso_wage: item.ssoWage,
             eri_effective_from: item.from,
+            eri_effective_to: item.to ?? null,
         });
     }
     if (employee.raise) {
@@ -212,4 +267,4 @@ async function addEmployee(employee, ids) {
     return created.emp_id;
 }
 
-module.exports = { setupCompany, addEmployee, HEAD_OFFICE_ID };
+module.exports = { setupCompany, addEmployee, updatePeopleSettings, HEAD_OFFICE_ID };

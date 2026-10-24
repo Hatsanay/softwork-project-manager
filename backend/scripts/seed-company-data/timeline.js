@@ -1,4 +1,4 @@
-// เหตุการณ์ของบริษัทตามวันที่ (เม.ย. – 16 ต.ค. 2026) — เรียงวันก่อนรัน แต่ละเหตุการณ์ตั้งนาฬิกาจำลองเป็นวันนั้น
+// เหตุการณ์ของบริษัทตามวันที่ (เม.ย. – 23 ต.ค. 2026 · ลงเวลา/OT/WFH อยู่ใน timeline-attendance.js · แชต/issue อยู่ใน timeline-collab.js) — เรียงวันก่อนรัน แต่ละเหตุการณ์ตั้งนาฬิกาจำลองเป็นวันนั้น
 // อ่านจากบนลงล่างได้เหมือนบันทึกประจำวันของบริษัท · ค่าที่ขั้นหลังต้องใช้เก็บใน state
 const { setToday } = require("./clock");
 const { as, forgetTokens } = require("./api");
@@ -8,8 +8,12 @@ const purchasing = require("./purchasing");
 const people = require("./people");
 const projects = require("./projects");
 const { addEmployee } = require("./setup");
+const { scheduleAttendance } = require("./timeline-attendance");
+const { scheduleCollaboration } = require("./timeline-collab");
+const { scheduleExtras, insertExchangeRates, addProductPackages } = require("./timeline-extras");
+const { weekdayIndex } = require("../../src/shared/payroll-math.mjs");
 
-const LAST_DAY = "2026-10-16";
+const LAST_DAY = "2026-10-23";
 // ประเภทลา (ค่าเริ่มต้นของระบบ) — ลาพักร้อนใช้ได้เมื่อทำงานครบ 1 ปี บริษัทเริ่ม ม.ค. 2026 จึงยังไม่มีใครใช้
 const LEAVE = { sick: 1, personal: 2 };
 
@@ -22,6 +26,7 @@ function addDays(dateText, days) {
 const weekdayOf = (dateText) => new Date(`${dateText}T00:00:00Z`).getUTCDay(); // 0 = อาทิตย์
 const holidays = new Set(data.HOLIDAYS_2026.map(([date]) => date));
 const isWorkday = (dateText) => weekdayOf(dateText) >= 1 && weekdayOf(dateText) <= 5 && !holidays.has(dateText);
+const isHoliday = (dateText) => holidays.has(dateText);
 const money = (value) => (Math.round(value * 100) / 100).toFixed(2);
 
 // ─── ตัวจัดคิวเหตุการณ์ ────────────────────────────────────────────────────────────────────
@@ -30,8 +35,8 @@ function on(date, label, run) {
     events.push({ date, label, run, order: events.length });
 }
 
-async function runTimeline({ ids }) {
-    const state = { quotations: {}, projects: {}, invoices: {}, leaveDays: new Map() };
+async function runTimeline({ ids, pool }) {
+    const state = { quotations: {}, projects: {}, invoices: {}, leaveDays: new Map(), userIds: ids.users };
     const user = (username) => ids.users[username];
 
     scheduleSales(ids, state, user);
@@ -39,6 +44,14 @@ async function runTimeline({ ids }) {
     schedulePurchasing(ids, state);
     schedulePeople(ids, state);
     scheduleTimesheets(state);
+    // หลัง schedulePeople: ต้องรู้วันลาที่อนุมัติแล้ว (ไม่กดเข้า/ออกวันลา)
+    scheduleAttendance({ on, ids, state, addDays, isHoliday, weekdayIndex, lastDay: LAST_DAY });
+    scheduleCollaboration({ on, state });
+    scheduleExtras({ on, ids, state });
+
+    // ก่อนเริ่มเหตุการณ์ (1 เม.ย.): อัตราแลกเปลี่ยนที่ ธปท. ประกาศ · ชุดรายการสินค้าเพิ่ม
+    await insertExchangeRates(pool, { addDays, isWorkday });
+    await addProductPackages(ids);
 
     events.sort((first, second) => first.date.localeCompare(second.date) || first.order - second.order);
     let currentMonth = null;
@@ -868,6 +881,17 @@ function schedulePeople(ids, state) {
         await addEmployee(data.EMPLOYEES.find((employee) => employee.key === "apichart"), ids);
     });
     on("2026-06-01", "พิมพ์บัตรพนักงานใหม่", () => people.printPendingCards(hr));
+    on("2026-08-20", "เปิดสาขาภูเก็ต + แผนกขายสาขา", async () => {
+        ids.branches = { ...ids.branches, phuket: (await as("admin", "POST", "/V1/company/branches", data.PHUKET_BRANCH)).branch_id };
+        for (const [abbr, name] of Object.entries(data.PHUKET_DEPARTMENTS)) {
+            const department = await as("admin", "POST", "/V1/departments", { dep_name: name, dep_branch_id: ids.branches.phuket, dep_abbr: abbr });
+            ids.departments[abbr] = department.dep_id;
+        }
+    });
+    on("2026-08-25", "รับพนักงานขายสาขาภูเก็ต ปวีณา (เริ่ม 1 ก.ย.)", async () => {
+        await addEmployee(data.EMPLOYEES.find((employee) => employee.key === "pawinee"), ids);
+    });
+    on("2026-09-01", "พิมพ์บัตรพนักงานสาขาภูเก็ต", () => people.printPendingCards(hr));
 
     // การลา
     const leaves = [
@@ -876,6 +900,10 @@ function schedulePeople(ids, state) {
         { filed: "2026-08-03", employee: "siriporn", approver: "hatsanai", typeId: LEAVE.personal, start: "2026-08-13", end: "2026-08-14", reason: "พาครอบครัวไปงานบวชน้องชายที่นครศรีธรรมราช" },
         { filed: "2026-08-17", employee: "weerayut", approver: "nattapon", typeId: LEAVE.personal, start: "2026-08-24", end: "2026-08-25", reason: "ไปสัมภาษณ์และสอบเข้าเรียนปริญญาโท" },
         { filed: "2026-09-08", employee: "kamonchanok", approver: "wannipa", typeId: LEAVE.sick, start: "2026-09-08", halfDay: "morning", reason: "ไปพบทันตแพทย์ช่วงเช้า" },
+        {
+            filed: "2026-09-17", employee: "supawadee", approver: "nattapon", typeId: LEAVE.sick, start: "2026-09-14", end: "2026-09-16",
+            reason: "ไข้เลือดออก แพทย์ให้พักรักษาตัว 3 วัน", medicalCertificate: true,
+        },
         { filed: "2026-09-23", employee: "kittisak", approver: "nattapon", typeId: LEAVE.sick, start: "2026-09-21", end: "2026-09-22", reason: "ท้องเสีย พักรักษาตัว" },
         { filed: "2026-10-15", employee: "chonthicha", approver: null, typeId: LEAVE.personal, start: "2026-10-26", end: "2026-10-27", reason: "เดินทางไปงานแต่งงานพี่สาวที่เชียงใหม่" },
         { filed: "2026-10-16", employee: "thanawat", approver: null, typeId: LEAVE.personal, start: "2026-10-30", reason: "ติดต่อราชการเรื่องทะเบียนบ้าน" },
@@ -933,17 +961,17 @@ function scheduleTimesheets(state) {
         nattapon: [
             ["2026-05-04", "2026-05-27", "internal", "พัฒนาระบบบริหารงานภายใน"],
             ["2026-05-28", "2026-07-19", "resort", "ออกแบบสถาปัตยกรรมและรีวิวโค้ด ระบบจองห้องพัก"],
-            ["2026-07-20", "2026-10-16", "palm", "วิเคราะห์ระบบรับซื้อปาล์มและดูแลทีม"],
+            ["2026-07-20", "2026-10-23", "palm", "วิเคราะห์ระบบรับซื้อปาล์มและดูแลทีม"],
         ],
         piyapong: [
             ["2026-05-04", "2026-05-12", "tour", "พัฒนาระบบจองทัวร์"],
             ["2026-05-13", "2026-07-10", "clinic", "พัฒนาเว็บไซต์คลินิกและระบบนัดหมาย"],
             ["2026-07-13", "2026-08-21", "resort", "พัฒนา API การจองห้องพัก"],
-            ["2026-08-24", "2026-10-16", "dive", "พัฒนาแอปจองทริปดำน้ำ"],
+            ["2026-08-24", "2026-10-23", "dive", "พัฒนาแอปจองทริปดำน้ำ"],
         ],
         supawadee: [
             ["2026-05-04", "2026-07-31", "tour", "พัฒนาระบบจองทัวร์และหน้าชำระเงิน"],
-            ["2026-08-03", "2026-10-16", "palm", "พัฒนาระบบชั่งน้ำหนักและคลังสินค้า"],
+            ["2026-08-03", "2026-10-23", "palm", "พัฒนาระบบชั่งน้ำหนักและคลังสินค้า"],
         ],
         weerayut: [
             ["2026-05-04", "2026-05-27", "tour", "พัฒนาระบบหลังบ้านจัดการทัวร์"],
@@ -951,25 +979,25 @@ function scheduleTimesheets(state) {
             // วันสุดท้ายจริง 31 ส.ค. (จันทร์) เป็นวันส่งมอบงาน ไม่ได้ลงเวลา — หลังวันนั้นเข้าระบบไม่ได้แล้ว
             ["2026-07-20", "2026-08-28", "palm", "พัฒนาโมดูลรับซื้อผลปาล์ม"],
         ],
-        apichart: [["2026-06-01", "2026-10-16", "resort", "พัฒนาระบบเช็กอินและแม่บ้าน"]],
+        apichart: [["2026-06-01", "2026-10-23", "resort", "พัฒนาระบบเช็กอินและแม่บ้าน"]],
         chonthicha: [
             ["2026-05-04", "2026-05-12", "tour", "ออกแบบหน้าจอระบบจองทัวร์"],
             ["2026-05-13", "2026-05-29", "clinic", "ออกแบบเว็บไซต์คลินิก"],
             ["2026-06-01", "2026-08-21", "resort", "ออกแบบหน้าจอระบบจองห้องพัก"],
             ["2026-08-24", "2026-09-30", "dive", "ออกแบบแอปจองดำน้ำ"],
-            ["2026-10-01", "2026-10-16", "palm", "ออกแบบหน้าจอแอปจุดรับซื้อ"],
+            ["2026-10-01", "2026-10-23", "palm", "ออกแบบหน้าจอแอปจุดรับซื้อ"],
         ],
         kittisak: [
             ["2026-05-04", "2026-07-31", "tour", "ทดสอบระบบจองทัวร์"],
             ["2026-08-03", "2026-09-30", "resort", "ทดสอบระบบจองห้องพัก"],
-            ["2026-10-01", "2026-10-16", "palm", "ทดสอบระบบรับซื้อผลปาล์ม"],
+            ["2026-10-01", "2026-10-23", "palm", "ทดสอบระบบรับซื้อผลปาล์ม"],
         ],
     };
     const approverOf = (username) => (username === "nattapon" ? "hatsanai" : "nattapon");
     // สัปดาห์สุดท้าย: ส่งแล้วแต่หัวหน้ายังไม่อนุมัติ
     const pendingLastWeek = new Set(["supawadee", "kittisak", "apichart"]);
 
-    for (let monday = "2026-05-04"; monday <= "2026-10-12"; monday = addDays(monday, 7)) {
+    for (let monday = "2026-05-04"; monday <= "2026-10-19"; monday = addDays(monday, 7)) {
         const friday = addDays(monday, 4);
         on(friday, `ลงเวลาสัปดาห์ ${monday}`, async () => {
             for (const [username, periods] of Object.entries(schedule)) {
@@ -979,6 +1007,8 @@ function scheduleTimesheets(state) {
                     if (!isWorkday(day)) continue;
                     const period = periods.find(([from, to]) => day >= from && day <= to);
                     if (!period) continue;
+                    // ขาดงาน (ไม่ลา ไม่มา) ไม่มีชั่วโมงทำงานให้ลง
+                    if (state.absentDays?.has(`${username}|${day}`)) continue;
                     const leaveHours = state.leaveDays.get(username)?.get(day) ?? 0;
                     const hours = 8 - leaveHours;
                     if (hours <= 0) continue;
@@ -990,7 +1020,7 @@ function scheduleTimesheets(state) {
                     });
                 }
                 if (entries.length === 0) continue;
-                const isLastWeek = monday === "2026-10-12";
+                const isLastWeek = monday === "2026-10-19";
                 await people.timesheetWeek({
                     employee: username,
                     approver: isLastWeek && pendingLastWeek.has(username) ? null : approverOf(username),

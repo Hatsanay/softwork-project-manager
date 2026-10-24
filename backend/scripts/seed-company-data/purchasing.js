@@ -3,7 +3,27 @@ const sharp = require("sharp");
 const { as } = require("./api");
 const { HEAD_OFFICE_ID } = require("./setup");
 
-/** บันทึกบิลผู้ขาย → ส่ง → อนุมัติ (ถ้าถึงวงเงิน ผู้อนุมัติกด) → คืน ex_id */
+/** รูปสแกนเอกสารผู้ขาย (PNG) แนบบิล — ข้อความอังกฤษ/ตัวเลข (ฟอนต์ไทยในเครื่องสร้างภาพไม่แน่นอน) */
+async function vendorDocumentImage(bill) {
+    const subtotal = bill.lines.reduce((sum, line) => sum + Number(line.exl_unit_price) * Number(line.exl_quantity ?? 1), 0);
+    const total = (subtotal + Number(bill.ex_vat_amount ?? 0)).toFixed(2);
+    const title = { tax_invoice: "TAX INVOICE", receipt: "RECEIPT", substitute_receipt: "PAYMENT VOUCHER" }[bill.ex_doc_type] ?? "BILL";
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="620" height="820">
+        <rect width="100%" height="100%" fill="#fbfbf8"/>
+        <text x="310" y="70" font-family="Arial" font-size="28" text-anchor="middle" font-weight="bold">${title}</text>
+        <text x="60" y="130" font-family="Arial" font-size="17">No.: ${bill.ex_vendor_doc_no ?? "-"}</text>
+        <text x="60" y="165" font-family="Arial" font-size="17">Date: ${bill.ex_vendor_doc_date ?? bill.ex_expense_date}</text>
+        <line x1="60" y1="195" x2="560" y2="195" stroke="#888"/>
+        ${bill.lines.map((line, index) => `<text x="60" y="${235 + index * 34}" font-family="Arial" font-size="15">${index + 1}. Item x ${line.exl_quantity ?? 1}</text><text x="560" y="${235 + index * 34}" font-family="Arial" font-size="15" text-anchor="end">${Number(line.exl_unit_price).toFixed(2)}</text>`).join("")}
+        <line x1="60" y1="600" x2="560" y2="600" stroke="#888"/>
+        <text x="60" y="640" font-family="Arial" font-size="20" font-weight="bold">TOTAL (THB)</text>
+        <text x="560" y="640" font-family="Arial" font-size="20" font-weight="bold" text-anchor="end">${total}</text>
+        <text x="310" y="790" font-family="Arial" font-size="12" text-anchor="middle" fill="#999">SAMPLE DOCUMENT FOR DEMO DATA</text>
+    </svg>`;
+    return sharp(Buffer.from(svg)).png().toBuffer();
+}
+
+/** บันทึกบิลผู้ขาย (แนบสแกนเอกสาร) → ส่ง → อนุมัติ (ถ้าถึงวงเงิน ผู้อนุมัติกด) → คืน ex_id */
 async function recordBill(clerk, approver, bill) {
     const created = await as(clerk, "POST", "/V1/expenses", {
         ex_branch_id: HEAD_OFFICE_ID,
@@ -11,6 +31,9 @@ async function recordBill(clerk, approver, bill) {
         ex_vat_amount: "0",
         ...bill,
     });
+    const form = new FormData();
+    form.append("file", new Blob([await vendorDocumentImage(bill)], { type: "image/png" }), "vendor-document.png");
+    await as(clerk, "POST", `/V1/expenses/${created.ex_id}/attachments`, form);
     const submitted = await as(clerk, "POST", `/V1/expenses/${created.ex_id}/submit`, {});
     const status = submitted?.ex_status ?? submitted?.expense?.ex_status;
     if (status !== "approved" && approver) {

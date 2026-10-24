@@ -10,7 +10,9 @@
     "schema:manifest": "node scripts/schema-manifest.js",
     "format:changed": "node scripts/format-changed.js",
     "sync-shared": "node scripts/sync-shared.js",
-    "seed:demo": "node scripts/seed-demo.js"
+    "seed:demo": "node scripts/seed-demo.js",
+    "mock:export": "node scripts/mock-data/export.js",
+    "mock:verify": "node scripts/mock-data/verify.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
