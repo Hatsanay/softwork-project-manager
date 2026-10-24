@@ -2,6 +2,8 @@
 
 // ตำแหน่งจากมือถือ (2026-10-23 ช่วง A-1) — ขอครั้งเดียวตอนเปิดหน้า และเมื่อกด "หาตำแหน่งใหม่" (ไม่ติดตามต่อเนื่อง · PDPA)
 // เบราว์เซอร์ให้ตำแหน่งเฉพาะเว็บ https (และ localhost) · ไม่อนุญาต/หาไม่เจอ = กดได้แต่ถือเป็นนอกจุด ต้องใส่เหตุผล
+// ลองแบบแม่นยำ (GPS) ก่อน · หมดเวลาหรือจับสัญญาณไม่ได้ (ในอาคารบ่อย) ลองใหม่แบบปกติ (Wi-Fi/เสาสัญญาณ) อีกครั้ง
+// 2026-10-24: เคยกดไม่ได้ทั้งเว็บเพราะ next.config.ts ส่ง Permissions-Policy geolocation=() — ต้องเป็น geolocation=(self)
 import { useCallback, useEffect, useState } from "react";
 
 export type LocationState =
@@ -10,9 +12,24 @@ export type LocationState =
     | { kind: "denied" }
     | { kind: "unavailable"; reason: "insecure" | "unsupported" | "timeout" | "error" };
 
-const LOCATE_OPTIONS: PositionOptions = { enableHighAccuracy: true, timeout: 15_000, maximumAge: 30_000 };
+const PRECISE_OPTIONS: PositionOptions = { enableHighAccuracy: true, timeout: 15_000, maximumAge: 30_000 };
+const FALLBACK_OPTIONS: PositionOptions = { enableHighAccuracy: false, timeout: 10_000, maximumAge: 60_000 };
 
-function requestPosition(onResult: (state: LocationState) => void) {
+function toReadyState(position: GeolocationPosition): LocationState {
+    return {
+        kind: "ready",
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: Math.round(position.coords.accuracy),
+    };
+}
+
+function toFailedState(error: GeolocationPositionError): LocationState {
+    if (error.code === error.PERMISSION_DENIED) return { kind: "denied" };
+    return { kind: "unavailable", reason: error.code === error.TIMEOUT ? "timeout" : "error" };
+}
+
+export function requestPosition(onResult: (state: LocationState) => void) {
     if (!window.isSecureContext) {
         onResult({ kind: "unavailable", reason: "insecure" });
         return;
@@ -22,18 +39,19 @@ function requestPosition(onResult: (state: LocationState) => void) {
         return;
     }
     navigator.geolocation.getCurrentPosition(
-        (position) =>
-            onResult({
-                kind: "ready",
-                latitude: position.coords.latitude,
-                longitude: position.coords.longitude,
-                accuracy: Math.round(position.coords.accuracy),
-            }),
-        (error) => {
-            if (error.code === error.PERMISSION_DENIED) onResult({ kind: "denied" });
-            else onResult({ kind: "unavailable", reason: error.code === error.TIMEOUT ? "timeout" : "error" });
+        (position) => onResult(toReadyState(position)),
+        (preciseError) => {
+            if (preciseError.code === preciseError.PERMISSION_DENIED) {
+                onResult({ kind: "denied" });
+                return;
+            }
+            navigator.geolocation.getCurrentPosition(
+                (position) => onResult(toReadyState(position)),
+                (fallbackError) => onResult(toFailedState(fallbackError)),
+                FALLBACK_OPTIONS,
+            );
         },
-        LOCATE_OPTIONS,
+        PRECISE_OPTIONS,
     );
 }
 

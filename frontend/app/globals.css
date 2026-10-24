@@ -184,3 +184,16 @@ h4 {
         animation: none;
     }
 }
+
+/* ── แผนที่จุดลงเวลา (Leaflet · 2026-10-24 · people/attendance/_components/attendance-map.tsx) ── */
+/* ปุ่มซูมของ Leaflet สูง 30px เล็กกว่าระยะนิ้วกด 40px (CODING_GUIDELINES 5.1) · ฟอนต์ตามธีม
+   ตัวเลือกต้องเจาะจงกว่า .leaflet-touch .leaflet-bar a เพราะ leaflet.css โหลดทีหลัง */
+.attendance-map.leaflet-container .leaflet-bar a {
+    width: 40px;
+    height: 40px;
+    line-height: 40px;
+    font-size: 20px;
+}
+.attendance-map.leaflet-container {
+    font-family: inherit;
+}

@@ -22,7 +22,8 @@ const nextConfig: NextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           // ลิงก์ /share/<token> เป็นความลับ — ไม่ส่ง path เต็มไปใน Referer เวลาลูกค้ากดลิงก์ออกไปเว็บอื่น
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+          // geolocation=(self): หน้าลงเวลาต้องใช้ตำแหน่งของเว็บเราเอง · ห้ามกลับเป็น () — เบราว์เซอร์จะปฏิเสธทันทีโดยไม่ถามผู้ใช้
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self)" },
         ],
       },
     ];

@@ -2,7 +2,8 @@
 
 // จุดลงเวลา (2026-10-23 ช่วง A-1) — พิกัด + รัศมี · ตั้งพิกัดด้วยปุ่ม "ใช้ตำแหน่งที่ยืนอยู่ตอนนี้" ไม่ต้องพิมพ์เอง
 // สาขาหนึ่งมีได้หลายจุด · ปิดใช้งานแทนการลบ (การกดเก่าเก็บชื่อจุดและระยะไว้แล้ว) · ยังไม่มีจุดเลย = กดได้ทุกที่
-import { useEffect, useState } from "react";
+// แผนที่ (2026-10-24): เห็นวงรัศมีของทุกจุด · ในฟอร์มแตะแผนที่เพื่อวางจุดได้ (ไม่ต้องยืนอยู่ที่ออฟฟิศ) · วงเปลี่ยนตามรัศมีที่พิมพ์
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Crosshair, ExternalLink, MapPin, Plus } from "lucide-react";
 import SectionCard from "@/components/ui/section-card";
@@ -15,6 +16,8 @@ import { toFieldErrors, type FieldErrors } from "@/lib/form-errors";
 import { attendanceLocationSchema } from "@/lib/shared/schemas/attendance.mjs";
 import { ATTENDANCE_MESSAGES } from "../../_messages";
 import type { ActiveStatus, AttendanceLocation, PeopleSetup } from "../../_types";
+import AttendanceMap, { mapLocationsOf, type MapLocation } from "../../attendance/_components/attendance-map";
+import { requestPosition } from "../../attendance/_components/use-location";
 
 type BranchChoice = { branch_id: string; branch_name_th: string; branch_status: ActiveStatus };
 
@@ -46,6 +49,7 @@ export default function AttendanceLocationsSection({
 
     const locations = setup.attendance_locations;
     const hasActive = locations.some((location) => location.al_status === "active");
+    const mapLocations = useMemo(() => mapLocationsOf(locations), [locations]);
 
     return (
         <SectionCard
@@ -71,6 +75,12 @@ export default function AttendanceLocationsSection({
                         if (saved) await onChanged();
                     }}
                 />
+            )}
+            {locations.length > 0 && !editing && (
+                <div className="grid gap-1.5">
+                    <AttendanceMap locations={mapLocations} className="h-64 sm:h-80" />
+                    <FieldHint>วงสีน้ำเงิน = รัศมีของจุดที่ใช้งาน · วงสีเทา = จุดที่ปิดใช้งาน · แตะจุดกลางวงเพื่อดูชื่อ</FieldHint>
+                </div>
             )}
             <ul className="grid gap-2 text-sm">
                 {locations.map((location) => (
@@ -145,27 +155,25 @@ function LocationForm({
 
     // ยืนอยู่ที่จุดนั้นแล้วกด — ระบบเติมพิกัด (ทศนิยม 6 ตำแหน่ง ≈ 0.1 เมตร)
     function fillCurrentPosition() {
-        if (!window.isSecureContext || !("geolocation" in navigator)) {
-            setLocateMessage(ATTENDANCE_MESSAGES.gpsInsecure);
-            return;
-        }
         setIsLocating(true);
         setLocateMessage(null);
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                setIsLocating(false);
-                update("al_latitude", position.coords.latitude.toFixed(6));
-                update("al_longitude", position.coords.longitude.toFixed(6));
-                setLocateMessage(`ได้พิกัดแล้ว · ความแม่นยำประมาณ ${Math.round(position.coords.accuracy)} เมตร`);
-            },
-            (error) => {
-                setIsLocating(false);
-                setLocateMessage(
-                    error.code === error.PERMISSION_DENIED ? ATTENDANCE_MESSAGES.gpsDenied : "หาตำแหน่งไม่สำเร็จ ลองใหม่อีกครั้ง",
-                );
-            },
-            { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 },
-        );
+        requestPosition((result) => {
+            setIsLocating(false);
+            if (result.kind === "ready") {
+                placePoint(result.latitude, result.longitude);
+                setLocateMessage(`ได้พิกัดแล้ว · ความแม่นยำประมาณ ${result.accuracy} เมตร`);
+                return;
+            }
+            if (result.kind === "denied") setLocateMessage(ATTENDANCE_MESSAGES.gpsDenied);
+            else if (result.kind === "unavailable" && result.reason === "insecure") setLocateMessage(ATTENDANCE_MESSAGES.gpsInsecure);
+            else setLocateMessage("หาตำแหน่งไม่สำเร็จ ลองใหม่อีกครั้ง หรือแตะบนแผนที่ตรงจุดที่ต้องการ");
+        });
+    }
+
+    // แตะแผนที่/ได้ตำแหน่ง → เติมพิกัด
+    function placePoint(latitude: number, longitude: number) {
+        update("al_latitude", latitude.toFixed(6));
+        update("al_longitude", longitude.toFixed(6));
     }
 
     async function save(event: React.FormEvent) {
@@ -195,6 +203,25 @@ function LocationForm({
     }
 
     const hasCoordinates = form.al_latitude !== "" && form.al_longitude !== "";
+    // วงของจุดที่กำลังแก้ (ตามค่าที่พิมพ์ · พิกัดหรือรัศมีไม่ถูกต้อง = ยังไม่วาด)
+    const formLatitude = Number(form.al_latitude);
+    const formLongitude = Number(form.al_longitude);
+    const formRadius = Number(form.al_radius_m);
+    const isDrawable =
+        hasCoordinates &&
+        Number.isFinite(formLatitude) &&
+        Number.isFinite(formLongitude) &&
+        Math.abs(formLatitude) <= 90 &&
+        Math.abs(formLongitude) <= 180 &&
+        formRadius > 0 &&
+        formRadius <= 5000;
+    const formMapLocations = useMemo<MapLocation[]>(
+        () =>
+            isDrawable
+                ? [{ id: "form", name: form.al_name || "จุดนี้", latitude: formLatitude, longitude: formLongitude, radius: formRadius, isActive: true }]
+                : [],
+        [isDrawable, form.al_name, formLatitude, formLongitude, formRadius],
+    );
 
     return (
         <form onSubmit={save} noValidate className="grid gap-4 rounded-xl border border-blue-100 bg-blue-50/40 p-4 sm:grid-cols-2">
@@ -235,6 +262,10 @@ function LocationForm({
                     {isLocating ? "กำลังหาตำแหน่ง..." : "ใช้ตำแหน่งที่ยืนอยู่ตอนนี้"}
                 </button>
                 <FieldHint>{locateMessage ?? ATTENDANCE_MESSAGES.locationHint}</FieldHint>
+            </div>
+            <div className="grid gap-1.5 sm:col-span-2">
+                <AttendanceMap locations={formMapLocations} onPick={placePoint} className="h-64 sm:h-80" />
+                <FieldHint>แตะบนแผนที่ตรงออฟฟิศเพื่อวางจุด (ซูมด้วยปุ่ม + หรือสองนิ้ว) · วงสีน้ำเงิน = รัศมีที่ถือว่าอยู่ในจุด</FieldHint>
             </div>
             <FormField label="ละติจูด" htmlFor="al_latitude" required error={errors.al_latitude}>
                 <input

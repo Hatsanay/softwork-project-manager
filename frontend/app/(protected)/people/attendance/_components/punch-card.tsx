@@ -4,7 +4,8 @@
 // นาฬิกา = เวลาเซิร์ฟเวอร์ตอนโหลด + เวลาที่ผ่านไปบนเครื่อง (ไม่ใช้นาฬิกามือถือตรงๆ) · เวลาที่บันทึกจริงเซิร์ฟเวอร์เป็นคนกำหนด
 // ปุ่มใหญ่ = ขั้นถัดไป (ยังไม่เข้า/ออกแล้ว → เข้างาน · เข้าแล้ว → ออกงาน) · นอกจุด/ไม่มีตำแหน่ง ต้องใส่เหตุผลก่อนกด
 // วัน WFH (2026-10-24) = ไม่ตรวจตำแหน่ง ไม่ต้องใส่เหตุผล (ยังส่งพิกัดไปบันทึก)
-import { useEffect, useState } from "react";
+// แผนที่ (2026-10-24): วงรัศมีของจุดลงเวลา + ตำแหน่งของฉันและวงความแม่นยำ GPS
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { House, LogIn, LogOut, MapPin, RefreshCw } from "lucide-react";
 import FieldHint from "@/components/ui/guidance/field-hint";
@@ -18,6 +19,7 @@ import type { AttendanceDay, MyAttendance } from "../../_types";
 import { dayLabel } from "../../timesheet/_components/week-lines";
 import { scheduleLabel } from "../../_schedule-label";
 import { useLocation, type LocationState } from "./use-location";
+import AttendanceMap, { mapLocationsOf } from "./attendance-map";
 
 type PunchType = "in" | "out";
 
@@ -99,6 +101,12 @@ export default function PunchCard({
     const isWfh = day?.is_wfh ?? false;
     const isOffsite = !isWfh && hasLocations && !nearest.isInside;
     const isLocating = location.kind === "locating";
+    // memo: การ์ด render ใหม่ทุกวินาทีตามนาฬิกา · ส่งของใหม่ทุกครั้งแผนที่จะซูมกลับเอง
+    const mapLocations = useMemo(() => mapLocationsOf(data.locations), [data.locations]);
+    const myPosition = useMemo(
+        () => (location.kind === "ready" ? { latitude: location.latitude, longitude: location.longitude, accuracy: location.accuracy } : null),
+        [location],
+    );
     const status = day ? ATTENDANCE_STATUS[day.status] : null;
 
     async function punch(type: PunchType) {
@@ -172,7 +180,12 @@ export default function PunchCard({
                     <span>{WFH_MESSAGES.punch}</span>
                 </p>
             ) : (
-                <LocationLine location={location} hasLocations={hasLocations} nearest={nearest} onRelocate={relocate} />
+                <div className="grid gap-2">
+                    <LocationLine location={location} hasLocations={hasLocations} nearest={nearest} onRelocate={relocate} />
+                    {(hasLocations || myPosition) && (
+                        <AttendanceMap locations={mapLocations} myPosition={myPosition} className="h-48 sm:h-60" />
+                    )}
+                </div>
             )}
 
             {isOffsite && (
@@ -242,10 +255,10 @@ function LocationLine({
         tone = "text-red-600";
     } else if (!hasLocations) text = ATTENDANCE_MESSAGES.noLocations;
     else if (nearest.isInside) {
-        text = `อยู่ในจุดลงเวลา ${nearest.location?.al_name} (${distanceText(nearest.distance ?? 0)})`;
+        text = `อยู่ในจุดลงเวลา ${nearest.location?.al_name} (${distanceText(nearest.distance ?? 0)}) · GPS แม่นยำ ±${distanceText(location.accuracy)}`;
         tone = "text-blue-700";
     } else {
-        text = `อยู่นอกจุดลงเวลา · ห่าง ${nearest.location?.al_name} ${distanceText(nearest.distance ?? 0)}`;
+        text = `อยู่นอกจุดลงเวลา · ห่าง ${nearest.location?.al_name} ${distanceText(nearest.distance ?? 0)} · GPS แม่นยำ ±${distanceText(location.accuracy)}`;
         tone = "text-amber-700";
     }
 
