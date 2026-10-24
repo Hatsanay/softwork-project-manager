@@ -100,7 +100,7 @@ export default function EditProjectPage() {
     if (!id || notFound) return <p className="p-6 text-gray-500">ไม่พบโปรเจกต์นี้</p>;
 
     return (
-        <div className="mx-auto grid max-w-3xl gap-6">
+        <div className="grid w-full gap-6">
             <PageHeader
                 eyebrow="งาน · โปรเจกต์"
                 title="แก้ไขโปรเจกต์"

@@ -68,7 +68,7 @@ export default function PayablePayeePage() {
     const bucketLabel = new Map(aging.buckets.map((bucket) => [bucket.key, bucket.label]));
 
     return (
-        <div className="mx-auto grid w-full max-w-5xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader
                 eyebrow={`จัดซื้อ · เจ้าหนี้คงค้าง · ${payeeKind === "employee" ? "พนักงาน" : "ผู้ขาย"}`}
                 title={aging.payee?.payee_name ?? "ผู้รับเงิน"}

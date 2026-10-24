@@ -171,7 +171,7 @@ export default function QuotationViewPage() {
         actions.can_decline;
 
     return (
-        <div className={`mx-auto grid max-w-6xl grid-cols-1 gap-6 ${hasDecisionBar ? "max-sm:pb-32" : ""}`}>
+        <div className={`grid w-full grid-cols-1 gap-6 ${hasDecisionBar ? "max-sm:pb-32" : ""}`}>
             <PageHeader
                 eyebrow={`ขาย · ใบเสนอราคา · ${documentNumberLabel(quotation)}`}
                 title={quotation.qt_title}

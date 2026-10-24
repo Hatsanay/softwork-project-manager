@@ -5,7 +5,7 @@ import VendorForm from "../_components/vendor-form";
 
 export default function NewVendorPage() {
     return (
-        <div className="mx-auto grid w-full max-w-4xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader
                 eyebrow="จัดซื้อ · ผู้ขาย"
                 title="เพิ่มผู้ขาย"

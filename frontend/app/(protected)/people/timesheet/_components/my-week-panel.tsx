@@ -385,6 +385,7 @@ export default function MyWeekPanel() {
                     <FieldHint>{TIMESHEET_MESSAGES.shortRules(data.backdate_days)}</FieldHint>
                     <HowItWorks label="กติกาลงเวลา">
                         <p>{TIMESHEET_MESSAGES.rules(data.backdate_days)}</p>
+                        <p>{TIMESHEET_MESSAGES.costNote}</p>
                         <p>{TIMESHEET_MESSAGES.internalWork}</p>
                         <p>{TIMESHEET_MESSAGES.copyPrevious}</p>
                         {hoursPerDay && <p>{TIMESHEET_MESSAGES.fillEmpty(Number(hoursPerDay))}</p>}

@@ -11,7 +11,7 @@ export default function NewClaimPage() {
     const { options, loadError } = useExpenseOptions();
 
     return (
-        <div className="mx-auto grid w-full max-w-5xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader eyebrow="เบิกเงิน" title="เบิกเงินคืน" description={CLAIM_MESSAGES.listDescription} />
             {loadError && (
                 <StatusBanner tone="error" title="โหลดข้อมูลสำหรับฟอร์มไม่สำเร็จ">

@@ -39,7 +39,7 @@ export default function PurchasingSettingsPage() {
     if (!setup) return <PageSkeleton />;
 
     return (
-        <div className="mx-auto grid w-full max-w-5xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader eyebrow="จัดซื้อ" title="ตั้งค่าจัดซื้อ" description={SETUP_MESSAGES.description} />
             <StatusBanner tone="warn" title="ตรวจกับนักบัญชีก่อนใช้งานจริง">
                 {SETUP_MESSAGES.accountantNote}

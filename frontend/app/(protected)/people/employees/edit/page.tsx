@@ -28,7 +28,7 @@ export default function EditEmployeePage() {
     }, [employeeId]);
 
     return (
-        <div className="mx-auto grid w-full max-w-4xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader
                 eyebrow="บุคคล · พนักงาน"
                 title="แก้ไขข้อมูลพนักงาน"

@@ -33,7 +33,7 @@ export default function EditClaimPage() {
     const isNotEditable = detail && !detail.actions.can_edit;
 
     return (
-        <div className="mx-auto grid w-full max-w-5xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader
                 eyebrow="เบิกเงิน"
                 title="แก้ไขใบเบิก"

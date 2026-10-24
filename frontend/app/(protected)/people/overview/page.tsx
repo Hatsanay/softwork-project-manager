@@ -44,7 +44,11 @@ function todosOf(overview: PeopleOverview): Todo[] {
     const todos: Todo[] = [];
     const { pending, cards, payroll, incomplete_employees: incomplete } = overview;
     if (pending.leave) todos.push({ icon: CalendarCheck, label: "ใบลารออนุมัติ", count: pending.leave, href: "/people/approvals?tab=leave", isUrgent: true });
-    if (pending.timesheet) todos.push({ icon: CalendarClock, label: "ลงเวลารออนุมัติ", count: pending.timesheet, href: "/people/approvals?tab=timesheet", isUrgent: true });
+    if (pending.overtime) todos.push({ icon: CalendarClock, label: "OT รออนุมัติ", count: pending.overtime, href: "/people/approvals?tab=overtime", isUrgent: true });
+    if (pending.wfh) todos.push({ icon: CalendarClock, label: "WFH รออนุมัติ", count: pending.wfh, href: "/people/approvals?tab=wfh", isUrgent: true });
+    if (pending.attendance_corrections) todos.push({ icon: CalendarClock, label: "ขอแก้เวลารออนุมัติ", count: pending.attendance_corrections, href: "/people/approvals?tab=corrections", isUrgent: true });
+    if (overview.attendance_today?.incomplete) todos.push({ icon: CalendarClock, label: "ลงเวลาไม่ครบวันนี้", count: overview.attendance_today.incomplete, href: "/people/attendance-board" });
+    if (pending.timesheet) todos.push({ icon: CalendarClock, label: "ลงชั่วโมงรออนุมัติ", count: pending.timesheet, href: "/people/approvals?tab=timesheet", isUrgent: true });
     if (payroll?.missing_period) {
         todos.push({ icon: Wallet, label: `ยังไม่ได้สร้างรอบเงินเดือน${monthLabel(payroll.missing_period)}`, href: "/people/payroll", isUrgent: true });
     }
@@ -85,7 +89,7 @@ export default function PeopleOverviewPage() {
     const { headcount, payroll, incomplete_employees: incomplete } = overview;
 
     return (
-        <div className="mx-auto grid w-full max-w-5xl gap-6">
+        <div className="grid w-full gap-6">
             <section className="relative overflow-hidden rounded-3xl bg-brand-grid p-5 text-white shadow-brand sm:p-7">
                 <p className="text-sm text-blue-100">จัดการบุคคล</p>
                 <h1 className="text-2xl font-medium">ภาพรวมบุคคล</h1>
@@ -122,6 +126,7 @@ export default function PeopleOverviewPage() {
                 </section>
 
                 <div className="grid content-start gap-4 lg:col-span-2">
+                    {overview.attendance_today && <AttendanceTodayCard counts={overview.attendance_today} />}
                     {payroll && <PayrollCard payroll={payroll} />}
                     <section className={`grid gap-3 p-5 ${CARD_CLASS}`}>
                         <h2 className="flex items-center gap-2 text-base font-medium text-gray-900">
@@ -251,6 +256,35 @@ function PayrollCard({ payroll }: { payroll: NonNullable<PeopleOverview["payroll
                     ))}
                 </ol>
             )}
+        </Link>
+    );
+}
+
+// ลงเวลาวันนี้ (A-2) — ตัวเลขรวม กดไปหน้าลงเวลาพนักงาน
+function AttendanceTodayCard({ counts }: { counts: NonNullable<PeopleOverview["attendance_today"]> }) {
+    const items = [
+        { label: "เข้าแล้ว", value: counts.arrived, tone: "text-gray-900" },
+        { label: "สาย", value: counts.late, tone: counts.late > 0 ? "text-red-600" : "text-gray-900" },
+        { label: "ยังไม่เข้า", value: counts.not_yet, tone: "text-gray-900" },
+        { label: "ลา", value: counts.leave, tone: "text-gray-900" },
+    ];
+    return (
+        <Link href="/people/attendance-board" className={`grid gap-3 p-5 hover:border-blue-200 ${CARD_CLASS}`}>
+            <h2 className="flex items-center gap-2 text-base font-medium text-gray-900">
+                <CalendarClock size={18} className="text-blue-600" />
+                ลงเวลาวันนี้
+                <span className="ml-auto text-sm font-normal text-gray-500">จาก {counts.total} คน</span>
+            </h2>
+            <div className="grid grid-cols-4 gap-2 text-center">
+                {items.map((item) => (
+                    <span key={item.label} className="grid gap-0.5 rounded-xl bg-gray-50 py-2">
+                        <span className={`text-lg font-medium tabular-nums ${item.tone}`}>{item.value}</span>
+                        <span className="text-xs text-gray-500">{item.label}</span>
+                    </span>
+                ))}
+            </div>
+            {counts.wfh > 0 && <p className="text-xs text-blue-700">ทำงานที่บ้าน (WFH) {counts.wfh} คน</p>}
+            {counts.offsite > 0 && <p className="text-xs text-amber-700">กดนอกจุดลงเวลา {counts.offsite} คน</p>}
         </Link>
     );
 }

@@ -5,7 +5,7 @@ import DepartmentForm from "../_components/department-form";
 
 export default function CreateDepartmentPage() {
     return (
-        <div className="mx-auto grid max-w-3xl gap-6">
+        <div className="grid w-full gap-6">
             <PageHeader
                 eyebrow="ตั้งค่าระบบ · แผนก"
                 title="สร้างแผนก"

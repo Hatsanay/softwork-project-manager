@@ -101,7 +101,7 @@ export const MENU_DEFS: MenuItem[] = [
         href: "/people",
         children: [
             { key: "dashboard", label: "ภาพรวมของฉัน", href: "/people/me" },
-            { key: "dashboard", label: "ลงเวลาทำงาน", href: "/people/timesheet" },
+            { key: "dashboard", label: "ลงเวลาทำงาน", href: "/people/attendance" },
             { key: "dashboard", label: "การลา", href: "/people/leave" },
             { key: "dashboard", label: "สลิปเงินเดือน", href: "/people/payslips" },
             { key: "approveLeave", label: "รออนุมัติ", href: "/people/approvals" },
@@ -112,6 +112,8 @@ export const MENU_DEFS: MenuItem[] = [
             { key: "runPayroll", label: "ภาพรวมบุคคล", href: "/people/overview", hidden: true },
             { key: "approvePayroll", label: "ภาพรวมบุคคล", href: "/people/overview", hidden: true },
             { key: "manageHrSettings", label: "ภาพรวมบุคคล", href: "/people/overview", hidden: true },
+            { key: "manageEmployees", label: "ลงเวลาพนักงาน", href: "/people/attendance-board" },
+            { key: "approveTimesheet", label: "ลงเวลาพนักงาน", href: "/people/attendance-board", hidden: true },
             { key: "manageEmployees", label: "พนักงาน", href: "/people/employees" },
             // รอบเงินเดือน: เห็นเมื่อมีสิทธิ์ดู/สร้าง/อนุมัติข้อใดข้อหนึ่ง (แถวซ่อนช่วยเปิดเมนูเดียวกัน)
             { key: "viewPayroll", label: "รอบเงินเดือน", href: "/people/payroll" },
@@ -244,7 +246,7 @@ export const PERMISSION_GROUPS: PermGroup[] = [
             { key: "viewPayroll",      label: "ดูรอบเงินเดือน สลิปของทุกคน และรายงานเงินเดือน/ภาษี",                                  href: "/people/payroll" },
             { key: "runPayroll",       label: "สร้าง/คิด/แก้รอบเงินเดือน และบันทึกจ่ายเงินเดือน",                                       href: "/people/payroll/new" },
             { key: "approvePayroll",   label: "อนุมัติ/ตีกลับรอบเงินเดือน (ต้องมี role อยู่ในชั้นที่รออยู่ด้วย)",                          href: "/people/payroll/approve" },
-            { key: "approveTimesheet", label: "อนุมัติลงเวลาของทุกคน (ผู้จัดการโปรเจกต์อนุมัติของโปรเจกต์ตัวเองได้โดยไม่ต้องมีสิทธิ์นี้)",       href: "/people/timesheet/approve" },
+            { key: "approveTimesheet", label: "อนุมัติลงเวลา (ขอแก้เวลา · ดูลงเวลาพนักงานทุกคน · ลงชั่วโมงต่อโปรเจกต์ของทุกคนเมื่อเปิดใช้)", href: "/people/attendance-board" },
             { key: "approveLeave",     label: "อนุมัติ/ไม่อนุมัติใบลาของทุกคน และเห็นเหตุผล/ไฟล์แนบของใบลา",                              href: "/people/leave/approve" },
             { key: "manageHrSettings", label: "ตั้งค่าบุคคล (อัตราประกันสังคม ภาษีเงินได้ วันหยุดบริษัท ประเภทลา เวลาทำงาน)",                  href: "/people/settings" },
         ],

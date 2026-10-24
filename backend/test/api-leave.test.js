@@ -111,6 +111,8 @@ async function attachFile(person, requestId) {
 
 test.before(async () => {
     api = await startTestServer("leave");
+    // ลงชั่วโมงต่อโปรเจกต์ปิดเป็นค่าเริ่มต้นแล้ว (2026-10-23) — เทสต์นี้ทดสอบระบบลงชั่วโมงจึงเปิดไว้
+    await api.pool.query("UPDATE tb_payroll_settings SET ps_timesheet_enabled = 1 WHERE ps_id = 1");
     await api.loginAsAdmin();
     departmentId = await createTestDepartment(api);
     people.developer = await createPerson("lv.dev", ["dashboard"], 181);

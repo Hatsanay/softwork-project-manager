@@ -90,7 +90,7 @@ export default function PaymentViewPage() {
     const expensePath = (kind: "bill" | "claim") => (kind === "claim" ? "/purchasing/claims" : "/purchasing/expenses");
 
     return (
-        <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader
                 eyebrow={`จัดซื้อ · ใบสำคัญจ่าย · ${payment.pv_number}`}
                 title={`จ่าย ${payeeName ?? "—"}`}

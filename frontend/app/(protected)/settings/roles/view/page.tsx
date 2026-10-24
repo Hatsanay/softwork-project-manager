@@ -50,7 +50,7 @@ export default function ViewRolePage() {
     if (!id) return <p className="p-6 text-gray-500">ไม่พบ Role</p>;
 
     return (
-        <div className="mx-auto grid max-w-3xl gap-6">
+        <div className="grid w-full gap-6">
             <PageHeader
                 eyebrow="ตั้งค่าระบบ · จัดการสิทธิ์"
                 title={isPending ? "กำลังโหลด..." : (role?.role_name ?? "ไม่พบข้อมูล")}

@@ -51,7 +51,7 @@ export default function ViewUserPage() {
     const avatarUrl = user.user_avatar_url ? `${SERVER_BASE}${user.user_avatar_url}` : "/defult.png";
 
     return (
-        <div className="mx-auto grid max-w-3xl gap-6">
+        <div className="grid w-full gap-6">
             <PageHeader
                 eyebrow="จัดการข้อมูลผู้ใช้งาน"
                 title="ข้อมูลผู้ใช้งาน"

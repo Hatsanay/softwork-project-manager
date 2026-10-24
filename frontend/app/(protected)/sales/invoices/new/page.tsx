@@ -49,7 +49,7 @@ function DebitNote({ referenceId }: { referenceId: string }) {
               "ใบนี้ออกใบเพิ่มหนี้ไม่ได้ — ต้องเป็นใบแจ้งหนี้ที่ออกแล้ว และคุณต้องมีสิทธิ์สร้างใบแจ้งหนี้")
             : null;
     return (
-        <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader
                 eyebrow="ขาย · ใบแจ้งหนี้"
                 title={reference ? `ออกใบเพิ่มหนี้ · ${reference.invoice.inv_number ?? ""}` : "ออกใบเพิ่มหนี้"}
@@ -81,7 +81,7 @@ function DebitNote({ referenceId }: { referenceId: string }) {
 
 function FromQuotation({ quotationId }: { quotationId: string }) {
     return (
-        <div className="mx-auto grid max-w-3xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader
                 eyebrow="ขาย · ใบแจ้งหนี้"
                 title="ออกใบแจ้งหนี้จากงวด"
@@ -95,7 +95,7 @@ function FromQuotation({ quotationId }: { quotationId: string }) {
 function Manual() {
     const { options, loadError } = useInvoiceOptions();
     return (
-        <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader
                 eyebrow="ขาย · ใบแจ้งหนี้"
                 title="สร้างใบแจ้งหนี้เอง"

@@ -9,6 +9,7 @@ import { FileText, Plus } from "lucide-react";
 import PageHeader from "@/components/ui/page-header";
 import StatusPill from "@/components/ui/status-pill";
 import StatusBanner from "@/components/ui/guidance/status-banner";
+import HowItWorks from "@/components/ui/guidance/how-it-works";
 import FormField, { inputClass } from "@/components/ui/form-field";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { CARD_CLASS } from "@/components/ui/card";
@@ -69,7 +70,7 @@ export default function PayrollListPage() {
     }
 
     return (
-        <div className="mx-auto grid w-full max-w-5xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader
                 eyebrow="บุคคล"
                 title="รอบเงินเดือน"
@@ -96,6 +97,11 @@ export default function PayrollListPage() {
             <StatusBanner tone="warn" title="รอนักบัญชียืนยันตัวเลข">
                 {PAYROLL_MESSAGES.accountantPending}
             </StatusBanner>
+            <HowItWorks label="รอบเงินเดือนทำงานอย่างไร">
+                <p>{PAYROLL_MESSAGES.listRules}</p>
+                <p>{PAYROLL_MESSAGES.tax}</p>
+                <p>{PAYROLL_MESSAGES.approvedLock}</p>
+            </HowItWorks>
 
             {isCreating && (
                 <form onSubmit={create} noValidate className={`grid gap-4 p-4 sm:p-5 ${CARD_CLASS}`}>
@@ -163,7 +169,7 @@ export default function PayrollListPage() {
             {!runs && !loadError && <PageSkeleton />}
             {runs && runs.length === 0 && (
                 <p className="rounded-2xl border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
-                    ยังไม่มีรอบเงินเดือน{canRun ? ' — กด "สร้างรอบ" เพื่อเริ่ม' : ""}
+                    ยังไม่มีรอบเงินเดือน{canRun ? ' · กด "สร้างรอบ" เพื่อเริ่ม' : ""}
                 </p>
             )}
             {runs && runs.length > 0 && (

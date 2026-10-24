@@ -14,7 +14,7 @@ export default function NewReceiptPage() {
     const { options, loadError } = useInvoiceOptions();
 
     return (
-        <div className="mx-auto grid w-full max-w-3xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader
                 eyebrow="ขาย · ใบเสร็จรับเงิน"
                 title="บันทึกรับเงิน"

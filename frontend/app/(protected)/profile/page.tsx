@@ -174,7 +174,7 @@ export default function ProfilePage() {
     }
 
     return (
-        <div className="mx-auto grid max-w-3xl gap-6">
+        <div className="grid w-full gap-6">
             <PageHeader
                 eyebrow="บัญชีของฉัน"
                 title="โปรไฟล์ของฉัน"

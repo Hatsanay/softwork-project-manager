@@ -12,7 +12,7 @@ export default function NewBillingNotePage() {
     const { options, loadError } = useInvoiceOptions();
 
     return (
-        <div className="mx-auto grid w-full max-w-3xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader
                 eyebrow="ขาย · ใบวางบิล"
                 title="สร้างใบวางบิล"

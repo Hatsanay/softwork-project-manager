@@ -68,6 +68,8 @@ const employeeFields = z.object({
     emp_sso_enrolled: yesNo("เข้าประกันสังคม").default(true),
     emp_sso_number: optionalText("เลขประกันสังคม", 20),
     emp_notes: optionalText("หมายเหตุ", 2000),
+    // ต้องลงเวลาเข้า-ออกงานไหม (2026-10-23) · ไม่ต้อง = ไม่นับสาย/ขาด เช่น ผู้บริหาร
+    emp_attendance_required: yesNo("ต้องลงเวลา").default(true),
 });
 
 function checkEmployee(employee, context) {
@@ -244,6 +246,17 @@ export const payrollSettingsSchema = z.object({
     ps_unpaid_leave_divisor: z.enum(["days_30", "working_days"], { error: "กรุณาเลือกวิธีหักลาไม่รับค่าจ้าง" }),
     ps_timesheet_backdate_days: integerInRange("ลงเวลาย้อนหลังได้ (วัน)", 0, 90),
     ps_card_valid_years: integerInRange("อายุบัตรพนักงาน (ปี)", 1, 10),
+    // ลงเวลาเข้า-ออกงาน (2026-10-23): กะของคนที่ยังไม่ได้กำหนด · เปิดลงชั่วโมงต่อโปรเจกต์ (ค่าเริ่มต้นปิด)
+    ps_default_schedule_id: integerInRange("กะเริ่มต้น", 1, 2147483647).nullish().transform((value) => value ?? null),
+    ps_timesheet_enabled: z.boolean({ error: "เลือกว่าจะเปิดลงชั่วโมงต่อโปรเจกต์หรือไม่" }).default(false),
+    // วันก่อนหน้านี้ไม่นับขาด/สาย (ยังไม่ได้ใช้ระบบ) · ว่าง = นับทุกวัน
+    ps_attendance_start_date: optionalDate("เริ่มใช้ลงเวลาตั้งแต่"),
+    // OT (ลงเวลา A-3 · 2026-10-24) — เท่าของค่าจ้างต่อชั่วโมง · ค่าเริ่มต้นตามกฎหมาย รอนักบัญชียืนยัน (Y7)
+    ps_ot_rate_workday: decimalText("อัตรา OT วันทำงาน", { minimum: "1", maximum: "10" }).default("1.50"),
+    ps_ot_rate_holiday_work: decimalText("อัตราทำงานวันหยุด", { minimum: "0", maximum: "10" }).default("1.00"),
+    ps_ot_rate_holiday_ot: decimalText("อัตรา OT วันหยุด", { minimum: "1", maximum: "10" }).default("3.00"),
+    ps_ot_weekly_cap_hours: integerInRange("เพดาน OT ต่อสัปดาห์ (ชม.)", 1, 60).default(36),
+    ps_ot_is_sso_wage: z.boolean({ error: "เลือกว่า OT นับเป็นค่าจ้างประกันสังคมหรือไม่" }).default(true),
 });
 
 /** วันหยุดบริษัท */

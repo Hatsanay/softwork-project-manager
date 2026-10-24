@@ -24,6 +24,9 @@ import EmployeeCodeCard from "./_components/employee-code-card";
 import EmployeeCardsCard from "./_components/employee-cards-card";
 import CompensationCard from "./_components/compensation-card";
 import RecurringItemsCard from "./_components/recurring-items-card";
+import WorkScheduleCard from "./_components/work-schedule-card";
+import EmployeeAttendanceCard from "./_components/employee-attendance-card";
+import WfhDaysCard from "./_components/wfh-days-card";
 import LeaveBalanceCard from "./_components/leave-balance-card";
 import TaxProfileCard from "./_components/tax-profile-card";
 import TerminateDialog from "./_components/terminate-dialog";
@@ -31,11 +34,12 @@ import { nameInitial } from "../_card-status";
 
 type PendingAction = "delete" | "reinstate" | null;
 
-type Tab = "overview" | "salary" | "leave" | "tax" | "code";
+type Tab = "overview" | "salary" | "work" | "leave" | "tax" | "code";
 
 const TABS: { value: Tab; label: string }[] = [
     { value: "overview", label: "ภาพรวม" },
     { value: "salary", label: "เงินเดือน" },
+    { value: "work", label: "เวลาทำงาน" },
     { value: "leave", label: "วันลา" },
     { value: "tax", label: "ภาษี" },
     { value: "code", label: "รหัสและบัตร" },
@@ -128,7 +132,7 @@ export default function EmployeeViewPage() {
     const subtitle = [employee.emp_position, employee.department_name, employee.branch_name].filter(Boolean).join(" · ");
 
     return (
-        <div className="mx-auto grid w-full max-w-5xl grid-cols-1 gap-5">
+        <div className="grid w-full grid-cols-1 gap-5">
             <section className={`grid gap-4 p-5 sm:p-6 ${CARD_CLASS}`}>
                 <div className="flex flex-wrap items-start gap-4">
                     <span className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-linear-to-br from-blue-50 to-blue-100 text-3xl font-medium text-blue-600">
@@ -183,6 +187,13 @@ export default function EmployeeViewPage() {
                     <>
                         <CompensationCard employee={employee} onChanged={reload} />
                         <RecurringItemsCard employee={employee} onChanged={reload} />
+                    </>
+                )}
+                {tab === "work" && (
+                    <>
+                        <WorkScheduleCard employee={employee} onChanged={reload} />
+                        <WfhDaysCard key={employee.emp_wfh_weekdays} employee={employee} onChanged={reload} />
+                        <EmployeeAttendanceCard employeeId={employee.emp_id} />
                     </>
                 )}
                 {tab === "leave" && <LeaveBalanceCard employeeId={employee.emp_id} currentYear={currentYearBangkok()} />}

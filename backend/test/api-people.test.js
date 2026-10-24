@@ -117,6 +117,17 @@ test("เพิ่มพนักงาน: เงินเดือนเริ
     assert.equal(list.total, 1);
     assert.equal(list.data[0].emp_national_id, undefined, "รายการไม่ส่งเลขเต็ม");
     assert.match(list.data[0].national_id_masked, /^•{9}\d{4}$/);
+    assert.ok("photo_url" in list.data[0], "รายการมีรูป (รูปพนักงาน หรือรูปบัญชี) ไว้แสดงหน้ารายชื่อ");
+    const inDepartment = expectStatus(
+        await as(people.hr, "GET", `/V1/employees?search=สมชาย&department_id=${DEPARTMENT_ID}`),
+        200,
+    );
+    assert.equal(inDepartment.total, 1);
+    const otherDepartment = expectStatus(
+        await as(people.hr, "GET", "/V1/employees?search=สมชาย&department_id=DEP000000000000000"),
+        200,
+    );
+    assert.equal(otherDepartment.total, 0, "กรองแผนกอื่นแล้วไม่เจอ");
 
     // รหัสระบบออกให้ (2026-10-18): รหัสแผนก 00000ENG + วันเริ่มงาน 260105 + ลำดับ 0001 · ส่ง emp_code มาเองไม่มีผล
     assert.equal(created.emp_code, "00000ENG2601050001");

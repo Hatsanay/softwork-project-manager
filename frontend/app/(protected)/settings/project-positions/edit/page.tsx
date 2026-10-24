@@ -90,7 +90,7 @@ export default function EditProjectPositionPage() {
     if (!id || notFound) return <p className="p-6 text-gray-500">ไม่พบตำแหน่งนี้</p>;
 
     return (
-        <div className="mx-auto grid max-w-3xl gap-6">
+        <div className="grid w-full gap-6">
             <PageHeader
                 eyebrow="ตั้งค่าระบบ · ตำแหน่งในโปรเจกต์"
                 title="แก้ไขตำแหน่งในโปรเจกต์"

@@ -34,7 +34,7 @@ export default function EditBillingNotePage() {
     const isDraft = detail?.billing_note.bn_status === "draft";
 
     return (
-        <div className="mx-auto grid w-full max-w-3xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader
                 eyebrow="ขาย · ใบวางบิล"
                 title="แก้ร่างใบวางบิล"

@@ -32,7 +32,7 @@ export default function PayrollReportsPage() {
     const [year, setYear] = useState(() => Number(currentPeriodBangkok().slice(0, 4)) - 1);
 
     return (
-        <div className="mx-auto grid w-full max-w-3xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader
                 eyebrow="บุคคล"
                 title="แบบยื่นภาษีและประกันสังคม"

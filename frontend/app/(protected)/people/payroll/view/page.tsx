@@ -2,6 +2,7 @@
 
 // รายละเอียดรอบเงินเดือน (ขั้น 4-4) — ยอดรวม · ปัญหาก่อนส่ง · ปุ่มตามสถานะและสิทธิ์ · รายคน (กดดูที่มาของตัวเลข/แก้รายการ)
 // ปุ่มบนหน้าจอแค่ซ่อน/แสดงตามสิทธิ์ — backend ตรวจสถานะ เวอร์ชัน และสิทธิ์อนุมัติจริงทุกครั้ง
+// U-3 (2026-10-23): แถบขั้นตอน + ขั้นถัดไป · ยอดสรุปคิดจากบนลงล่างจบที่จ่ายสุทธิ · รายคนเป็นตาราง (จอคอม) ค้นหาได้
 import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -24,6 +25,8 @@ import { PAYROLL_MESSAGES, PAYROLL_STATUS } from "../../_messages";
 import type { PayrollItem, PayrollRun } from "../../_types";
 import { periodLabel } from "../_lib";
 import ItemSheet from "./_components/item-sheet";
+import RunItems from "./_components/run-items";
+import RunSteps from "./_components/run-steps";
 
 type ReasonAction = "return" | "cancel";
 
@@ -35,11 +38,17 @@ export default function PayrollRunPage() {
     );
 }
 
-function Stat({ label, value, tone = "text-gray-900" }: { label: string; value: string; tone?: string }) {
+// บรรทัดในยอดสรุป: เครื่องหมาย (− =) · ชื่อ · จำนวน ชิดขวา
+function SummaryLine({ sign, label, amount, isTotal = false }: { sign: string; label: string; amount: string; isTotal?: boolean }) {
     return (
-        <div className="grid content-start gap-0.5 rounded-xl bg-gray-50 p-3">
-            <span className="text-xs text-gray-500">{label}</span>
-            <span className={`text-base font-medium tabular-nums ${tone}`}>{value}</span>
+        <div
+            className={`grid grid-cols-[1rem_1fr_auto] items-baseline gap-2 ${isTotal ? "border-t border-gray-200 pt-2 font-medium text-gray-900" : "text-gray-700"}`}
+        >
+            <span className="text-gray-400" aria-hidden="true">
+                {sign}
+            </span>
+            <span>{label}</span>
+            <span className="tabular-nums">{formatAmount(amount)}</span>
         </div>
     );
 }
@@ -122,7 +131,7 @@ function PayrollRunContent() {
 
     async function confirmPaid(event: React.FormEvent) {
         event.preventDefault();
-        const error = await act("paid", "บันทึกจ่ายแล้ว — พนักงานเปิดดูสลิปได้", {
+        const error = await act("paid", "บันทึกจ่ายแล้ว พนักงานเปิดดูสลิปได้", {
             pr_paid_date: paidDate,
             pr_paid_note: paidNote,
         });
@@ -132,25 +141,41 @@ function PayrollRunContent() {
     const canCancel = canRun && ["draft", "pending_approval", "approved"].includes(run.pr_status);
 
     return (
-        <div className="mx-auto grid w-full max-w-5xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader
                 eyebrow="รอบเงินเดือน"
                 title={periodLabel(run.pr_period)}
-                description={`${run.pr_number} · จ่าย ${formatDateOnly(run.pr_paid_date ?? run.pr_pay_date)} · ${run.pr_employee_count} คน · วันทำงาน ${run.pr_working_days} วัน`}
+                description={`${run.pr_number} · วันทำงานของเดือน ${run.pr_working_days} วัน`}
                 actions={<StatusPill tone={status.tone}>{status.label}</StatusPill>}
             />
 
-            <section className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-                <Stat label="รวมเงินได้" value={formatAmount(run.pr_total_gross)} />
-                <Stat label="รายหักอื่น" value={formatAmount(run.pr_total_deductions)} />
-                <Stat label="ประกันสังคม (พนักงาน)" value={formatAmount(run.pr_total_sso_employee)} />
-                <Stat label="ภาษีหัก ณ ที่จ่าย" value={formatAmount(run.pr_total_tax)} />
-                <Stat label="จ่ายสุทธิ" value={formatAmount(run.pr_total_net)} tone="text-blue-600" />
-                <Stat label="ประกันสังคม (บริษัท)" value={formatAmount(run.pr_total_sso_employer)} />
+            <section className={`grid gap-5 p-5 sm:grid-cols-[1fr_1.3fr] sm:p-6 ${CARD_CLASS}`} aria-label="ยอดสรุปรอบ">
+                <div className="grid content-start gap-1">
+                    <span className="text-sm text-gray-500">จ่ายสุทธิทั้งรอบ</span>
+                    <span className="text-3xl font-medium text-blue-600 tabular-nums">
+                        {formatAmount(run.pr_total_net)}
+                        <span className="ml-1.5 text-base font-normal text-gray-500">บาท</span>
+                    </span>
+                    <span className="text-xs text-gray-500">
+                        {run.pr_employee_count} คน · จ่าย {formatDateOnly(run.pr_paid_date ?? run.pr_pay_date)}
+                    </span>
+                </div>
+                <div className="grid content-start gap-1.5 text-sm">
+                    <SummaryLine sign="" label="รวมเงินได้" amount={run.pr_total_gross} />
+                    <SummaryLine sign="−" label="รายหักอื่น" amount={run.pr_total_deductions} />
+                    <SummaryLine sign="−" label="ประกันสังคม (ส่วนพนักงาน)" amount={run.pr_total_sso_employee} />
+                    <SummaryLine sign="−" label="ภาษีหัก ณ ที่จ่าย" amount={run.pr_total_tax} />
+                    <SummaryLine sign="=" label="จ่ายสุทธิ" amount={run.pr_total_net} isTotal />
+                    <p className="pt-1 text-xs text-gray-500 tabular-nums">
+                        บริษัทสมทบประกันสังคมเพิ่ม {formatAmount(run.pr_total_sso_employer)} บาท (ไม่หักจากพนักงาน)
+                    </p>
+                </div>
             </section>
 
+            <RunSteps status={run.pr_status} />
+
             {run.pr_returned_reason && isDraft && (
-                <StatusBanner tone="error" title="ถูกตีกลับ — แก้แล้วส่งใหม่">
+                <StatusBanner tone="error" title="ถูกตีกลับ แก้แล้วส่งใหม่">
                     {run.pr_returned_reason}
                 </StatusBanner>
             )}
@@ -313,40 +338,7 @@ function PayrollRunContent() {
                 </form>
             )}
 
-            <section className="grid gap-2" aria-label="รายคน">
-                <h2 className="text-sm font-medium text-gray-900">รายคน ({run.items.length})</h2>
-                {run.items.map((item) => (
-                    <button
-                        key={item.pri_id}
-                        type="button"
-                        onClick={() => setOpenItemId(item.pri_id)}
-                        className={`grid gap-2 p-4 text-left hover:border-blue-200 sm:grid-cols-[1fr_auto] sm:items-center ${CARD_CLASS}`}
-                    >
-                        <span className="grid min-w-0 gap-0.5">
-                            <span className="font-medium text-gray-900">{item.pri_full_name}</span>
-                            <span className="text-xs text-gray-500">
-                                {item.pri_emp_code}
-                                {item.pri_employed_days < item.pri_days_in_month
-                                    ? ` · ทำงาน ${item.pri_employed_days}/${item.pri_days_in_month} วัน`
-                                    : ""}
-                                {Number(item.pri_unpaid_leave_days) > 0
-                                    ? ` · ลาไม่รับค่าจ้าง ${Number(item.pri_unpaid_leave_days)} วัน`
-                                    : ""}
-                            </span>
-                        </span>
-                        <span className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-gray-600 tabular-nums sm:grid-cols-4 sm:text-right">
-                            <span>เงินได้ {formatAmount(item.pri_gross)}</span>
-                            <span>ประกันสังคม {formatAmount(item.pri_sso_employee)}</span>
-                            <span>ภาษี {formatAmount(item.pri_tax)}</span>
-                            <span
-                                className={`font-medium ${Number(item.pri_net) < 0 ? "text-red-600" : "text-gray-900"}`}
-                            >
-                                สุทธิ {formatAmount(item.pri_net)}
-                            </span>
-                        </span>
-                    </button>
-                ))}
-            </section>
+            <RunItems items={run.items} onOpen={setOpenItemId} />
 
             {run.approvals.length > 0 && (
                 <section className="grid gap-2 text-sm" aria-label="ประวัติอนุมัติ">
@@ -356,7 +348,7 @@ function PayrollRunContent() {
                             <li key={index}>
                                 รอบที่ {approval.pra_round} ชั้น {approval.pra_level} ·{" "}
                                 {approval.pra_action === "approve" ? "อนุมัติ" : "ตีกลับ"} โดย {approval.pra_user_name}
-                                {approval.pra_reason ? ` — ${approval.pra_reason}` : ""}
+                                {approval.pra_reason ? ` · ${approval.pra_reason}` : ""}
                             </li>
                         ))}
                     </ul>
@@ -385,7 +377,7 @@ function PayrollRunContent() {
                 title={reasonAction === "return" ? "ตีกลับรอบเงินเดือนเป็นร่าง?" : "ยกเลิกรอบเงินเดือนนี้?"}
                 description={
                     reasonAction === "return"
-                        ? "ฝ่ายบุคคลแก้แล้วส่งใหม่ — การอนุมัติรอบนี้เริ่มชั้น 1 ใหม่"
+                        ? "ฝ่ายบุคคลแก้แล้วส่งใหม่ · การอนุมัติรอบนี้เริ่มชั้น 1 ใหม่"
                         : "ยกเลิกแล้วสร้างรอบของเดือนนี้ใหม่ได้ · รอบที่อนุมัติแล้วยกเลิกได้เมื่อยังไม่มีรอบเดือนถัดไป"
                 }
                 reasonLabel="เหตุผล"

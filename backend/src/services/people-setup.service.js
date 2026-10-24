@@ -7,6 +7,7 @@
 // - วันหยุดบริษัท · ประเภทลา (ปิดใช้งานแทนการลบ) · ตั้งค่าเวลาทำงาน (แถวเดียว ps_id = 1)
 const { AppError } = require("../utils/app-error");
 const { todayBangkok } = require("../utils/bangkok-time");
+const attendanceSetupService = require("./attendance-setup.service");
 
 const PAYROLL_SETTINGS_ID = 1;
 
@@ -24,7 +25,9 @@ async function getPeopleSetup(conn) {
     const today = todayBangkok();
     const [[settings]] = await conn.query(
         `SELECT ps_working_weekdays, ps_hours_per_day, ps_pay_day, ps_unpaid_leave_divisor, ps_timesheet_backdate_days,
-                ps_card_valid_years
+                ps_card_valid_years, ps_default_schedule_id, ps_timesheet_enabled,
+                DATE_FORMAT(ps_attendance_start_date, '%Y-%m-%d') AS ps_attendance_start_date,
+                ps_ot_rate_workday, ps_ot_rate_holiday_work, ps_ot_rate_holiday_ot, ps_ot_weekly_cap_hours, ps_ot_is_sso_wage
          FROM tb_payroll_settings WHERE ps_id = ?`,
         [PAYROLL_SETTINGS_ID],
     );
@@ -36,7 +39,16 @@ async function getPeopleSetup(conn) {
     const currentSso = ssoRates.find((rate) => rate.sr_effective_from <= today) ?? null;
     const [leaveTypes] = await conn.query("SELECT * FROM tb_leave_types ORDER BY lt_sort_order, lt_id");
     return {
-        settings: settings ?? null,
+        settings: settings
+            ? {
+                  ...settings,
+                  ps_timesheet_enabled: settings.ps_timesheet_enabled === 1,
+                  ps_ot_is_sso_wage: settings.ps_ot_is_sso_wage === 1,
+              }
+            : null,
+        // ลงเวลาเข้า-ออกงาน (2026-10-23): กะทำงาน + จุดลงเวลา (ไม่มีข้อมูลรายคน — พิกัดออฟฟิศไม่ใช่ความลับ)
+        work_schedules: await attendanceSetupService.listSchedules(conn),
+        attendance_locations: await attendanceSetupService.listLocations(conn),
         sso_rates: ssoRates.map((rate) => ({ ...rate, is_current: rate === currentSso })),
         tax_years: await findTaxYears(conn),
         current_tax_year: Number(today.slice(0, 4)),
@@ -98,10 +110,16 @@ async function ssoRateOn(conn, dateText) {
  * @param {{ user_id: string }} actor
  */
 async function updateSettings(conn, settings, actor) {
+    if (settings.ps_default_schedule_id !== null) {
+        await attendanceSetupService.assertActiveSchedule(conn, settings.ps_default_schedule_id, "ps_default_schedule_id");
+    }
     await conn.query(
         `UPDATE tb_payroll_settings
          SET ps_working_weekdays = ?, ps_hours_per_day = ?, ps_pay_day = ?, ps_unpaid_leave_divisor = ?,
-             ps_timesheet_backdate_days = ?, ps_card_valid_years = ?, ps_updated_by = ?
+             ps_timesheet_backdate_days = ?, ps_card_valid_years = ?, ps_default_schedule_id = ?,
+             ps_timesheet_enabled = ?, ps_attendance_start_date = ?, ps_ot_rate_workday = ?,
+             ps_ot_rate_holiday_work = ?, ps_ot_rate_holiday_ot = ?, ps_ot_weekly_cap_hours = ?, ps_ot_is_sso_wage = ?,
+             ps_updated_by = ?
          WHERE ps_id = ?`,
         [
             settings.ps_working_weekdays,
@@ -110,6 +128,14 @@ async function updateSettings(conn, settings, actor) {
             settings.ps_unpaid_leave_divisor,
             settings.ps_timesheet_backdate_days,
             settings.ps_card_valid_years,
+            settings.ps_default_schedule_id,
+            settings.ps_timesheet_enabled ? 1 : 0,
+            settings.ps_attendance_start_date,
+            settings.ps_ot_rate_workday,
+            settings.ps_ot_rate_holiday_work,
+            settings.ps_ot_rate_holiday_ot,
+            settings.ps_ot_weekly_cap_hours,
+            settings.ps_ot_is_sso_wage ? 1 : 0,
             actor.user_id,
             PAYROLL_SETTINGS_ID,
         ],

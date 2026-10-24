@@ -48,6 +48,7 @@ const EMPTY_FORM = {
     emp_bank_account_no: "",
     emp_bank_account_name: "",
     emp_sso_enrolled: true,
+    emp_attendance_required: true,
     emp_sso_number: "",
     emp_notes: "",
     ecm_base_salary: "",
@@ -55,7 +56,7 @@ const EMPTY_FORM = {
 
 type EmployeeFormValues = typeof EMPTY_FORM;
 type SaveResult = { emp_id: string; emp_code: string; code_changed?: boolean };
-type TextField = Exclude<keyof EmployeeFormValues, "emp_sso_enrolled">;
+type TextField = Exclude<keyof EmployeeFormValues, "emp_sso_enrolled" | "emp_attendance_required">;
 
 function toForm(employee: Employee): EmployeeFormValues {
     return {
@@ -78,6 +79,7 @@ function toForm(employee: Employee): EmployeeFormValues {
         emp_bank_account_no: employee.emp_bank_account_no ?? "",
         emp_bank_account_name: employee.emp_bank_account_name ?? "",
         emp_sso_enrolled: employee.emp_sso_enrolled,
+        emp_attendance_required: employee.emp_attendance_required,
         emp_sso_number: employee.emp_sso_number ?? "",
         emp_notes: employee.emp_notes ?? "",
         ecm_base_salary: "",
@@ -514,6 +516,18 @@ export default function EmployeeForm({ employee, initialUserId }: { employee?: E
                         <span className="grid gap-0.5">
                             <span>เข้าประกันสังคม</span>
                             <FieldHint>{EMPLOYEE_MESSAGES.sso}</FieldHint>
+                        </span>
+                    </label>
+                    <label className="flex items-start gap-2 text-sm sm:col-span-2">
+                        <input
+                            type="checkbox"
+                            className="mt-1 h-4 w-4"
+                            checked={form.emp_attendance_required}
+                            onChange={(event) => updateField("emp_attendance_required", event.target.checked)}
+                        />
+                        <span className="grid gap-0.5">
+                            <span>ต้องลงเวลาเข้า-ออกงาน</span>
+                            <FieldHint>ไม่ติ๊ก = ไม่ต้องกดเข้า/ออก และไม่นับสาย/ขาด เช่น ผู้บริหาร · กะทำงานกำหนดที่แท็บ เวลาทำงาน ในหน้าพนักงาน</FieldHint>
                         </span>
                     </label>
                     {form.emp_sso_enrolled && (

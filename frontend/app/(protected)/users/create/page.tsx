@@ -154,7 +154,7 @@ export default function CreateUserPage() {
     }
 
     return (
-        <div className="mx-auto grid max-w-3xl gap-6">
+        <div className="grid w-full gap-6">
             <PageHeader
                 eyebrow="จัดการข้อมูลผู้ใช้งาน"
                 title="สร้างผู้ใช้งาน"

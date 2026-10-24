@@ -34,6 +34,7 @@ async function listEmployees(req, res, next) {
                 offset: req.query.offset,
                 search: String(req.query.search ?? ""),
                 status: req.query.status,
+                departmentId: String(req.query.department_id ?? ""),
             }),
         );
     } catch (err) {

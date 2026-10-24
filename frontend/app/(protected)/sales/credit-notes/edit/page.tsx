@@ -41,7 +41,7 @@ export default function EditCreditNotePage() {
     const isDraft = detail?.credit_note.cn_status === "draft";
 
     return (
-        <div className="mx-auto grid w-full max-w-3xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader
                 eyebrow="ขาย · ใบลดหนี้"
                 title="แก้ร่างใบลดหนี้"

@@ -103,7 +103,7 @@ export default function EditRolePage() {
     if (!id) return <p className="p-6 text-gray-500">ไม่พบ Role</p>;
 
     return (
-        <div className="mx-auto grid max-w-3xl gap-6">
+        <div className="grid w-full gap-6">
             <PageHeader
                 eyebrow="ตั้งค่าระบบ · จัดการสิทธิ์"
                 title="แก้ไขสิทธิ์"

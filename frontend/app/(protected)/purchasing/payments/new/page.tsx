@@ -38,7 +38,7 @@ export default function NewPaymentPage() {
         (payeeKind === "vendor" || payeeKind === "employee") && payeeId ? { kind: payeeKind, id: payeeId } : null;
 
     return (
-        <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader eyebrow="จัดซื้อ · ทำจ่าย" title="ทำจ่าย" description={PAYMENT_MESSAGES.confirm} />
             {loadError && (
                 <StatusBanner tone="error" title="โหลดข้อมูลไม่สำเร็จ">

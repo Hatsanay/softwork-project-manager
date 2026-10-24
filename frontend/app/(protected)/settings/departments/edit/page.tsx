@@ -33,7 +33,7 @@ export default function EditDepartmentPage() {
     if (loadError) return <p className="p-6 text-gray-500">{loadError}</p>;
 
     return (
-        <div className="mx-auto grid max-w-3xl gap-6">
+        <div className="grid w-full gap-6">
             <PageHeader
                 eyebrow="ตั้งค่าระบบ · แผนก"
                 title={department ? `แก้ไขแผนก ${department.dep_code}` : "แก้ไขแผนก"}

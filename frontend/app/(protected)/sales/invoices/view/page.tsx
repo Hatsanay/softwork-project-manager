@@ -201,7 +201,7 @@ export default function InvoiceViewPage() {
 
     return (
         <div
-            className={`mx-auto grid max-w-6xl grid-cols-1 gap-6 ${decisionCount > 1 ? "max-sm:pb-48" : hasDecisionBar ? "max-sm:pb-32" : ""}`}
+            className={`grid w-full grid-cols-1 gap-6 ${decisionCount > 1 ? "max-sm:pb-48" : hasDecisionBar ? "max-sm:pb-32" : ""}`}
         >
             <PageHeader
                 eyebrow={`ขาย · ${isDebitNote ? "ใบเพิ่มหนี้" : "ใบแจ้งหนี้"} · ${invoiceNumberLabel(invoice)}`}

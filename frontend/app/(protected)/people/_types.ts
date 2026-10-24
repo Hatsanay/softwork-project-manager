@@ -21,6 +21,8 @@ export type EmployeeListRow = {
     department_code: string | null;
     branch_name: string | null;
     user_username: string | null;
+    // รูปพนักงาน หรือรูปบัญชีที่ผูก (U-3)
+    photo_url: string | null;
     employment_status: EmploymentStatus;
     national_id_masked: string | null;
 };
@@ -147,6 +149,10 @@ export type Employee = {
     employment_status: EmploymentStatus;
     // ปิดการเข้าระบบของบัญชีที่ผูกหลังวันทำงานวันสุดท้าย (2026-10-18 · docs/plans/2026-10-18-user-employee-link.md)
     emp_close_login_on_termination: boolean;
+    emp_attendance_required: boolean;
+    // วัน WFH ประจำ จันทร์→อาทิตย์ (1 = ทำงานที่บ้าน · 2026-10-24)
+    emp_wfh_weekdays: string;
+    schedules: EmployeeSchedule[];
     login_access: {
         state: "not_linked" | "inactive" | "open" | "closes_after" | "closed" | "kept_open";
         last_day: string | null;
@@ -211,6 +217,16 @@ export type PayrollSettings = {
     ps_unpaid_leave_divisor: UnpaidLeaveDivisor;
     ps_timesheet_backdate_days: number;
     ps_card_valid_years: number;
+    // ลงเวลาเข้า-ออกงาน (2026-10-23)
+    ps_default_schedule_id: number | null;
+    ps_timesheet_enabled: boolean;
+    ps_attendance_start_date: string | null;
+    // OT (A-3)
+    ps_ot_rate_workday: string;
+    ps_ot_rate_holiday_work: string;
+    ps_ot_rate_holiday_ot: string;
+    ps_ot_weekly_cap_hours: number;
+    ps_ot_is_sso_wage: boolean;
 };
 
 export type SsoRate = {
@@ -253,6 +269,8 @@ export type PeopleSetup = {
     tax_years: TaxYear[];
     current_tax_year: number;
     leave_types: LeaveType[];
+    work_schedules: WorkSchedule[];
+    attendance_locations: AttendanceLocation[];
     today: string;
 };
 
@@ -442,7 +460,7 @@ export type PayrollRunSummary = {
 
 export type PayrollLine = {
     pil_id: number;
-    pil_source: "recurring" | "manual";
+    pil_source: "recurring" | "manual" | "attendance";
     pil_kind: "earning" | "deduction";
     pil_label: string;
     pil_amount: string;
@@ -469,6 +487,11 @@ export type PayrollItem = {
     pri_base_salary: string;
     pri_salary_amount: string;
     pri_unpaid_leave_amount: string;
+    // ลงเวลา A-4: หักสาย/ออกก่อน/ขาด (ลดเงินเดือนเหมือนลาไม่รับค่าจ้าง)
+    pri_late_minutes: number;
+    pri_early_leave_minutes: number;
+    pri_absent_days: number;
+    pri_attendance_deduction: string;
     pri_other_earnings: string;
     pri_other_deductions: string;
     pri_gross: string;
@@ -630,7 +653,15 @@ export type MyProfile = {
 export type PeopleOverview = {
     today: string;
     headcount: { working: number; upcoming: number; joined_this_month: number; leaving_this_month: number } | null;
-    pending: { leave: number | null; timesheet: number | null };
+    pending: {
+        leave: number | null;
+        timesheet: number | null;
+        attendance_corrections: number | null;
+        overtime: number | null;
+        wfh: number | null;
+    };
+    // ลงเวลาวันนี้ (A-2) · null = ไม่มีสิทธิ์ดู
+    attendance_today: AttendanceBoard["counts"] | null;
     cards: { pending_print: number; not_returned: number; expiring: number } | null;
     incomplete_employees: { emp_id: string; emp_code: string; full_name: string; missing: string[] }[] | null;
     payroll: {
@@ -646,4 +677,253 @@ export type PeopleOverview = {
         missing_period: string | null;
     } | null;
     on_leave_today: { lr_id: number; full_name: string; nickname: string | null; leave_type: string; half_day: HalfDay }[];
+};
+
+// ─── ลงเวลาเข้า-ออกงาน (2026-10-23 ช่วง A-1) ───────────────────────────────────────────────────────
+
+export type WorkSchedule = {
+    ws_id: number;
+    ws_name: string;
+    ws_start_time: string; // "HH:MM"
+    ws_end_time: string;
+    ws_break_minutes: number;
+    ws_working_weekdays: string;
+    ws_late_grace_minutes: number;
+    ws_checkin_open_minutes: number;
+    ws_status: ActiveStatus;
+    employee_count: number;
+};
+
+export type AttendanceLocation = {
+    al_id: number;
+    al_name: string;
+    al_branch_id: string | null;
+    al_latitude: string;
+    al_longitude: string;
+    al_radius_m: number;
+    al_status: ActiveStatus;
+    branch_name_th: string | null;
+};
+
+export type EmployeeSchedule = {
+    es_id: number;
+    es_effective_from: string;
+    es_schedule_id: number;
+    ws_name: string;
+    ws_start_time: string;
+    ws_end_time: string;
+    ws_status: ActiveStatus;
+};
+
+export type AttendanceStatus =
+    | "not_employed"
+    | "not_tracked"
+    | "not_required"
+    | "off"
+    | "off_worked"
+    | "leave"
+    | "upcoming"
+    | "not_yet"
+    | "working"
+    | "present"
+    | "incomplete"
+    | "absent"
+    | "no_schedule";
+
+export type AttendancePunch = {
+    ap_id: number;
+    ap_type: "in" | "out";
+    ap_at: string;
+    ap_work_date: string;
+    ap_source: "mobile" | "correction" | "hr";
+    ap_location_name: string | null;
+    ap_distance_m: number | null;
+    ap_is_offsite: boolean;
+    ap_is_wfh: boolean;
+    ap_note: string | null;
+};
+
+export type AttendanceDay = {
+    work_date: string;
+    status: AttendanceStatus;
+    is_working_day?: boolean;
+    expected_start?: string;
+    expected_end?: string;
+    first_in?: string | null;
+    last_out?: string | null;
+    late_minutes?: number;
+    early_leave_minutes?: number;
+    present_minutes?: number;
+    holiday_name?: string | null;
+    leave?: "full" | "morning" | "afternoon" | null;
+    // วัน WFH (วันประจำหรือคำขออนุมัติแล้ว) = กดได้ทุกที่ ไม่ตรวจตำแหน่ง
+    is_wfh: boolean;
+    schedule: {
+        ws_id: number;
+        ws_name: string;
+        ws_start_time: string;
+        ws_end_time: string;
+        ws_late_grace_minutes: number;
+    } | null;
+    punches: AttendancePunch[];
+};
+
+export type AttendanceTotals = {
+    present: number;
+    late_days: number;
+    late_minutes: number;
+    early_leave_minutes: number;
+    absent: number;
+    incomplete: number;
+    leave: number;
+};
+
+export type MyAttendance = {
+    today: string;
+    now: string;
+    month: string;
+    timesheet_enabled: boolean;
+    locations: { al_id: number; al_name: string; al_latitude: string; al_longitude: string; al_radius_m: number }[];
+    employee: { emp_id: string; emp_code: string; emp_hire_date: string } | null;
+    attendance_required: boolean;
+    today_day: AttendanceDay | null;
+    days: AttendanceDay[];
+    totals: AttendanceTotals | null;
+    corrections: AttendanceCorrection[];
+    overtime: OvertimeRequest[];
+    wfh_weekdays: string;
+    wfh_requests: WfhRequest[];
+};
+
+// ─── WFH (2026-10-24): วันประจำรายคน + คำขอรายวัน ─────────────────────────────────────────────
+
+export type WfhRequest = {
+    wfh_id: number;
+    wfh_employee_id: string;
+    wfh_date: string;
+    wfh_reason: string;
+    wfh_status: CorrectionStatus;
+    wfh_decided_at: string | null;
+    wfh_decision_note: string | null;
+    wfh_created_at: string;
+    decided_by_name: string | null;
+};
+
+export type PendingWfh = WfhRequest & {
+    emp_code: string;
+    emp_nickname: string | null;
+    employee_name: string;
+};
+
+// ─── ลงเวลา A-2 (2026-10-24): ขอแก้เวลา · กระดาน · สรุปเดือน ───────────────────────────────────────
+
+export type CorrectionStatus = "pending" | "approved" | "rejected" | "cancelled";
+
+export type AttendanceCorrection = {
+    ac_id: number;
+    ac_employee_id: string;
+    ac_work_date: string;
+    ac_type: "in" | "out";
+    ac_requested_at: string;
+    ac_reason: string;
+    ac_status: CorrectionStatus;
+    ac_decided_at: string | null;
+    ac_decision_note: string | null;
+    ac_created_at: string;
+    decided_by_name: string | null;
+};
+
+export type PendingCorrection = AttendanceCorrection & {
+    emp_code: string;
+    emp_nickname: string | null;
+    employee_name: string;
+};
+
+export type AttendanceEmployee = {
+    emp_id: string;
+    emp_code: string;
+    full_name: string;
+    emp_nickname: string | null;
+    emp_position: string | null;
+    department_name: string | null;
+    photo_url: string | null;
+    attendance_required: boolean;
+};
+
+export type AttendanceBoard = {
+    date: string;
+    today: string;
+    counts: {
+        total: number;
+        arrived: number;
+        late: number;
+        not_yet: number;
+        absent: number;
+        incomplete: number;
+        leave: number;
+        offsite: number;
+        wfh: number;
+    };
+    rows: (AttendanceEmployee & { day: AttendanceDay; has_offsite: boolean })[];
+};
+
+export type AttendanceMonthSummary = {
+    month: string;
+    today: string;
+    rows: (AttendanceEmployee & { totals: AttendanceTotals; incomplete_dates: string[]; absent_dates: string[] })[];
+};
+
+export type EmployeeAttendanceMonth = {
+    month: string;
+    today: string;
+    employee: AttendanceEmployee;
+    days: AttendanceDay[];
+    totals: AttendanceTotals;
+    corrections: AttendanceCorrection[];
+    overtime: OvertimeRequest[];
+};
+
+// ─── OT (ลงเวลา A-3 · 2026-10-24) ─────────────────────────────────────────────────────────────
+
+export type OvertimeRequest = {
+    ot_id: number;
+    ot_employee_id: string;
+    ot_work_date: string;
+    ot_start_at: string;
+    ot_end_at: string;
+    ot_workday_minutes: number;
+    ot_holiday_work_minutes: number;
+    ot_holiday_ot_minutes: number;
+    ot_reason: string;
+    ot_status: CorrectionStatus;
+    ot_decided_at: string | null;
+    ot_decision_note: string | null;
+    ot_created_at: string;
+    decided_by_name: string | null;
+    actual_minutes?: number | null;
+};
+
+export type PendingOvertime = OvertimeRequest & {
+    emp_code: string;
+    emp_nickname: string | null;
+    employee_name: string;
+    week_approved_minutes: number;
+    week_cap_minutes: number;
+};
+
+export type OvertimePreview = {
+    ot_work_date: string;
+    ot_start_at: string;
+    ot_end_at: string;
+    total_minutes: number;
+    workday_minutes: number;
+    holiday_work_minutes: number;
+    holiday_ot_minutes: number;
+    is_off_day: boolean;
+    holiday_name: string | null;
+    schedule: { ws_name: string; ws_start_time: string; ws_end_time: string };
+    rates: { workday: string; holiday_work: string; holiday_ot: string };
+    week: { used_minutes: number; cap_minutes: number; after_minutes: number };
+    is_over_cap: boolean;
+    is_after_the_fact: boolean;
 };

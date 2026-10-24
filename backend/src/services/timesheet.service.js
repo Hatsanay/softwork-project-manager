@@ -15,7 +15,8 @@ const { addDays, weekDates, weekdayIndex } = require("../shared/payroll-math.mjs
 const { formatHundredths } = require("../shared/money.mjs");
 const { findLinkedEmployee } = require("./linked-employee.service");
 const leaveService = require("./leave.service");
-const { assertPeriodsOpen } = require("./payroll.service");
+const { assertPeriodsOpen } = require("./payroll-lock.service");
+const { assertTimesheetEnabled, isTimesheetEnabled } = require("./timesheet-switch.service");
 
 const EDITABLE_STATUSES = ["draft", "returned"];
 const MANAGE_MEMBERS_BIT = PROJECT_BIT_INDEX.manageMembers;
@@ -176,6 +177,7 @@ async function findProjectOptions(conn, userId, entries) {
  * @param {{ week_start: string, tsw_version: number, entries: object[] }} payload ผ่าน timesheetWeekSchema แล้ว (ชั่วโมงเป็น BigInt)
  */
 async function saveMyWeek(conn, userId, payload) {
+    await assertTimesheetEnabled(conn);
     const employee = requireEmployee(await findLinkedEmployee(conn, userId, { forUpdate: true }));
     const week = await findWeek(conn, employee.emp_id, payload.week_start, { forUpdate: true });
     assertEditable(week, payload.tsw_version);
@@ -215,6 +217,7 @@ async function saveMyWeek(conn, userId, payload) {
  * @param {number} version
  */
 async function submitMyWeek(conn, userId, weekStart, version) {
+    await assertTimesheetEnabled(conn);
     const employee = requireEmployee(await findLinkedEmployee(conn, userId, { forUpdate: true }));
     const week = await findWeek(conn, employee.emp_id, weekStart, { forUpdate: true });
     if (!week) throw new AppError(409, "TIMESHEET_EMPTY", "ยังไม่ได้ลงเวลาในสัปดาห์นี้ — บันทึกก่อนแล้วค่อยส่ง");
@@ -379,6 +382,8 @@ function isInScope(entry, scope) {
  * @param {{ user_id: string, role_permission: string }} user
  */
 async function listPendingApprovals(conn, user) {
+    // ปิดลงชั่วโมงแล้ว = ไม่มีอะไรรออนุมัติ (หน้ารออนุมัติ/ภาพรวมซ่อนส่วนนี้เอง)
+    if (!(await isTimesheetEnabled(conn))) return { can_approve: false, weeks: [] };
     const scope = await findApprovalScope(conn, user);
     if (!scope.canApproveAll && scope.projectIds.size === 0) return { can_approve: false, weeks: [] };
 
@@ -434,6 +439,7 @@ async function listPendingApprovals(conn, user) {
  * @param {number} version
  */
 async function approveWeek(conn, user, weekId, version) {
+    await assertTimesheetEnabled(conn);
     const week = await lockSubmittedWeek(conn, weekId, version);
     const scope = await findApprovalScope(conn, user);
     assertNotOwnWeek(week, scope);
@@ -475,6 +481,7 @@ async function approveWeek(conn, user, weekId, version) {
  * @param {string} reason
  */
 async function returnWeek(conn, user, weekId, version, reason) {
+    await assertTimesheetEnabled(conn);
     const week = await lockSubmittedWeek(conn, weekId, version);
     const scope = await findApprovalScope(conn, user);
     assertNotOwnWeek(week, scope);

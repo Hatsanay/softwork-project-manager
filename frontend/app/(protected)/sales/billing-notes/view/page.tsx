@@ -113,7 +113,7 @@ export default function BillingNoteViewPage() {
     const totalLabel = `${formatAmount(note.bn_total, decimals)} ${code}`;
 
     return (
-        <div className={`mx-auto grid w-full max-w-5xl grid-cols-1 gap-6 ${actions.can_issue ? "max-sm:pb-32" : ""}`}>
+        <div className={`grid w-full grid-cols-1 gap-6 ${actions.can_issue ? "max-sm:pb-32" : ""}`}>
             <PageHeader
                 eyebrow={`ขาย · ใบวางบิล · ${billingNoteNumberLabel(note)}`}
                 title={clientName}

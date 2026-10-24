@@ -11,7 +11,7 @@ export default function NewExpensePage() {
     const { options, loadError } = useExpenseOptions();
 
     return (
-        <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader
                 eyebrow="จัดซื้อ · ค่าใช้จ่าย"
                 title="บันทึกค่าใช้จ่าย / บิลผู้ขาย"

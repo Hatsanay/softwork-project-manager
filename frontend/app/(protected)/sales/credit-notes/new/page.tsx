@@ -33,7 +33,7 @@ export default function NewCreditNotePage() {
         invoiceDetail && !invoiceDetail.actions.can_credit ? invoiceDetail.actions.credit_blocked_reason : null;
 
     return (
-        <div className="mx-auto grid w-full max-w-3xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader eyebrow="ขาย · ใบลดหนี้" title="ออกใบลดหนี้" description={invoiceDetail?.invoice.inv_title} />
             {!invoiceId && (
                 <StatusBanner tone="info" title="เลือกใบแจ้งหนี้ก่อน">

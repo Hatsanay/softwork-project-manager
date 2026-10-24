@@ -13,6 +13,7 @@ const { generateDailyId } = require("../utils/generateDailyId");
 const { todayBangkok } = require("../utils/bangkok-time");
 const employeeCodeService = require("./employee-code.service");
 const accountLinkService = require("./account-link.service");
+const attendanceSetupService = require("./attendance-setup.service");
 
 const MAX_LIST_LIMIT = 200;
 const VISIBLE_NATIONAL_ID_DIGITS = 4;
@@ -40,6 +41,7 @@ const EDITABLE_COLUMNS = [
     "emp_sso_enrolled",
     "emp_sso_number",
     "emp_notes",
+    "emp_attendance_required",
 ];
 
 // สถานะการทำงาน ณ วันนี้ — ตัวแปร ? ตัวเดียวคือวันนี้ (ใช้ 2 ครั้ง)
@@ -81,7 +83,7 @@ function maskNationalId(nationalId) {
  * @param {{ limit?: number, offset?: number, search?: string, status?: string }} options
  *   status: "employed" = ยังไม่พ้นสภาพ (รวมยังไม่เริ่มงาน/กำลังจะออก) · "terminated" · อื่นๆ = ทั้งหมด
  */
-async function listEmployees(conn, { limit = 25, offset = 0, search = "", status }) {
+async function listEmployees(conn, { limit = 25, offset = 0, search = "", status, departmentId = "" }) {
     const safeLimit = Math.min(Math.max(Number(limit) || 25, 1), MAX_LIST_LIMIT);
     const safeOffset = Math.max(Number(offset) || 0, 0);
     const today = todayBangkok();
@@ -101,12 +103,18 @@ async function listEmployees(conn, { limit = 25, offset = 0, search = "", status
         conditions.push("e.emp_termination_date < ?");
         params.push(today);
     }
+    // ตัวกรองแผนก (ชิปในหน้ารายการ · U-3 2026-10-23)
+    if (departmentId) {
+        conditions.push("e.emp_department_id = ?");
+        params.push(String(departmentId));
+    }
     const where = conditions.join(" AND ");
     const [rows] = await conn.query(
         `SELECT e.emp_id, e.emp_code, e.emp_title, e.emp_first_name_th, e.emp_last_name_th, e.emp_nickname,
                 e.emp_national_id, e.emp_position, e.emp_user_id, ${DATE_COLUMNS},
                 d.dep_name AS department_name, d.dep_code AS department_code, b.branch_name_th AS branch_name,
                 u.user_username AS user_username,
+                COALESCE(e.emp_photo_url, u.user_avatar_url) AS photo_url,
                 ${EMPLOYMENT_STATUS_SQL} AS employment_status
          FROM tb_employees e
          LEFT JOIN tb_department d ON d.dep_id = e.emp_department_id
@@ -161,6 +169,9 @@ async function getEmployee(conn, employeeId) {
         login_access: await accountLinkService.loginAccessOf(conn, employee),
         emp_close_login_on_termination: employee.emp_close_login_on_termination === 1,
         emp_sso_enrolled: employee.emp_sso_enrolled === 1,
+        emp_attendance_required: employee.emp_attendance_required === 1,
+        // กะทำงานตามวันที่มีผล (ลงเวลาเข้า-ออกงาน A-1)
+        schedules: await attendanceSetupService.listEmployeeSchedules(conn, employeeId),
         compensations,
         current_compensation: compensationOn(compensations, today),
         recurring_items: recurringItems.map((item) => ({ ...item, item_status: recurringItemStatus(item, today) })),
@@ -682,6 +693,7 @@ async function findRecurringItem(conn, employeeId, itemId) {
 function toColumnValues(employee) {
     return EDITABLE_COLUMNS.map((column) => {
         if (column === "emp_sso_enrolled") return employee.emp_sso_enrolled ? 1 : 0;
+        if (column === "emp_attendance_required") return employee.emp_attendance_required ? 1 : 0;
         return employee[column] ?? null;
     });
 }

@@ -5,7 +5,7 @@ import ClientForm from "../_components/client-form";
 
 export default function CreateClientPage() {
     return (
-        <div className="mx-auto grid max-w-4xl gap-6">
+        <div className="grid w-full gap-6">
             <PageHeader
                 eyebrow="งาน · ลูกค้า"
                 title="สร้างลูกค้า"

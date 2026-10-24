@@ -225,3 +225,23 @@ export function monthlyWithholdingOf({ annualTax, withheldBefore, remainingMonth
     if (remainingMonths <= 1) return outstanding;
     return divideRoundHalfUp(outstanding, BigInt(remainingMonths));
 }
+
+// ─── ลงเวลาในรอบเงินเดือน (ลงเวลา A-4 · 2026-10-24) — รอนักบัญชียืนยัน (Y6/Y7) ─────────────────────────
+
+/**
+ * ค่าจ้างตามนาทีพร้อมอัตรา = Σ (เงินเดือน × นาที) × อัตรา ÷ (30 × ชั่วโมงต่อวัน × 60)
+ * ค่าจ้างต่อชั่วโมงของพนักงานรายเดือน = เงินเดือน ÷ 30 ÷ ชั่วโมงทำงานต่อวัน (พ.ร.บ.คุ้มครองแรงงาน ม.68)
+ * ใช้ทั้งหักสาย/ออกก่อน (อัตรา 1.00 = เวลาที่ไม่ได้ทำงานจริง ไม่ใช่ค่าปรับ · ม.76) และ OT (1.50 / 1.00 / 3.00)
+ * รวมทุกวันแล้วปัดครั้งเดียว — เงินเดือนเปลี่ยนกลางเดือนใช้อัตราของแต่ละวัน
+ * @param {Array<{ salary: bigint, minutes: number }>} parts เงินเดือน (สตางค์) ณ วันนั้น + นาที
+ * @param {string} rateText เท่า เช่น "1.50"
+ * @param {string} hoursPerDayText ชั่วโมงทำงานต่อวัน เช่น "8.00"
+ * @returns {bigint} สตางค์
+ */
+export function minuteWageOf(parts, rateText, hoursPerDayText) {
+    const rate = parseHundredths(rateText, "อัตรา");
+    const hoursPerDay = parseHundredths(hoursPerDayText, "ชั่วโมงทำงานต่อวัน");
+    if (hoursPerDay <= 0n) return 0n;
+    const numerator = parts.reduce((sum, part) => sum + part.salary * BigInt(part.minutes), 0n) * rate;
+    return divideRoundHalfUp(numerator, 30n * hoursPerDay * 60n);
+}

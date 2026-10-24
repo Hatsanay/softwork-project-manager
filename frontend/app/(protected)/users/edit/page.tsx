@@ -251,7 +251,7 @@ export default function EditUserPage() {
     if (!id || notFound) return <p className="p-6 text-gray-500">ไม่พบผู้ใช้งาน</p>;
 
     return (
-        <div className="mx-auto grid max-w-3xl gap-6">
+        <div className="grid w-full gap-6">
             <PageHeader
                 eyebrow="จัดการข้อมูลผู้ใช้งาน"
                 title="แก้ไขผู้ใช้งาน"

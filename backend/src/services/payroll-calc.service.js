@@ -4,6 +4,8 @@
 //   Y1 ประกันสังคม = ฐาน (จำกัดขั้นต่ำ–เพดาน) × อัตรา ปัดเป็นบาท · Y3 ลาไม่รับค่าจ้าง ÷ 30 หรือ ÷ วันทำงาน (ตั้งค่า) · Y4 เข้า/ออกกลางเดือนตามวันปฏิทิน
 // ภาษี (H9): เงินได้ทั้งปีประมาณ = สะสมก่อนเดือนนี้ + เดือนนี้ + เงินได้ประจำเต็มเดือน × เดือนที่เหลือหลังเดือนนี้
 //   (รายรับครั้งเดียว เช่น โบนัส ไม่ถูกคูณ) → ภาษีทั้งปี → หักเดือนนี้ = ที่ค้าง ÷ เดือนที่เหลือรวมเดือนนี้ · เดือนสุดท้าย (ธ.ค./เดือนที่ออก) = ที่ค้างทั้งหมด
+// ลงเวลา A-4 (2026-10-24): หักสาย/ออกก่อน/ขาดลดเงินเดือนก่อนคิดภาษี/ประกันสังคม · OT เป็นบรรทัดที่มา 'attendance' (ครั้งเดียว)
+//   ลาไม่รับค่าจ้างนับวันทำงานตามกะของพนักงาน (เดิมใช้วันทำงานของบริษัท)
 const { formatHundredths, parseHundredths } = require("../shared/money.mjs");
 const {
     addDays,
@@ -18,6 +20,9 @@ const {
     standardHoursOf,
     workingDatesBetween,
 } = require("../shared/payroll-math.mjs");
+
+const { attendanceForPayroll } = require("./attendance-payroll.service");
+const attendanceSetup = require("./attendance-setup.service");
 
 const money = (value) => parseHundredths(value ?? "0", "ยอดเงิน");
 const ALLOWANCE_COLUMNS = [
@@ -41,7 +46,9 @@ async function loadPeriodContext(conn, period) {
     const taxYear = Number(period.slice(0, 4));
 
     const [[settings]] = await conn.query(
-        "SELECT ps_working_weekdays, ps_hours_per_day, ps_unpaid_leave_divisor FROM tb_payroll_settings WHERE ps_id = 1",
+        `SELECT ps_working_weekdays, ps_hours_per_day, ps_unpaid_leave_divisor, ps_ot_rate_workday, ps_ot_rate_holiday_work,
+                ps_ot_rate_holiday_ot, ps_ot_is_sso_wage
+         FROM tb_payroll_settings WHERE ps_id = 1`,
     );
     const [holidays] = await conn.query(
         "SELECT DATE_FORMAT(hd_date, '%Y-%m-%d') AS hd_date FROM tb_company_holidays WHERE hd_date BETWEEN ? AND ?",
@@ -159,13 +166,29 @@ async function calculateEmployee(conn, employee, context, manualLines, runId) {
     for (const leave of unpaidLeaves) {
         const start = leave.lr_start_date > employedFrom ? leave.lr_start_date : employedFrom;
         const end = leave.lr_end_date < employedTo ? leave.lr_end_date : employedTo;
-        const dates = workingDatesBetween(start, end, context.settings.ps_working_weekdays, context.holidayDates);
+        const { dates } = await attendanceSetup.workingDatesOf(conn, employee.emp_id, start, end);
         const dayUnits = leave.lr_half_day === "none" ? 100n : 50n;
         for (const date of dates) leaveDays.push({ salary: salaryOn(compensations, date), dayUnits });
     }
     const divisor = context.settings.ps_unpaid_leave_divisor === "working_days" ? context.workingDates.length : 30;
     const unpaidLeaveAmount = unpaidLeaveDeductionOf(leaveDays, divisor);
     const unpaidLeaveDays = leaveDays.reduce((sum, day) => sum + day.dayUnits, 0n);
+
+    // ─ ลงเวลา (A-4): หักสาย/ออกก่อน/ขาด · OT ที่อนุมัติตามเวลาที่อยู่จริง ─
+    const attendance = await attendanceForPayroll(conn, employee, context, {
+        employedFrom,
+        employedTo,
+        salaryOn: (date) => salaryOn(compensations, date),
+    });
+    const attendanceLines = attendance.overtimeLines.map((line) => ({
+        pil_source: "attendance",
+        pil_kind: "earning",
+        pil_label: line.label,
+        pil_amount: formatHundredths(line.amount),
+        pil_is_taxable: true,
+        pil_is_sso_wage: context.settings.ps_ot_is_sso_wage === 1,
+        pil_is_one_off: true,
+    }));
 
     // ─ รายการประจำที่มีผลในเดือน (เต็มจำนวน) + รายการกรอกเอง ─
     const [recurring] = await conn.query(
@@ -183,7 +206,7 @@ async function calculateEmployee(conn, employee, context, manualLines, runId) {
         pil_is_sso_wage: item.eri_kind === "earning" && item.eri_is_sso_wage === 1,
         pil_is_one_off: false,
     }));
-    const lines = [...recurringLines, ...manualLines];
+    const lines = [...recurringLines, ...attendanceLines, ...manualLines];
     const earningLines = lines.filter((line) => line.pil_kind === "earning");
     const sumOf = (selected) => selected.reduce((sum, line) => sum + money(line.pil_amount), 0n);
     const otherEarnings = sumOf(earningLines);
@@ -195,7 +218,7 @@ async function calculateEmployee(conn, employee, context, manualLines, runId) {
         earningLines.filter((line) => line.pil_is_sso_wage && line.pil_source === "recurring"),
     );
 
-    const salaryAfterLeave = salaryAmount - unpaidLeaveAmount;
+    const salaryAfterLeave = salaryAmount - unpaidLeaveAmount - attendance.deduction;
     const gross = salaryAfterLeave + otherEarnings;
     const taxableIncome = salaryAfterLeave + taxableEarnings;
     const ssoWage = salaryAfterLeave + ssoWageEarnings;
@@ -263,6 +286,10 @@ async function calculateEmployee(conn, employee, context, manualLines, runId) {
             pri_salary_amount: formatHundredths(salaryAmount),
             pri_unpaid_leave_days: formatHundredths(unpaidLeaveDays),
             pri_unpaid_leave_amount: formatHundredths(unpaidLeaveAmount),
+            pri_late_minutes: attendance.lateMinutes,
+            pri_early_leave_minutes: attendance.earlyLeaveMinutes,
+            pri_absent_days: attendance.absentDays,
+            pri_attendance_deduction: formatHundredths(attendance.deduction),
             pri_other_earnings: formatHundredths(otherEarnings),
             pri_other_deductions: formatHundredths(otherDeductions),
             pri_gross: formatHundredths(gross),
@@ -283,6 +310,7 @@ async function calculateEmployee(conn, employee, context, manualLines, runId) {
             pri_labor_cost: formatHundredths(gross + ssoEmployer),
         },
         recurringLines,
+        attendanceLines,
     };
 }
 

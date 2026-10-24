@@ -33,7 +33,7 @@ export default function EditExpensePage() {
     const isNotDraft = detail && !detail.actions.can_edit;
 
     return (
-        <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader
                 eyebrow="จัดซื้อ · ค่าใช้จ่าย"
                 title="แก้ไขร่างค่าใช้จ่าย"

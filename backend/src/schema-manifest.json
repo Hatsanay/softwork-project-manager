@@ -12,6 +12,57 @@
             "al_require_distinct",
             "al_updated_at"
         ],
+        "tb_attendance_corrections": [
+            "ac_created_at",
+            "ac_created_by",
+            "ac_decided_at",
+            "ac_decided_by",
+            "ac_decision_note",
+            "ac_employee_id",
+            "ac_id",
+            "ac_punch_id",
+            "ac_reason",
+            "ac_requested_at",
+            "ac_status",
+            "ac_type",
+            "ac_work_date"
+        ],
+        "tb_attendance_locations": [
+            "al_branch_id",
+            "al_created_at",
+            "al_created_by",
+            "al_id",
+            "al_latitude",
+            "al_longitude",
+            "al_name",
+            "al_radius_m",
+            "al_status",
+            "al_updated_at"
+        ],
+        "tb_attendance_punches": [
+            "ap_accuracy_m",
+            "ap_at",
+            "ap_created_at",
+            "ap_created_by",
+            "ap_distance_m",
+            "ap_employee_id",
+            "ap_id",
+            "ap_ip",
+            "ap_is_offsite",
+            "ap_is_wfh",
+            "ap_latitude",
+            "ap_location_id",
+            "ap_location_name",
+            "ap_longitude",
+            "ap_note",
+            "ap_source",
+            "ap_type",
+            "ap_user_agent",
+            "ap_void_reason",
+            "ap_voided_at",
+            "ap_voided_by",
+            "ap_work_date"
+        ],
         "tb_audit_logs": [
             "aud_action",
             "aud_changes",
@@ -308,6 +359,14 @@
             "eri_label",
             "eri_note"
         ],
+        "tb_employee_schedules": [
+            "es_created_at",
+            "es_created_by",
+            "es_effective_from",
+            "es_employee_id",
+            "es_id",
+            "es_schedule_id"
+        ],
         "tb_employee_tax_profiles": [
             "etp_child_allowance",
             "etp_employee_id",
@@ -328,6 +387,7 @@
         ],
         "tb_employees": [
             "emp_address",
+            "emp_attendance_required",
             "emp_bank_account_name",
             "emp_bank_account_no",
             "emp_bank_name",
@@ -357,7 +417,8 @@
             "emp_termination_reason",
             "emp_title",
             "emp_updated_at",
-            "emp_user_id"
+            "emp_user_id",
+            "emp_wfh_weekdays"
         ],
         "tb_error_logs": [
             "err_count",
@@ -669,6 +730,23 @@
             "max_id",
             "max_table"
         ],
+        "tb_overtime_requests": [
+            "ot_created_at",
+            "ot_created_by",
+            "ot_decided_at",
+            "ot_decided_by",
+            "ot_decision_note",
+            "ot_employee_id",
+            "ot_end_at",
+            "ot_holiday_ot_minutes",
+            "ot_holiday_work_minutes",
+            "ot_id",
+            "ot_reason",
+            "ot_start_at",
+            "ot_status",
+            "ot_work_date",
+            "ot_workday_minutes"
+        ],
         "tb_payment_allocations": [
             "pva_amount",
             "pva_amount_thb",
@@ -741,13 +819,16 @@
             "pil_source"
         ],
         "tb_payroll_items": [
+            "pri_absent_days",
             "pri_annual_income_estimate",
             "pri_annual_tax_estimate",
+            "pri_attendance_deduction",
             "pri_bank_account_no",
             "pri_bank_name",
             "pri_base_salary",
             "pri_days_in_month",
             "pri_department_name",
+            "pri_early_leave_minutes",
             "pri_emp_code",
             "pri_employed_days",
             "pri_employee_id",
@@ -755,6 +836,7 @@
             "pri_gross",
             "pri_id",
             "pri_labor_cost",
+            "pri_late_minutes",
             "pri_national_id",
             "pri_net",
             "pri_other_deductions",
@@ -809,11 +891,19 @@
             "pr_working_days"
         ],
         "tb_payroll_settings": [
+            "ps_attendance_start_date",
             "ps_card_valid_years",
+            "ps_default_schedule_id",
             "ps_hours_per_day",
             "ps_id",
+            "ps_ot_is_sso_wage",
+            "ps_ot_rate_holiday_ot",
+            "ps_ot_rate_holiday_work",
+            "ps_ot_rate_workday",
+            "ps_ot_weekly_cap_hours",
             "ps_pay_day",
             "ps_timesheet_backdate_days",
+            "ps_timesheet_enabled",
             "ps_unpaid_leave_divisor",
             "ps_updated_at",
             "ps_updated_by",
@@ -1291,6 +1381,18 @@
             "vd_type",
             "vd_updated_at"
         ],
+        "tb_wfh_requests": [
+            "wfh_created_at",
+            "wfh_created_by",
+            "wfh_date",
+            "wfh_decided_at",
+            "wfh_decided_by",
+            "wfh_decision_note",
+            "wfh_employee_id",
+            "wfh_id",
+            "wfh_reason",
+            "wfh_status"
+        ],
         "tb_wht_certificate_lines": [
             "wtl_certificate_id",
             "wtl_form_label",
@@ -1336,6 +1438,20 @@
             "wr_min_payment",
             "wr_note",
             "wr_rate"
+        ],
+        "tb_work_schedules": [
+            "ws_break_minutes",
+            "ws_checkin_open_minutes",
+            "ws_created_at",
+            "ws_created_by",
+            "ws_end_time",
+            "ws_id",
+            "ws_late_grace_minutes",
+            "ws_name",
+            "ws_start_time",
+            "ws_status",
+            "ws_updated_at",
+            "ws_working_weekdays"
         ]
     }
 }

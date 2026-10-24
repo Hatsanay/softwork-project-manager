@@ -2,6 +2,7 @@
 
 // สลิปเงินเดือน (หน้าพิมพ์ — ขั้น 4-4) · เจ้าของเปิดได้หลังบันทึกจ่าย · ผู้มีสิทธิ์ดูรอบเงินเดือนเปิดได้ทุกคน (backend ตรวจ + บันทึกการเปิด)
 // ตัวเลขทั้งหมดมาจาก snapshot ของรอบ (ไม่คิดใหม่)
+import { attendanceDeductionText } from "@/app/(protected)/people/payroll/_attendance-text";
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Printer } from "lucide-react";
@@ -64,12 +65,16 @@ function PayslipContent() {
     if (Number(item.pri_unpaid_leave_amount) > 0) {
         deductions.push([`ลาไม่รับค่าจ้าง ${Number(item.pri_unpaid_leave_days)} วัน`, item.pri_unpaid_leave_amount]);
     }
+    if (Number(item.pri_attendance_deduction) > 0) {
+        deductions.push([`หัก${attendanceDeductionText(item)}`, item.pri_attendance_deduction]);
+    }
     deductions.push(["ประกันสังคม", item.pri_sso_employee], ["ภาษีหัก ณ ที่จ่าย", item.pri_tax]);
     for (const line of item.lines.filter((entry) => entry.pil_kind === "deduction")) {
         deductions.push([line.pil_label, line.pil_amount]);
     }
     const totalDeductions = sumAmounts(
         item.pri_unpaid_leave_amount,
+        item.pri_attendance_deduction,
         item.pri_sso_employee,
         item.pri_tax,
         item.pri_other_deductions,

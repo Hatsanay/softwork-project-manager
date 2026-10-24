@@ -43,7 +43,7 @@ function LeaveContent() {
     if (canApprove) options.push({ value: "approvals", label: "อนุมัติลา" });
 
     return (
-        <div className="mx-auto grid w-full max-w-4xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader eyebrow="บุคคล" title="การลา" description={LEAVE_MESSAGES.description} />
             <Segmented<Tab> label="มุมมอง" role="tablist" value={tab} onChange={setTab} options={options} />
             {tab === "mine" && <MyLeavePanel />}

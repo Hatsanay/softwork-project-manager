@@ -37,7 +37,7 @@ export default function EditInvoicePage() {
     const isDebitNote = detail?.invoice.inv_doc_type === "debit_note";
 
     return (
-        <div className={`mx-auto grid grid-cols-1 gap-6 ${isManual ? "max-w-6xl" : "max-w-3xl"}`}>
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader
                 eyebrow="ขาย · ใบแจ้งหนี้"
                 title={

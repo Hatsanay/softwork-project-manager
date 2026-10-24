@@ -59,7 +59,7 @@ export default function CreateProjectPositionPage() {
     }
 
     return (
-        <div className="mx-auto grid max-w-3xl gap-6">
+        <div className="grid w-full gap-6">
             <PageHeader
                 eyebrow="ตั้งค่าระบบ · ตำแหน่งในโปรเจกต์"
                 title="สร้างตำแหน่งในโปรเจกต์"

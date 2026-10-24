@@ -20,6 +20,9 @@ SELECT IF(DATABASE() = @confirm_database, 1, (SELECT 1 UNION SELECT 2)) AS datab
 SET FOREIGN_KEY_CHECKS = 0;
 TRUNCATE TABLE `tb_approval_level_roles`;
 TRUNCATE TABLE `tb_approval_levels`;
+TRUNCATE TABLE `tb_attendance_corrections`;
+TRUNCATE TABLE `tb_attendance_locations`;
+TRUNCATE TABLE `tb_attendance_punches`;
 TRUNCATE TABLE `tb_audit_logs`;
 TRUNCATE TABLE `tb_bank_accounts`;
 TRUNCATE TABLE `tb_billing_note_invoices`;
@@ -37,6 +40,7 @@ TRUNCATE TABLE `tb_document_sequences`;
 TRUNCATE TABLE `tb_email_otps`;
 TRUNCATE TABLE `tb_employee_cards`;
 TRUNCATE TABLE `tb_employee_codes`;
+TRUNCATE TABLE `tb_employee_schedules`;
 TRUNCATE TABLE `tb_employee_compensations`;
 TRUNCATE TABLE `tb_employee_recurring_items`;
 TRUNCATE TABLE `tb_employee_tax_profiles`;
@@ -64,6 +68,7 @@ TRUNCATE TABLE `tb_payment_allocations`;
 TRUNCATE TABLE `tb_payments`;
 TRUNCATE TABLE `tb_payroll_approvals`;
 TRUNCATE TABLE `tb_payroll_item_lines`;
+TRUNCATE TABLE `tb_overtime_requests`;
 TRUNCATE TABLE `tb_payroll_items`;
 TRUNCATE TABLE `tb_payroll_runs`;
 TRUNCATE TABLE `tb_payroll_settings`;
@@ -107,10 +112,12 @@ TRUNCATE TABLE `tb_user_signatures`;
 TRUNCATE TABLE `tb_users`;
 TRUNCATE TABLE `tb_vat_rates`;
 TRUNCATE TABLE `tb_vendors`;
+TRUNCATE TABLE `tb_wfh_requests`;
 TRUNCATE TABLE `tb_wht_certificate_lines`;
 TRUNCATE TABLE `tb_wht_certificates`;
 TRUNCATE TABLE `tb_wht_income_types`;
 TRUNCATE TABLE `tb_wht_rates`;
+TRUNCATE TABLE `tb_work_schedules`;
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- ─── 2. ค่าเริ่มต้นที่ระบบต้องใช้ (ชุดเดียวกับ deploy_schema.sql · ใส่เฉพาะตอนตารางว่าง) ─────────────
@@ -290,6 +297,18 @@ WHERE NOT EXISTS (SELECT 1 FROM tb_income_tax_brackets)
 
 INSERT INTO tb_payroll_settings (ps_id)
 SELECT 1 FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM tb_payroll_settings);
+
+-- ── ลงเวลาเข้า-ออกงาน A-1 (2026-10-23) — กะเริ่มต้น (ใส่เฉพาะตอนยังไม่มีกะเลย) แล้วตั้งเป็นกะเริ่มต้นถ้ายังว่าง ──
+INSERT INTO tb_work_schedules (ws_name, ws_start_time, ws_end_time, ws_break_minutes, ws_working_weekdays, ws_late_grace_minutes)
+SELECT 'ออฟฟิศ 09:00-18:00', '09:00:00', '18:00:00', 60,
+       COALESCE((SELECT ps_working_weekdays FROM tb_payroll_settings WHERE ps_id = 1), '1111100'), 0
+FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM tb_work_schedules);
+UPDATE tb_payroll_settings
+SET ps_default_schedule_id = (SELECT MIN(ws_id) FROM tb_work_schedules WHERE ws_status = 'active')
+WHERE ps_id = 1 AND ps_default_schedule_id IS NULL;
+-- วันเริ่มใช้ลงเวลา = วันที่ deploy (เฉพาะตอนยังว่างและยังไม่มีการกดเลย — ไม่ทับที่ฝ่ายบุคคลตั้งเอง)
+UPDATE tb_payroll_settings SET ps_attendance_start_date = CURDATE()
+WHERE ps_id = 1 AND ps_attendance_start_date IS NULL AND NOT EXISTS (SELECT 1 FROM tb_attendance_punches);
 
 -- ประเภทลาตามพระราชบัญญัติคุ้มครองแรงงาน (ขั้นต่ำ) — บริษัทปรับได้ในหน้าตั้งค่าบุคคล
 INSERT INTO tb_leave_types (lt_name_th, lt_name_en, lt_days_per_year, lt_is_paid, lt_attachment_from_days, lt_min_service_days, lt_sort_order)

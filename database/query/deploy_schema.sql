@@ -1514,6 +1514,8 @@ CREATE TABLE IF NOT EXISTS `tb_employees` (
   `emp_notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   `emp_photo_url` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'รูปพนักงานสำหรับบัตร (/uploads/employees/...) — ว่าง = ใช้รูปโปรไฟล์บัญชีผู้ใช้ที่ผูก',
   `emp_close_login_on_termination` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'ปิดการเข้าระบบของบัญชีที่ผูกหลังวันทำงานวันสุดท้าย (1 = ปิด · 2026-10-18)',
+  `emp_attendance_required` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'ต้องลงเวลาเข้า-ออกงานไหม (2026-10-23) · 0 = ไม่ต้อง เช่น ผู้บริหาร — ไม่นับสาย/ขาด',
+  `emp_wfh_weekdays` char(7) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '0000000' COMMENT 'วัน WFH ประจำ จันทร์→อาทิตย์ (1 = ทำงานที่บ้าน · 1111111 = WFH เต็มเวลา) · วัน WFH กดได้ทุกที่ (2026-10-24)',
   `emp_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `emp_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `emp_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -1676,6 +1678,14 @@ CREATE TABLE IF NOT EXISTS `tb_payroll_settings` (
   `ps_unpaid_leave_divisor` enum('days_30','working_days') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'days_30' COMMENT 'หักลาไม่รับค่าจ้างต่อวัน = เงินเดือน ÷ 30 หรือ ÷ วันทำงานของเดือน (Y3)',
   `ps_timesheet_backdate_days` smallint unsigned NOT NULL DEFAULT '14' COMMENT 'ลงเวลาย้อนหลังได้กี่วัน (ขั้น 4-2)',
   `ps_card_valid_years` tinyint unsigned NOT NULL DEFAULT '3' COMMENT 'บัตรพนักงานใช้ได้กี่ปีนับจากวันออก (2026-10-18) — เปลี่ยนแล้วมีผลกับบัตรที่ออกหลังจากนั้น',
+  `ps_default_schedule_id` int unsigned DEFAULT NULL COMMENT 'กะเริ่มต้นของพนักงานที่ยังไม่ได้กำหนดกะ (tb_work_schedules.ws_id · 2026-10-23)',
+  `ps_timesheet_enabled` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'เปิดลงชั่วโมงต่อโปรเจกต์ (ขั้น 4-2) · 0 = ปิด ใช้ลงเวลาเข้า-ออกแทน (2026-10-23 ผู้ใช้สั่งปิด เปิดกลับได้)',
+  `ps_attendance_start_date` date DEFAULT NULL COMMENT 'เริ่มใช้ลงเวลาเข้า-ออกงานตั้งแต่วันนี้ (2026-10-24) · วันก่อนหน้าไม่นับขาด/สาย · ว่าง = นับทุกวัน',
+  `ps_ot_rate_workday` decimal(4,2) NOT NULL DEFAULT '1.50' COMMENT 'อัตรา OT วันทำงาน (เท่าของค่าจ้างต่อชั่วโมง · ม.61) — รอนักบัญชียืนยัน Y7',
+  `ps_ot_rate_holiday_work` decimal(4,2) NOT NULL DEFAULT '1.00' COMMENT 'ทำงานวันหยุดในเวลาปกติ จ่ายเพิ่ม (เท่า · พนักงานรายเดือน ม.62)',
+  `ps_ot_rate_holiday_ot` decimal(4,2) NOT NULL DEFAULT '3.00' COMMENT 'OT วันหยุด นอกเวลาปกติ (เท่า · ม.63)',
+  `ps_ot_weekly_cap_hours` smallint unsigned NOT NULL DEFAULT '36' COMMENT 'OT + OT วันหยุด รวมไม่เกินกี่ชั่วโมงต่อสัปดาห์ (กฎกระทรวง 36)',
+  `ps_ot_is_sso_wage` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'OT นับเป็นค่าจ้างคิดประกันสังคม (1 = นับ · รอนักบัญชียืนยัน Y5)',
   `ps_updated_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `ps_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`ps_id`),
@@ -1983,6 +1993,10 @@ CREATE TABLE IF NOT EXISTS `tb_payroll_items` (
   `pri_salary_amount` decimal(15,2) NOT NULL COMMENT 'เงินเดือนตามสัดส่วนวัน',
   `pri_unpaid_leave_days` decimal(5,1) NOT NULL DEFAULT '0.0',
   `pri_unpaid_leave_amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_late_minutes` int unsigned NOT NULL DEFAULT '0' COMMENT 'นาทีมาสาย (หลังผ่อนผัน) ที่หัก · ลงเวลา A-4',
+  `pri_early_leave_minutes` int unsigned NOT NULL DEFAULT '0' COMMENT 'นาทีออกก่อนเวลาที่หัก',
+  `pri_absent_days` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'วันขาดงาน (วันทำงาน ไม่ลา ไม่กดเลย)',
+  `pri_attendance_deduction` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'หักสาย/ออกก่อน/ขาด (ลดเงินเดือนก่อนคิดภาษีและประกันสังคม เหมือนลาไม่รับค่าจ้าง)',
   `pri_other_earnings` decimal(15,2) NOT NULL DEFAULT '0.00',
   `pri_other_deductions` decimal(15,2) NOT NULL DEFAULT '0.00',
   `pri_gross` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'เงินเดือนสุทธิจากลา + รายรับอื่น',
@@ -2010,7 +2024,7 @@ CREATE TABLE IF NOT EXISTS `tb_payroll_items` (
 CREATE TABLE IF NOT EXISTS `tb_payroll_item_lines` (
   `pil_id` int unsigned NOT NULL AUTO_INCREMENT,
   `pil_item_id` int unsigned NOT NULL,
-  `pil_source` enum('recurring','manual') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pil_source` enum('recurring','manual','attendance') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `pil_kind` enum('earning','deduction') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `pil_label` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `pil_amount` decimal(15,2) NOT NULL,
@@ -2159,6 +2173,183 @@ CREATE TABLE IF NOT EXISTS `tb_credit_note_approvals` (
   KEY `fk_cna_user` (`cna_user_id`),
   CONSTRAINT `fk_cna_credit_note` FOREIGN KEY (`cna_credit_note_id`) REFERENCES `tb_credit_notes` (`cn_id`) ON DELETE CASCADE,
   CONSTRAINT `fk_cna_user` FOREIGN KEY (`cna_user_id`) REFERENCES `tb_users` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ════ ลงเวลาเข้า-ออกงาน ช่วง A-1 (2026-10-23) · แบบระบบ: docs/plans/2026-10-23-attendance-ot.md ════
+-- กะทำงาน: ชุดเวลาให้เลือกแล้วกำหนดให้แต่ละคน · เวลาเลิก <= เวลาเข้า = กะข้ามเที่ยงคืน (วันทำงาน = วันที่เริ่มกะ)
+-- ปิดใช้งานแทนการลบ (พนักงานที่เคยใช้กะนี้ต้องดูประวัติได้)
+CREATE TABLE IF NOT EXISTS `tb_work_schedules` (
+  `ws_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `ws_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ws_start_time` time NOT NULL COMMENT 'เวลาเข้างาน',
+  `ws_end_time` time NOT NULL COMMENT 'เวลาเลิกงาน (<= เวลาเข้า = เลิกวันถัดไป)',
+  `ws_break_minutes` smallint unsigned NOT NULL DEFAULT '60' COMMENT 'พักระหว่างวัน (นาที) ไม่นับเป็นเวลาทำงาน',
+  `ws_working_weekdays` char(7) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '1111100' COMMENT 'วันทำงาน จันทร์→อาทิตย์ 1 = ทำงาน',
+  `ws_late_grace_minutes` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'ผ่อนผันสาย (นาที) · เกินแล้วนับสายจากเวลาเข้างาน (Q3)',
+  `ws_checkin_open_minutes` smallint unsigned NOT NULL DEFAULT '120' COMMENT 'กดเข้างานได้ก่อนเวลาเข้ากี่นาที (ใช้ตัดวันของกะข้ามคืน)',
+  `ws_status` enum('active','inactive') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `ws_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ws_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `ws_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`ws_id`),
+  UNIQUE KEY `uq_ws_name` (`ws_name`),
+  KEY `fk_ws_created_by` (`ws_created_by`),
+  CONSTRAINT `fk_ws_created_by` FOREIGN KEY (`ws_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- กะของพนักงานตามวันที่มีผล (ประวัติไม่หาย เหมือนค่าจ้าง) · กะ ณ วันใด = แถวล่าสุดที่มีผลไม่เกินวันนั้น · ไม่มีแถว = กะเริ่มต้นในตั้งค่า
+CREATE TABLE IF NOT EXISTS `tb_employee_schedules` (
+  `es_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `es_employee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `es_schedule_id` int unsigned NOT NULL,
+  `es_effective_from` date NOT NULL,
+  `es_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `es_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`es_id`),
+  UNIQUE KEY `uq_es_employee_date` (`es_employee_id`,`es_effective_from`),
+  KEY `fk_es_schedule` (`es_schedule_id`),
+  KEY `fk_es_created_by` (`es_created_by`),
+  CONSTRAINT `fk_es_created_by` FOREIGN KEY (`es_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_es_employee` FOREIGN KEY (`es_employee_id`) REFERENCES `tb_employees` (`emp_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_es_schedule` FOREIGN KEY (`es_schedule_id`) REFERENCES `tb_work_schedules` (`ws_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- จุดลงเวลา (พิกัด + รัศมี) · สาขาหนึ่งมีได้หลายจุด · กดในรัศมี = ในจุด · นอกรัศมีกดได้แต่ต้องใส่เหตุผล (Q1)
+CREATE TABLE IF NOT EXISTS `tb_attendance_locations` (
+  `al_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `al_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `al_branch_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `al_latitude` decimal(9,6) NOT NULL,
+  `al_longitude` decimal(9,6) NOT NULL,
+  `al_radius_m` smallint unsigned NOT NULL DEFAULT '150' COMMENT 'รัศมี (เมตร)',
+  `al_status` enum('active','inactive') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `al_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `al_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `al_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`al_id`),
+  KEY `fk_al_branch` (`al_branch_id`),
+  KEY `fk_al_created_by` (`al_created_by`),
+  CONSTRAINT `fk_al_branch` FOREIGN KEY (`al_branch_id`) REFERENCES `tb_branches` (`branch_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_al_created_by` FOREIGN KEY (`al_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- การกดเข้า/ออกงาน — แก้/ลบไม่ได้ · เวลา = เวลาเซิร์ฟเวอร์ (ไทย) ไม่รับจากมือถือ · ชื่อจุดและระยะเก็บไว้ในแถว (จุดถูกปิดทีหลังก็ยังอ่านได้)
+-- แก้เวลา (ช่วง A-2) = เพิ่มแถวที่มา correction และทำเครื่องหมายแถวเดิมว่าไม่ใช้ (ap_voided_at) — ประวัติครบ
+-- พิกัดเป็นข้อมูลส่วนบุคคล: เก็บเฉพาะตอนกด · เห็นได้เฉพาะเจ้าตัว ผู้อนุมัติ และฝ่ายบุคคล
+CREATE TABLE IF NOT EXISTS `tb_attendance_punches` (
+  `ap_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `ap_employee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ap_type` enum('in','out') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ap_at` datetime NOT NULL COMMENT 'เวลาเซิร์ฟเวอร์ (เวลาไทย)',
+  `ap_work_date` date NOT NULL COMMENT 'วันทำงานที่การกดนี้นับ (กะข้ามคืน = วันเริ่มกะ)',
+  `ap_source` enum('mobile','correction','hr') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'mobile',
+  `ap_latitude` decimal(9,6) DEFAULT NULL,
+  `ap_longitude` decimal(9,6) DEFAULT NULL,
+  `ap_accuracy_m` int unsigned DEFAULT NULL COMMENT 'ความแม่นยำ GPS (เมตร) ที่มือถือรายงาน',
+  `ap_location_id` int unsigned DEFAULT NULL COMMENT 'จุดลงเวลาที่ใกล้ที่สุด',
+  `ap_location_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ap_distance_m` int unsigned DEFAULT NULL,
+  `ap_is_offsite` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1 = นอกจุดลงเวลา / ไม่มีตำแหน่ง (ต้องมีเหตุผล)',
+  `ap_is_wfh` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1 = กดวัน WFH (ไม่ตรวจตำแหน่ง · ไม่ใช่นอกจุด)',
+  `ap_note` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ap_ip` varchar(45) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ap_user_agent` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ap_voided_at` datetime DEFAULT NULL,
+  `ap_voided_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ap_void_reason` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ap_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ap_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`ap_id`),
+  KEY `idx_ap_employee_date` (`ap_employee_id`,`ap_work_date`),
+  KEY `idx_ap_work_date` (`ap_work_date`),
+  KEY `fk_ap_location` (`ap_location_id`),
+  KEY `fk_ap_voided_by` (`ap_voided_by`),
+  KEY `fk_ap_created_by` (`ap_created_by`),
+  CONSTRAINT `fk_ap_created_by` FOREIGN KEY (`ap_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_ap_employee` FOREIGN KEY (`ap_employee_id`) REFERENCES `tb_employees` (`emp_id`),
+  CONSTRAINT `fk_ap_location` FOREIGN KEY (`ap_location_id`) REFERENCES `tb_attendance_locations` (`al_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_ap_voided_by` FOREIGN KEY (`ap_voided_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- คำขอแก้เวลา (ลงเวลา A-2 · 2026-10-24) — ลืมกดเข้า/ออก → ขอเวลาที่ถูก + เหตุผล → ผู้มีสิทธิ์อนุมัติลงเวลาอนุมัติ
+-- อนุมัติแล้วสร้างการกดที่มา 'correction' (ac_punch_id) · ของตัวเองอนุมัติไม่ได้ · เดือนที่ปิดรอบเงินเดือนแล้วขอ/อนุมัติไม่ได้
+-- ac_requested_at = เวลาเต็ม (กะข้ามคืน: ออกหลังเที่ยงคืนเป็นวันถัดไป) · ac_work_date = วันทำงานที่ขอแก้
+CREATE TABLE IF NOT EXISTS `tb_attendance_corrections` (
+  `ac_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `ac_employee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ac_work_date` date NOT NULL,
+  `ac_type` enum('in','out') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ac_requested_at` datetime NOT NULL COMMENT 'เวลาที่ขอให้บันทึก (เวลาไทย)',
+  `ac_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ac_status` enum('pending','approved','rejected','cancelled') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `ac_decided_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ac_decided_at` datetime DEFAULT NULL,
+  `ac_decision_note` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เหตุผลที่ไม่อนุมัติ (พนักงานเห็น)',
+  `ac_punch_id` bigint unsigned DEFAULT NULL COMMENT 'การกดที่สร้างตอนอนุมัติ',
+  `ac_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ac_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`ac_id`),
+  KEY `idx_ac_employee_date` (`ac_employee_id`,`ac_work_date`),
+  KEY `idx_ac_status` (`ac_status`),
+  KEY `fk_ac_decided_by` (`ac_decided_by`),
+  KEY `fk_ac_punch` (`ac_punch_id`),
+  KEY `fk_ac_created_by` (`ac_created_by`),
+  CONSTRAINT `fk_ac_created_by` FOREIGN KEY (`ac_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_ac_decided_by` FOREIGN KEY (`ac_decided_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_ac_employee` FOREIGN KEY (`ac_employee_id`) REFERENCES `tb_employees` (`emp_id`),
+  CONSTRAINT `fk_ac_punch` FOREIGN KEY (`ac_punch_id`) REFERENCES `tb_attendance_punches` (`ap_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- คำขอ OT (ลงเวลา A-3 · 2026-10-24) — พนักงานขอ (= ยินยอมทำ OT ครั้งนั้น ม.24) → ผู้มีสิทธิ์อนุมัติลงเวลาอนุมัติ
+-- นาทีแยกชนิด (snapshot ตอนขอ ใช้คุมเพดานต่อสัปดาห์): วันทำงานนอกเวลางาน · วันหยุดในเวลาปกติของกะ · วันหยุดนอกเวลาปกติ
+-- จ่ายจริง (A-4) = ช่วงที่อนุมัติ ∩ เวลาที่อยู่จริง (เข้า-ออก) ปัดลงทีละ 15 นาที
+CREATE TABLE IF NOT EXISTS `tb_overtime_requests` (
+  `ot_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `ot_employee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ot_work_date` date NOT NULL,
+  `ot_start_at` datetime NOT NULL,
+  `ot_end_at` datetime NOT NULL,
+  `ot_workday_minutes` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'OT วันทำงาน (นอกเวลางาน)',
+  `ot_holiday_work_minutes` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'ทำงานวันหยุดในเวลาปกติของกะ',
+  `ot_holiday_ot_minutes` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'OT วันหยุด (นอกเวลาปกติ)',
+  `ot_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ot_status` enum('pending','approved','rejected','cancelled') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `ot_decided_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ot_decided_at` datetime DEFAULT NULL,
+  `ot_decision_note` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เหตุผลที่ไม่อนุมัติ (พนักงานเห็น)',
+  `ot_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ot_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`ot_id`),
+  KEY `idx_ot_employee_date` (`ot_employee_id`,`ot_work_date`),
+  KEY `idx_ot_status` (`ot_status`),
+  KEY `fk_ot_decided_by` (`ot_decided_by`),
+  KEY `fk_ot_created_by` (`ot_created_by`),
+  CONSTRAINT `fk_ot_created_by` FOREIGN KEY (`ot_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_ot_decided_by` FOREIGN KEY (`ot_decided_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_ot_employee` FOREIGN KEY (`ot_employee_id`) REFERENCES `tb_employees` (`emp_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- คำขอ WFH รายวัน (2026-10-24) — พนักงานขอล่วงหน้า (วันนี้หรือหลังจากนี้) → ผู้มีสิทธิ์อนุมัติลงเวลาอนุมัติ
+-- วันที่อนุมัติแล้ว = วัน WFH: กดเข้า/ออกได้ทุกที่ ไม่ต้องใส่เหตุผล (บันทึกพิกัดไว้) · WFH ประจำตั้งที่ tb_employees.emp_wfh_weekdays
+CREATE TABLE IF NOT EXISTS `tb_wfh_requests` (
+  `wfh_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `wfh_employee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `wfh_date` date NOT NULL,
+  `wfh_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `wfh_status` enum('pending','approved','rejected','cancelled') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `wfh_decided_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `wfh_decided_at` datetime DEFAULT NULL,
+  `wfh_decision_note` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เหตุผลที่ไม่อนุมัติ (พนักงานเห็น)',
+  `wfh_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `wfh_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`wfh_id`),
+  KEY `idx_wfh_employee_date` (`wfh_employee_id`,`wfh_date`),
+  KEY `idx_wfh_status` (`wfh_status`),
+  KEY `fk_wfh_decided_by` (`wfh_decided_by`),
+  KEY `fk_wfh_created_by` (`wfh_created_by`),
+  CONSTRAINT `fk_wfh_created_by` FOREIGN KEY (`wfh_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_wfh_decided_by` FOREIGN KEY (`wfh_decided_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_wfh_employee` FOREIGN KEY (`wfh_employee_id`) REFERENCES `tb_employees` (`emp_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ─── ส่วนที่ 2: เติมคอลัมน์ที่ยังขาด (สำหรับฐานข้อมูลที่สร้างจากโครงสร้างเวอร์ชันเก่า) ──────────────
@@ -2921,6 +3112,22 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA 
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_settings' AND COLUMN_NAME = 'ps_timesheet_backdate_days') = 0, 'ALTER TABLE `tb_payroll_settings` ADD COLUMN `ps_timesheet_backdate_days` smallint unsigned NOT NULL DEFAULT ''14'' COMMENT ''ลงเวลาย้อนหลังได้กี่วัน (ขั้น 4-2)'' AFTER `ps_unpaid_leave_divisor`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 -- 2026-10-18 อายุบัตรพนักงาน
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_settings' AND COLUMN_NAME = 'ps_card_valid_years') = 0, 'ALTER TABLE `tb_payroll_settings` ADD COLUMN `ps_card_valid_years` tinyint unsigned NOT NULL DEFAULT ''3'' COMMENT ''บัตรพนักงานใช้ได้กี่ปีนับจากวันออก (2026-10-18) — เปลี่ยนแล้วมีผลกับบัตรที่ออกหลังจากนั้น'' AFTER `ps_timesheet_backdate_days`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- 2026-10-23 ลงเวลาเข้า-ออกงาน: กะเริ่มต้น + เปิด/ปิดลงชั่วโมงต่อโปรเจกต์ (ค่าเริ่มต้น = ปิด ตามที่ผู้ใช้สั่ง)
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_settings' AND COLUMN_NAME = 'ps_default_schedule_id') = 0, 'ALTER TABLE `tb_payroll_settings` ADD COLUMN `ps_default_schedule_id` int unsigned DEFAULT NULL COMMENT ''กะเริ่มต้นของพนักงานที่ยังไม่ได้กำหนดกะ (tb_work_schedules.ws_id · 2026-10-23)'' AFTER `ps_card_valid_years`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_settings' AND COLUMN_NAME = 'ps_timesheet_enabled') = 0, 'ALTER TABLE `tb_payroll_settings` ADD COLUMN `ps_timesheet_enabled` tinyint(1) NOT NULL DEFAULT ''0'' COMMENT ''เปิดลงชั่วโมงต่อโปรเจกต์ (ขั้น 4-2) · 0 = ปิด ใช้ลงเวลาเข้า-ออกแทน (2026-10-23 ผู้ใช้สั่งปิด เปิดกลับได้)'' AFTER `ps_default_schedule_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_settings' AND COLUMN_NAME = 'ps_attendance_start_date') = 0, 'ALTER TABLE `tb_payroll_settings` ADD COLUMN `ps_attendance_start_date` date DEFAULT NULL COMMENT ''เริ่มใช้ลงเวลาเข้า-ออกงานตั้งแต่วันนี้ (2026-10-24) · วันก่อนหน้าไม่นับขาด/สาย · ว่าง = นับทุกวัน'' AFTER `ps_timesheet_enabled`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- 2026-10-24 ลงเวลา A-3: อัตรา OT + เพดานต่อสัปดาห์
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_settings' AND COLUMN_NAME = 'ps_ot_rate_workday') = 0, 'ALTER TABLE `tb_payroll_settings` ADD COLUMN `ps_ot_rate_workday` decimal(4,2) NOT NULL DEFAULT ''1.50'' COMMENT ''อัตรา OT วันทำงาน (เท่าของค่าจ้างต่อชั่วโมง · ม.61) — รอนักบัญชียืนยัน Y7'' AFTER `ps_attendance_start_date`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_settings' AND COLUMN_NAME = 'ps_ot_rate_holiday_work') = 0, 'ALTER TABLE `tb_payroll_settings` ADD COLUMN `ps_ot_rate_holiday_work` decimal(4,2) NOT NULL DEFAULT ''1.00'' COMMENT ''ทำงานวันหยุดในเวลาปกติ จ่ายเพิ่ม (เท่า · พนักงานรายเดือน ม.62)'' AFTER `ps_ot_rate_workday`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_settings' AND COLUMN_NAME = 'ps_ot_rate_holiday_ot') = 0, 'ALTER TABLE `tb_payroll_settings` ADD COLUMN `ps_ot_rate_holiday_ot` decimal(4,2) NOT NULL DEFAULT ''3.00'' COMMENT ''OT วันหยุด นอกเวลาปกติ (เท่า · ม.63)'' AFTER `ps_ot_rate_holiday_work`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_settings' AND COLUMN_NAME = 'ps_ot_weekly_cap_hours') = 0, 'ALTER TABLE `tb_payroll_settings` ADD COLUMN `ps_ot_weekly_cap_hours` smallint unsigned NOT NULL DEFAULT ''36'' COMMENT ''OT + OT วันหยุด รวมไม่เกินกี่ชั่วโมงต่อสัปดาห์ (กฎกระทรวง 36)'' AFTER `ps_ot_rate_holiday_ot`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- 2026-10-24 ลงเวลา A-4: หักสาย/ขาดในรอบเงินเดือน + บรรทัด OT (ที่มา attendance) + OT นับค่าจ้างประกันสังคมไหม
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_settings' AND COLUMN_NAME = 'ps_ot_is_sso_wage') = 0, 'ALTER TABLE `tb_payroll_settings` ADD COLUMN `ps_ot_is_sso_wage` tinyint(1) NOT NULL DEFAULT ''1'' COMMENT ''OT นับเป็นค่าจ้างคิดประกันสังคม (1 = นับ · รอนักบัญชียืนยัน Y5)'' AFTER `ps_ot_weekly_cap_hours`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_late_minutes') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_late_minutes` int unsigned NOT NULL DEFAULT ''0'' COMMENT ''นาทีมาสาย (หลังผ่อนผัน) ที่หัก · ลงเวลา A-4'' AFTER `pri_unpaid_leave_amount`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_early_leave_minutes') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_early_leave_minutes` int unsigned NOT NULL DEFAULT ''0'' COMMENT ''นาทีออกก่อนเวลาที่หัก'' AFTER `pri_late_minutes`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_absent_days') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_absent_days` smallint unsigned NOT NULL DEFAULT ''0'' COMMENT ''วันขาดงาน (วันทำงาน ไม่ลา ไม่กดเลย)'' AFTER `pri_early_leave_minutes`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_items' AND COLUMN_NAME = 'pri_attendance_deduction') = 0, 'ALTER TABLE `tb_payroll_items` ADD COLUMN `pri_attendance_deduction` decimal(15,2) NOT NULL DEFAULT ''0.00'' COMMENT ''หักสาย/ออกก่อน/ขาด (ลดเงินเดือนก่อนคิดภาษีและประกันสังคม เหมือนลาไม่รับค่าจ้าง)'' AFTER `pri_absent_days`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_item_lines' AND COLUMN_NAME = 'pil_source' AND COLUMN_TYPE NOT LIKE '%''attendance''%') > 0, 'ALTER TABLE `tb_payroll_item_lines` MODIFY COLUMN `pil_source` enum(''recurring'',''manual'',''attendance'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_settings' AND COLUMN_NAME = 'ps_updated_by') = 0, 'ALTER TABLE `tb_payroll_settings` ADD COLUMN `ps_updated_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ps_timesheet_backdate_days`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_payroll_settings' AND COLUMN_NAME = 'ps_updated_at') = 0, 'ALTER TABLE `tb_payroll_settings` ADD COLUMN `ps_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `ps_updated_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
@@ -3261,6 +3468,11 @@ SET @close_login_added = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE 
 SET @q = IF(@close_login_added, 'ALTER TABLE `tb_employees` ADD COLUMN `emp_close_login_on_termination` tinyint(1) NOT NULL DEFAULT ''1'' COMMENT ''ปิดการเข้าระบบของบัญชีที่ผูกหลังวันทำงานวันสุดท้าย (1 = ปิด · 2026-10-18)'' AFTER `emp_photo_url`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 -- K3: คนที่ตั้งพ้นสภาพไว้แล้วก่อนมีคอลัมน์นี้ ไม่ปิดบัญชีให้เอง (ฝ่ายบุคคลเลือกปิดทีละคนที่หน้าพนักงาน) · รันเฉพาะรอบที่เพิ่งเพิ่มคอลัมน์
 UPDATE tb_employees SET emp_close_login_on_termination = 0 WHERE @close_login_added AND emp_termination_date IS NOT NULL;
+-- 2026-10-23 ลงเวลาเข้า-ออกงาน: ต้องลงเวลาไหม (พนักงานเดิมทุกคน = ต้องลง)
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employees' AND COLUMN_NAME = 'emp_attendance_required') = 0, 'ALTER TABLE `tb_employees` ADD COLUMN `emp_attendance_required` tinyint(1) NOT NULL DEFAULT ''1'' COMMENT ''ต้องลงเวลาเข้า-ออกงานไหม (2026-10-23) · 0 = ไม่ต้อง เช่น ผู้บริหาร — ไม่นับสาย/ขาด'' AFTER `emp_close_login_on_termination`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- 2026-10-24 WFH: วัน WFH ประจำรายคน + ป้าย WFH ของการกด
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employees' AND COLUMN_NAME = 'emp_wfh_weekdays') = 0, 'ALTER TABLE `tb_employees` ADD COLUMN `emp_wfh_weekdays` char(7) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''0000000'' COMMENT ''วัน WFH ประจำ จันทร์→อาทิตย์ (1 = ทำงานที่บ้าน · 1111111 = WFH เต็มเวลา) · วัน WFH กดได้ทุกที่ (2026-10-24)'' AFTER `emp_attendance_required`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_attendance_punches' AND COLUMN_NAME = 'ap_is_wfh') = 0, 'ALTER TABLE `tb_attendance_punches` ADD COLUMN `ap_is_wfh` tinyint(1) NOT NULL DEFAULT ''0'' COMMENT ''1 = กดวัน WFH (ไม่ตรวจตำแหน่ง · ไม่ใช่นอกจุด)'' AFTER `ap_is_offsite`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 -- tb_employee_codes
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_codes' AND COLUMN_NAME = 'ecd_id') = 0, 'ALTER TABLE `tb_employee_codes` ADD COLUMN `ecd_id` int unsigned NOT NULL AUTO_INCREMENT FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_codes' AND COLUMN_NAME = 'ecd_employee_id') = 0, 'ALTER TABLE `tb_employee_codes` ADD COLUMN `ecd_employee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL AFTER `ecd_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
@@ -4344,6 +4556,19 @@ WHERE NOT EXISTS (SELECT 1 FROM tb_income_tax_brackets)
 INSERT INTO tb_payroll_settings (ps_id)
 SELECT 1 FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM tb_payroll_settings);
 
+-- ── ลงเวลาเข้า-ออกงาน A-1 (2026-10-23) — กะเริ่มต้น (ใส่เฉพาะตอนยังไม่มีกะเลย) แล้วตั้งเป็นกะเริ่มต้นถ้ายังว่าง ──
+INSERT INTO tb_work_schedules (ws_name, ws_start_time, ws_end_time, ws_break_minutes, ws_working_weekdays, ws_late_grace_minutes)
+SELECT 'ออฟฟิศ 09:00-18:00', '09:00:00', '18:00:00', 60,
+       COALESCE((SELECT ps_working_weekdays FROM tb_payroll_settings WHERE ps_id = 1), '1111100'), 0
+FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM tb_work_schedules);
+UPDATE tb_payroll_settings
+SET ps_default_schedule_id = (SELECT MIN(ws_id) FROM tb_work_schedules WHERE ws_status = 'active')
+WHERE ps_id = 1 AND ps_default_schedule_id IS NULL;
+-- วันเริ่มใช้ลงเวลา = วันที่ deploy (เฉพาะตอนยังว่างและยังไม่มีการกดเลย — ไม่ทับที่ฝ่ายบุคคลตั้งเอง)
+UPDATE tb_payroll_settings SET ps_attendance_start_date = CURDATE()
+WHERE ps_id = 1 AND ps_attendance_start_date IS NULL AND NOT EXISTS (SELECT 1 FROM tb_attendance_punches);
+
+
 -- ประเภทลาตามพระราชบัญญัติคุ้มครองแรงงาน (ขั้นต่ำ) — บริษัทปรับได้ในหน้าตั้งค่าบุคคล
 INSERT INTO tb_leave_types (lt_name_th, lt_name_en, lt_days_per_year, lt_is_paid, lt_attachment_from_days, lt_min_service_days, lt_sort_order)
 SELECT * FROM (
@@ -4427,13 +4652,13 @@ FROM (
     UNION ALL SELECT 'tb_payment_allocations' AS table_name, 'pva_amount,pva_amount_thb,pva_base_amount,pva_expense_id,pva_order,pva_payment_id,pva_wht_income_type' AS expected_columns, 'fk_pva_expense(pva_expense_id),primary(pva_payment_id+pva_expense_id)' AS expected_indexes
     UNION ALL SELECT 'tb_wht_certificates' AS table_name, 'wt_book_no,wt_cancelled_at,wt_created_at,wt_form,wt_id,wt_number,wt_payee_snapshot,wt_payer_snapshot,wt_payment_date,wt_payment_id,wt_sequence,wt_status,wt_total_paid,wt_total_tax' AS expected_columns, 'idx_wt_form_date(wt_form+wt_payment_date),primary(wt_id),uq_wt_number(wt_number),uq_wt_payment(wt_payment_id)' AS expected_indexes
     UNION ALL SELECT 'tb_wht_certificate_lines' AS table_name, 'wtl_certificate_id,wtl_form_label,wtl_form_row,wtl_id,wtl_income_type,wtl_paid_amount,wtl_rate,wtl_tax_amount' AS expected_columns, 'fk_wtl_income_type(wtl_income_type),idx_wtl_certificate(wtl_certificate_id),primary(wtl_id)' AS expected_indexes
-    UNION ALL SELECT 'tb_employees' AS table_name, 'emp_address,emp_bank_account_name,emp_bank_account_no,emp_bank_name,emp_birth_date,emp_branch_id,emp_close_login_on_termination,emp_code,emp_created_at,emp_created_by,emp_department_id,emp_email,emp_first_name_en,emp_first_name_th,emp_hire_date,emp_id,emp_last_name_en,emp_last_name_th,emp_national_id,emp_nickname,emp_notes,emp_phone,emp_photo_url,emp_position,emp_sso_enrolled,emp_sso_number,emp_termination_date,emp_termination_reason,emp_title,emp_updated_at,emp_user_id' AS expected_columns, 'fk_emp_branch(emp_branch_id),fk_emp_created_by(emp_created_by),fk_emp_department(emp_department_id),fk_emp_user(emp_user_id),idx_emp_name(emp_first_name_th+emp_last_name_th),idx_emp_national_id(emp_national_id),idx_emp_termination(emp_termination_date),primary(emp_id),uq_emp_code(emp_code)' AS expected_indexes
+    UNION ALL SELECT 'tb_employees' AS table_name, 'emp_address,emp_attendance_required,emp_bank_account_name,emp_bank_account_no,emp_bank_name,emp_birth_date,emp_branch_id,emp_close_login_on_termination,emp_code,emp_created_at,emp_created_by,emp_department_id,emp_email,emp_first_name_en,emp_first_name_th,emp_hire_date,emp_id,emp_last_name_en,emp_last_name_th,emp_national_id,emp_nickname,emp_notes,emp_phone,emp_photo_url,emp_position,emp_sso_enrolled,emp_sso_number,emp_termination_date,emp_termination_reason,emp_title,emp_updated_at,emp_user_id,emp_wfh_weekdays' AS expected_columns, 'fk_emp_branch(emp_branch_id),fk_emp_created_by(emp_created_by),fk_emp_department(emp_department_id),fk_emp_user(emp_user_id),idx_emp_name(emp_first_name_th+emp_last_name_th),idx_emp_national_id(emp_national_id),idx_emp_termination(emp_termination_date),primary(emp_id),uq_emp_code(emp_code)' AS expected_indexes
     UNION ALL SELECT 'tb_employee_compensations' AS table_name, 'ecm_base_salary,ecm_created_at,ecm_created_by,ecm_effective_from,ecm_employee_id,ecm_note' AS expected_columns, 'fk_ecm_created_by(ecm_created_by),primary(ecm_employee_id+ecm_effective_from)' AS expected_indexes
     UNION ALL SELECT 'tb_employee_recurring_items' AS table_name, 'eri_amount,eri_created_at,eri_created_by,eri_effective_from,eri_effective_to,eri_employee_id,eri_id,eri_is_sso_wage,eri_is_taxable,eri_kind,eri_label,eri_note' AS expected_columns, 'fk_eri_created_by(eri_created_by),idx_eri_employee(eri_employee_id+eri_effective_from),primary(eri_id)' AS expected_indexes
     UNION ALL SELECT 'tb_sso_rates' AS table_name, 'sr_created_at,sr_created_by,sr_effective_from,sr_employee_rate,sr_employer_rate,sr_note,sr_wage_ceiling,sr_wage_floor' AS expected_columns, 'fk_sr_created_by(sr_created_by),primary(sr_effective_from)' AS expected_indexes
     UNION ALL SELECT 'tb_income_tax_years' AS table_name, 'ity_created_at,ity_created_by,ity_expense_cap,ity_expense_rate,ity_note,ity_personal_allowance,ity_tax_year,ity_updated_at' AS expected_columns, 'fk_ity_created_by(ity_created_by),primary(ity_tax_year)' AS expected_indexes
     UNION ALL SELECT 'tb_income_tax_brackets' AS table_name, 'itb_from_amount,itb_rate,itb_tax_year' AS expected_columns, 'primary(itb_tax_year+itb_from_amount)' AS expected_indexes
-    UNION ALL SELECT 'tb_payroll_settings' AS table_name, 'ps_card_valid_years,ps_hours_per_day,ps_id,ps_pay_day,ps_timesheet_backdate_days,ps_unpaid_leave_divisor,ps_updated_at,ps_updated_by,ps_working_weekdays' AS expected_columns, 'fk_ps_updated_by(ps_updated_by),primary(ps_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_payroll_settings' AS table_name, 'ps_attendance_start_date,ps_card_valid_years,ps_default_schedule_id,ps_hours_per_day,ps_id,ps_ot_is_sso_wage,ps_ot_rate_holiday_ot,ps_ot_rate_holiday_work,ps_ot_rate_workday,ps_ot_weekly_cap_hours,ps_pay_day,ps_timesheet_backdate_days,ps_timesheet_enabled,ps_unpaid_leave_divisor,ps_updated_at,ps_updated_by,ps_working_weekdays' AS expected_columns, 'fk_ps_updated_by(ps_updated_by),primary(ps_id)' AS expected_indexes
     UNION ALL SELECT 'tb_company_holidays' AS table_name, 'hd_created_at,hd_created_by,hd_date,hd_name' AS expected_columns, 'fk_hd_created_by(hd_created_by),primary(hd_date)' AS expected_indexes
     UNION ALL SELECT 'tb_leave_types' AS table_name, 'lt_attachment_from_days,lt_carry_over_days,lt_created_at,lt_days_per_year,lt_id,lt_is_paid,lt_min_service_days,lt_name_en,lt_name_th,lt_sort_order,lt_status,lt_updated_at' AS expected_columns, 'primary(lt_id),uq_lt_name_th(lt_name_th)' AS expected_indexes
     UNION ALL SELECT 'tb_timesheet_weeks' AS table_name, 'tsw_approved_at,tsw_created_at,tsw_employee_id,tsw_id,tsw_return_reason,tsw_returned_at,tsw_returned_by,tsw_status,tsw_submitted_at,tsw_total_hours,tsw_updated_at,tsw_version,tsw_week_start' AS expected_columns, 'fk_tsw_returned_by(tsw_returned_by),idx_tsw_status(tsw_status+tsw_week_start),primary(tsw_id),uq_tsw_employee_week(tsw_employee_id+tsw_week_start)' AS expected_indexes
@@ -4441,12 +4666,19 @@ FROM (
     UNION ALL SELECT 'tb_project_labels' AS table_name, 'pl_color,pl_created_at,pl_created_by,pl_id,pl_name,pl_project_id,pl_sort_order,pl_updated_at' AS expected_columns, 'fk_pl_created_by(pl_created_by),primary(pl_id),uq_pl_project_name(pl_project_id+pl_name)' AS expected_indexes
     UNION ALL SELECT 'tb_task_labels' AS table_name, 'tl_label_id,tl_task_id' AS expected_columns, 'fk_tl_label(tl_label_id),primary(tl_task_id+tl_label_id)' AS expected_indexes
     UNION ALL SELECT 'tb_task_checklist_items' AS table_name, 'tci_created_at,tci_created_by,tci_done_at,tci_done_by,tci_id,tci_is_done,tci_sort_order,tci_task_id,tci_text' AS expected_columns, 'fk_tci_created_by(tci_created_by),fk_tci_done_by(tci_done_by),idx_tci_task(tci_task_id+tci_sort_order),primary(tci_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_work_schedules' AS table_name, 'ws_break_minutes,ws_checkin_open_minutes,ws_created_at,ws_created_by,ws_end_time,ws_id,ws_late_grace_minutes,ws_name,ws_start_time,ws_status,ws_updated_at,ws_working_weekdays' AS expected_columns, 'fk_ws_created_by(ws_created_by),primary(ws_id),uq_ws_name(ws_name)' AS expected_indexes
+    UNION ALL SELECT 'tb_employee_schedules' AS table_name, 'es_created_at,es_created_by,es_effective_from,es_employee_id,es_id,es_schedule_id' AS expected_columns, 'fk_es_created_by(es_created_by),fk_es_schedule(es_schedule_id),primary(es_id),uq_es_employee_date(es_employee_id+es_effective_from)' AS expected_indexes
+    UNION ALL SELECT 'tb_attendance_locations' AS table_name, 'al_branch_id,al_created_at,al_created_by,al_id,al_latitude,al_longitude,al_name,al_radius_m,al_status,al_updated_at' AS expected_columns, 'fk_al_branch(al_branch_id),fk_al_created_by(al_created_by),primary(al_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_attendance_punches' AS table_name, 'ap_accuracy_m,ap_at,ap_created_at,ap_created_by,ap_distance_m,ap_employee_id,ap_id,ap_ip,ap_is_offsite,ap_is_wfh,ap_latitude,ap_location_id,ap_location_name,ap_longitude,ap_note,ap_source,ap_type,ap_user_agent,ap_void_reason,ap_voided_at,ap_voided_by,ap_work_date' AS expected_columns, 'fk_ap_created_by(ap_created_by),fk_ap_location(ap_location_id),fk_ap_voided_by(ap_voided_by),idx_ap_employee_date(ap_employee_id+ap_work_date),idx_ap_work_date(ap_work_date),primary(ap_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_attendance_corrections' AS table_name, 'ac_created_at,ac_created_by,ac_decided_at,ac_decided_by,ac_decision_note,ac_employee_id,ac_id,ac_punch_id,ac_reason,ac_requested_at,ac_status,ac_type,ac_work_date' AS expected_columns, 'fk_ac_created_by(ac_created_by),fk_ac_decided_by(ac_decided_by),fk_ac_punch(ac_punch_id),idx_ac_employee_date(ac_employee_id+ac_work_date),idx_ac_status(ac_status),primary(ac_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_overtime_requests' AS table_name, 'ot_created_at,ot_created_by,ot_decided_at,ot_decided_by,ot_decision_note,ot_employee_id,ot_end_at,ot_holiday_ot_minutes,ot_holiday_work_minutes,ot_id,ot_reason,ot_start_at,ot_status,ot_work_date,ot_workday_minutes' AS expected_columns, 'fk_ot_created_by(ot_created_by),fk_ot_decided_by(ot_decided_by),idx_ot_employee_date(ot_employee_id+ot_work_date),idx_ot_status(ot_status),primary(ot_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_wfh_requests' AS table_name, 'wfh_created_at,wfh_created_by,wfh_date,wfh_decided_at,wfh_decided_by,wfh_decision_note,wfh_employee_id,wfh_id,wfh_reason,wfh_status' AS expected_columns, 'fk_wfh_created_by(wfh_created_by),fk_wfh_decided_by(wfh_decided_by),idx_wfh_employee_date(wfh_employee_id+wfh_date),idx_wfh_status(wfh_status),primary(wfh_id)' AS expected_indexes
     UNION ALL SELECT 'tb_leave_requests' AS table_name, 'lr_cancel_reason,lr_cancelled_at,lr_cancelled_by,lr_created_at,lr_created_by,lr_days,lr_decided_at,lr_decided_by,lr_decision_note,lr_employee_id,lr_end_date,lr_half_day,lr_id,lr_leave_type_id,lr_reason,lr_start_date,lr_status,lr_submitted_at,lr_updated_at,lr_version' AS expected_columns, 'fk_lr_cancelled_by(lr_cancelled_by),fk_lr_created_by(lr_created_by),fk_lr_decided_by(lr_decided_by),fk_lr_leave_type(lr_leave_type_id),idx_lr_employee_dates(lr_employee_id+lr_start_date),idx_lr_status_dates(lr_status+lr_start_date),primary(lr_id)' AS expected_indexes
     UNION ALL SELECT 'tb_leave_attachments' AS table_name, 'lra_file_name,lra_file_path,lra_file_size,lra_id,lra_request_id,lra_uploaded_at,lra_uploaded_by' AS expected_columns, 'fk_lra_uploaded_by(lra_uploaded_by),idx_lra_request(lra_request_id),primary(lra_id)' AS expected_indexes
     UNION ALL SELECT 'tb_employee_tax_profiles' AS table_name, 'etp_child_allowance,etp_employee_id,etp_fund_allowance,etp_home_loan_interest,etp_insurance_allowance,etp_note,etp_other_allowance,etp_parent_allowance,etp_prior_from_other_employer,etp_prior_income,etp_prior_sso,etp_prior_tax,etp_spouse_allowance,etp_tax_year,etp_updated_at,etp_updated_by' AS expected_columns, 'fk_etp_updated_by(etp_updated_by),primary(etp_employee_id+etp_tax_year)' AS expected_indexes
     UNION ALL SELECT 'tb_payroll_runs' AS table_name, 'pr_approval_current_level,pr_approval_plan,pr_approval_round,pr_approved_at,pr_calculated_at,pr_cancel_reason,pr_cancelled_at,pr_cancelled_by,pr_created_at,pr_created_by,pr_employee_count,pr_id,pr_number,pr_paid_by,pr_paid_date,pr_paid_note,pr_pay_date,pr_period,pr_returned_reason,pr_standard_hours,pr_status,pr_submitted_at,pr_total_deductions,pr_total_gross,pr_total_net,pr_total_sso_employee,pr_total_sso_employer,pr_total_tax,pr_updated_at,pr_version,pr_working_days' AS expected_columns, 'fk_pr_cancelled_by(pr_cancelled_by),fk_pr_created_by(pr_created_by),fk_pr_paid_by(pr_paid_by),idx_pr_period_status(pr_period+pr_status),primary(pr_id)' AS expected_indexes
     UNION ALL SELECT 'tb_payroll_approvals' AS table_name, 'pra_action,pra_created_at,pra_id,pra_level,pra_reason,pra_role_id,pra_role_name,pra_round,pra_run_id,pra_user_id,pra_user_name' AS expected_columns, 'fk_pra_user(pra_user_id),idx_pra_run_round(pra_run_id+pra_round),primary(pra_id)' AS expected_indexes
-    UNION ALL SELECT 'tb_payroll_items' AS table_name, 'pri_annual_income_estimate,pri_annual_tax_estimate,pri_bank_account_no,pri_bank_name,pri_base_salary,pri_days_in_month,pri_department_name,pri_emp_code,pri_employed_days,pri_employee_id,pri_full_name,pri_gross,pri_id,pri_labor_cost,pri_national_id,pri_net,pri_other_deductions,pri_other_earnings,pri_position,pri_run_id,pri_salary_amount,pri_sso_employee,pri_sso_employer,pri_sso_enrolled,pri_sso_wage,pri_standard_hours,pri_tax,pri_taxable_income,pri_unpaid_leave_amount,pri_unpaid_leave_days,pri_ytd_income_before,pri_ytd_sso_before,pri_ytd_tax_before' AS expected_columns, 'idx_pri_employee(pri_employee_id),primary(pri_id),uq_pri_run_employee(pri_run_id+pri_employee_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_payroll_items' AS table_name, 'pri_absent_days,pri_annual_income_estimate,pri_annual_tax_estimate,pri_attendance_deduction,pri_bank_account_no,pri_bank_name,pri_base_salary,pri_days_in_month,pri_department_name,pri_early_leave_minutes,pri_emp_code,pri_employed_days,pri_employee_id,pri_full_name,pri_gross,pri_id,pri_labor_cost,pri_late_minutes,pri_national_id,pri_net,pri_other_deductions,pri_other_earnings,pri_position,pri_run_id,pri_salary_amount,pri_sso_employee,pri_sso_employer,pri_sso_enrolled,pri_sso_wage,pri_standard_hours,pri_tax,pri_taxable_income,pri_unpaid_leave_amount,pri_unpaid_leave_days,pri_ytd_income_before,pri_ytd_sso_before,pri_ytd_tax_before' AS expected_columns, 'idx_pri_employee(pri_employee_id),primary(pri_id),uq_pri_run_employee(pri_run_id+pri_employee_id)' AS expected_indexes
     UNION ALL SELECT 'tb_payroll_item_lines' AS table_name, 'pil_amount,pil_created_at,pil_created_by,pil_id,pil_is_one_off,pil_is_sso_wage,pil_is_taxable,pil_item_id,pil_kind,pil_label,pil_source' AS expected_columns, 'fk_pil_created_by(pil_created_by),idx_pil_item(pil_item_id),primary(pil_id)' AS expected_indexes
     UNION ALL SELECT 'tb_labor_cost_allocations' AS table_name, 'lca_amount,lca_employee_id,lca_hours,lca_id,lca_period,lca_project_id,lca_run_id' AS expected_columns, 'fk_lca_employee(lca_employee_id),idx_lca_project_period(lca_project_id+lca_period),idx_lca_run(lca_run_id),primary(lca_id)' AS expected_indexes
     UNION ALL SELECT 'tb_credit_notes' AS table_name, 'cn_approval_current_level,cn_approval_plan,cn_approval_round,cn_base_thb,cn_branch_id,cn_cancel_reason,cn_cancelled_at,cn_cancelled_by,cn_client_id,cn_client_snapshot,cn_company_snapshot,cn_created_at,cn_created_by,cn_created_by_name,cn_currency,cn_id,cn_internal_note,cn_invoice_id,cn_issue_date,cn_issued_at,cn_issued_by,cn_issued_by_name,cn_issued_by_title,cn_issuer_signature_id,cn_language,cn_notes,cn_number,cn_original_total,cn_outstanding_before,cn_project_id,cn_reason,cn_reason_code,cn_refund_amount,cn_refund_bank_account_id,cn_refund_date,cn_refund_note,cn_refund_reference,cn_refund_required,cn_refund_wht,cn_refunded_at,cn_refunded_by,cn_returned_reason,cn_status,cn_submitted_at,cn_subtotal,cn_total,cn_total_thb,cn_updated_at,cn_vat_amount,cn_vat_rate,cn_version,cn_wht_amount' AS expected_columns, 'fk_cn_branch(cn_branch_id),fk_cn_cancelled_by(cn_cancelled_by),fk_cn_client(cn_client_id),fk_cn_created_by(cn_created_by),fk_cn_currency(cn_currency),fk_cn_issued_by(cn_issued_by),fk_cn_issuer_signature(cn_issuer_signature_id),fk_cn_project(cn_project_id),fk_cn_refund_bank_account(cn_refund_bank_account_id),fk_cn_refunded_by(cn_refunded_by),idx_cn_invoice_status(cn_invoice_id+cn_status),idx_cn_status_issue_date(cn_status+cn_issue_date),primary(cn_id),uq_cn_number(cn_number)' AS expected_indexes

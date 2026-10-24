@@ -13,16 +13,19 @@ const { formatHundredths, parseHundredths } = require("../shared/money.mjs");
 const { addDays, daysInMonth, laborCostOf } = require("../shared/payroll-math.mjs");
 const { buildApprovalPlan, evaluateApproval } = require("../shared/approval-flow.mjs");
 const approvalRulesService = require("./approval-rules.service");
+const { isTimesheetEnabled } = require("./timesheet-switch.service");
+const attendanceBoardService = require("./attendance-board.service");
 const companyService = require("./company.service");
 const { loadPeriodContext, findEligibleEmployees, calculateEmployee } = require("./payroll-calc.service");
 
 const DOCUMENT_TYPE = "PR";
 const DOCUMENT_NAME = "รอบเงินเดือน";
-const CLOSED_STATUSES = ["approved", "paid"];
+const { CLOSED_STATUSES, findClosedPeriods, assertPeriodsOpen } = require("./payroll-lock.service");
 const ITEM_MONEY_COLUMNS = [
     "pri_base_salary",
     "pri_salary_amount",
     "pri_unpaid_leave_amount",
+    "pri_attendance_deduction",
     "pri_other_earnings",
     "pri_other_deductions",
     "pri_gross",
@@ -52,6 +55,9 @@ const ITEM_COLUMNS = [
     "pri_employed_days",
     "pri_days_in_month",
     "pri_unpaid_leave_days",
+    "pri_late_minutes",
+    "pri_early_leave_minutes",
+    "pri_absent_days",
     "pri_standard_hours",
     ...ITEM_MONEY_COLUMNS,
 ];
@@ -72,35 +78,7 @@ function previousPeriodOf(period) {
 
 // ─── ล็อกเดือนที่ปิดรอบแล้ว (R-H7) — ใช้กับลงเวลาและลา ──────────────────────────────────────────────
 
-/**
- * เดือนที่รอบเงินเดือนอนุมัติ/จ่ายแล้ว จากวันที่ที่ส่งมา
- * @param {string[]} dates "YYYY-MM-DD"
- * @returns {Promise<string[]>} "YYYY-MM" ที่ล็อก
- */
-async function findClosedPeriods(conn, dates) {
-    const periods = [...new Set(dates.filter(Boolean).map((date) => date.slice(0, 7)))];
-    if (periods.length === 0) return [];
-    const [rows] = await conn.query(
-        "SELECT DISTINCT pr_period FROM tb_payroll_runs WHERE pr_period IN (?) AND pr_status IN (?) ORDER BY pr_period",
-        [periods, CLOSED_STATUSES],
-    );
-    return rows.map((row) => row.pr_period);
-}
-
-/**
- * ห้ามแก้ข้อมูลที่อยู่ในเดือนที่ปิดรอบเงินเดือนแล้ว
- * @param {string[]} dates
- * @param {string} what เช่น "ลงเวลา"
- */
-async function assertPeriodsOpen(conn, dates, what) {
-    const closed = await findClosedPeriods(conn, dates);
-    if (closed.length === 0) return;
-    throw new AppError(
-        409,
-        "PAYROLL_PERIOD_CLOSED",
-        `${what}ในเดือน ${closed.join(", ")} แก้ไม่ได้ เพราะรอบเงินเดือนของเดือนนั้นอนุมัติแล้ว — ถ้าผิดให้แจ้งฝ่ายบุคคลปรับในรอบถัดไป`,
-    );
-}
+// findClosedPeriods / assertPeriodsOpen ย้ายไป payroll-lock.service.js (2026-10-24) — ส่งต่อใน module.exports
 
 // ─── อ่าน ───────────────────────────────────────────────────────────────────────────────────
 
@@ -201,6 +179,44 @@ async function getRun(conn, runId, user) {
 }
 
 /**
+ * ลงเวลาก่อนส่งรอบ (ลงเวลา A-4 · 2026-10-24)
+ * ปัญหา: คำขอแก้เวลา/OT ของเดือนนี้ที่ยังรอ · วันที่ลงเวลาไม่ครบ (ลืมกด) — ตัวเลขหัก/OT ยังไม่นิ่ง
+ * เตือน: คิดก่อนสิ้นเดือน (วันที่ยังไม่ถึงยังไม่ถูกหักขาด/ไม่มี OT) · มีคนถูกหักขาดงาน
+ */
+async function addAttendanceReadiness(conn, run, items, { monthStart, monthEnd, problems, warnings }) {
+    const [[{ pendingCorrections }]] = await conn.query(
+        `SELECT COUNT(*) AS pendingCorrections FROM tb_attendance_corrections
+         WHERE ac_status = 'pending' AND ac_work_date BETWEEN ? AND ?`,
+        [monthStart, monthEnd],
+    );
+    if (Number(pendingCorrections) > 0) {
+        problems.push(`มีคำขอแก้เวลารออนุมัติ ${pendingCorrections} รายการในเดือนนี้ · อนุมัติหรือไม่อนุมัติก่อน (มีผลกับการหักสาย/ขาด)`);
+    }
+    const [[{ pendingOvertime }]] = await conn.query(
+        `SELECT COUNT(*) AS pendingOvertime FROM tb_overtime_requests
+         WHERE ot_status = 'pending' AND ot_work_date BETWEEN ? AND ?`,
+        [monthStart, monthEnd],
+    );
+    if (Number(pendingOvertime) > 0) {
+        problems.push(`มี OT รออนุมัติ ${pendingOvertime} รายการในเดือนนี้ · อนุมัติหรือไม่อนุมัติก่อน`);
+    }
+    const employeeIds = new Set(items.map((item) => item.pri_employee_id));
+    const summary = await attendanceBoardService.getMonthSummary(conn, run.pr_period);
+    const incomplete = summary.rows.filter((row) => employeeIds.has(row.emp_id) && row.incomplete_dates.length > 0);
+    if (incomplete.length > 0) {
+        const detail = incomplete.map((row) => `${row.emp_code} ${row.incomplete_dates.length} วัน`).join(", ");
+        problems.push(`ลงเวลาไม่ครบ ${incomplete.length} คน (${detail}) · ให้พนักงานขอแก้เวลา หรือดูที่หน้าลงเวลาพนักงาน`);
+    }
+    if (todayBangkok() < monthEnd) {
+        warnings.push("คิดก่อนสิ้นเดือน: วันที่ยังไม่ถึงยังไม่ถูกหักขาดงานและยังไม่มี OT · กด คิดใหม่ หลังสิ้นเดือนก่อนส่ง");
+    }
+    const absent = items.filter((item) => Number(item.pri_absent_days) > 0);
+    if (absent.length > 0) {
+        warnings.push(`หักขาดงาน ${absent.length} คน (${absent.map((item) => `${item.pri_emp_code} ${item.pri_absent_days} วัน`).join(", ")}) · ถ้าลาจริงให้อนุมัติใบลาแล้วคิดใหม่`);
+    }
+}
+
+/**
  * ปัญหาก่อนส่ง (blocking) + คำเตือน (ส่งได้)
  */
 async function buildReadiness(conn, run, items) {
@@ -225,12 +241,16 @@ async function buildReadiness(conn, run, items) {
             `มีคำขอลารออนุมัติ ${pendingLeaves} ใบในเดือนนี้ — อนุมัติหรือไม่อนุมัติก่อน (ลาไม่รับค่าจ้างมีผลกับเงินเดือน)`,
         );
     }
-    const [[{ pendingWeeks }]] = await conn.query(
-        `SELECT COUNT(DISTINCT w.tsw_id) AS pendingWeeks FROM tb_timesheet_weeks w
-         JOIN tb_timesheet_entries e ON e.tse_week_id = w.tsw_id
-         WHERE w.tsw_status IN ('submitted', 'returned', 'draft') AND e.tse_date BETWEEN ? AND ?`,
-        [monthStart, monthEnd],
-    );
+    await addAttendanceReadiness(conn, run, items, { monthStart, monthEnd, problems, warnings });
+    // ลงชั่วโมงต่อโปรเจกต์ปิดอยู่ (2026-10-23) ไม่ต้องเตือนสัปดาห์ที่ค้าง
+    const [[{ pendingWeeks }]] = (await isTimesheetEnabled(conn))
+        ? await conn.query(
+              `SELECT COUNT(DISTINCT w.tsw_id) AS pendingWeeks FROM tb_timesheet_weeks w
+               JOIN tb_timesheet_entries e ON e.tse_week_id = w.tsw_id
+               WHERE w.tsw_status IN ('submitted', 'returned', 'draft') AND e.tse_date BETWEEN ? AND ?`,
+              [monthStart, monthEnd],
+          )
+        : [[{ pendingWeeks: 0 }]];
     if (Number(pendingWeeks) > 0) {
         warnings.push(
             `ลงเวลา ${pendingWeeks} สัปดาห์ในเดือนนี้ยังไม่อนุมัติ — ชั่วโมงเหล่านี้จะไม่ถูกนับเป็นค่าแรงโปรเจกต์ และแก้ไม่ได้หลังอนุมัติรอบ`,
@@ -406,14 +426,15 @@ async function manualLinesOf(conn, itemId) {
 
 async function saveEmployeeItem(conn, runId, employee, context, itemId) {
     const manualLines = await manualLinesOf(conn, itemId);
-    const { item, recurringLines } = await calculateEmployee(conn, employee, context, manualLines, runId);
+    const { item, recurringLines, attendanceLines } = await calculateEmployee(conn, employee, context, manualLines, runId);
     let savedId = itemId;
     if (savedId) {
         await conn.query(
             `UPDATE tb_payroll_items SET ${ITEM_COLUMNS.map((column) => `${column} = ?`).join(", ")} WHERE pri_id = ?`,
             [...ITEM_COLUMNS.map((column) => item[column]), savedId],
         );
-        await conn.query("DELETE FROM tb_payroll_item_lines WHERE pil_item_id = ? AND pil_source = 'recurring'", [
+        // รายการที่ระบบคิด (ประจำ + OT จากลงเวลา) คิดใหม่ทุกครั้ง · ที่กรอกเองคงไว้
+        await conn.query("DELETE FROM tb_payroll_item_lines WHERE pil_item_id = ? AND pil_source IN ('recurring', 'attendance')", [
             savedId,
         ]);
     } else {
@@ -437,6 +458,14 @@ async function saveEmployeeItem(conn, runId, employee, context, itemId) {
                 line.pil_is_taxable ? 1 : 0,
                 line.pil_is_sso_wage ? 1 : 0,
             ],
+        );
+    }
+    for (const line of attendanceLines) {
+        await conn.query(
+            `INSERT INTO tb_payroll_item_lines
+                (pil_item_id, pil_source, pil_kind, pil_label, pil_amount, pil_is_taxable, pil_is_sso_wage, pil_is_one_off)
+             VALUES (?, 'attendance', 'earning', ?, ?, 1, ?, 1)`,
+            [savedId, line.pil_label, line.pil_amount, line.pil_is_sso_wage ? 1 : 0],
         );
     }
     return savedId;

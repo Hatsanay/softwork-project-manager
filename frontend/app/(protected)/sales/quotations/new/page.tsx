@@ -10,7 +10,7 @@ export default function NewQuotationPage() {
     const { options, loadError } = useFormOptions();
 
     return (
-        <div className="mx-auto grid max-w-6xl gap-6">
+        <div className="grid w-full gap-6">
             <PageHeader
                 eyebrow="ขาย · ใบเสนอราคา"
                 title="สร้างใบเสนอราคา"

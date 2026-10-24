@@ -154,7 +154,7 @@ export default function CreditNoteViewPage() {
     const needsRefund = parseHundredths(creditNote.cn_refund_required, "ต้องคืน") > 0n;
 
     return (
-        <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader
                 eyebrow={`ขาย · ใบลดหนี้ · ${creditNoteNumberLabel(creditNote)}`}
                 title={`ลดหนี้ ${invoice.inv_number ?? ""}`}

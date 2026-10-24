@@ -4,6 +4,10 @@ const { hasBit } = require("../utils/permissions");
 const { todayBangkok } = require("../utils/bangkok-time");
 const employeeCodeService = require("./employee-code.service");
 const timesheetService = require("./timesheet.service");
+const correctionService = require("./attendance-correction.service");
+const boardService = require("./attendance-board.service");
+const overtimeService = require("./attendance-overtime.service");
+const wfhService = require("./attendance-wfh.service");
 
 const CURRENT_SQL = "(e.emp_termination_date IS NULL OR e.emp_termination_date >= ?)";
 
@@ -152,6 +156,9 @@ async function getOverview(conn, user) {
     const canManage = hasBit(permission, "manageEmployees");
     const canPayroll = ["viewPayroll", "runPayroll", "approvePayroll"].some((key) => hasBit(permission, key));
     const canApproveLeave = hasBit(permission, "approveLeave");
+    const canApproveAttendance = hasBit(permission, "approveTimesheet");
+    // ลงเวลาวันนี้ (A-2): ฝ่ายบุคคลและผู้อนุมัติลงเวลาเห็นตัวเลขรวม
+    const attendanceToday = canManage || canApproveAttendance ? (await boardService.getBoard(conn, today)).counts : null;
 
     const timesheet = await timesheetService.listPendingApprovals(conn, user);
     const cardQueue = async (kind) => (await employeeCodeService.listCardQueue(conn, kind)).length;
@@ -162,7 +169,11 @@ async function getOverview(conn, user) {
         pending: {
             leave: canApproveLeave ? await countPendingLeave(conn, user.user_id) : null,
             timesheet: timesheet.can_approve ? timesheet.weeks.length : null,
+            attendance_corrections: canApproveAttendance ? (await correctionService.listPending(conn, user)).length : null,
+            overtime: canApproveAttendance ? (await overtimeService.listPending(conn, user)).length : null,
+            wfh: canApproveAttendance ? (await wfhService.listPending(conn, user)).length : null,
         },
+        attendance_today: attendanceToday,
         cards: canManage
             ? {
                   pending_print: await cardQueue("pending_print"),

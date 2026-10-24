@@ -1354,7 +1354,7 @@ export default function ViewProjectPage() {
     ];
 
     return (
-        <div className="mx-auto grid max-w-5xl gap-6">
+        <div className="grid w-full gap-6">
             {/* หัวข้อ + ข้อมูลโปรเจกต์ (ส่วนแสดงผลอยู่ที่ _components/project-sections.tsx) */}
             <ProjectHeader
                 project={project}

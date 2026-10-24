@@ -59,7 +59,7 @@ export default function CreateRolePage() {
     }
 
     return (
-        <div className="mx-auto grid max-w-3xl gap-6">
+        <div className="grid w-full gap-6">
             <PageHeader
                 eyebrow="ตั้งค่าระบบ · จัดการสิทธิ์"
                 title="สร้างสิทธิ์"

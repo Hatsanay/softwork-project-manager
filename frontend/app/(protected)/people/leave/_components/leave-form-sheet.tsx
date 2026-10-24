@@ -10,6 +10,7 @@ import { Paperclip, X } from "lucide-react";
 import FormField, { inputClass } from "@/components/ui/form-field";
 import FieldHint from "@/components/ui/guidance/field-hint";
 import StatusBanner from "@/components/ui/guidance/status-banner";
+import HowItWorks from "@/components/ui/guidance/how-it-works";
 import Segmented from "@/components/ui/segmented";
 import { buttonClass } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
@@ -354,7 +355,7 @@ export default function LeaveFormSheet({
                     <FieldHint>{attachmentHint}</FieldHint>
                 </div>
 
-                <FieldHint>{LEAVE_MESSAGES.formRules}</FieldHint>
+                <HowItWorks label="เงื่อนไขการลา">{LEAVE_MESSAGES.formRules}</HowItWorks>
 
                 <div className="flex flex-wrap justify-end gap-2">
                     <button

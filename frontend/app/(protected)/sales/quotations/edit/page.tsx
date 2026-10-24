@@ -34,7 +34,7 @@ export default function EditQuotationPage() {
     const isDraft = detail?.quotation.qt_status === "draft";
 
     return (
-        <div className="mx-auto grid max-w-6xl gap-6">
+        <div className="grid w-full gap-6">
             <PageHeader
                 eyebrow="ขาย · ใบเสนอราคา"
                 title={detail ? `แก้ร่าง: ${detail.quotation.qt_title}` : "แก้ร่างใบเสนอราคา"}

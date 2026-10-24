@@ -12,11 +12,13 @@ const { AppError } = require("../utils/app-error");
 const { todayBangkok } = require("../utils/bangkok-time");
 const { hasBit } = require("../shared/permissions.mjs");
 const { formatHundredths, parseHundredths } = require("../shared/money.mjs");
-const { addDays, daysBetween, weekdayIndex, workingDatesBetween } = require("../shared/payroll-math.mjs");
+const { addDays, daysBetween, workingDatesBetween } = require("../shared/payroll-math.mjs");
 const { HALF_DAY_OPTIONS, MAX_LEAVE_ATTACHMENTS } = require("../shared/schemas/leave.mjs");
 const { isRealDateText } = require("../shared/schemas/common.mjs");
 const { findLinkedEmployee } = require("./linked-employee.service");
-const { assertPeriodsOpen } = require("./payroll.service");
+const attendanceSetup = require("./attendance-setup.service");
+const { assertPeriodsOpen } = require("./payroll-lock.service");
+const { isTimesheetEnabled } = require("./timesheet-switch.service");
 
 const DAY_HUNDREDTHS = 100n;
 const HALF_DAY_HUNDREDTHS = 50n;
@@ -59,19 +61,20 @@ async function loadWorkCalendar(conn, startDate, endDate) {
 
 /**
  * วันทำงานที่ลา + จำนวนวัน (หน่วย 1/100 วัน)
- * @returns {Promise<{ dates: string[], dayCount: bigint }>}
+ * นับตามวันทำงานของกะพนักงานแต่ละวัน (2026-10-24 · กะทำงานเสาร์ ลาเสาร์ก็นับ) · ไม่รู้พนักงาน = วันทำงานของบริษัท
+ * @param {string | null} employeeId
+ * @returns {Promise<{ dates: string[], dayCount: bigint, holidayDates: string[] }>} holidayDates = วันทำงานที่ตรงวันหยุดบริษัท
  */
-async function leaveDaysOf(conn, request) {
-    const calendar = await loadWorkCalendar(conn, request.lr_start_date, request.lr_end_date);
-    const dates = workingDatesBetween(
+async function leaveDaysOf(conn, request, employeeId) {
+    const { dates, holidayDates } = await attendanceSetup.workingDatesOf(
+        conn,
+        employeeId ?? null,
         request.lr_start_date,
         request.lr_end_date,
-        calendar.workingWeekdays,
-        calendar.holidayDates,
     );
     const isHalfDay = request.lr_half_day && request.lr_half_day !== "none";
     const dayCount = isHalfDay && dates.length > 0 ? HALF_DAY_HUNDREDTHS : BigInt(dates.length) * DAY_HUNDREDTHS;
-    return { dates, dayCount };
+    return { dates, dayCount, holidayDates };
 }
 
 const MAX_PREVIEW_SPAN_DAYS = 366;
@@ -93,20 +96,20 @@ async function preview(conn, userId, query) {
     }
     const requestedHalf = HALF_DAY_OPTIONS.includes(query.half_day) ? query.half_day : "none";
     const halfDay = startDate === endDate ? requestedHalf : "none";
-    const { dates, dayCount } = await leaveDaysOf(conn, {
-        lr_start_date: startDate,
-        lr_end_date: endDate,
-        lr_half_day: halfDay,
-    });
+    const employee = await findLinkedEmployee(conn, userId);
+    const { dates, dayCount, holidayDates } = await leaveDaysOf(
+        conn,
+        { lr_start_date: startDate, lr_end_date: endDate, lr_half_day: halfDay },
+        employee?.emp_id ?? null,
+    );
 
-    // วันที่ไม่นับ: วันหยุดบริษัทที่ตรงวันทำงาน (พร้อมชื่อ) + วันหยุดประจำสัปดาห์
-    const calendar = await loadWorkCalendar(conn, startDate, endDate);
+    // วันที่ไม่นับ: วันหยุดบริษัทที่ตรงวันทำงานของกะ (พร้อมชื่อ) + วันหยุดประจำสัปดาห์ของกะ
     const [holidayRows] = await conn.query(
         `SELECT DATE_FORMAT(hd_date, '%Y-%m-%d') AS hd_date, hd_name FROM tb_company_holidays
          WHERE hd_date BETWEEN ? AND ? ORDER BY hd_date`,
         [startDate, endDate],
     );
-    const holidays = holidayRows.filter((row) => calendar.workingWeekdays[weekdayIndex(row.hd_date)] === "1");
+    const holidays = holidayRows.filter((row) => holidayDates.includes(row.hd_date));
     const calendarDays = daysBetween(startDate, endDate) + 1;
 
     return {
@@ -406,7 +409,7 @@ async function checkRequest(conn, employee, request) {
     if (Object.keys(fields).length > 0) {
         throw new AppError(400, "VALIDATION", "คำขอลาบางช่องใช้ไม่ได้ กรุณาแก้ตามข้อความใต้ช่อง", fields);
     }
-    const { dates, dayCount } = await leaveDaysOf(conn, request);
+    const { dates, dayCount } = await leaveDaysOf(conn, request, employee.emp_id);
     if (dayCount === 0n) {
         throw new AppError(400, "VALIDATION", "ช่วงที่เลือกไม่มีวันทำงาน (เป็นวันหยุดทั้งหมด)", {
             lr_end_date: "ช่วงนี้ไม่มีวันทำงาน — ไม่ต้องขอลา",
@@ -544,7 +547,7 @@ async function cancelOwn(conn, user, requestId, version, reason) {
 async function approve(conn, user, requestId, version) {
     const { row } = await lockForApprover(conn, user, requestId, version);
     if (row.lr_status !== "pending") throw wrongStatus("คำขอนี้ไม่ได้รออนุมัติแล้ว กรุณาโหลดหน้าใหม่");
-    const { dates, dayCount } = await leaveDaysOf(conn, row);
+    const { dates, dayCount } = await leaveDaysOf(conn, row, row.lr_employee_id);
     if (dayCount === 0n) throw wrongStatus("ช่วงลาไม่มีวันทำงานแล้ว (วันหยุดถูกเพิ่ม) — ให้พนักงานยกเลิกคำขอนี้");
     await assertNoOverlap(conn, row);
     await assertNoTimesheetHours(conn, row, dates);
@@ -670,6 +673,8 @@ async function assertNoOverlap(conn, request) {
  */
 async function assertNoTimesheetHours(conn, request, dates) {
     if (request.lr_half_day !== "none" || dates.length === 0) return;
+    // ปิดลงชั่วโมงต่อโปรเจกต์แล้ว (2026-10-23) ไม่ต้องตรวจชั่วโมงเก่า
+    if (!(await isTimesheetEnabled(conn))) return;
     const [rows] = await conn.query(
         `SELECT DATE_FORMAT(tse_date, '%Y-%m-%d') AS tse_date FROM tb_timesheet_entries
          WHERE tse_employee_id = ? AND tse_date IN (?) GROUP BY tse_date ORDER BY tse_date`,

@@ -93,7 +93,7 @@ export default function ReceiptViewPage() {
     const hasFee = parseHundredths(receipt.rc_fee_amount, "ค่าธรรมเนียม") > 0n;
 
     return (
-        <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader
                 eyebrow={`ขาย · ใบเสร็จรับเงิน · ${receipt.rc_number}`}
                 title={receipt.client_company || receipt.client_name}

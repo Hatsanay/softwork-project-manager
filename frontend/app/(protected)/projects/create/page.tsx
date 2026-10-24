@@ -81,7 +81,7 @@ export default function CreateProjectPage() {
     }
 
     return (
-        <div className="mx-auto grid max-w-3xl gap-6">
+        <div className="grid w-full gap-6">
             <PageHeader
                 eyebrow="งาน · โปรเจกต์"
                 title="สร้างโปรเจกต์"

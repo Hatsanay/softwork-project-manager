@@ -178,3 +178,25 @@ test("ภาษีทั้งปี 12 เดือน: เงินเดื�
     assert.equal(joined.total, joined.actualTax, "เข้างาน พ.ค. (เดือนแรกได้ครึ่งเดือน)");
     assert.ok(joined.withheld.every((tax) => tax >= 0n));
 });
+
+test("ค่าจ้างตามนาที (ลงเวลา A-4): เงินเดือน ÷ 30 ÷ ชั่วโมงต่อวัน × นาที/60 × อัตรา · เงินเดือนต่างกันรายวันรวมแล้วปัดครั้งเดียว", () => {
+    const { minuteWageOf } = require("../src/shared/payroll-math.mjs");
+    // 30,000 ÷ 30 ÷ 8 = 125 บาท/ชม. → สาย 30 นาที = 62.50 · OT 2 ชม. × 1.5 = 375.00 · OT วันหยุด 3 ชม. × 3 = 1,125.00
+    assert.equal(minuteWageOf([{ salary: 3000000n, minutes: 30 }], "1.00", "8.00"), 6250n);
+    assert.equal(minuteWageOf([{ salary: 3000000n, minutes: 120 }], "1.50", "8.00"), 37500n);
+    assert.equal(minuteWageOf([{ salary: 3000000n, minutes: 180 }], "3.00", "8.00"), 112500n);
+    // 25,000 ÷ 30 ÷ 8 = 104.1666... → 10 นาที = 17.36 (ปัดครึ่งขึ้น)
+    assert.equal(minuteWageOf([{ salary: 2500000n, minutes: 10 }], "1.00", "8.00"), 1736n);
+    assert.equal(
+        minuteWageOf(
+            [
+                { salary: 3000000n, minutes: 15 },
+                { salary: 3600000n, minutes: 15 },
+            ],
+            "1.00",
+            "8.00",
+        ),
+        6875n,
+        "15 นาทีที่ 30,000 (31.25) + 15 นาทีที่ 36,000 (37.50) = 68.75",
+    );
+});

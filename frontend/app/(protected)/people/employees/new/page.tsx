@@ -18,7 +18,7 @@ export default function NewEmployeePage() {
 function NewEmployeeContent() {
     const initialUserId = useSearchParams().get("user");
     return (
-        <div className="mx-auto grid w-full max-w-4xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader
                 eyebrow="บุคคล · พนักงาน"
                 title="เพิ่มพนักงาน"

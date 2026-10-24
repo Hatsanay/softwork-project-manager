@@ -12,14 +12,14 @@ import { CARD_CLASS } from "@/components/ui/card";
 import { formatDateOnly } from "@/app/function";
 import { apiFetch, uploadedFileUrl } from "@/lib/api";
 import { formatAmount } from "@/lib/shared/money.mjs";
-import { TIMESHEET_STATUS } from "../_messages";
-import type { MyLeave, MyProfile, MyTimesheetWeek, PayslipSummary } from "../_types";
+import { ATTENDANCE_STATUS } from "../_messages";
+import type { MyAttendance, MyLeave, MyProfile, PayslipSummary } from "../_types";
 import { cardStatusOf, nameInitial } from "../employees/_card-status";
 
 type MyData = {
     profile: MyProfile;
     leave: MyLeave | null;
-    week: MyTimesheetWeek | null;
+    attendance: MyAttendance | null;
     payslips: PayslipSummary[];
 };
 
@@ -49,11 +49,11 @@ export default function MyPeoplePage() {
         Promise.all([
             apiFetch<MyProfile>("/people/me"),
             apiFetch<MyLeave>(`/leave/me?year=${new Date().getFullYear()}`),
-            apiFetch<MyTimesheetWeek>("/timesheet/me"),
+            apiFetch<MyAttendance>("/attendance/me"),
             apiFetch<{ data: PayslipSummary[] }>("/payroll/payslips"),
-        ]).then(([profile, leave, week, payslips]) => {
+        ]).then(([profile, leave, attendance, payslips]) => {
             if (isLeftPage || !profile.data) return;
-            setData({ profile: profile.data, leave: leave.data, week: week.data, payslips: payslips.data?.data ?? [] });
+            setData({ profile: profile.data, leave: leave.data, attendance: attendance.data, payslips: payslips.data?.data ?? [] });
         });
         return () => {
             isLeftPage = true;
@@ -65,7 +65,7 @@ export default function MyPeoplePage() {
 
     if (!employee) {
         return (
-            <div className="mx-auto grid w-full max-w-4xl gap-6">
+            <div className="grid w-full gap-6">
                 <MyHero name={null} subtitle="บัญชีนี้ยังไม่ได้ผูกกับทะเบียนพนักงาน" photoUrl={null} />
                 <StatusBanner tone="info" title="ยังไม่ใช่พนักงานในระบบ">
                     ลงเวลา ขอลา และดูสลิปได้เมื่อฝ่ายบุคคลผูกบัญชีนี้กับทะเบียนพนักงานแล้ว
@@ -78,7 +78,7 @@ export default function MyPeoplePage() {
     const subtitle = [employee.emp_position, employee.department_name].filter(Boolean).join(" · ");
 
     return (
-        <div className="mx-auto grid w-full max-w-5xl gap-6">
+        <div className="grid w-full gap-6">
             <MyHero name={displayName} subtitle={subtitle} photoUrl={employee.photo_url} initialSource={employee.emp_first_name_th}>
                 <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
                     <HeroFact label="รหัสพนักงาน" value={employee.emp_code} isCode />
@@ -88,7 +88,7 @@ export default function MyPeoplePage() {
             </MyHero>
 
             <div className="grid gap-4 md:grid-cols-2">
-                <TimesheetTile week={data.week} />
+                <AttendanceTile attendance={data.attendance} />
                 <LeaveTile leave={data.leave} />
                 <PayslipTile payslips={data.payslips} />
                 <CardTile card={card} today={today} />
@@ -177,25 +177,34 @@ function Tile({
     );
 }
 
-function TimesheetTile({ week }: { week: MyTimesheetWeek | null }) {
-    const workingDays = week?.days.filter((day) => day.is_working_day && !day.holiday_name).length ?? 0;
-    const hours = Number(week?.week?.tsw_total_hours ?? 0);
-    const target = workingDays * 8;
-    const percent = target > 0 ? Math.min(100, Math.round((hours / target) * 100)) : 0;
-    const status = week?.week ? TIMESHEET_STATUS[week.week.tsw_status] : null;
+// ลงเวลาวันนี้ (เข้า-ออกงาน · 2026-10-23) — สถานะ + เวลาเข้า/ออก + สรุปเดือนนี้
+function AttendanceTile({ attendance }: { attendance: MyAttendance | null }) {
+    const day = attendance?.today_day ?? null;
+    const status = day ? ATTENDANCE_STATUS[day.status] : null;
+    const totals = attendance?.totals;
+    const timeOf = (text: string | null | undefined) => (text ? text.slice(11, 16) : "-");
+    if (attendance && !attendance.attendance_required) {
+        return (
+            <Tile icon={CalendarClock} title="ลงเวลาวันนี้" href="/people/attendance" linkLabel="ดูรายละเอียด">
+                <p className="text-sm text-gray-600">คุณไม่ต้องลงเวลาเข้า-ออกงาน</p>
+            </Tile>
+        );
+    }
     return (
-        <Tile icon={CalendarClock} title="ลงเวลาสัปดาห์นี้" href="/people/timesheet" linkLabel="ลงเวลา">
+        <Tile icon={CalendarClock} title="ลงเวลาวันนี้" href="/people/attendance" linkLabel="ลงเวลา">
             <div className="grid gap-3">
                 <div className="flex items-end justify-between gap-3">
-                    <p className="text-3xl font-medium text-gray-900 tabular-nums">
-                        {hours.toLocaleString("th-TH")} <span className="text-base font-normal text-gray-500">/ {target} ชม.</span>
+                    <p className="text-2xl font-medium text-gray-900 tabular-nums">
+                        เข้า {timeOf(day?.first_in)} <span className="text-gray-400">·</span> ออก {timeOf(day?.last_out)}
                     </p>
-                    {status ? <StatusPill tone={status.tone}>{status.label}</StatusPill> : <StatusPill tone="neutral">ยังไม่ลง</StatusPill>}
+                    {status && <StatusPill tone={status.tone}>{status.label}</StatusPill>}
                 </div>
-                <div className="h-2 overflow-hidden rounded-full bg-gray-100">
-                    <div className="h-full rounded-full bg-blue-500" style={{ width: `${percent}%` }} />
-                </div>
-                <p className="text-xs text-gray-500">เป้า = วันทำงานของสัปดาห์ {workingDays} วัน × 8 ชม.</p>
+                {totals && (
+                    <p className="text-xs text-gray-500">
+                        เดือนนี้ มา {totals.present} วัน · สาย {totals.late_days} ครั้ง · ขาด {totals.absent} วัน
+                        {totals.incomplete > 0 ? ` · ไม่ครบ ${totals.incomplete} วัน (ต้องขอแก้)` : ""}
+                    </p>
+                )}
             </div>
         </Tile>
     );

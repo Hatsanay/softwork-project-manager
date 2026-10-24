@@ -2,6 +2,7 @@
 
 // รายละเอียดเงินเดือนรายคน — ที่มาของทุกตัวเลข + รายการเพิ่ม/หัก · ร่าง: เพิ่ม/ลบรายการกรอกเองได้ (คิดคนนั้นใหม่ทันที)
 // บนมือถือเลื่อนขึ้นจากล่าง (CODING_GUIDELINES 5.1)
+import { attendanceDeductionText } from "../../_attendance-text";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -147,7 +148,11 @@ export default function ItemSheet({
                     {line.pil_label}
                     <span className="text-xs text-gray-400">
                         {[
-                            line.pil_source === "recurring" ? "รายการประจำ" : "กรอกเอง",
+                            line.pil_source === "recurring"
+                                ? "รายการประจำ"
+                                : line.pil_source === "attendance"
+                                  ? "จากลงเวลา (OT ที่อนุมัติ ตามเวลาที่อยู่จริง)"
+                                  : "กรอกเอง",
                             line.pil_kind === "earning" && (line.pil_is_taxable ? "คิดภาษี" : "ไม่คิดภาษี"),
                             line.pil_kind === "earning" && line.pil_is_sso_wage && "ค่าจ้างประกันสังคม",
                             line.pil_kind === "earning" &&
@@ -231,6 +236,13 @@ export default function ItemSheet({
                             label="หักลาไม่รับค่าจ้าง"
                             value={minus(item.pri_unpaid_leave_amount)}
                             note={`${Number(item.pri_unpaid_leave_days)} วัน`}
+                        />
+                    )}
+                    {Number(item.pri_attendance_deduction) > 0 && (
+                        <Row
+                            label="หักสาย/ออกก่อน/ขาดงาน"
+                            value={minus(item.pri_attendance_deduction)}
+                            note={`${attendanceDeductionText(item)} · ค่าจ้างต่อชั่วโมง = เงินเดือน ÷ 30 ÷ ชั่วโมงต่อวัน · ขาด = วันละเท่าลาไม่รับค่าจ้าง`}
                         />
                     )}
                     {lineList(earnings, "+")}

@@ -40,6 +40,8 @@ CREATE TABLE `tb_employees` (
   `emp_notes` text COLLATE utf8mb4_unicode_ci,
   `emp_photo_url` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'รูปพนักงานสำหรับบัตร (/uploads/employees/...) — ว่าง = ใช้รูปโปรไฟล์บัญชีผู้ใช้ที่ผูก',
   `emp_close_login_on_termination` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'ปิดการเข้าระบบของบัญชีที่ผูกหลังวันทำงานวันสุดท้าย (1 = ปิด · 2026-10-18)',
+  `emp_attendance_required` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'ต้องลงเวลาเข้า-ออกงานไหม (2026-10-23) · 0 = ไม่ต้อง เช่น ผู้บริหาร — ไม่นับสาย/ขาด',
+  `emp_wfh_weekdays` char(7) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '0000000' COMMENT 'วัน WFH ประจำ จันทร์→อาทิตย์ (1 = ทำงานที่บ้าน · 1111111 = WFH เต็มเวลา) · วัน WFH กดได้ทุกที่ (2026-10-24)',
   `emp_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `emp_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `emp_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -205,6 +207,14 @@ CREATE TABLE `tb_payroll_settings` (
   `ps_unpaid_leave_divisor` enum('days_30','working_days') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'days_30' COMMENT 'หักลาไม่รับค่าจ้างต่อวัน = เงินเดือน ÷ 30 หรือ ÷ วันทำงานของเดือน (Y3)',
   `ps_timesheet_backdate_days` smallint unsigned NOT NULL DEFAULT '14' COMMENT 'ลงเวลาย้อนหลังได้กี่วัน (ขั้น 4-2)',
   `ps_card_valid_years` tinyint unsigned NOT NULL DEFAULT '3' COMMENT 'บัตรพนักงานใช้ได้กี่ปีนับจากวันออก (2026-10-18) — เปลี่ยนแล้วมีผลกับบัตรที่ออกหลังจากนั้น',
+  `ps_default_schedule_id` int unsigned DEFAULT NULL COMMENT 'กะเริ่มต้นของพนักงานที่ยังไม่ได้กำหนดกะ (tb_work_schedules.ws_id · 2026-10-23)',
+  `ps_timesheet_enabled` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'เปิดลงชั่วโมงต่อโปรเจกต์ (ขั้น 4-2) · 0 = ปิด ใช้ลงเวลาเข้า-ออกแทน (2026-10-23 ผู้ใช้สั่งปิด เปิดกลับได้)',
+  `ps_attendance_start_date` date DEFAULT NULL COMMENT 'เริ่มใช้ลงเวลาเข้า-ออกงานตั้งแต่วันนี้ (2026-10-24) · วันก่อนหน้าไม่นับขาด/สาย · ว่าง = นับทุกวัน',
+  `ps_ot_rate_workday` decimal(4,2) NOT NULL DEFAULT '1.50' COMMENT 'อัตรา OT วันทำงาน (เท่าของค่าจ้างต่อชั่วโมง · ม.61) — รอนักบัญชียืนยัน Y7',
+  `ps_ot_rate_holiday_work` decimal(4,2) NOT NULL DEFAULT '1.00' COMMENT 'ทำงานวันหยุดในเวลาปกติ จ่ายเพิ่ม (เท่า · พนักงานรายเดือน ม.62)',
+  `ps_ot_rate_holiday_ot` decimal(4,2) NOT NULL DEFAULT '3.00' COMMENT 'OT วันหยุด นอกเวลาปกติ (เท่า · ม.63)',
+  `ps_ot_weekly_cap_hours` smallint unsigned NOT NULL DEFAULT '36' COMMENT 'OT + OT วันหยุด รวมไม่เกินกี่ชั่วโมงต่อสัปดาห์ (กฎกระทรวง 36)',
+  `ps_ot_is_sso_wage` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'OT นับเป็นค่าจ้างคิดประกันสังคม (1 = นับ · รอนักบัญชียืนยัน Y5)',
   `ps_updated_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `ps_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`ps_id`),
@@ -461,6 +471,10 @@ CREATE TABLE `tb_payroll_items` (
   `pri_salary_amount` decimal(15,2) NOT NULL COMMENT 'เงินเดือนตามสัดส่วนวัน',
   `pri_unpaid_leave_days` decimal(5,1) NOT NULL DEFAULT '0.0',
   `pri_unpaid_leave_amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `pri_late_minutes` int unsigned NOT NULL DEFAULT '0' COMMENT 'นาทีมาสาย (หลังผ่อนผัน) ที่หัก · ลงเวลา A-4',
+  `pri_early_leave_minutes` int unsigned NOT NULL DEFAULT '0' COMMENT 'นาทีออกก่อนเวลาที่หัก',
+  `pri_absent_days` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'วันขาดงาน (วันทำงาน ไม่ลา ไม่กดเลย)',
+  `pri_attendance_deduction` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'หักสาย/ออกก่อน/ขาด (ลดเงินเดือนก่อนคิดภาษีและประกันสังคม เหมือนลาไม่รับค่าจ้าง)',
   `pri_other_earnings` decimal(15,2) NOT NULL DEFAULT '0.00',
   `pri_other_deductions` decimal(15,2) NOT NULL DEFAULT '0.00',
   `pri_gross` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'เงินเดือนสุทธิจากลา + รายรับอื่น',
@@ -488,7 +502,7 @@ CREATE TABLE `tb_payroll_items` (
 CREATE TABLE `tb_payroll_item_lines` (
   `pil_id` int unsigned NOT NULL AUTO_INCREMENT,
   `pil_item_id` int unsigned NOT NULL,
-  `pil_source` enum('recurring','manual') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pil_source` enum('recurring','manual','attendance') COLLATE utf8mb4_unicode_ci NOT NULL,
   `pil_kind` enum('earning','deduction') COLLATE utf8mb4_unicode_ci NOT NULL,
   `pil_label` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
   `pil_amount` decimal(15,2) NOT NULL,
@@ -548,3 +562,180 @@ INSERT INTO `tb_leave_types` (`lt_name_th`, `lt_name_en`, `lt_days_per_year`, `l
   ('ลากิจ', 'Personal leave', 3.0, 1, NULL, 0, 2),
   ('ลาพักร้อน', 'Annual leave', 6.0, 1, NULL, 365, 3),
   ('ลาไม่รับค่าจ้าง', 'Unpaid leave', NULL, 0, NULL, 0, 4);
+
+-- ════ ลงเวลาเข้า-ออกงาน ช่วง A-1 (2026-10-23) · แบบระบบ: docs/plans/2026-10-23-attendance-ot.md ════
+-- กะทำงาน: ชุดเวลาให้เลือกแล้วกำหนดให้แต่ละคน · เวลาเลิก <= เวลาเข้า = กะข้ามเที่ยงคืน (วันทำงาน = วันที่เริ่มกะ)
+-- ปิดใช้งานแทนการลบ (พนักงานที่เคยใช้กะนี้ต้องดูประวัติได้)
+CREATE TABLE IF NOT EXISTS `tb_work_schedules` (
+  `ws_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `ws_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ws_start_time` time NOT NULL COMMENT 'เวลาเข้างาน',
+  `ws_end_time` time NOT NULL COMMENT 'เวลาเลิกงาน (<= เวลาเข้า = เลิกวันถัดไป)',
+  `ws_break_minutes` smallint unsigned NOT NULL DEFAULT '60' COMMENT 'พักระหว่างวัน (นาที) ไม่นับเป็นเวลาทำงาน',
+  `ws_working_weekdays` char(7) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '1111100' COMMENT 'วันทำงาน จันทร์→อาทิตย์ 1 = ทำงาน',
+  `ws_late_grace_minutes` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'ผ่อนผันสาย (นาที) · เกินแล้วนับสายจากเวลาเข้างาน (Q3)',
+  `ws_checkin_open_minutes` smallint unsigned NOT NULL DEFAULT '120' COMMENT 'กดเข้างานได้ก่อนเวลาเข้ากี่นาที (ใช้ตัดวันของกะข้ามคืน)',
+  `ws_status` enum('active','inactive') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `ws_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ws_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `ws_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`ws_id`),
+  UNIQUE KEY `uq_ws_name` (`ws_name`),
+  KEY `fk_ws_created_by` (`ws_created_by`),
+  CONSTRAINT `fk_ws_created_by` FOREIGN KEY (`ws_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- กะของพนักงานตามวันที่มีผล (ประวัติไม่หาย เหมือนค่าจ้าง) · กะ ณ วันใด = แถวล่าสุดที่มีผลไม่เกินวันนั้น · ไม่มีแถว = กะเริ่มต้นในตั้งค่า
+CREATE TABLE IF NOT EXISTS `tb_employee_schedules` (
+  `es_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `es_employee_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `es_schedule_id` int unsigned NOT NULL,
+  `es_effective_from` date NOT NULL,
+  `es_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `es_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`es_id`),
+  UNIQUE KEY `uq_es_employee_date` (`es_employee_id`,`es_effective_from`),
+  KEY `fk_es_schedule` (`es_schedule_id`),
+  KEY `fk_es_created_by` (`es_created_by`),
+  CONSTRAINT `fk_es_created_by` FOREIGN KEY (`es_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_es_employee` FOREIGN KEY (`es_employee_id`) REFERENCES `tb_employees` (`emp_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_es_schedule` FOREIGN KEY (`es_schedule_id`) REFERENCES `tb_work_schedules` (`ws_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- จุดลงเวลา (พิกัด + รัศมี) · สาขาหนึ่งมีได้หลายจุด · กดในรัศมี = ในจุด · นอกรัศมีกดได้แต่ต้องใส่เหตุผล (Q1)
+CREATE TABLE IF NOT EXISTS `tb_attendance_locations` (
+  `al_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `al_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `al_branch_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `al_latitude` decimal(9,6) NOT NULL,
+  `al_longitude` decimal(9,6) NOT NULL,
+  `al_radius_m` smallint unsigned NOT NULL DEFAULT '150' COMMENT 'รัศมี (เมตร)',
+  `al_status` enum('active','inactive') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `al_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `al_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `al_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`al_id`),
+  KEY `fk_al_branch` (`al_branch_id`),
+  KEY `fk_al_created_by` (`al_created_by`),
+  CONSTRAINT `fk_al_branch` FOREIGN KEY (`al_branch_id`) REFERENCES `tb_branches` (`branch_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_al_created_by` FOREIGN KEY (`al_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- การกดเข้า/ออกงาน — แก้/ลบไม่ได้ · เวลา = เวลาเซิร์ฟเวอร์ (ไทย) ไม่รับจากมือถือ · ชื่อจุดและระยะเก็บไว้ในแถว (จุดถูกปิดทีหลังก็ยังอ่านได้)
+-- แก้เวลา (ช่วง A-2) = เพิ่มแถวที่มา correction และทำเครื่องหมายแถวเดิมว่าไม่ใช้ (ap_voided_at) — ประวัติครบ
+-- พิกัดเป็นข้อมูลส่วนบุคคล: เก็บเฉพาะตอนกด · เห็นได้เฉพาะเจ้าตัว ผู้อนุมัติ และฝ่ายบุคคล
+CREATE TABLE IF NOT EXISTS `tb_attendance_punches` (
+  `ap_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `ap_employee_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ap_type` enum('in','out') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ap_at` datetime NOT NULL COMMENT 'เวลาเซิร์ฟเวอร์ (เวลาไทย)',
+  `ap_work_date` date NOT NULL COMMENT 'วันทำงานที่การกดนี้นับ (กะข้ามคืน = วันเริ่มกะ)',
+  `ap_source` enum('mobile','correction','hr') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'mobile',
+  `ap_latitude` decimal(9,6) DEFAULT NULL,
+  `ap_longitude` decimal(9,6) DEFAULT NULL,
+  `ap_accuracy_m` int unsigned DEFAULT NULL COMMENT 'ความแม่นยำ GPS (เมตร) ที่มือถือรายงาน',
+  `ap_location_id` int unsigned DEFAULT NULL COMMENT 'จุดลงเวลาที่ใกล้ที่สุด',
+  `ap_location_name` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ap_distance_m` int unsigned DEFAULT NULL,
+  `ap_is_offsite` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1 = นอกจุดลงเวลา / ไม่มีตำแหน่ง (ต้องมีเหตุผล)',
+  `ap_is_wfh` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1 = กดวัน WFH (ไม่ตรวจตำแหน่ง · ไม่ใช่นอกจุด)',
+  `ap_note` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ap_ip` varchar(45) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ap_user_agent` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ap_voided_at` datetime DEFAULT NULL,
+  `ap_voided_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ap_void_reason` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ap_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ap_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`ap_id`),
+  KEY `idx_ap_employee_date` (`ap_employee_id`,`ap_work_date`),
+  KEY `idx_ap_work_date` (`ap_work_date`),
+  KEY `fk_ap_location` (`ap_location_id`),
+  KEY `fk_ap_voided_by` (`ap_voided_by`),
+  KEY `fk_ap_created_by` (`ap_created_by`),
+  CONSTRAINT `fk_ap_created_by` FOREIGN KEY (`ap_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_ap_employee` FOREIGN KEY (`ap_employee_id`) REFERENCES `tb_employees` (`emp_id`),
+  CONSTRAINT `fk_ap_location` FOREIGN KEY (`ap_location_id`) REFERENCES `tb_attendance_locations` (`al_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_ap_voided_by` FOREIGN KEY (`ap_voided_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- คำขอแก้เวลา (ลงเวลา A-2 · 2026-10-24) — ลืมกดเข้า/ออก → ขอเวลาที่ถูก + เหตุผล → ผู้มีสิทธิ์อนุมัติลงเวลาอนุมัติ
+-- อนุมัติแล้วสร้างการกดที่มา 'correction' (ac_punch_id) · ของตัวเองอนุมัติไม่ได้ · เดือนที่ปิดรอบเงินเดือนแล้วขอ/อนุมัติไม่ได้
+-- ac_requested_at = เวลาเต็ม (กะข้ามคืน: ออกหลังเที่ยงคืนเป็นวันถัดไป) · ac_work_date = วันทำงานที่ขอแก้
+CREATE TABLE IF NOT EXISTS `tb_attendance_corrections` (
+  `ac_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `ac_employee_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ac_work_date` date NOT NULL,
+  `ac_type` enum('in','out') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ac_requested_at` datetime NOT NULL COMMENT 'เวลาที่ขอให้บันทึก (เวลาไทย)',
+  `ac_reason` varchar(500) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ac_status` enum('pending','approved','rejected','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `ac_decided_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ac_decided_at` datetime DEFAULT NULL,
+  `ac_decision_note` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เหตุผลที่ไม่อนุมัติ (พนักงานเห็น)',
+  `ac_punch_id` bigint unsigned DEFAULT NULL COMMENT 'การกดที่สร้างตอนอนุมัติ',
+  `ac_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ac_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`ac_id`),
+  KEY `idx_ac_employee_date` (`ac_employee_id`,`ac_work_date`),
+  KEY `idx_ac_status` (`ac_status`),
+  KEY `fk_ac_decided_by` (`ac_decided_by`),
+  KEY `fk_ac_punch` (`ac_punch_id`),
+  KEY `fk_ac_created_by` (`ac_created_by`),
+  CONSTRAINT `fk_ac_created_by` FOREIGN KEY (`ac_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_ac_decided_by` FOREIGN KEY (`ac_decided_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_ac_employee` FOREIGN KEY (`ac_employee_id`) REFERENCES `tb_employees` (`emp_id`),
+  CONSTRAINT `fk_ac_punch` FOREIGN KEY (`ac_punch_id`) REFERENCES `tb_attendance_punches` (`ap_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- คำขอ OT (ลงเวลา A-3 · 2026-10-24) — พนักงานขอ (= ยินยอมทำ OT ครั้งนั้น ม.24) → ผู้มีสิทธิ์อนุมัติลงเวลาอนุมัติ
+-- นาทีแยกชนิด (snapshot ตอนขอ ใช้คุมเพดานต่อสัปดาห์): วันทำงานนอกเวลางาน · วันหยุดในเวลาปกติของกะ · วันหยุดนอกเวลาปกติ
+-- จ่ายจริง (A-4) = ช่วงที่อนุมัติ ∩ เวลาที่อยู่จริง (เข้า-ออก) ปัดลงทีละ 15 นาที
+CREATE TABLE IF NOT EXISTS `tb_overtime_requests` (
+  `ot_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `ot_employee_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ot_work_date` date NOT NULL,
+  `ot_start_at` datetime NOT NULL,
+  `ot_end_at` datetime NOT NULL,
+  `ot_workday_minutes` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'OT วันทำงาน (นอกเวลางาน)',
+  `ot_holiday_work_minutes` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'ทำงานวันหยุดในเวลาปกติของกะ',
+  `ot_holiday_ot_minutes` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'OT วันหยุด (นอกเวลาปกติ)',
+  `ot_reason` varchar(500) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ot_status` enum('pending','approved','rejected','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `ot_decided_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ot_decided_at` datetime DEFAULT NULL,
+  `ot_decision_note` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เหตุผลที่ไม่อนุมัติ (พนักงานเห็น)',
+  `ot_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ot_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`ot_id`),
+  KEY `idx_ot_employee_date` (`ot_employee_id`,`ot_work_date`),
+  KEY `idx_ot_status` (`ot_status`),
+  KEY `fk_ot_decided_by` (`ot_decided_by`),
+  KEY `fk_ot_created_by` (`ot_created_by`),
+  CONSTRAINT `fk_ot_created_by` FOREIGN KEY (`ot_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_ot_decided_by` FOREIGN KEY (`ot_decided_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_ot_employee` FOREIGN KEY (`ot_employee_id`) REFERENCES `tb_employees` (`emp_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- คำขอ WFH รายวัน (2026-10-24) — พนักงานขอล่วงหน้า (วันนี้หรือหลังจากนี้) → ผู้มีสิทธิ์อนุมัติลงเวลาอนุมัติ
+-- วันที่อนุมัติแล้ว = วัน WFH: กดเข้า/ออกได้ทุกที่ ไม่ต้องใส่เหตุผล (บันทึกพิกัดไว้) · WFH ประจำตั้งที่ tb_employees.emp_wfh_weekdays
+CREATE TABLE IF NOT EXISTS `tb_wfh_requests` (
+  `wfh_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `wfh_employee_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `wfh_date` date NOT NULL,
+  `wfh_reason` varchar(500) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `wfh_status` enum('pending','approved','rejected','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `wfh_decided_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `wfh_decided_at` datetime DEFAULT NULL,
+  `wfh_decision_note` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เหตุผลที่ไม่อนุมัติ (พนักงานเห็น)',
+  `wfh_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `wfh_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`wfh_id`),
+  KEY `idx_wfh_employee_date` (`wfh_employee_id`,`wfh_date`),
+  KEY `idx_wfh_status` (`wfh_status`),
+  KEY `fk_wfh_decided_by` (`wfh_decided_by`),
+  KEY `fk_wfh_created_by` (`wfh_created_by`),
+  CONSTRAINT `fk_wfh_created_by` FOREIGN KEY (`wfh_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_wfh_decided_by` FOREIGN KEY (`wfh_decided_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_wfh_employee` FOREIGN KEY (`wfh_employee_id`) REFERENCES `tb_employees` (`emp_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

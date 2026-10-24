@@ -60,7 +60,7 @@ export default function ReceivableClientPage() {
     const bucketLabel = new Map(aging.buckets.map((bucket) => [bucket.key, bucket.label]));
 
     return (
-        <div className="mx-auto grid w-full max-w-5xl grid-cols-1 gap-6">
+        <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader
                 eyebrow="ขาย · ลูกหนี้คงค้าง"
                 title={clientName}

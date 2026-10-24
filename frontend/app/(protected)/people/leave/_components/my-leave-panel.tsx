@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import StatusBanner from "@/components/ui/guidance/status-banner";
-import FieldHint from "@/components/ui/guidance/field-hint";
+import HowItWorks from "@/components/ui/guidance/how-it-works";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { buttonClass } from "@/components/ui/button";
@@ -214,9 +214,11 @@ export default function MyLeavePanel() {
             </div>
 
             <LeaveBalanceBars balances={data.balances} />
-            <FieldHint>
-                {LEAVE_MESSAGES.balanceHint} · {LEAVE_MESSAGES.cancelApprovedHint}
-            </FieldHint>
+            <HowItWorks label="วิธีคิดวันลาคงเหลือ">
+                <p>{LEAVE_MESSAGES.balanceHint}</p>
+                <p>{LEAVE_MESSAGES.countRule}</p>
+                <p>{LEAVE_MESSAGES.cancelApprovedHint}</p>
+            </HowItWorks>
 
             {actionError && (
                 <StatusBanner tone="error" title="ทำรายการไม่สำเร็จ">
