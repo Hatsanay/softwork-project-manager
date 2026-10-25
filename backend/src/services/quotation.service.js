@@ -575,7 +575,8 @@ async function getQuotationDetail(conn, quotationId, actor) {
         quotation.qt_status === "pending_approval"
             ? evaluateFor(quotation, approvalsThisRound, actor, company.cs_allow_self_approval)
             : null;
-    const actions = await buildActions(conn, quotation, chain, actor, approval);
+    const fastworkSource = await fastworkSourceOf(conn, quotation);
+    const actions = await buildActions(conn, quotation, chain, actor, approval, fastworkSource);
     const readiness = quotation.qt_status === "draft" ? buildReadiness(quotation, items, milestones, currency) : [];
 
     return {
@@ -595,13 +596,37 @@ async function getQuotationDetail(conn, quotationId, actor) {
         approval,
         actions,
         readiness,
+        fastwork_internal: fastworkSource,
     };
 }
 
 /**
  * ปุ่มที่ผู้ใช้คนนี้กดได้ตอนนี้ + เหตุผลถ้ากดไม่ได้ (หน้าเว็บซ่อนปุ่มและแสดงเหตุผลในแถบสถานะ — ห้าม tooltip)
  */
-async function buildActions(conn, quotation, chain, actor, approval) {
+/**
+ * ใบเสนอราคาภายในของงาน Fastwork (S-5): ออกจากคำขอของลิงก์ Fastwork (ทุก revision) หรือผูกโปรเจกต์ช่องทาง Fastwork
+ * ไม่เก็บธงซ้ำ อ่านจากที่มา · ส่งลูกค้า/บันทึกตอบรับ/ออกใบแจ้งหนี้ไม่ได้ (ราคาและเงินอยู่บน Fastwork)
+ * @returns {Promise<{ request_id: string | null } | null>}
+ */
+async function fastworkSourceOf(conn, quotation) {
+    const [[request]] = await conn.query(
+        `SELECT r.svr_id FROM tb_service_requests r
+         JOIN tb_order_links l ON l.ol_id = r.svr_link_id
+         JOIN tb_quotations q ON q.qt_id = r.svr_quotation_id
+         WHERE l.ol_kind = 'fastwork' AND q.qt_root_id = ? LIMIT 1`,
+        [quotation.qt_root_id],
+    );
+    if (request) return { request_id: request.svr_id };
+    if (!quotation.qt_project_id) return null;
+    const [[project]] = await conn.query("SELECT project_channel FROM tb_projects WHERE project_id = ?", [quotation.qt_project_id]);
+    return project?.project_channel === "fastwork" ? { request_id: null } : null;
+}
+
+function fastworkInternalError() {
+    return new AppError(409, "QUOTATION_FASTWORK_INTERNAL", "ใบนี้เป็นเอกสารภายในของงาน Fastwork · ส่งราคาและรับเงินบน Fastwork แล้วรับงานจากหน้าคำขอบริการ");
+}
+
+async function buildActions(conn, quotation, chain, actor, approval, fastworkSource = null) {
     const canCreate = hasBit(actor.role_permission, "createQuotation");
     const canCancelPermission = hasBit(actor.role_permission, "cancelQuotation");
     const status = quotation.qt_status;
@@ -624,9 +649,9 @@ async function buildActions(conn, quotation, chain, actor, approval) {
         can_approve: Boolean(approval?.canApprove),
         can_return:
             status === "pending_approval" && hasBit(actor.role_permission, "approveQuotation") && isInCurrentLevel,
-        can_send: canCreate && status === "approved",
+        can_send: canCreate && status === "approved" && !fastworkSource,
         can_decline: canCreate && ["approved", "sent"].includes(status),
-        can_accept: canCreate && ["approved", "sent"].includes(status),
+        can_accept: canCreate && ["approved", "sent"].includes(status) && !fastworkSource,
         can_revise: canCreate && REVISABLE_STATUSES.includes(status) && !hasOpenRevision,
         revise_blocked_reason:
             canCreate && (REVISABLE_STATUSES.includes(status) || status === "accepted") ? reviseBlockedReason : null,
@@ -665,6 +690,8 @@ function buildReadiness(quotation, items, milestones, currency) {
 }
 
 module.exports = {
+    fastworkSourceOf,
+    fastworkInternalError,
     createDraft,
     updateDraft,
     deleteDraft,

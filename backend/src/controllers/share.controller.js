@@ -14,7 +14,8 @@ async function getSharedProject(req, res, next) {
         const project = projectRows[0];
         if (!project) return res.status(404).json({ message: "ไม่พบโปรเจกต์นี้ หรือลิงก์ถูกปิดใช้งานแล้ว" });
 
-        // ลูกค้าเห็นแค่งานระดับบนสุด ไม่เห็น subtask (รายละเอียดย่อยเก็บไว้ใช้ภายในทีมเท่านั้น)
+        // งานระดับบนสุด + งานย่อย (ชื่อและสถานะเท่านั้น · 2026-10-25: งานย่อยจากชุดบริการคือสิ่งที่ลูกค้าซื้อ เช่น "ดูแลบั๊ก 30 วัน"
+        // ลูกค้าเห็นชื่องานย่อยในความเคลื่อนไหวอยู่แล้ว) · ไม่ส่งวันที่/ผู้รับผิดชอบของงานย่อย
         const [tasks] = await pool.query(
             `SELECT t.task_id, t.task_title, t.task_status,
                     (SELECT GROUP_CONCAT(CONCAT(u.user_fname, ' ', u.user_lname) SEPARATOR ', ')
@@ -40,7 +41,23 @@ async function getSharedProject(req, res, next) {
             [project.project_id]
         );
 
-        res.json({ project, tasks, timeline });
+        const [subtasks] = tasks.length
+            ? await pool.query(
+                  `SELECT task_id, task_parent_id, task_title, task_status FROM tb_tasks
+                   WHERE project_id = ? AND task_parent_id IS NOT NULL
+                   ORDER BY task_sort_order ASC, task_id ASC`,
+                  [project.project_id],
+              )
+            : [[]];
+        for (const task of tasks) {
+            task.subtasks = subtasks
+                .filter((subtask) => subtask.task_parent_id === task.task_id)
+                .map((subtask) => ({ task_id: subtask.task_id, task_title: subtask.task_title, task_status: subtask.task_status }));
+        }
+        // ชื่อร้านและโลโก้บนหัวหน้า (แทนคำว่า SOFTWORK)
+        const [[shop]] = await pool.query("SELECT cs_name_th AS name, cs_logo_url AS logo_url FROM tb_company_settings WHERE cs_id = 1");
+
+        res.json({ project, tasks, timeline, shop: shop ?? null });
     } catch (err) {
         next(err);
     }

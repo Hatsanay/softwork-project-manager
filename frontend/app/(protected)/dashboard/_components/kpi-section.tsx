@@ -124,7 +124,7 @@ export function MyKpiSection({
                 <div className="grid gap-0.5">
                     <h2 className="text-base font-medium text-gray-900">KPI ของฉัน</h2>
                     <FieldHint>
-                        &quot;ตรงเวลา&quot; นับเฉพาะรายการที่ครบกำหนดในช่วงนี้และครบกำหนดไปแล้ว —
+                        &quot;ตรงเวลา&quot; นับเฉพาะรายการที่ครบกำหนดในช่วงนี้และครบกำหนดไปแล้ว ·
                         ที่เลยกำหนดแต่ยังไม่เสร็จนับว่าสายทันที ไม่ต้องรอปิดงาน
                     </FieldHint>
                 </div>

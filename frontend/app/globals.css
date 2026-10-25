@@ -47,20 +47,127 @@
     }
 }
 
-/* พื้นไล่เฉดฟ้าของปุ่มหลัก/เมนูที่เลือก/การ์ดต้อนรับ */
+/* พื้นไล่เฉดฟ้าของปุ่มหลัก/เมนูที่เลือก/แถบความคืบหน้า (ชิ้นเล็กเท่านั้น ไม่ใช้เป็นกล่องใหญ่) */
 @utility bg-brand-gradient {
     background-image: linear-gradient(135deg, var(--color-blue-500), var(--color-blue-600));
 }
 
-/* ไล่เฉดฟ้า + ลายตารางขาวจาง (การ์ดต้อนรับ/หัวหน้าลิงก์ลูกค้า) — ต้องอยู่ใน background-image ชุดเดียวกัน
-   ถ้าใส่ลายตารางแยกผ่าน style={{ backgroundImage }} จะทับไล่เฉดหายทั้งแผ่น เหลือพื้นใส ตัวหนังสือขาวมองไม่เห็น */
-@utility bg-brand-grid {
-    background-color: var(--color-blue-500);
-    background-image:
-        linear-gradient(rgb(255 255 255 / 0.07) 1px, transparent 1px),
-        linear-gradient(90deg, rgb(255 255 255 / 0.07) 1px, transparent 1px),
-        linear-gradient(135deg, var(--color-blue-500), var(--color-blue-600));
-    background-size: 28px 28px, 28px 28px, 100% 100%;
+/* หัวหน้าแบบสว่าง (26 ต.ค. 2026 แทนกล่องฟ้าไล่เฉด · ผู้ใช้: "ดูเชย ดูยาก ขอเรียบกว่านี้ ให้เข้าธีม" แล้ว "อยากให้เด่นกว่านี้" "ดูแข็งไป อยากให้มีชีวิตชีวา")
+   พื้นขาว ตัวหนังสือเข้ม ฟ้าเป็นแค่แสงและจุดเน้น · ใช้กับ: แดชบอร์ด · ภาพรวมของฉัน · ภาพรวมบุคคล · หน้าลูกค้า (เลือกบริการ / สถานะคำขอ / ติดตามงาน)
+   ตัวกล่อง = ขอบฟ้าอ่อน เงาฟ้าจาง แสงจางมุมซ้ายล่าง (นิ่ง) · เปิดหน้าแล้วค่อยๆ ลอยขึ้น (hero-enter)
+   ::before = แสงฟ้า + ลายจุดที่มุมขวาบน ใหญ่กว่ากล่อง 20% รอบด้าน แล้วลอยเลื่อนช้าๆ (hero-drift 16 วิ) · มุมขวาบนของกล่อง = 86% 14% ของชิ้นนี้
+   ::after = แสงวิ่งพาดขอบบนเป็นระยะ (hero-sweep 7 วิ)
+   ขยับด้วย transform/opacity อย่างเดียว (มือถือไม่กระตุก) · เครื่องที่ตั้งลดการเคลื่อนไหว = หยุดนิ่งทั้งหมด
+   isolation ทำให้ z-index -1 ไม่หลุดไปหลังการ์ด · ห้ามใส่คอมเมนต์ข้างใน @utility (Tailwind คอมไพล์ไม่ผ่าน ไม่มี error ขึ้น หน้าใช้ CSS เก่าค้าง) */
+@keyframes hero-enter {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes hero-drift {
+    0% {
+        transform: translate(0, 0) scale(1);
+    }
+    50% {
+        transform: translate(-5%, 3%) scale(1.08);
+    }
+    100% {
+        transform: translate(2%, -2%) scale(1.03);
+    }
+}
+
+@keyframes hero-sweep {
+    0% {
+        transform: translateX(-100%);
+        opacity: 0;
+    }
+    10% {
+        opacity: 0.9;
+    }
+    45% {
+        opacity: 0.9;
+    }
+    55%,
+    100% {
+        transform: translateX(260%);
+        opacity: 0;
+    }
+}
+
+@utility surface-hero {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    border-radius: 1.75rem;
+    border: 1px solid rgb(59 130 246 / 0.16);
+    background-color: #fff;
+    background-image: radial-gradient(30rem 14rem at 0% 100%, rgb(59 130 246 / 0.09), transparent 70%);
+    box-shadow:
+        0 1px 2px rgb(16 24 40 / 0.04),
+        0 18px 40px -20px rgb(37 99 235 / 0.35);
+    animation: hero-enter 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+
+    &::before {
+        content: "";
+        position: absolute;
+        inset: -20%;
+        z-index: -1;
+        pointer-events: none;
+        background-image:
+            radial-gradient(44rem 22rem at 86% 14%, rgb(59 130 246 / 0.24), transparent 62%),
+            radial-gradient(18rem 10rem at 72% 20%, rgb(37 99 235 / 0.1), transparent 70%),
+            radial-gradient(rgb(37 99 235 / 0.3) 1.2px, transparent 1.2px);
+        background-size: 100% 100%, 100% 100%, 18px 18px;
+        mask-image: radial-gradient(46rem 24rem at 86% 14%, #000 12%, transparent 72%);
+        transform-origin: 86% 14%;
+        animation: hero-drift 16s ease-in-out infinite alternate;
+        will-change: transform;
+    }
+
+    &::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 40%;
+        height: 2px;
+        pointer-events: none;
+        background-image: linear-gradient(90deg, transparent, var(--color-blue-500), transparent);
+        animation: hero-sweep 7s ease-in-out 0.8s infinite;
+        will-change: transform, opacity;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        animation: none;
+
+        &::before {
+            animation: none;
+        }
+
+        &::after {
+            animation: none;
+            opacity: 0.7;
+            transform: translateX(80%);
+        }
+    }
+}
+
+/* ช่องตัวเลข/ข้อมูลในหัวหน้าแบบสว่าง: เทาอ่อน ขอบบาง · กดได้ = ใส่ hover:border-blue-200 hover:bg-white เอง (ขอบเป็น border ให้ hover เปลี่ยนสีได้) */
+@utility hero-tile {
+    border-radius: 1.25rem;
+    transition:
+        transform 0.2s ease,
+        border-color 0.2s ease,
+        background-color 0.2s ease,
+        box-shadow 0.2s ease;
+    border: 1px solid rgb(16 24 40 / 0.07);
+    background-color: rgb(249 250 251 / 0.85);
 }
 
 /* ระบบมีแต่ธีมสว่าง — บอกเบราว์เซอร์ให้ช่องกรอก/แถบเลื่อนเป็นแบบสว่างเสมอ แม้เครื่องผู้ใช้ตั้งโหมดมืด */
@@ -196,4 +303,48 @@ h4 {
 }
 .attendance-map.leaflet-container {
     font-family: inherit;
+}
+
+/*
+ * ─── หน้าที่ลูกค้าเห็น (2026-10-26) — ลิงก์เลือกบริการ · สถานะคำขอ · ติดตามงาน ─────────────────────────
+ * fluid: ตัวอักษร ระยะ และความกว้างขยายลื่นตามจอ (clamp) ไม่กระโดดตาม breakpoint · ใช้ผ่าน components/customer/*
+ */
+@utility text-fluid-display {
+    font-size: clamp(1.625rem, 1.15rem + 2.1vw, 2.75rem);
+    line-height: 1.2;
+}
+@utility text-fluid-title {
+    font-size: clamp(1.125rem, 0.98rem + 0.65vw, 1.5rem);
+    line-height: 1.35;
+}
+@utility text-fluid-lead {
+    font-size: clamp(0.9375rem, 0.88rem + 0.3vw, 1.0938rem);
+    line-height: 1.6;
+}
+@utility gap-fluid {
+    gap: clamp(1rem, 0.7rem + 1.3vw, 1.75rem);
+}
+@utility p-fluid {
+    padding: clamp(1rem, 0.72rem + 1.2vw, 1.75rem);
+}
+@utility px-fluid {
+    padding-inline: clamp(1rem, 0.4rem + 2.6vw, 3rem);
+}
+/* พื้นหน้าลูกค้า: เทาอ่อน + แสงฟ้านุ่มมุมบน + ลายจุดจาง (ไม่ใช้สีนอกธีม) */
+@utility bg-customer {
+    background-color: var(--color-gray-50);
+    background-image:
+        radial-gradient(60rem 28rem at 12% -6rem, rgb(59 130 246 / 0.14), transparent 70%),
+        radial-gradient(48rem 24rem at 100% 0, rgb(37 99 235 / 0.1), transparent 70%),
+        radial-gradient(rgb(16 24 40 / 0.045) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 22px 22px;
+    background-attachment: scroll;
+}
+/* การ์ดกระจกบนพื้นลูกค้า */
+@utility card-customer {
+    border-radius: 1.75rem;
+    border: 1px solid rgb(255 255 255 / 0.8);
+    background-color: rgb(255 255 255 / 0.86);
+    box-shadow: var(--shadow-card), 0 0 0 1px rgb(16 24 40 / 0.04);
+    backdrop-filter: blur(10px);
 }

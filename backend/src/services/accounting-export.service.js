@@ -495,6 +495,45 @@ async function findIssuedCertificateLines(conn, { from, to }) {
     });
 }
 
+/** เงินจาก Fastwork ที่เข้าในเดือน (P-1 · ตามวันที่เงินเข้า) — รวมที่ยกเลิกทีหลังด้วย ให้นักบัญชีเห็นการเปลี่ยนแปลง */
+async function findFastworkPayouts(conn, { from, to }) {
+    const [rows] = await conn.query(
+        `SELECT DATE_FORMAT(p.fwp_received_date, '%Y-%m-%d') AS received_date, p.fwp_status, p.fwp_gross, p.fwp_fee_rate, p.fwp_fee,
+                p.fwp_fee_vat, p.fwp_wht, p.fwp_wht_certificate_no, p.fwp_net, p.fwp_reference, p.fwp_cancel_reason,
+                DATE_FORMAT(p.fwp_cancelled_at, '%Y-%m-%d') AS cancelled_date,
+                pr.project_name, pr.project_fastwork_order_no, c.client_name, m.fwm_name,
+                CONCAT(b.ba_bank_name, ' ', b.ba_account_no) AS bank_account
+         FROM tb_fastwork_payouts p
+         JOIN tb_projects pr ON pr.project_id = p.fwp_project_id
+         LEFT JOIN tb_clients c ON c.client_id = pr.client_id
+         LEFT JOIN tb_fastwork_milestones m ON m.fwm_id = p.fwp_milestone_id
+         LEFT JOIN tb_bank_accounts b ON b.ba_id = p.fwp_bank_account_id
+         WHERE p.fwp_received_date BETWEEN ? AND ? AND p.fwp_status IN ('received', 'cancelled')
+         ORDER BY p.fwp_received_date, p.fwp_id`,
+        [from, to],
+    );
+    return rows.map((row) => ({
+        received_date: dateCell(row.received_date),
+        order_no: row.project_fastwork_order_no,
+        client: row.client_name,
+        project: row.project_name,
+        milestone: row.fwm_name,
+        gross: number(row.fwp_gross),
+        fee_rate: number(row.fwp_fee_rate),
+        fee: number(row.fwp_fee),
+        fee_vat: number(row.fwp_fee_vat),
+        wht: number(row.fwp_wht),
+        certificate_no: row.fwp_wht_certificate_no,
+        net: number(row.fwp_net),
+        bank_account: row.bank_account,
+        reference: row.fwp_reference,
+        status: row.fwp_status === "received" ? "เงินเข้าแล้ว" : "ยกเลิก",
+        is_received: row.fwp_status === "received",
+        cancelled_date: dateCell(row.cancelled_date),
+        cancel_reason: row.fwp_cancel_reason,
+    }));
+}
+
 const sum = (rows, key) => Math.round(rows.reduce((total, row) => total + (row[key] ?? 0), 0) * 100) / 100;
 
 /**
@@ -546,6 +585,8 @@ async function buildAccountingExport(conn, monthText, actor) {
     const issuedPayments = payments.filter((row) => row.is_issued);
     const certificateLines = await findIssuedCertificateLines(conn, range);
     const payroll = await payrollReportService.payrollJournalOfMonth(conn, range.month);
+    const fastworkPayouts = await findFastworkPayouts(conn, range);
+    const receivedFastwork = fastworkPayouts.filter((row) => row.is_received);
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "Softwork";
@@ -575,6 +616,12 @@ async function buildAccountingExport(conn, monthText, actor) {
         ["ส่วนต่างอัตราแลกเปลี่ยน (บาท)", sum(issuedReceipts, "fx_diff_thb")],
         ["ลูกหนี้คงค้าง ณ สิ้นเดือน (บาท)", sum(aging, "outstanding_thb")],
         ["เอกสารที่ยกเลิกในเดือน — จำนวน", cancellations.length],
+        [],
+        ["เงินจาก Fastwork ที่เข้าในเดือน — จำนวน", receivedFastwork.length],
+        ["ราคางวดรวม (บาท · รายได้)", sum(receivedFastwork, "gross")],
+        ["ค่าธรรมเนียม Fastwork รวม VAT (บาท)", Math.round((sum(receivedFastwork, "fee") + sum(receivedFastwork, "fee_vat")) * 100) / 100],
+        ["หัก ณ ที่จ่ายโดย Fastwork (บาท)", sum(receivedFastwork, "wht")],
+        ["เงินเข้าบัญชีจาก Fastwork (บาท)", sum(receivedFastwork, "net")],
         [],
         ["ค่าใช้จ่าย/ใบเบิกที่อนุมัติ (ตามวันที่ค่าใช้จ่าย) — จำนวน", approvedExpenses.length],
         ["ค่าใช้จ่ายรวม (บาท รวม VAT)", sum(approvedExpenses, "total_thb")],
@@ -629,6 +676,31 @@ async function buildAccountingExport(conn, monthText, actor) {
             { header: "เหตุผลที่เพิ่มหนี้", key: "adjust_reason", width: 30 },
         ],
         invoices,
+    );
+
+    addTableSheet(
+        workbook,
+        "รายได้ Fastwork",
+        [
+            { header: "วันที่เงินเข้า", key: "received_date", type: "date", width: 12 },
+            { header: "เลขคำสั่งซื้อ", key: "order_no", width: 16 },
+            { header: "ลูกค้า", key: "client", width: 24 },
+            { header: "งาน", key: "project", width: 30 },
+            { header: "งวด", key: "milestone", width: 24 },
+            { header: "ราคางวด", key: "gross", type: "money" },
+            { header: "อัตราค่าธรรมเนียม %", key: "fee_rate", type: "money", width: 10 },
+            { header: "ค่าธรรมเนียม", key: "fee", type: "money" },
+            { header: "VAT ค่าธรรมเนียม", key: "fee_vat", type: "money" },
+            { header: "หัก ณ ที่จ่าย", key: "wht", type: "money" },
+            { header: "เลขที่ 50 ทวิ", key: "certificate_no", width: 16 },
+            { header: "เงินเข้าบัญชี", key: "net", type: "money" },
+            { header: "บัญชีที่รับ", key: "bank_account", width: 24 },
+            { header: "อ้างอิง", key: "reference", width: 16 },
+            { header: "สถานะ", key: "status", width: 12 },
+            { header: "วันที่ยกเลิก", key: "cancelled_date", type: "date", width: 12 },
+            { header: "เหตุผลที่ยกเลิก", key: "cancel_reason", width: 30 },
+        ],
+        fastworkPayouts,
     );
 
     addTableSheet(

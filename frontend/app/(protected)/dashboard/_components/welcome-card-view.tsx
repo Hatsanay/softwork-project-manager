@@ -5,6 +5,8 @@
 import type { ReactNode } from "react";
 import { FolderKanban, ListTodo, MessageCircle, Plus, Search, TriangleAlert } from "lucide-react";
 import ViewLink from "@/components/ui/view-link";
+import HeroEyebrow from "@/components/ui/hero-eyebrow";
+import { buttonClass } from "@/components/ui/button";
 import { PROJECT_STATUS } from "../_labels";
 import type { SearchResults } from "../_types";
 
@@ -46,20 +48,15 @@ export default function WelcomeCardView(props: WelcomeCardViewProps) {
     ];
 
     return (
-        <section className="relative overflow-hidden rounded-3xl bg-brand-grid p-5 text-white shadow-brand sm:p-7">
+        <section className="surface-hero p-5 sm:p-7">
             <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="grid gap-1">
-                    <p className="text-sm text-blue-100">{greetingOf(props.hour)}</p>
-                    <h1 className="text-2xl font-medium">{props.firstName ? `คุณ${props.firstName}` : "แดชบอร์ด"}</h1>
-                    <p className="text-sm text-blue-100">
-                        ภาพรวมงานที่เกี่ยวกับคุณวันนี้ — กดที่รายการเพื่อไปยังงานนั้นได้ทันที
-                    </p>
+                <div className="grid min-w-0 gap-1.5">
+                    <HeroEyebrow>{greetingOf(props.hour)}</HeroEyebrow>
+                    <h1 className="text-2xl font-medium text-gray-900 sm:text-3xl">{props.firstName ? `คุณ${props.firstName}` : "แดชบอร์ด"}</h1>
+                    <p className="text-sm text-gray-500">ภาพรวมงานที่เกี่ยวกับคุณวันนี้ · กดที่รายการเพื่อไปยังงานนั้นได้ทันที</p>
                 </div>
                 {props.canCreateProject && (
-                    <ViewLink
-                        href="/projects/create"
-                        className="inline-flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-medium text-blue-600 shadow-sm transition hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/40"
-                    >
+                    <ViewLink href="/projects/create" className={buttonClass("primary")}>
                         <Plus size={16} />
                         สร้างโปรเจกต์
                     </ViewLink>
@@ -73,21 +70,19 @@ export default function WelcomeCardView(props: WelcomeCardViewProps) {
                     const Icon = counter.icon;
                     const content = (
                         <>
-                            <span className="flex items-center gap-2 text-xs text-blue-50">
-                                <Icon size={15} />
+                            <span className="flex items-center gap-2 text-xs text-gray-500">
+                                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                                    <Icon size={15} />
+                                </span>
                                 {counter.label}
                             </span>
-                            <span className="text-3xl font-medium tabular-nums">{counter.value}</span>
-                            <span className="text-xs text-blue-100">{counter.note ?? " "}</span>
+                            <span className="text-3xl font-medium text-gray-900 tabular-nums">{counter.value}</span>
+                            <span className={`text-xs ${counter.note ? "text-red-600" : "text-gray-400"}`}>{counter.note ?? " "}</span>
                         </>
                     );
-                    const className = "grid gap-1 rounded-2xl border border-white/20 bg-white/12 p-4 backdrop-blur-sm";
+                    const className = "hero-tile grid gap-1.5 p-4";
                     return counter.href ? (
-                        <ViewLink
-                            key={counter.label}
-                            href={counter.href}
-                            className={`${className} transition hover:bg-white/20`}
-                        >
+                        <ViewLink key={counter.label} href={counter.href} className={`${className} hover:-translate-y-0.5 hover:border-blue-200 hover:bg-white hover:shadow-card`}>
                             {content}
                         </ViewLink>
                     ) : (
@@ -130,7 +125,7 @@ export function DashboardSearchView(props: DashboardSearchViewProps) {
                 onBlur={props.onBlur}
                 placeholder="ค้นหาโปรเจกต์หรืองาน..."
                 aria-label="ค้นหาโปรเจกต์หรืองาน"
-                className="h-11 w-full rounded-xl border border-white/30 bg-white pr-3 pl-10 text-sm text-gray-800 shadow-sm placeholder:text-gray-400 focus:ring-4 focus:ring-white/30 focus:outline-none"
+                className="h-11 w-full rounded-xl border border-gray-200 bg-white pr-3 pl-10 text-sm text-gray-800 shadow-xs placeholder:text-gray-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-500/15 focus:outline-none"
             />
             {props.isOpen && query.trim() && (
                 <div className="absolute z-20 mt-2 max-h-80 w-full overflow-y-auto rounded-2xl border border-gray-200 bg-white p-1.5 text-gray-800 shadow-float">

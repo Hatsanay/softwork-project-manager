@@ -108,10 +108,11 @@ export default function InvoicePrintPage() {
     // ร่าง/รออนุมัติไม่พิมพ์ QR — กันลูกค้าสแกนจ่ายจากเอกสารที่ยังไม่ออก (ไม่มีเลขที่)
     const qrPayload = invoice.inv_status === "issued" ? payment.qr_payload : null;
 
-    // ยอดรวมย่อยท้ายแต่ละหัวข้อ (หัวข้อถึงหัวข้อถัดไป) — แบบเดียวกับหน้าพิมพ์ใบเสนอราคา
+    // ยอดรวมย่อยท้ายแต่ละหัวข้อ (หัวข้อถึงหัวข้อถัดไป) — แบบเดียวกับหน้าพิมพ์ใบเสนอราคา · พิมพ์เมื่อหัวข้อมีหลายแถวที่มีราคา (แถวเดียว = ยอดเท่ากับแถวนั้น ไม่พิมพ์ซ้ำ)
+    // แถวในหัวข้อที่ราคา 0 = สิ่งที่รวมในชุด (เช่น "ดูแลบั๊ก 30 วัน") → ✓ ไม่มีเลขลำดับ ไม่พิมพ์ 0.00
     let itemNumber = 0;
     const rows: {
-        kind: "heading" | "note" | "item" | "subtotal";
+        kind: "heading" | "note" | "item" | "included" | "subtotal";
         key: string;
         item?: (typeof items)[number];
         number?: number;
@@ -120,7 +121,7 @@ export default function InvoicePrintPage() {
     }[] = [];
     let currentHeading: { title: string; sum: bigint; count: number } | null = null;
     const closeHeading = () => {
-        if (currentHeading && currentHeading.count > 0) {
+        if (currentHeading && currentHeading.count > 1) {
             rows.push({
                 kind: "subtotal",
                 key: `subtotal-${rows.length}`,
@@ -136,6 +137,8 @@ export default function InvoicePrintPage() {
             rows.push({ kind: "heading", key: String(item.invi_id), item });
         } else if (item.invi_type === "note") {
             rows.push({ kind: "note", key: String(item.invi_id), item });
+        } else if (currentHeading && parseHundredths(item.invi_amount, "ยอด") === 0n && parseHundredths(item.invi_unit_price ?? "0", "ราคา") === 0n) {
+            rows.push({ kind: "included", key: String(item.invi_id), item });
         } else {
             itemNumber += 1;
             if (currentHeading) {
@@ -327,6 +330,14 @@ export default function InvoicePrintPage() {
                                         </td>
                                         <td className="py-1 pr-1 text-right tabular-nums">
                                             {formatAmount(row.item.invi_amount, decimals)}
+                                        </td>
+                                    </tr>
+                                )}
+                                {row.kind === "included" && row.item && (
+                                    <tr className="print-row align-top">
+                                        <td />
+                                        <td colSpan={5} className="py-0.5 pr-2 whitespace-pre-line text-gray-700">
+                                            ✓ {row.item.invi_description}
                                         </td>
                                     </tr>
                                 )}

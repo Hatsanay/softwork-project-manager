@@ -388,6 +388,7 @@ async function markSent(conn, quotationId, expectedVersion) {
     if (quotation.qt_status !== "approved")
         throw quotationService.wrongStatus("บันทึกว่าส่งลูกค้าได้เฉพาะใบที่อนุมัติแล้ว");
     quotationService.assertVersion(quotation, expectedVersion);
+    if (await quotationService.fastworkSourceOf(conn, quotation)) throw quotationService.fastworkInternalError();
     await conn.query(
         "UPDATE tb_quotations SET qt_status = 'sent', qt_sent_at = NOW(), qt_version = qt_version + 1 WHERE qt_id = ?",
         [quotationId],

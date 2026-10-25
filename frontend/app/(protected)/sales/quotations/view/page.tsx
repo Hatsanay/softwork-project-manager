@@ -179,7 +179,21 @@ export default function QuotationViewPage() {
                 actions={<StatusPill tone={status.tone}>{status.label}</StatusPill>}
             />
 
-            <StatusGuide detail={detail} />
+            {detail.fastwork_internal && (
+                <StatusBanner tone="info" title="เอกสารภายในของงาน Fastwork (ไม่ส่งลูกค้า)">
+                    ใช้เป็นตัวเลขอ้างอิงตอนส่งราคาบน Fastwork · ส่งลูกค้า บันทึกตอบรับ และออกใบแจ้งหนี้จากใบนี้ไม่ได้ (เงินเข้าบันทึกที่หน้า Fastwork)
+                    {detail.fastwork_internal.request_id && (
+                        <>
+                            {" · "}
+                            <Link href={`/sales/service-requests/view?id=${detail.fastwork_internal.request_id}`} className="-my-2 inline-block py-2 text-blue-600 hover:underline">
+                                รับงานจากคำขอ {detail.fastwork_internal.request_id}
+                            </Link>
+                        </>
+                    )}
+                </StatusBanner>
+            )}
+            {/* ใบภายใน: ข้อความขั้นส่งลูกค้า/รอลูกค้าตอบไม่ใช้ · ขั้นร่าง/อนุมัติ/ผูกงานยังใช้ */}
+            {(!detail.fastwork_internal || ["draft", "pending_approval", "accepted", "cancelled"].includes(quotation.qt_status)) && <StatusGuide detail={detail} />}
 
             {quotation.qt_status === "draft" && (
                 <section className={`grid gap-3 p-5 ${CARD_CLASS}`}>

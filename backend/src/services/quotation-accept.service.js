@@ -67,24 +67,24 @@ async function listProjectOptions(conn, quotationId, actor) {
     };
 }
 
-async function createTasksFromItems(conn, quotation, projectId) {
-    const [items] = await conn.query(
-        "SELECT qti_id, qti_type, qti_description FROM tb_quotation_items WHERE qti_quotation_id = ? ORDER BY qti_order, qti_id",
-        [quotation.qt_id],
-    );
+/**
+ * สร้างงานจากแถวรายการ — ใช้ทั้งใบเสนอราคาและคำขอบริการ (2026-10-25)
+ * หัวข้อ = งานหลัก · รายการ = งานย่อยใต้หัวข้อล่าสุด (ก่อนหัวข้อแรก = งานหลักระดับบนสุด) · หมายเหตุไม่สร้างงาน
+ * @param {{ type: "heading" | "item" | "note", description: string, quotationItemId?: number | null }[]} rows
+ * @param {string} sourceNote ต่อท้ายรายละเอียดงาน เช่น "จากใบเสนอราคา QT-..."
+ */
+async function insertTasksFromRows(conn, projectId, rows, sourceNote) {
     // โปรเจกต์เดิม: ต่อท้ายงานที่มีอยู่
     const [[{ lastOrder }]] = await conn.query(
         "SELECT COALESCE(MAX(task_sort_order), 0) AS lastOrder FROM tb_tasks WHERE project_id = ?",
         [projectId],
     );
-    const sourceNote = `จากใบเสนอราคา ${documentLabel(quotation)}`;
-
     let sortOrder = Number(lastOrder);
     let currentHeadingTaskId = null;
     let taskCount = 0;
-    for (const item of items) {
-        if (item.qti_type === "note") continue;
-        const isHeading = item.qti_type === "heading";
+    for (const row of rows) {
+        if (row.type === "note") continue;
+        const isHeading = row.type === "heading";
         const taskId = await generateDailyId("tb_tasks", "task_id", "TAS");
         sortOrder += 1;
         await conn.query(
@@ -95,10 +95,10 @@ async function createTasksFromItems(conn, quotation, projectId) {
                 taskId,
                 projectId,
                 isHeading ? null : currentHeadingTaskId,
-                taskTitleFrom(item.qti_description),
-                `${item.qti_description}\n\n${sourceNote}`,
+                taskTitleFrom(row.description),
+                `${row.description}\n\n${sourceNote}`,
                 sortOrder,
-                item.qti_id,
+                row.quotationItemId ?? null,
             ],
         );
         if (isHeading) currentHeadingTaskId = taskId;
@@ -107,14 +107,27 @@ async function createTasksFromItems(conn, quotation, projectId) {
     return taskCount;
 }
 
+async function createTasksFromItems(conn, quotation, projectId) {
+    const [items] = await conn.query(
+        "SELECT qti_id, qti_type, qti_description FROM tb_quotation_items WHERE qti_quotation_id = ? ORDER BY qti_order, qti_id",
+        [quotation.qt_id],
+    );
+    const rows = items.map((item) => ({ type: item.qti_type, description: item.qti_description, quotationItemId: item.qti_id }));
+    return insertTasksFromRows(conn, projectId, rows, `จากใบเสนอราคา ${documentLabel(quotation)}`);
+}
+
 /**
  * @param {import("mysql2/promise").PoolConnection} conn
  * @param {string} quotationId
  * @param {{ project_mode: "new" | "existing" | "none", project_id?: string | null, create_tasks: boolean, qt_version?: number | null }} choice
- * @param {{ user_id: string, role_permission: string }} actor
+ * @param {{ user_id: string, role_permission: string }} actor ลูกค้ากดเองในลิงก์ = ผู้รับคำขอ (เป็น PM ของโปรเจกต์ใหม่)
+ * @param {{ isCustomerAcceptance?: boolean, isFastworkTakeJob?: boolean }} [options]
+ *   isCustomerAcceptance: ลูกค้ากดยอมรับเองในลิงก์เลือกบริการ (2026-10-25 · S-4) ไม่ตรวจสิทธิ์สร้างโปรเจกต์ของผู้รับคำขอ
+ *   isFastworkTakeJob: รับงาน Fastwork จากคำขอ (S-5) · ใบภายในของงาน Fastwork ตอบรับได้ทางนี้ทางเดียว
  */
-async function acceptQuotation(conn, quotationId, choice, actor) {
+async function acceptQuotation(conn, quotationId, choice, actor, { isCustomerAcceptance = false, isFastworkTakeJob = false } = {}) {
     const quotation = await quotationService.findForUpdate(conn, quotationId);
+    if (!isFastworkTakeJob && (await quotationService.fastworkSourceOf(conn, quotation))) throw quotationService.fastworkInternalError();
     if (!ACCEPTABLE_STATUSES.includes(quotation.qt_status)) {
         throw quotationService.wrongStatus(
             "บันทึกว่าลูกค้าตอบรับได้เฉพาะใบที่อนุมัติแล้วหรือส่งลูกค้าแล้ว (ใบที่หมดอายุให้ออก revision ก่อน)",
@@ -124,7 +137,7 @@ async function acceptQuotation(conn, quotationId, choice, actor) {
 
     let projectId = null;
     if (choice.project_mode === "new") {
-        if (!hasBit(actor.role_permission, "createProject")) {
+        if (!isCustomerAcceptance && !hasBit(actor.role_permission, "createProject")) {
             throw new AppError(
                 403,
                 "CANNOT_CREATE_PROJECT",
@@ -176,4 +189,4 @@ async function acceptQuotation(conn, quotationId, choice, actor) {
     return { qt_id: quotationId, project_id: projectId, task_count: taskCount };
 }
 
-module.exports = { acceptQuotation, listProjectOptions, taskTitleFrom };
+module.exports = { acceptQuotation, listProjectOptions, taskTitleFrom, insertTasksFromRows };

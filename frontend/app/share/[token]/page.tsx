@@ -5,10 +5,10 @@
 // หน้าตาอยู่ที่ share-view.tsx (เดโมหน้า login ใช้ตัวเดียวกัน) · ไฟล์นี้ = โหลดข้อมูลจากลิงก์
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { CARD_CLASS } from "@/components/ui/card";
-import { PageSkeleton } from "@/components/ui/skeleton";
+import { Link2Off } from "lucide-react";
+import { CustomerLoading, CustomerNotice } from "@/components/customer/customer-shell";
 import { api } from "@/app/constans";
-import SharedProjectView, { ShareShell, type SharedProject, type SharedTask, type TimelineEntry } from "./share-view";
+import SharedProjectView, { ShareShell, type SharedProject, type SharedTask, type ShareShop, type TimelineEntry } from "./share-view";
 
 export default function SharedProjectPage() {
     const params = useParams<{ token: string }>();
@@ -16,6 +16,7 @@ export default function SharedProjectPage() {
     const [project, setProject] = useState<SharedProject | null>(null);
     const [tasks, setTasks] = useState<SharedTask[]>([]);
     const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
+    const [shop, setShop] = useState<ShareShop | null>(null);
     const [notFound, setNotFound] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -33,6 +34,7 @@ export default function SharedProjectPage() {
                 setProject(data.project);
                 setTasks(data.tasks ?? []);
                 setTimeline(data.timeline ?? []);
+                setShop(data.shop ?? null);
             })
             .catch(() => {
                 if (!isLeftPage) setNotFound(true);
@@ -46,26 +48,18 @@ export default function SharedProjectPage() {
     }, [token]);
 
     if (isLoading) {
-        return (
-            <ShareShell>
-                <PageSkeleton label="กำลังโหลดความคืบหน้า..." />
-            </ShareShell>
-        );
+        return <CustomerLoading label="กำลังโหลดความคืบหน้า..." />;
     }
 
     if (notFound || !project) {
         return (
             <ShareShell>
-                <div className={`grid justify-items-center gap-2 px-6 py-12 text-center ${CARD_CLASS}`}>
-                    <p className="text-base font-medium text-gray-900">เปิดลิงก์นี้ไม่ได้</p>
-                    <p className="max-w-sm text-sm text-gray-500">
-                        ลิงก์อาจถูกปิดใช้งาน หรือทีมงานสร้างลิงก์ใหม่แทนแล้ว —
-                        ติดต่อผู้ดูแลโปรเจกต์ของคุณเพื่อขอลิงก์ล่าสุด
-                    </p>
-                </div>
+                <CustomerNotice icon={Link2Off} title="เปิดลิงก์นี้ไม่ได้">
+                    ลิงก์อาจถูกปิดใช้งาน หรือทีมงานสร้างลิงก์ใหม่แทนแล้ว ติดต่อทีมงานเพื่อขอลิงก์ล่าสุด
+                </CustomerNotice>
             </ShareShell>
         );
     }
 
-    return <SharedProjectView project={project} tasks={tasks} timeline={timeline} />;
+    return <SharedProjectView project={project} tasks={tasks} timeline={timeline} shop={shop} />;
 }

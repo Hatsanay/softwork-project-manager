@@ -481,4 +481,52 @@ async function sendEmailOtpEmail({ to, ...data }) {
     });
 }
 
-module.exports = { sendTaskAssignedEmail, sendProjectMemberAddedEmail, sendClientShareLinkEmail, sendEmailOtpEmail };
+// คำขอบริการใหม่จากลิงก์เลือกบริการ (2026-10-25) — แจ้งผู้รับคำขอ · ส่งไม่ได้ไม่ทำให้การส่งคำขอของลูกค้าล้ม (กลืน error เหมือนแจ้งเตือนอื่น)
+function buildServiceRequestEmail({ requestId, customerName, total, linkKind, actionUrl }) {
+    const customer = escapeHtml(customerName);
+    const url = escapeHtml(actionUrl);
+    const source = linkKind === "fastwork" ? "ลิงก์ Fastwork" : linkKind === "public" ? "ลิงก์สาธารณะ" : "ลิงก์เฉพาะลูกค้า";
+    const html = `<!DOCTYPE html>
+<html lang="th">
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>คำขอบริการใหม่ ${escapeHtml(requestId)}</title></head>
+<body style="margin:0;padding:0;background:#eef1f7;font-family:'Segoe UI',Arial,'Noto Sans Thai',sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef1f7;padding:40px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border:1px solid #e3e7f0;border-radius:14px;">
+        <tr><td style="padding:32px;">
+          <p style="margin:0 0 10px;font-size:12px;font-weight:600;color:#2554c7;">คำขอบริการใหม่ · ${escapeHtml(source)}</p>
+          <p style="margin:0 0 16px;font-size:22px;font-weight:700;color:#10192e;">${customer}</p>
+          <p style="margin:0 0 24px;font-size:15px;line-height:1.7;color:#4b5568;">เลขคำขอ ${escapeHtml(requestId)} · ยอดประมาณการ ${escapeHtml(total)} บาท · รอคุณตรวจและยืนยัน</p>
+          <a href="${url}" style="display:inline-block;background:#2554c7;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;padding:13px 34px;border-radius:8px;">เปิดคำขอ</a>
+          <p style="font-size:12px;color:#8b93a7;margin:16px 0 0;word-break:break-all;">หากปุ่มใช้งานไม่ได้ ให้เปิดลิงก์นี้: ${url}</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+    const text = [`คำขอบริการใหม่ (${source}): ${customerName}`, `เลขคำขอ ${requestId} · ยอดประมาณการ ${total} บาท`, `เปิดคำขอ: ${actionUrl}`].join("\n");
+    return { html, text };
+}
+
+async function sendServiceRequestEmail({ to, ...data }) {
+    try {
+        const t = getTransporter();
+        if (!t) {
+            console.warn("[mailer] SMTP ยังไม่ได้ตั้งค่า (.env) — ข้ามการส่งอีเมลแจ้งคำขอบริการใหม่");
+            return;
+        }
+        const { html, text } = buildServiceRequestEmail(data);
+        await t.sendMail({
+            from: `"${process.env.SMTP_FROM_NAME || "Softwork Project Manager"}" <${process.env.SMTP_USER}>`,
+            to,
+            subject: `คำขอบริการใหม่ ${data.requestId}: ${data.customerName}`,
+            html,
+            text,
+        });
+    } catch (err) {
+        console.error("[mailer] ส่งอีเมลแจ้งคำขอบริการใหม่ไม่สำเร็จ:", err.message);
+    }
+}
+
+module.exports = { sendTaskAssignedEmail, sendProjectMemberAddedEmail, sendClientShareLinkEmail, sendEmailOtpEmail, sendServiceRequestEmail };

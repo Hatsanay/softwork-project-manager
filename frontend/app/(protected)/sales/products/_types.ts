@@ -13,6 +13,12 @@ export type Product = {
     product_category_id: string | null;
     category_name: string | null;
     product_status: ActiveStatus;
+    // หน้าร้านของลิงก์เลือกบริการ (2026-10-25) · MySQL ส่ง 0/1
+    product_is_public: number | boolean;
+    product_image_url: string | null;
+    // งานเพิ่มแบบ % ของยอดรายการอื่น (2026-10-25)
+    product_price_mode: "fixed" | "percent";
+    product_percent: string | null;
     product_created_at: string;
     product_updated_at: string;
 };
@@ -22,6 +28,7 @@ export type ProductCategory = {
     pc_name: string;
     pc_sort_order: number;
     pc_status: ActiveStatus;
+    pc_is_single_choice: boolean | number;
     product_count: number;
 };
 
@@ -34,6 +41,8 @@ export type ProductPackageSummary = {
     pkg_category_id: string | null;
     category_name: string | null;
     pkg_status: ActiveStatus;
+    pkg_is_public: number | boolean;
+    pkg_image_url: string | null;
     pkg_updated_at: string;
     item_count: number;
     inactive_product_count: number;
@@ -61,5 +70,9 @@ export type ProductPackage = {
     pkg_description: string | null;
     pkg_category_id: string | null;
     pkg_status: ActiveStatus;
+    pkg_is_public: number | boolean;
+    pkg_image_url: string | null;
     items: ProductPackageItem[];
+    // กติกางานเพิ่มบนหน้าร้าน (2026-10-25)
+    addon_rules: { product_id: string; rule: "included" | "not_available"; product_name: string }[];
 };

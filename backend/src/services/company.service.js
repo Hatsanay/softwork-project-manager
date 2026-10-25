@@ -12,6 +12,7 @@ const COMPANY_ROW_ID = 1;
 const COMPANY_COLUMNS = `
     cs_name_th, cs_name_en, cs_tax_id, cs_address_th, cs_address_en, cs_phone, cs_email, cs_website, cs_logo_url,
     DATE_FORMAT(cs_vat_registered_from, '%Y-%m-%d') AS cs_vat_registered_from,
+    DATE_FORMAT(cs_incorporated_on, '%Y-%m-%d') AS cs_incorporated_on,
     cs_quotation_valid_days, cs_quotation_terms_th, cs_quotation_terms_en, cs_allow_self_approval,
     cs_default_credit_days, cs_promptpay_id, cs_invoice_notes_th, cs_invoice_notes_en, cs_updated_at`;
 
@@ -92,10 +93,15 @@ async function getCompanySettings(conn, { canEdit }) {
  * @param {object} company ผ่าน companySchema แล้ว
  */
 async function updateCompany(conn, company) {
+    if (company.cs_incorporated_on && company.cs_incorporated_on > todayBangkok()) {
+        throw new AppError(400, "VALIDATION", "ข้อมูลบางช่องใช้ไม่ได้ กรุณาแก้ตามข้อความใต้ช่อง", {
+            cs_incorporated_on: "วันที่จดบริษัทต้องไม่เกินวันนี้ (ใส่หลังจดจริงแล้ว)",
+        });
+    }
     await conn.query(
         `UPDATE tb_company_settings SET
             cs_name_th = ?, cs_name_en = ?, cs_tax_id = ?, cs_address_th = ?, cs_address_en = ?,
-            cs_phone = ?, cs_email = ?, cs_website = ?, cs_vat_registered_from = ?,
+            cs_phone = ?, cs_email = ?, cs_website = ?, cs_vat_registered_from = ?, cs_incorporated_on = ?,
             cs_quotation_valid_days = ?, cs_quotation_terms_th = ?, cs_quotation_terms_en = ?, cs_allow_self_approval = ?,
             cs_default_credit_days = ?, cs_promptpay_id = ?, cs_invoice_notes_th = ?, cs_invoice_notes_en = ?
          WHERE cs_id = ?`,
@@ -109,6 +115,7 @@ async function updateCompany(conn, company) {
             company.cs_email,
             company.cs_website,
             company.cs_vat_registered_from,
+            company.cs_incorporated_on,
             company.cs_quotation_valid_days,
             company.cs_quotation_terms_th,
             company.cs_quotation_terms_en,

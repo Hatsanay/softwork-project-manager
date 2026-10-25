@@ -28,6 +28,17 @@ export const MENU_DEFS: MenuItem[] = [
             { key: "cancelProject",   label: "ยกเลิกโปรเจกต์",               href: "/projects/cancel", hidden: true },
         ],
     },
+    // Fastwork (2026-10-24 · P-1): หน้าศูนย์รวมขั้นตอนงาน Fastwork — เห็นเมื่อจัดการ Fastwork / สร้างโปรเจกต์ / ดูโปรเจกต์ทั้งหมด
+    {
+        key: "fastwork", label: "Fastwork", href: "/fastwork",
+        children: [
+            { key: "manageFastwork",  label: "Fastwork", href: "/fastwork", hidden: true },
+            { key: "createProject",   label: "Fastwork", href: "/fastwork", hidden: true },
+            { key: "viewAllProjects", label: "Fastwork", href: "/fastwork", hidden: true },
+            { key: "manageProfitShares", label: "Fastwork", href: "/fastwork", hidden: true },
+            { key: "manageCapitalFund", label: "Fastwork", href: "/fastwork", hidden: true },
+        ],
+    },
     // { key: "customers", label: "จัดการลูกค้า", href: "/customers" },
     // { key: "payments",  label: "การชำระเงิน",  href: "/payments" },
     {
@@ -57,6 +68,8 @@ export const MENU_DEFS: MenuItem[] = [
         label: "ขาย",
         href: "/sales",
         children: [
+            { key: "manageServiceRequests", label: "คำขอบริการ", href: "/sales/service-requests" },
+            { key: "manageServiceRequests", label: "ลิงก์เลือกบริการ", href: "/sales/order-links" },
             { key: "viewQuotations", label: "ใบเสนอราคา", href: "/sales/quotations" },
             { key: "viewInvoices", label: "ใบแจ้งหนี้", href: "/sales/invoices" },
             { key: "viewInvoices", label: "ใบวางบิล", href: "/sales/billing-notes" },
@@ -104,6 +117,8 @@ export const MENU_DEFS: MenuItem[] = [
             { key: "dashboard", label: "ลงเวลาทำงาน", href: "/people/attendance" },
             { key: "dashboard", label: "การลา", href: "/people/leave" },
             { key: "dashboard", label: "สลิปเงินเดือน", href: "/people/payslips" },
+            // ส่วนแบ่งกำไรรายโปรเจกต์ของตัวเอง (2026-10-24 · P-2) — ทุกคนเห็นของตัวเอง
+            { key: "dashboard", label: "ส่วนแบ่งของฉัน", href: "/people/my-shares" },
             { key: "approveLeave", label: "รออนุมัติ", href: "/people/approvals" },
             { key: "approveTimesheet", label: "รออนุมัติ", href: "/people/approvals", hidden: true },
             // ภาพรวมบุคคล: เห็นเมื่อมีสิทธิ์ด้านบุคคลข้อใดข้อหนึ่ง (ตัวเลขแต่ละส่วนตัดตามสิทธิ์ใน backend)
@@ -255,6 +270,22 @@ export const PERMISSION_GROUPS: PermGroup[] = [
         groupLabel: "ปรับยอด / คืนเงิน",
         bits: [
             { key: "refundCustomer", label: "บันทึกคืนเงินลูกค้าตามใบลดหนี้ (เงินออกจากบัญชีบริษัท)", href: "/sales/credit-notes/refund" },
+        ],
+    },
+    // งาน Fastwork (2026-10-24 · P-1) — ลำดับบิตต้องตรงกับ PERMISSION_KEYS (append-only)
+    {
+        groupLabel: "Fastwork",
+        bits: [
+            { key: "manageFastwork", label: "จัดการงาน Fastwork (สร้างงาน บันทึกเงินที่แพลตฟอร์มโอน ตั้งอัตราค่าธรรมเนียม · เห็นยอดเงินทุกงาน)", href: "/fastwork" },
+            { key: "manageProfitShares", label: "จัดการส่วนแบ่งกำไร (ตั้งส่วนแบ่ง เบิกล่วงหน้า ปิดยอด บันทึกจ่าย · เห็นส่วนแบ่งของทุกคน)", href: "/fastwork/shares" },
+            { key: "manageCapitalFund", label: "จัดการเงินทุนสะสม (ดูยอดเงินทุนและรายได้ปีนี้เทียบเพดาน VAT · ตั้งเป้า · ฝากเพิ่ม/ถอนออก)", href: "/fastwork/capital" },
+        ],
+    },
+    // ลิงก์เลือกบริการ (2026-10-25) — ลำดับบิตต้องตรงกับ PERMISSION_KEYS (append-only)
+    {
+        groupLabel: "ลิงก์เลือกบริการ",
+        bits: [
+            { key: "manageServiceRequests", label: "จัดการลิงก์เลือกบริการและคำขอบริการ (สร้าง/ปิดลิงก์ ตรวจ ปรับรายการ ปฏิเสธคำขอ · การอนุมัติ/ส่งใบเสนอราคาใช้สิทธิ์เดิม)", href: "/sales/service-requests" },
         ],
     },
 ];

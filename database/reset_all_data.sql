@@ -32,6 +32,7 @@ TRUNCATE TABLE `tb_bank_accounts`;
 TRUNCATE TABLE `tb_billing_note_invoices`;
 TRUNCATE TABLE `tb_billing_notes`;
 TRUNCATE TABLE `tb_branches`;
+TRUNCATE TABLE `tb_capital_entries`;
 TRUNCATE TABLE `tb_clients`;
 TRUNCATE TABLE `tb_company_holidays`;
 TRUNCATE TABLE `tb_company_settings`;
@@ -51,6 +52,8 @@ TRUNCATE TABLE `tb_employee_tax_profiles`;
 TRUNCATE TABLE `tb_employees`;
 TRUNCATE TABLE `tb_error_logs`;
 TRUNCATE TABLE `tb_exchange_rates`;
+TRUNCATE TABLE `tb_fastwork_milestones`;
+TRUNCATE TABLE `tb_fastwork_payouts`;
 TRUNCATE TABLE `tb_expense_approvals`;
 TRUNCATE TABLE `tb_expense_attachments`;
 TRUNCATE TABLE `tb_expense_categories`;
@@ -68,7 +71,14 @@ TRUNCATE TABLE `tb_leave_requests`;
 TRUNCATE TABLE `tb_leave_types`;
 TRUNCATE TABLE `tb_login_logs`;
 TRUNCATE TABLE `tb_maxID`;
+TRUNCATE TABLE `tb_order_link_items`;
+TRUNCATE TABLE `tb_order_link_categories`;
+TRUNCATE TABLE `tb_order_links`;
 TRUNCATE TABLE `tb_payment_allocations`;
+TRUNCATE TABLE `tb_requirement_group_packages`;
+TRUNCATE TABLE `tb_requirement_group_categories`;
+TRUNCATE TABLE `tb_requirement_groups`;
+TRUNCATE TABLE `tb_requirement_questions`;
 TRUNCATE TABLE `tb_payments`;
 TRUNCATE TABLE `tb_payroll_approvals`;
 TRUNCATE TABLE `tb_payroll_item_lines`;
@@ -77,6 +87,7 @@ TRUNCATE TABLE `tb_payroll_items`;
 TRUNCATE TABLE `tb_payroll_runs`;
 TRUNCATE TABLE `tb_payroll_settings`;
 TRUNCATE TABLE `tb_product_categories`;
+TRUNCATE TABLE `tb_package_addon_rules`;
 TRUNCATE TABLE `tb_product_package_items`;
 TRUNCATE TABLE `tb_product_packages`;
 TRUNCATE TABLE `tb_products`;
@@ -87,6 +98,7 @@ TRUNCATE TABLE `tb_project_labels`;
 TRUNCATE TABLE `tb_project_member_positions`;
 TRUNCATE TABLE `tb_project_members`;
 TRUNCATE TABLE `tb_project_positions`;
+TRUNCATE TABLE `tb_project_shares`;
 TRUNCATE TABLE `tb_projects`;
 TRUNCATE TABLE `tb_quotation_approvals`;
 TRUNCATE TABLE `tb_quotation_items`;
@@ -95,6 +107,13 @@ TRUNCATE TABLE `tb_quotations`;
 TRUNCATE TABLE `tb_receipt_allocations`;
 TRUNCATE TABLE `tb_receipts`;
 TRUNCATE TABLE `tb_roles`;
+TRUNCATE TABLE `tb_service_request_answers`;
+TRUNCATE TABLE `tb_service_request_files`;
+TRUNCATE TABLE `tb_service_request_items`;
+TRUNCATE TABLE `tb_service_requests`;
+TRUNCATE TABLE `tb_share_advances`;
+TRUNCATE TABLE `tb_share_settlement_lines`;
+TRUNCATE TABLE `tb_share_settlements`;
 TRUNCATE TABLE `tb_sso_rates`;
 TRUNCATE TABLE `tb_task_activity_log`;
 TRUNCATE TABLE `tb_task_assignees`;
@@ -310,8 +329,9 @@ FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM tb_work_schedules);
 UPDATE tb_payroll_settings
 SET ps_default_schedule_id = (SELECT MIN(ws_id) FROM tb_work_schedules WHERE ws_status = 'active')
 WHERE ps_id = 1 AND ps_default_schedule_id IS NULL;
--- วันเริ่มใช้ลงเวลา = วันที่ deploy (เฉพาะตอนยังว่างและยังไม่มีการกดเลย — ไม่ทับที่ฝ่ายบุคคลตั้งเอง)
-UPDATE tb_payroll_settings SET ps_attendance_start_date = CURDATE()
+-- วันเริ่มใช้ลงเวลา = วันที่ deploy ตามเวลาไทย (เฉพาะตอนยังว่างและยังไม่มีการกดเลย — ไม่ทับที่ฝ่ายบุคคลตั้งเอง)
+-- ไม่ใช้ CURDATE(): MySQL ที่ตั้งเป็น UTC จะได้วันก่อนหน้าเมื่อ deploy ช่วง 00:00-07:00 น.
+UPDATE tb_payroll_settings SET ps_attendance_start_date = DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+07:00'))
 WHERE ps_id = 1 AND ps_attendance_start_date IS NULL AND NOT EXISTS (SELECT 1 FROM tb_attendance_punches);
 
 -- ประเภทลาตามพระราชบัญญัติคุ้มครองแรงงาน (ขั้นต่ำ) — บริษัทปรับได้ในหน้าตั้งค่าบุคคล
@@ -323,6 +343,53 @@ SELECT * FROM (
   UNION ALL SELECT 'ลาไม่รับค่าจ้าง', 'Unpaid leave', NULL, 0, NULL, 0, 4
 ) seed
 WHERE NOT EXISTS (SELECT 1 FROM tb_leave_types);
+
+-- คำถามความต้องการตั้งต้น (2026-10-25) — ใส่เฉพาะตอนยังไม่มีกลุ่มเลย · ผูกกลุ่มกับหมวดสินค้าเองในหน้าตั้งค่า
+SET @seed_requirements = (SELECT COUNT(*) = 0 FROM tb_requirement_groups);
+INSERT INTO tb_requirement_groups (rqg_id, rqg_name, rqg_description, rqg_is_general, rqg_sort_order)
+SELECT * FROM (
+    SELECT 1 AS rqg_id, 'ทั่วไป' AS rqg_name, 'ถามทุกคำขอ' AS rqg_description, 1 AS rqg_is_general, 1 AS rqg_sort_order
+    UNION ALL SELECT 2 AS rqg_id, 'เว็บไซต์' AS rqg_name, 'ผูกกับหมวดงานเว็บไซต์' AS rqg_description, 0 AS rqg_is_general, 2 AS rqg_sort_order
+    UNION ALL SELECT 3 AS rqg_id, 'แอปมือถือ' AS rqg_name, 'ผูกกับหมวดงานแอปมือถือ' AS rqg_description, 0 AS rqg_is_general, 3 AS rqg_sort_order
+    UNION ALL SELECT 4 AS rqg_id, 'ออกแบบ UX/UI' AS rqg_name, 'ผูกกับหมวดงานออกแบบ' AS rqg_description, 0 AS rqg_is_general, 4 AS rqg_sort_order
+    UNION ALL SELECT 5 AS rqg_id, 'ระบบงาน' AS rqg_name, 'ผูกกับหมวดระบบภายในองค์กร' AS rqg_description, 0 AS rqg_is_general, 5 AS rqg_sort_order
+) AS seed WHERE @seed_requirements = 1;
+INSERT INTO tb_requirement_questions (rqq_group_id, rqq_text, rqq_help, rqq_type, rqq_options, rqq_is_required, rqq_sort_order)
+SELECT * FROM (
+    SELECT 1 AS rqq_group_id, 'ธุรกิจ/องค์กรของคุณทำอะไร ลูกค้าหลักคือใคร' AS rqq_text, 'เช่น ร้านอาหารไทย ลูกค้าเป็นนักท่องเที่ยว' AS rqq_help, 'long_text' AS rqq_type, NULL AS rqq_options, 1 AS rqq_is_required, 1 AS rqq_sort_order
+    UNION ALL SELECT 1 AS rqq_group_id, 'เป้าหมายของงานนี้' AS rqq_text, NULL AS rqq_help, 'multi' AS rqq_type, '["เพิ่มยอดขาย","ลดงานเอกสาร","สร้างภาพลักษณ์","ให้ลูกค้าจอง/สั่งเอง","อื่นๆ"]' AS rqq_options, 0 AS rqq_is_required, 2 AS rqq_sort_order
+    UNION ALL SELECT 1 AS rqq_group_id, 'อยากให้เสร็จภายใน' AS rqq_text, NULL AS rqq_help, 'date' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 3 AS rqq_sort_order
+    UNION ALL SELECT 1 AS rqq_group_id, 'งบประมาณที่ตั้งไว้' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["ต่ำกว่า 20,000","20,000-50,000","50,000-100,000","มากกว่า 100,000","ยังไม่แน่ใจ"]' AS rqq_options, 0 AS rqq_is_required, 4 AS rqq_sort_order
+    UNION ALL SELECT 1 AS rqq_group_id, 'ใครเป็นคนตัดสินใจ/ตรวจรับงาน' AS rqq_text, NULL AS rqq_help, 'short_text' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 5 AS rqq_sort_order
+    UNION ALL SELECT 1 AS rqq_group_id, 'ช่องทางที่สะดวกให้ติดต่อ' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["โทร","LINE","อีเมล"]' AS rqq_options, 0 AS rqq_is_required, 6 AS rqq_sort_order
+    UNION ALL SELECT 2 AS rqq_group_id, 'มีเว็บไซต์เดิมไหม' AS rqq_text, NULL AS rqq_help, 'yes_no' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 1 AS rqq_sort_order
+    UNION ALL SELECT 2 AS rqq_group_id, 'ลิงก์เว็บไซต์เดิม (ถ้ามี)' AS rqq_text, NULL AS rqq_help, 'url' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 2 AS rqq_sort_order
+    UNION ALL SELECT 2 AS rqq_group_id, 'ประมาณกี่หน้า และมีหน้าอะไรบ้าง' AS rqq_text, 'เช่น หน้าแรก เกี่ยวกับเรา บริการ ติดต่อ' AS rqq_help, 'long_text' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 3 AS rqq_sort_order
+    UNION ALL SELECT 2 AS rqq_group_id, 'มีโดเมนแล้วไหม' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["มีแล้ว","ยังไม่มี ให้จดให้","ไม่แน่ใจ"]' AS rqq_options, 0 AS rqq_is_required, 4 AS rqq_sort_order
+    UNION ALL SELECT 2 AS rqq_group_id, 'ต้องการระบบอะไรเพิ่ม' AS rqq_text, NULL AS rqq_help, 'multi' AS rqq_type, '["ฟอร์มติดต่อ","จอง/นัดหมาย","ร้านค้าออนไลน์","ชำระเงิน","ระบบสมาชิก","หลายภาษา","บทความ/ข่าว"]' AS rqq_options, 0 AS rqq_is_required, 5 AS rqq_sort_order
+    UNION ALL SELECT 2 AS rqq_group_id, 'ใครจะแก้เนื้อหาหลังส่งมอบ' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["แก้เอง ต้องมีหลังบ้าน","ให้ทีมงานแก้"]' AS rqq_options, 0 AS rqq_is_required, 6 AS rqq_sort_order
+    UNION ALL SELECT 2 AS rqq_group_id, 'เว็บตัวอย่างที่ชอบ และชอบตรงไหน' AS rqq_text, NULL AS rqq_help, 'long_text' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 7 AS rqq_sort_order
+    UNION ALL SELECT 2 AS rqq_group_id, 'มีเนื้อหา/รูปพร้อมแล้วไหม' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["พร้อม","บางส่วน","ยังไม่มี"]' AS rqq_options, 0 AS rqq_is_required, 8 AS rqq_sort_order
+    UNION ALL SELECT 3 AS rqq_group_id, 'ต้องการลงระบบไหน' AS rqq_text, NULL AS rqq_help, 'multi' AS rqq_type, '["iOS","Android"]' AS rqq_options, 1 AS rqq_is_required, 1 AS rqq_sort_order
+    UNION ALL SELECT 3 AS rqq_group_id, 'ผู้ใช้แอปคือใคร ใช้ทำอะไรเป็นหลัก' AS rqq_text, NULL AS rqq_help, 'long_text' AS rqq_type, NULL AS rqq_options, 1 AS rqq_is_required, 2 AS rqq_sort_order
+    UNION ALL SELECT 3 AS rqq_group_id, 'ฟีเจอร์ที่ต้องมีในเวอร์ชันแรก' AS rqq_text, 'เรียงจากสำคัญที่สุด' AS rqq_help, 'long_text' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 3 AS rqq_sort_order
+    UNION ALL SELECT 3 AS rqq_group_id, 'ต้องใช้งานตอนไม่มีอินเทอร์เน็ตไหม' AS rqq_text, NULL AS rqq_help, 'yes_no' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 4 AS rqq_sort_order
+    UNION ALL SELECT 3 AS rqq_group_id, 'ต้องเชื่อมกับระบบอื่นไหม' AS rqq_text, 'เช่น LINE ระบบชำระเงิน ระบบเดิม' AS rqq_help, 'long_text' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 5 AS rqq_sort_order
+    UNION ALL SELECT 3 AS rqq_group_id, 'มีบัญชีนักพัฒนา App Store / Google Play แล้วไหม' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["มีแล้ว","ยังไม่มี","ไม่แน่ใจ"]' AS rqq_options, 0 AS rqq_is_required, 6 AS rqq_sort_order
+    UNION ALL SELECT 4 AS rqq_group_id, 'ออกแบบให้อะไร' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["เว็บไซต์","แอปมือถือ","ระบบงาน","อื่นๆ"]' AS rqq_options, 0 AS rqq_is_required, 1 AS rqq_sort_order
+    UNION ALL SELECT 4 AS rqq_group_id, 'ประมาณกี่หน้าจอ' AS rqq_text, NULL AS rqq_help, 'number' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 2 AS rqq_sort_order
+    UNION ALL SELECT 4 AS rqq_group_id, 'มีโลโก้/สีประจำแบรนด์แล้วไหม' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["มีครบ","มีโลโก้อย่างเดียว","ยังไม่มี"]' AS rqq_options, 0 AS rqq_is_required, 3 AS rqq_sort_order
+    UNION ALL SELECT 4 AS rqq_group_id, 'ไฟล์โลโก้หรือคู่มือแบรนด์' AS rqq_text, 'รูปหรือ PDF ไม่เกิน 10 MB' AS rqq_help, 'file' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 4 AS rqq_sort_order
+    UNION ALL SELECT 4 AS rqq_group_id, 'โทนที่ต้องการ' AS rqq_text, NULL AS rqq_help, 'multi' AS rqq_type, '["เรียบหรู","สดใส","เป็นทางการ","เป็นกันเอง","มินิมอล"]' AS rqq_options, 0 AS rqq_is_required, 5 AS rqq_sort_order
+    UNION ALL SELECT 4 AS rqq_group_id, 'ตัวอย่างงานที่ชอบ' AS rqq_text, 'รูปหรือ PDF' AS rqq_help, 'file' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 6 AS rqq_sort_order
+    UNION ALL SELECT 5 AS rqq_group_id, 'ตอนนี้ทำงานนี้อย่างไร และติดปัญหาอะไร' AS rqq_text, 'เช่น ใช้กระดาษ Excel โปรแกรมเดิม' AS rqq_help, 'long_text' AS rqq_type, NULL AS rqq_options, 1 AS rqq_is_required, 1 AS rqq_sort_order
+    UNION ALL SELECT 5 AS rqq_group_id, 'ผู้ใช้กี่คน แบ่งกี่บทบาท' AS rqq_text, 'เช่น แอดมิน 2 พนักงาน 15' AS rqq_help, 'long_text' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 2 AS rqq_sort_order
+    UNION ALL SELECT 5 AS rqq_group_id, 'ต้องย้ายข้อมูลเดิมเข้าระบบใหม่ไหม' AS rqq_text, NULL AS rqq_help, 'yes_no' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 3 AS rqq_sort_order
+    UNION ALL SELECT 5 AS rqq_group_id, 'ตัวอย่างไฟล์/เอกสารที่ใช้อยู่' AS rqq_text, 'รูปหรือ PDF' AS rqq_help, 'file' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 4 AS rqq_sort_order
+    UNION ALL SELECT 5 AS rqq_group_id, 'รายงานที่ต้องดู' AS rqq_text, NULL AS rqq_help, 'long_text' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 5 AS rqq_sort_order
+    UNION ALL SELECT 5 AS rqq_group_id, 'ใช้บนอุปกรณ์อะไร' AS rqq_text, NULL AS rqq_help, 'multi' AS rqq_type, '["คอมพิวเตอร์","มือถือ","แท็บเล็ต"]' AS rqq_options, 0 AS rqq_is_required, 6 AS rqq_sort_order
+    UNION ALL SELECT 5 AS rqq_group_id, 'ต้องการติดตั้งที่ไหน' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["คลาวด์","เซิร์ฟเวอร์ของบริษัท","ไม่แน่ใจ"]' AS rqq_options, 0 AS rqq_is_required, 7 AS rqq_sort_order
+) AS seed WHERE @seed_requirements = 1;
 
 -- ─── 3. ตรวจผล ─────────────────────────────────────────────────────────────────────────
 SELECT u.user_username, u.user_email, r.role_name, r.role_type, u.user_must_change_password,

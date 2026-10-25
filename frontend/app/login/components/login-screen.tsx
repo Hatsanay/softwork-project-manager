@@ -3,9 +3,11 @@
 // หน้าเข้าสู่ระบบ (UI ใหม่ 16 ต.ค. 2026 — ผู้ใช้เลือก "พื้นขาวทั้งหน้า ใช้ฟ้าแค่เป็นจุดเน้น")
 // จอคอม: ซ้าย = แผงแนะนำระบบบนพื้นเทาอ่อน + เดโมหน้าจอจริงแบบเคลื่อนไหว (system-demo/ — 18 ต.ค. 2026) · ขวา = การ์ดฟอร์ม
 // มือถือ: โลโก้ + การ์ดฟอร์ม + สไลด์แบบย่อ · ทุกส่วนค่อยๆ ขึ้นตอนเปิดหน้า (ปิดเมื่อเครื่องตั้งลดการเคลื่อนไหว)
+// พื้นมีอนุภาคลอย (26 ต.ค. 2026 · ตัวเดียวกับหน้าลูกค้า): เห็นรอบฟอร์ม · แผงแนะนำบนจอคอมพื้นทึบบังไว้ ไม่แย่งสายตากับเดโม
 // ใช้ทั้งหน้า "/" และ "/login" · สีตามธีม: เทา + ฟ้า blue-500/600 เฉพาะจุดเน้น (คำหลัก ไอคอน ปุ่ม)
 import dynamic from "next/dynamic";
 import Image from "next/image";
+import ParticleBackground from "@/components/ui/particle-background";
 import Skeleton from "@/components/ui/skeleton";
 import FeatureCarousel from "./feature-carousel";
 // เดโมสร้างฝั่งเครื่องผู้ใช้อย่างเดียว: ข้อมูลตัวอย่างนับวันที่จาก "วันนี้" ของเครื่อง (ไม่ให้ HTML จากเซิร์ฟเวอร์กับเครื่องไม่ตรงกัน)
@@ -48,7 +50,8 @@ function BrandMark() {
 
 export default function LoginScreen() {
     return (
-        <div className="grid min-h-screen bg-white lg:grid-cols-[1.35fr_1fr]">
+        <div className="isolate grid min-h-screen bg-white lg:grid-cols-[1.35fr_1fr]">
+            <ParticleBackground />
             {/* ── จอคอม: แผงแนะนำระบบ ── */}
             <section className="relative m-3 hidden flex-col justify-between gap-8 overflow-hidden rounded-[1.75rem] border border-gray-200/70 bg-gray-50 p-8 lg:flex xl:p-10">
                 {/* ลายจุดจางๆ มุมขวาบน */}

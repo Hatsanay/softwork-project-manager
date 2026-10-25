@@ -27,6 +27,9 @@ type SalesSummary = {
     credited: { credit_note_count: number; amount_thb: string; amount_with_vat_thb: string };
     net_sales: { amount_thb: string; amount_with_vat_thb: string };
     refunds: { refund_count: number; refunded_thb: string };
+    // งาน Fastwork (P-1): ราคางวดของเงินที่เข้าในช่วง · รายได้รวม = ยอดขายสุทธิ + ราคางวด Fastwork
+    fastwork: { payout_count: number; gross_thb: string; fee_thb: string; wht_thb: string; net_thb: string };
+    total_income: { amount_thb: string };
     received: {
         receipt_count: number;
         received_thb: string;
@@ -381,6 +384,20 @@ export default function ReportsPage() {
                             value={formatAmount(summary.net_sales.amount_thb)}
                             detail={`ออกบิล ${formatAmount(summary.billed.amount_thb)} (${summary.billed.invoice_count} ใบ) − ลดหนี้ ${formatAmount(summary.credited.amount_thb)} (${summary.credited.credit_note_count} ใบ)`}
                         />
+                    )}
+                    {summary.fastwork.payout_count > 0 && (
+                        <>
+                            <SummaryCard
+                                label="รายได้ Fastwork (ราคางวดที่เงินเข้า)"
+                                value={formatAmount(summary.fastwork.gross_thb)}
+                                detail={`${summary.fastwork.payout_count} งวด · ค่าธรรมเนียม ${formatAmount(summary.fastwork.fee_thb)} · หัก ณ ที่จ่าย ${formatAmount(summary.fastwork.wht_thb)} · เข้าบัญชี ${formatAmount(summary.fastwork.net_thb)}`}
+                            />
+                            <SummaryCard
+                                label="รายได้รวม (ลูกค้าตรง + Fastwork)"
+                                value={formatAmount(summary.total_income.amount_thb)}
+                                detail={`ยอดขายสุทธิ ${formatAmount(summary.net_sales.amount_thb)} + Fastwork ${formatAmount(summary.fastwork.gross_thb)}`}
+                            />
+                        </>
                     )}
                     <SummaryCard
                         label="รับชำระ"

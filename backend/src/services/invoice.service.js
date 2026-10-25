@@ -139,6 +139,11 @@ function describeBilledBy(invoice) {
     return "ใบแจ้งหนี้ร่างที่ยังไม่ออก";
 }
 
+/** งาน Fastwork: รายได้มาจากเงินที่ Fastwork โอน (กันนับรายได้ซ้ำ) */
+function fastworkInvoiceBlocked() {
+    return new AppError(409, "QUOTATION_FASTWORK_INTERNAL", "ใบเสนอราคาของงาน Fastwork ออกใบแจ้งหนี้ไม่ได้ · บันทึกเงินที่หน้า Fastwork > เงินจาก Fastwork");
+}
+
 /**
  * ใบเสนอราคาที่จะออกบิล — ล็อกแถว (R-B1: สองคนออกงวดเดียวกันพร้อมกัน คนที่สองรอแล้วเห็นของคนแรก)
  * @returns {Promise<object>} แถวใบเสนอราคา + qt_rate_date_text
@@ -157,6 +162,7 @@ async function lockBillableQuotation(conn, quotationId) {
             "ออกใบแจ้งหนี้ได้เฉพาะใบเสนอราคาที่ลูกค้าตอบรับแล้ว — บันทึกว่าลูกค้าตอบรับที่หน้าใบเสนอราคาก่อน",
         );
     }
+    if (await quotationService.fastworkSourceOf(conn, quotation)) throw fastworkInvoiceBlocked();
     return quotation;
 }
 
@@ -1065,11 +1071,12 @@ async function listInvoices(conn, { tab = "all", search = "", clientId, quotatio
  */
 async function listBillableMilestones(conn, quotationId) {
     const [[quotation]] = await conn.query(
-        `SELECT qt_id, qt_number, qt_status, qt_payment_mode, qt_currency, qt_after_discount, qt_vat_amount, qt_vat_rate, qt_total
+        `SELECT qt_id, qt_root_id, qt_project_id, qt_number, qt_status, qt_payment_mode, qt_currency, qt_after_discount, qt_vat_amount, qt_vat_rate, qt_total
          FROM tb_quotations WHERE qt_id = ?`,
         [quotationId],
     );
     if (!quotation) throw quotationService.notFound();
+    if (await quotationService.fastworkSourceOf(conn, quotation)) throw fastworkInvoiceBlocked();
     const milestones = await findMilestones(conn, quotationId);
     const billed = await findBilledMilestones(conn, quotationId);
     const currency = await quotationService.findCurrency(conn, quotation.qt_currency);

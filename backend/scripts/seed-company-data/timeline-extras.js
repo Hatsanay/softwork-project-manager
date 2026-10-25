@@ -56,11 +56,33 @@ async function addProductPackages(ids) {
     }
 }
 
+// ส่งลิงก์ติดตามความคืบหน้าให้ลูกค้า (หน้า /share ของโปรเจกต์) — [โปรเจกต์, วันที่, เวลา, ข้อความ]
+const SHARE_LINK_EMAILS = [
+    ["tour", "2026-05-04", "15:30", "เริ่มพัฒนาระบบจองทัวร์แล้วครับ ดูความคืบหน้าได้ตลอดจากลิงก์นี้ ไม่ต้องเข้าระบบ"],
+    ["tour", "2026-07-31", "16:00", "งานพร้อมส่งมอบแล้วครับ ความคืบหน้าในลิงก์เป็น 100% รบกวนตรวจรับภายในสัปดาห์หน้า"],
+    ["clinic", "2026-05-13", "14:00", "เรียนคุณหมอ ส่งลิงก์ติดตามงานเว็บไซต์คลินิกครับ อัปเดตทุกสัปดาห์"],
+    ["resort", "2026-06-01", "15:00", "ลิงก์ติดตามความคืบหน้าระบบจองห้องพักครับ รวมกำหนดส่งแต่ละงวด"],
+    ["resort", "2026-09-25", "10:30", "แจ้งกำหนดติดตั้งระบบจริงคืนวันที่ 30 ก.ย. หลังปิดรับจอง ดูรายละเอียดในลิงก์ครับ"],
+    ["palm", "2026-07-21", "16:20", "ลิงก์ติดตามงานระบบรับซื้อผลปาล์มครับ ทีมจะเข้าหน้างานทุกวันพฤหัส"],
+    ["dive", "2026-08-25", "17:00", "Here is the live progress link for the dive booking app. No login needed."],
+];
+
 /**
  * @param {{ on: Function, ids: object, state: object, pool: import("mysql2/promise").Pool }} context
  */
 function scheduleExtras({ on, ids, state }) {
     const invoices = state.invoices;
+
+    for (const [projectKey, date, time, message] of SHARE_LINK_EMAILS) {
+        on(date, `ส่งลิงก์ติดตามงานให้ลูกค้า ${projectKey}`, async () => {
+            setToday(date, Number(time.slice(0, 2)), Number(time.slice(3, 5)));
+            await as("nattapon", "POST", `/V1/projects/${state.projects[projectKey]}/share/send-email`, { message });
+        });
+    }
+    // โปรเจกต์ภายในไม่มีลูกค้า — ปิดลิงก์สาธารณะไว้
+    on("2026-05-04", "ปิดลิงก์ลูกค้าของโปรเจกต์ภายใน", () =>
+        as("nattapon", "PUT", `/V1/projects/${state.projects.internal}/share/toggle`, { project_share_enabled: false }),
+    );
 
     // ใบวางบิลงวด 3 ระบบจองห้องพัก (ลูกค้ารวบรวมจ่ายตามรอบวางบิล)
     on("2026-10-06", "ใบวางบิล งวด 3 ระบบจองห้องพัก", async () => {

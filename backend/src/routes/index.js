@@ -38,6 +38,8 @@ const { registerTaskBoardRoutes } = require("./task-board.routes");
 const { registerLeaveRoutes } = require("./leave.routes");
 const { registerPayrollRoutes } = require("./payroll.routes");
 const { registerAttendanceRoutes } = require("./attendance.routes");
+const { registerFastworkRoutes } = require("./fastwork.routes");
+const { registerOrderRoutes } = require("./order.routes");
 
 const router = express.Router();
 
@@ -298,6 +300,8 @@ registerTaskBoardRoutes(router);
 registerLeaveRoutes(router);
 registerPayrollRoutes(router);
 registerAttendanceRoutes(router);
+registerFastworkRoutes(router);
+registerOrderRoutes(router);
 
 // ─── public share (ลูกค้าดู ไม่ต้อง login) ───────────────────────────────────
 router.get("/V1/share/:token", shareController.getSharedProject);

@@ -36,4 +36,11 @@ const uploadDocument = multer({
     limits: { fileSize: 10 * 1024 * 1024, files: 1 },
 });
 
-module.exports = { uploadImage, uploadDocument };
+// ไฟล์แนบของคำตอบในลิงก์เลือกบริการ (2026-10-25) — หลายคำถาม คำถามละไม่เกิน 5 ไฟล์ (ตรวจใน service) · ชนิดตรวจจากเนื้อไฟล์อีกชั้น
+const uploadOrderFiles = multer({
+    storage,
+    fileFilter: documentFileFilter,
+    limits: { fileSize: 10 * 1024 * 1024, files: 15 },
+});
+
+module.exports = { uploadImage, uploadDocument, uploadOrderFiles };

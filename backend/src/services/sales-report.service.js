@@ -1,6 +1,8 @@
 // รายงานขาย (2026-10-15 ขั้น 1D-2 — docs/plans/2026-10-15-finance-1d.md หัวข้อ 3.2)
 //
 // ยอดขาย (D4) = ยอดก่อน VAT เป็นบาทของใบแจ้งหนี้ที่ออกในช่วง และยังไม่ยกเลิก (เกณฑ์สิทธิ์) · แสดงเงินรับจริงคู่กัน
+// งาน Fastwork (2026-10-24 · P-1): รายได้ = ราคางวดของเงินที่เข้าแล้วตามวันที่เงินเข้า (ไม่มีใบแจ้งหนี้) · แสดงแยกบล็อก
+//   รวมกับยอดขายสุทธิของลูกค้าตรงเป็น "รายได้รวม" อีกบรรทัด (ไม่นับซ้ำ ไม่หักเงียบ — กติกาเงิน 3.8)
 // ทุกยอดรวมใช้คอลัมน์บาท (R-D1) · ช่วงเป็นวันที่ของเอกสาร (DATE — ไม่ขึ้นกับเขตเวลาเครื่อง R-D4) · รวมใน SQL
 const { AppError } = require("../utils/app-error");
 const { todayBangkok } = require("../utils/bangkok-time");
@@ -79,6 +81,13 @@ async function salesSummary(conn, range) {
          WHERE cn_status = 'issued' AND cn_refunded_at IS NOT NULL AND cn_total > 0 AND cn_refund_date BETWEEN ? AND ?`,
         [from, to],
     );
+    const [[fastwork]] = await conn.query(
+        `SELECT COUNT(*) AS payout_count, COALESCE(SUM(fwp_gross), 0) AS gross_thb,
+                COALESCE(SUM(fwp_fee + fwp_fee_vat), 0) AS fee_thb, COALESCE(SUM(fwp_wht), 0) AS wht_thb,
+                COALESCE(SUM(fwp_net), 0) AS net_thb
+         FROM tb_fastwork_payouts WHERE fwp_status = 'received' AND fwp_received_date BETWEEN ? AND ?`,
+        [from, to],
+    );
     // ใบเสนอราคาที่ "จบผล" ในช่วง: ตอบรับ/ปฏิเสธ ตามวันที่บันทึกผล · หมดอายุตามวันหมดอายุ
     const [[quotations]] = await conn.query(
         `SELECT
@@ -136,6 +145,18 @@ async function salesSummary(conn, range) {
             amount_with_vat_thb: toDecimalText(
                 money(billed.billed_with_vat_thb) - money(credited.credited_with_vat_thb),
             ),
+        },
+        // งาน Fastwork: ราคางวด − ค่าธรรมเนียม (รวม VAT) − หัก ณ ที่จ่าย = เงินเข้าบัญชี
+        fastwork: {
+            payout_count: Number(fastwork.payout_count),
+            gross_thb: text(fastwork.gross_thb),
+            fee_thb: text(fastwork.fee_thb),
+            wht_thb: text(fastwork.wht_thb),
+            net_thb: text(fastwork.net_thb),
+        },
+        // รายได้รวม = ยอดขายสุทธิ (ลูกค้าตรง ก่อน VAT) + ราคางวด Fastwork ที่เงินเข้าแล้ว
+        total_income: {
+            amount_thb: toDecimalText(money(billed.billed_thb) - money(credited.credited_thb) + money(fastwork.gross_thb)),
         },
         refunds: {
             refund_count: Number(refunded.refund_count),
@@ -207,6 +228,13 @@ async function monthlySales(conn, monthCount = 12) {
          GROUP BY month`,
         [from, today],
     );
+    const [fastworkRows] = await conn.query(
+        `SELECT DATE_FORMAT(fwp_received_date, '%Y-%m') AS month, SUM(fwp_gross) AS gross_thb
+         FROM tb_fastwork_payouts WHERE fwp_status = 'received' AND fwp_received_date BETWEEN ? AND ?
+         GROUP BY month`,
+        [from, today],
+    );
+    const fastworkByMonth = new Map(fastworkRows.map((row) => [row.month, money(row.gross_thb)]));
     const billedByMonth = new Map(billedRows.map((row) => [row.month, money(row.billed_thb)]));
     const creditedByMonth = new Map(creditedRows.map((row) => [row.month, money(row.credited_thb)]));
     const receivedByMonth = new Map(
@@ -222,6 +250,8 @@ async function monthlySales(conn, monthCount = 12) {
             billed_thb: toDecimalText((billedByMonth.get(month) ?? 0n) - (creditedByMonth.get(month) ?? 0n)),
             credited_thb: toDecimalText(creditedByMonth.get(month) ?? 0n),
             received_thb: toDecimalText(receivedByMonth.get(month) ?? 0n),
+            // งาน Fastwork: ราคางวดของเงินที่เข้าในเดือน (P-1)
+            fastwork_thb: toDecimalText(fastworkByMonth.get(month) ?? 0n),
         })),
         today,
     };

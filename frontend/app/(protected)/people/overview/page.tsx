@@ -2,6 +2,7 @@
 
 // ภาพรวมบุคคล (2026-10-19 · docs/plans/2026-10-19-people-ux-redesign.md ข้อ 2.2) — หน้าแรกของฝ่ายบุคคล/หัวหน้า
 // "ต้องทำ" เรียงตามความด่วน กดไปทำได้ทันที · ส่วนที่ไม่มีสิทธิ์ backend ไม่ส่งมา (null) หน้านี้จึงไม่แสดง
+import HeroEyebrow from "@/components/ui/hero-eyebrow";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
@@ -90,14 +91,14 @@ export default function PeopleOverviewPage() {
 
     return (
         <div className="grid w-full gap-6">
-            <section className="relative overflow-hidden rounded-3xl bg-brand-grid p-5 text-white shadow-brand sm:p-7">
-                <p className="text-sm text-blue-100">จัดการบุคคล</p>
-                <h1 className="text-2xl font-medium">ภาพรวมบุคคล</h1>
-                <p className="text-sm text-blue-100">
+            <section className="surface-hero grid gap-1.5 p-5 sm:p-7">
+                <HeroEyebrow>จัดการบุคคล</HeroEyebrow>
+                <h1 className="text-2xl font-medium text-gray-900 sm:text-3xl">ภาพรวมบุคคล</h1>
+                <p className="text-sm text-gray-500">
                     {todos.length > 0 ? `มีเรื่องต้องทำ ${todos.length} เรื่อง` : "ไม่มีเรื่องค้าง"} · ข้อมูล ณ {formatDateOnly(overview.today)}
                 </p>
                 {headcount && (
-                    <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                    <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
                         <HeroStat label="ทำงานอยู่" value={headcount.working} unit="คน" />
                         <HeroStat label="เข้าใหม่เดือนนี้" value={headcount.joined_this_month} unit="คน" />
                         <HeroStat label="ลาออกเดือนนี้" value={headcount.leaving_this_month} unit="คน" />
@@ -185,10 +186,10 @@ export default function PeopleOverviewPage() {
 
 function HeroStat({ label, value, unit }: { label: string; value: number; unit: string }) {
     return (
-        <div className="grid gap-0.5 rounded-2xl bg-white/12 px-4 py-3 ring-1 ring-white/20 backdrop-blur">
-            <span className="text-xs text-blue-100">{label}</span>
-            <span className="text-3xl font-medium tabular-nums">
-                {value} <span className="text-sm font-normal text-blue-100">{unit}</span>
+        <div className="hero-tile grid gap-0.5 px-4 py-3">
+            <span className="text-xs text-gray-500">{label}</span>
+            <span className="text-3xl font-medium text-gray-900 tabular-nums">
+                {value} <span className="text-sm font-normal text-gray-500">{unit}</span>
             </span>
         </div>
     );

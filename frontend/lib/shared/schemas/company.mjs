@@ -37,6 +37,8 @@ export const companySchema = z.object({
     cs_email: optionalEmail(),
     cs_website: optionalText("เว็บไซต์", 255),
     cs_vat_registered_from: optionalDate("วันที่จดทะเบียน VAT"),
+    // ว่าง = ยังเป็นบุคคลธรรมดา (ช่วงก่อนจดบริษัท · P-3 2026-10-25) · ไม่เกินวันนี้ (ตรวจใน service)
+    cs_incorporated_on: optionalDate("วันที่จดบริษัท"),
     cs_quotation_valid_days: integerInRange("อายุยืนราคา", 1, 365),
     cs_quotation_terms_th: optionalText("เงื่อนไขท้ายใบเสนอราคา (ภาษาไทย)", 5000),
     cs_quotation_terms_en: optionalText("เงื่อนไขท้ายใบเสนอราคา (ภาษาอังกฤษ)", 5000),

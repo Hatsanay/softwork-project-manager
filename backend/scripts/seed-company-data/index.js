@@ -1,7 +1,8 @@
 // ใส่ข้อมูลบริษัทแบบใช้งานจริงลงฐาน dev (ผู้ใช้สั่ง 18 ต.ค. 2026)
 //
 // ใช้: 1) รัน database/reset_all_data.sql บนฐาน dev (เหลือแค่ admin + ค่าเริ่มต้น)
-//      2) cd backend && node scripts/seed-company-data
+//      2) cd backend && node scripts/seed-company-data                          (ชุดบริษัทที่จดแล้ว)
+//         cd backend && node scripts/seed-company-data --set pre-incorporation  (ชุดช่วงก่อนจด · P-4 2026-10-25)
 // ทำไฟล์ข้อมูลจำลอง database/mock_data.sql: npm run mock:export (scripts/mock-data/export.js เรียก seedCompany บนฐานชั่วคราว)
 //
 // - ยิงผ่าน API ของระบบจริงทั้งหมด (เลขเอกสาร การอนุมัติ ยอดเงิน snapshot ถูกตามกติกา) — รัน backend ในตัวสคริปต์เอง
@@ -23,11 +24,17 @@ installClock();
 const PASSWORD = "12345678";
 const PRODUCTION_DATABASES = new Set(["dktimeh_softwork_pm_db"]);
 
-/** ใส่ข้อมูลบริษัททั้งหมดลงฐานตาม process.env.DB_NAME (ต้องเป็นฐานที่เพิ่ง reset) */
-async function seedCompany() {
+/**
+ * ใส่ข้อมูลทั้งหมดลงฐานตาม process.env.DB_NAME (ต้องเป็นฐานที่เพิ่ง reset)
+ * @param {{ set?: "company" | "pre-incorporation" }} [options]
+ */
+async function seedCompany({ set = "company" } = {}) {
     if (PRODUCTION_DATABASES.has(process.env.DB_NAME)) {
         throw new Error(`ฐาน ${process.env.DB_NAME} เป็นฐาน production — สคริปต์นี้ใช้กับเครื่อง dev เท่านั้น`);
     }
+    // ส่งลิงก์ติดตามงานให้ลูกค้า (ฟีเจอร์อีเมลล้วน) — แทนตัวส่งด้วยตัวที่ไม่ส่งจริง ให้ API ตอบสำเร็จและเกิดประวัติใน audit log
+    // ต้องแทนก่อน require app (controller ดึงฟังก์ชันไปเก็บตอนโหลด) · ห้ามส่งอีเมลจริงจากสคริปต์นี้เด็ดขาด
+    require("../../src/utils/mailer").sendClientShareLinkEmail = async () => {};
     const app = require("../../src/app");
     const pool = require("../../src/config/db");
     const { generateDailyId } = require("../../src/utils/generateDailyId");
@@ -51,10 +58,15 @@ async function seedCompany() {
     console.log(`ฐานข้อมูล ${process.env.DB_NAME} · เริ่มใส่ข้อมูล`);
 
     try {
-        setToday("2026-04-01", 9);
-        const ids = await setupCompany({ pool, permissionKeys: PERMISSION_KEYS, generateDailyId, password: PASSWORD });
-        console.log("✓ ตั้งค่าบริษัท ผู้ใช้ พนักงาน ลูกค้า ผู้ขาย สินค้า");
-        await runTimeline({ ids, pool });
+        if (set === "pre-incorporation") {
+            const { seedPreIncorporation } = require("./pre-incorporation");
+            await seedPreIncorporation({ pool, permissionKeys: PERMISSION_KEYS, generateDailyId, password: PASSWORD });
+        } else {
+            setToday("2026-04-01", 9);
+            const ids = await setupCompany({ pool, permissionKeys: PERMISSION_KEYS, generateDailyId, password: PASSWORD });
+            console.log("✓ ตั้งค่าบริษัท ผู้ใช้ พนักงาน ลูกค้า ผู้ขาย สินค้า");
+            await runTimeline({ ids, pool });
+        }
     } finally {
         // audit log บันทึกหลังตอบคำขอ — รอให้เขียนเสร็จก่อนปิดการเชื่อมต่อฐานข้อมูล
         await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -62,11 +74,12 @@ async function seedCompany() {
         server.close();
         await pool.end();
     }
-    console.log("เสร็จ · เข้าระบบได้ทุกบัญชีด้วยรหัสผ่าน 12345678 (admin, hatsanai, siriporn, kamonchanok, wannipa, nattapon …)");
+    console.log("เสร็จ · เข้าระบบได้ทุกบัญชีด้วยรหัสผ่าน 12345678 (admin, hatsanai, nattapon …)");
 }
 
 if (require.main === module) {
-    seedCompany().catch((error) => {
+    const { setFromArgs } = require("../mock-data/sets");
+    seedCompany({ set: setFromArgs().name }).catch((error) => {
         console.error("\nหยุด:", error.message);
         process.exit(1);
     });

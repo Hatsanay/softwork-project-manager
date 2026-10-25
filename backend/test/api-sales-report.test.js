@@ -173,6 +173,7 @@ test("รายเดือน 12 เดือน: เดือนที่ไ�
         billed_thb: "13550.00",
         credited_thb: "0.00",
         received_thb: "8700.00",
+        fastwork_thb: "0.00",
     });
     const pastMonth = monthly.months.find((row) => row.month === pastIssueDate.slice(0, 7));
     assert.equal(pastMonth.billed_thb, "10000.00");

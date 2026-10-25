@@ -12,6 +12,8 @@ export type Company = {
     cs_website: string | null;
     cs_logo_url: string | null;
     cs_vat_registered_from: string | null;
+    // ว่าง = ยังเป็นบุคคลธรรมดา (ช่วงก่อนจดบริษัท)
+    cs_incorporated_on: string | null;
     cs_quotation_valid_days: number;
     cs_quotation_terms_th: string | null;
     cs_quotation_terms_en: string | null;
@@ -123,6 +125,7 @@ export function toCompanyPayload(company: Company): CompanyPayload {
         cs_email: company.cs_email,
         cs_website: company.cs_website,
         cs_vat_registered_from: company.cs_vat_registered_from,
+        cs_incorporated_on: company.cs_incorporated_on,
         cs_quotation_valid_days: company.cs_quotation_valid_days,
         cs_quotation_terms_th: company.cs_quotation_terms_th,
         cs_quotation_terms_en: company.cs_quotation_terms_en,

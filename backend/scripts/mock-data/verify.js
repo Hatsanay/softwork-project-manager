@@ -1,6 +1,6 @@
 // ตรวจไฟล์ข้อมูลจำลองแบบที่ผู้ใช้ลงจริง (2026-10-24 · docs/plans/2026-10-24-mock-data.md)
 //
-// ใช้: cd backend && npm run mock:verify
+// ใช้: cd backend && npm run mock:verify  (ชุดช่วงก่อนจด: npm run mock:verify:pre · รายการชุดอยู่ใน scripts/mock-data/sets.js)
 // - ฐานใหม่จาก deploy_schema.sql → database/reset_all_data.sql → database/mock_data.sql (แทนชื่อฐานในบรรทัดตรวจ)
 // - เปิดระบบบนฐานนั้นในสคริปต์ แล้วเรียกหน้าหลักของทุกฝ่ายในนามผู้ใช้จริง ต้องตอบ 200 และมีข้อมูล
 // - ตรวจว่าไฟล์รูป/ไฟล์แนบที่ข้อมูลอ้างถึงมีอยู่ใน database/mock_uploads ครบ
@@ -19,14 +19,17 @@ const LATER_THAN_DATA = "2026-10-24 00:00:00";
 const FUTURE_BY_DESIGN = new Set(["tb_overtime_requests.ot_start_at", "tb_overtime_requests.ot_end_at"]);
 
 require("dotenv").config({ path: path.join(BACKEND_DIR, ".env"), quiet: true });
+const MOCK_SET = require("./sets").setFromArgs();
+const SQL_FILE = MOCK_SET.sqlFile;
+const UPLOADS_DIR = path.join(DATABASE_DIR, MOCK_SET.uploadsDir);
 const DATABASE_NAME = `tmp_mockcheck_${process.pid}`;
 process.env.DB_NAME = DATABASE_NAME;
 process.env.SMTP_USER = "";
 process.env.SMTP_PASS = "";
 process.env.BOT_API_KEY = "";
 process.env.BOT_API_URL = "";
-process.env.SIGNATURE_STORAGE_DIR = path.join(DATABASE_DIR, "mock_uploads", "storage", "signatures");
-process.env.DOCUMENT_STORAGE_DIR = path.join(DATABASE_DIR, "mock_uploads", "storage");
+process.env.SIGNATURE_STORAGE_DIR = path.join(UPLOADS_DIR, "storage", "signatures");
+process.env.DOCUMENT_STORAGE_DIR = path.join(UPLOADS_DIR, "storage");
 
 const mysql = require("mysql2/promise");
 
@@ -45,32 +48,12 @@ function withDatabaseName(sqlText, fileName) {
     return sqlText.replace(GUARD_LINE, `SET @confirm_database = '${DATABASE_NAME}';`);
 }
 
-// [ผู้ใช้, เส้นทาง, ตรวจผล (คืนข้อความปัญหา หรือ null)]
-const nonEmpty = (pick) => (body) => ((pick(body) ?? []).length > 0 ? null : "ไม่มีข้อมูล");
-const CHECKS = [
-    ["hatsanai", "/V1/dashboard/summary", () => null],
-    ["hatsanai", "/V1/projects", nonEmpty((body) => body.data ?? body)],
-    ["siriporn", "/V1/invoices", nonEmpty((body) => body.data)],
-    ["kamonchanok", "/V1/credit-notes", nonEmpty((body) => body.data)],
-    ["kamonchanok", "/V1/billing-notes", nonEmpty((body) => body.data)],
-    ["kamonchanok", "/V1/receipts", nonEmpty((body) => body.data)],
-    ["kamonchanok", "/V1/expenses", nonEmpty((body) => body.data)],
-    ["kamonchanok", "/V1/payments", nonEmpty((body) => body.data)],
-    ["kamonchanok", "/V1/receivables/aging", () => null],
-    ["kamonchanok", "/V1/payables/aging", () => null],
-    ["hatsanai", "/V1/reports/sales?from=2026-04-01&to=2026-10-31", () => null],
-    ["kamonchanok", "/V1/reports/withholding?month=2026-09&form=PND53", () => null],
-    ["wannipa", "/V1/payroll/runs", nonEmpty((body) => body.data)],
-    ["wannipa", "/V1/attendance/board?date=2026-10-22", nonEmpty((body) => body.rows)],
-    ["wannipa", "/V1/attendance/summary?month=2026-09", nonEmpty((body) => body.rows)],
-    ["supawadee", "/V1/attendance/me?month=2026-09", nonEmpty((body) => body.days)],
-    ["supawadee", "/V1/leave/me?year=2026", nonEmpty((body) => body.requests)],
-    ["nattapon", "/V1/timesheet/approvals", () => null],
-];
+// [ผู้ใช้, เส้นทาง, ตรวจผล (คืนข้อความปัญหา หรือ null)] — แยกตามชุดใน sets.js
+const CHECKS = MOCK_SET.checks;
 
 async function main() {
     const startedAt = Date.now();
-    console.log(`สร้างฐาน ${DATABASE_NAME}: deploy_schema → reset_all_data → mock_data`);
+    console.log(`สร้างฐาน ${DATABASE_NAME}: deploy_schema → reset_all_data → ${SQL_FILE}`);
     const connection = await connect();
     await connection.query(`CREATE DATABASE \`${DATABASE_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
     const problems = [];
@@ -78,14 +61,14 @@ async function main() {
         await connection.query(`USE \`${DATABASE_NAME}\``);
         await connection.query(fs.readFileSync(path.join(DATABASE_DIR, "query", "deploy_schema.sql"), "utf8"));
         await connection.query(withDatabaseName(fs.readFileSync(path.join(DATABASE_DIR, "reset_all_data.sql"), "utf8"), "reset_all_data.sql"));
-        await connection.query(withDatabaseName(fs.readFileSync(path.join(DATABASE_DIR, "mock_data.sql"), "utf8"), "mock_data.sql"));
+        await connection.query(withDatabaseName(fs.readFileSync(path.join(DATABASE_DIR, SQL_FILE), "utf8"), SQL_FILE));
 
         // ลงซ้ำบนฐานที่มีข้อมูลแล้วต้องหยุดเอง (กันทับข้อมูลจริง)
         const isBlocked = await connection
-            .query(withDatabaseName(fs.readFileSync(path.join(DATABASE_DIR, "mock_data.sql"), "utf8"), "mock_data.sql"))
+            .query(withDatabaseName(fs.readFileSync(path.join(DATABASE_DIR, SQL_FILE), "utf8"), SQL_FILE))
             .then(() => false)
             .catch((error) => error.message.includes("more than 1 row"));
-        if (!isBlocked) problems.push("mock_data.sql ลงซ้ำบนฐานที่มีข้อมูลแล้วได้ (ควรหยุด)");
+        if (!isBlocked) problems.push(`${SQL_FILE} ลงซ้ำบนฐานที่มีข้อมูลแล้วได้ (ควรหยุด)`);
 
         const [emptyTables] = await connection.query(
             `SELECT TABLE_NAME AS name FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'`,
@@ -93,8 +76,16 @@ async function main() {
         );
         for (const { name } of emptyTables) {
             const [[{ total }]] = await connection.query(`SELECT COUNT(*) AS total FROM \`${name}\``);
-            if (Number(total) === 0 && name !== "tb_error_logs") problems.push(`ตาราง ${name} ว่าง`);
+            if (Number(total) > 0) continue;
+            const isRequired = MOCK_SET.requiredTables ? MOCK_SET.requiredTables.includes(name) : !MOCK_SET.emptyAllowed.has(name);
+            if (isRequired) problems.push(`ตาราง ${name} ว่าง`);
         }
+
+        // ลิงก์ติดตามงานส่งให้ลูกค้าแล้ว (ส่งอีเมลล้วน ไม่มีตารางเก็บ — ดูจากประวัติ audit log)
+        const [[{ shareEmails }]] = await connection.query(
+            "SELECT COUNT(*) AS shareEmails FROM tb_audit_logs WHERE aud_action = 'ส่งลิงก์ลูกค้าทางอีเมล'",
+        );
+        if (MOCK_SET.requiresShareLinkEmail && Number(shareEmails) === 0) problems.push("ยังไม่มีประวัติส่งลิงก์ติดตามงานให้ลูกค้า");
 
         // เวลาที่ MySQL ใส่เอง (created_at ฯลฯ) ต้องเป็นเวลาจำลอง ไม่ใช่วันที่รันสคริปต์
         const [datetimeColumns] = await connection.query(
@@ -117,8 +108,8 @@ async function main() {
              UNION ALL SELECT image_url FROM tb_task_issue_images UNION ALL SELECT image_url FROM tb_task_issue_reply_images`,
         );
         for (const { file } of paths) {
-            const local = path.join(DATABASE_DIR, "mock_uploads", file.replace(/^\//, ""));
-            if (!fs.existsSync(local)) problems.push(`ไม่มีไฟล์ ${file} ใน mock_uploads`);
+            const local = path.join(UPLOADS_DIR, file.replace(/^\//, ""));
+            if (!fs.existsSync(local)) problems.push(`ไม่มีไฟล์ ${file} ใน ${MOCK_SET.uploadsDir}`);
         }
         const [signatures] = await connection.query("SELECT sig_file_path AS file FROM tb_user_signatures");
         for (const { file } of signatures) {
@@ -168,7 +159,7 @@ async function main() {
         console.log(`\n✗ พบปัญหา ${problems.length} ข้อ (${seconds} วินาที):\n- ${problems.join("\n- ")}`);
         process.exit(1);
     }
-    console.log(`\n✓ mock_data.sql ลงได้ ทุกตารางมีข้อมูล ไฟล์ครบ และหน้าหลักทุกฝ่ายเปิดได้ (${seconds} วินาที)`);
+    console.log(`\n✓ ${SQL_FILE} ลงได้ ตารางที่ต้องมีข้อมูลครบ ไฟล์ครบ และหน้าหลักเปิดได้ (${seconds} วินาที)`);
 }
 
 main().catch((error) => {

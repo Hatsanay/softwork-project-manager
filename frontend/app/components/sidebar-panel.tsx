@@ -6,6 +6,7 @@ import Image from "next/image";
 import ViewLink from "@/components/ui/view-link";
 import { initialsOf } from "@/components/ui/person-cell";
 import {
+    BriefcaseBusiness,
     Building2,
     ChartColumn,
     ChevronDown,
@@ -28,6 +29,7 @@ const ICONS: Record<string, LucideIcon> = {
     "/dashboard": LayoutDashboard,
     "/users": UsersRound,
     "/projects": FolderKanban,
+    "/fastwork": BriefcaseBusiness,
     "/settings": Settings2,
     "/clients": Building2,
     "/sales": ShoppingBag,

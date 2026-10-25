@@ -16,6 +16,9 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import SearchableSelect from "@/components/ui/SearchableSelect";
 import { PROJECT_PERMISSION_BITS } from "@/app/components/project-position-bits";
 import ProjectFinanceCard from "./_components/project-finance-card";
+import FastworkProjectCard from "./_components/fastwork-project-card";
+import ProfitShareLinkCard from "./_components/profit-share-link-card";
+import CustomerRequirementsCard from "./_components/customer-requirements-card";
 import TaskBoard from "./_components/board/task-board";
 import TaskLabelsChecklist, { type ChecklistItem } from "./_components/board/task-labels-checklist";
 import type { BoardLabel } from "./_components/board/board-types";
@@ -56,6 +59,8 @@ type ProjectDetail = {
     project_share_token: string;
     project_share_enabled: number;
     project_use_task_weight: number;
+    // ช่องทางงาน (2026-10-24 · P-1): fastwork = รับงานผ่าน fastwork.com (การ์ดงวดงาน + เงินจากแพลตฟอร์ม)
+    project_channel: "direct" | "fastwork";
     client_name: string | null;
     client_email: string | null;
     unread_chat_count: number;
@@ -1380,8 +1385,17 @@ export default function ViewProjectPage() {
                 />
             )}
 
+            {/* งาน Fastwork (P-1) — งวดงานและการส่งงาน · สมาชิกตัวจริงกดส่งงานได้ */}
+            {project.project_channel === "fastwork" && <FastworkProjectCard projectId={id} isMember={Boolean(permission)} />}
+
+            {/* ความต้องการจากลูกค้า (S-4) — จากลิงก์เลือกบริการ · ไม่มีคำขอ = ไม่แสดง */}
+            <CustomerRequirementsCard projectId={id} />
+
             {/* การเงิน — เฉพาะผู้มีสิทธิ์ดูใบแจ้งหนี้ (ช่วง 1D) */}
             <ProjectFinanceCard projectId={id} />
+
+            {/* ส่วนแบ่งกำไร (P-2) — เฉพาะผู้จัดการส่วนแบ่ง */}
+            <ProfitShareLinkCard projectId={id} />
 
             {/* ภาพรวม Agile — เฉพาะโปรเจกต์ agile */}
             {project.project_type === "agile" && (

@@ -267,7 +267,16 @@ test("สถานะและรูปร่างของคำตอบท�
 
 // ── ทุกเส้นทางที่ต้อง login ──────────────────────────────────────────────────────
 // ไล่จากตาราง route จริงของ express ไม่ต้องเขียนรายการซ้ำ — เพิ่ม route ใหม่แล้วลืมใส่ requireAuth เทสต์นี้จะจับได้
-const PUBLIC_ROUTES = new Set(["GET /health", "POST /V1/auth/login", "GET /V1/share/:token"]);
+const PUBLIC_ROUTES = new Set([
+    "GET /health",
+    "POST /V1/auth/login",
+    "GET /V1/share/:token",
+    // ลิงก์เลือกบริการ (2026-10-25): หน้าร้าน ส่งคำขอ หน้าสถานะ ของลูกค้า
+    "GET /V1/order/requests/:token",
+    "GET /V1/order/:code",
+    "POST /V1/order/:code/requests",
+    "POST /V1/order/requests/:token/accept",
+]);
 
 function listRoutes() {
     const router = require("../src/routes");

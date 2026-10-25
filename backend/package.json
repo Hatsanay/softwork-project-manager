@@ -12,7 +12,9 @@
     "sync-shared": "node scripts/sync-shared.js",
     "seed:demo": "node scripts/seed-demo.js",
     "mock:export": "node scripts/mock-data/export.js",
-    "mock:verify": "node scripts/mock-data/verify.js"
+    "mock:export:pre": "node scripts/mock-data/export.js --set pre-incorporation",
+    "mock:verify": "node scripts/mock-data/verify.js",
+    "mock:verify:pre": "node scripts/mock-data/verify.js --set pre-incorporation"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

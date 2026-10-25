@@ -164,6 +164,7 @@ async function setupCompany({ pool, permissionKeys, generateDailyId, password })
         const created = await as("siriporn", "POST", "/V1/product-categories", { pc_name: name, pc_sort_order: index + 1, pc_status: "active" });
         categoryIds.push(created.pc_id);
     }
+    ids.categories = categoryIds;
     ids.products = {};
     for (const product of data.PRODUCTS) {
         const created = await as("siriporn", "POST", "/V1/products", {
@@ -173,15 +174,18 @@ async function setupCompany({ pool, permissionKeys, generateDailyId, password })
             product_price: product.price,
             product_category_id: categoryIds[product.category],
             product_status: "active",
+            product_is_public: Boolean(product.isPublic),
         });
         ids.products[product.key] = { id: created.product_id, ...product };
     }
     const website = ids.products;
-    await as("siriporn", "POST", "/V1/product-packages", {
+    ids.packages = {};
+    ids.packages.corporateWebsite = (await as("siriporn", "POST", "/V1/product-packages", {
         pkg_name: "เว็บไซต์องค์กรพร้อมระบบหลังบ้าน",
         pkg_description: "เว็บไซต์ 8 หน้า รองรับมือถือ ระบบจัดการเนื้อหา โฮสติ้งและโดเมนปีแรก",
         pkg_category_id: categoryIds[0],
         pkg_status: "active",
+        pkg_is_public: true,
         items: [
             { pki_type: "heading", pki_description: "ออกแบบและพัฒนา" },
             { pki_type: "item", pki_product_id: website.uxui.id, pki_description: website.uxui.name, pki_quantity: "8", pki_unit: "หน้าจอ", pki_unit_price: "2500" },
@@ -191,7 +195,7 @@ async function setupCompany({ pool, permissionKeys, generateDailyId, password })
             { pki_type: "item", pki_product_id: website.hosting.id, pki_description: website.hosting.name, pki_quantity: "1", pki_unit: "ปี", pki_unit_price: "18000" },
             { pki_type: "item", pki_product_id: website.domain.id, pki_description: website.domain.name, pki_quantity: "1", pki_unit: "ปี", pki_unit_price: "650" },
         ],
-    });
+    })).pkg_id;
 
     // ── พนักงานที่เริ่มงานก่อนเริ่มใช้ระบบ
     for (const employee of data.EMPLOYEES.filter((item) => !item.hireAt)) {

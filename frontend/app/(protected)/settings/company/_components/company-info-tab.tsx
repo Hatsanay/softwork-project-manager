@@ -28,6 +28,7 @@ function toForm(company: Company) {
         cs_phone: company.cs_phone ?? "",
         cs_email: company.cs_email ?? "",
         cs_website: company.cs_website ?? "",
+        cs_incorporated_on: company.cs_incorporated_on ?? "",
     };
 }
 
@@ -47,7 +48,7 @@ export default function CompanyInfoTab({ company, canEdit, onSaved }: CompanyInf
 
     async function handleSubmit(event?: React.FormEvent) {
         event?.preventDefault();
-        await save(form);
+        await save({ ...form, cs_incorporated_on: form.cs_incorporated_on || null });
     }
 
     function textInput(
@@ -110,6 +111,14 @@ export default function CompanyInfoTab({ company, canEdit, onSaved }: CompanyInf
                         error={fieldErrors.cs_tax_id}
                     >
                         {textInput("cs_tax_id", { inputMode: "numeric" })}
+                    </FormField>
+                    <FormField
+                        label="วันที่จดบริษัท"
+                        htmlFor="cs_incorporated_on"
+                        hint={messages.incorporatedOn}
+                        error={fieldErrors.cs_incorporated_on}
+                    >
+                        {textInput("cs_incorporated_on", { type: "date" })}
                     </FormField>
                 </div>
             </SectionCard>

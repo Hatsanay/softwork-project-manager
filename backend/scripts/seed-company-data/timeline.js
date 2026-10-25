@@ -11,6 +11,7 @@ const { addEmployee } = require("./setup");
 const { scheduleAttendance } = require("./timeline-attendance");
 const { scheduleCollaboration } = require("./timeline-collab");
 const { scheduleExtras, insertExchangeRates, addProductPackages } = require("./timeline-extras");
+const { scheduleOrderLinks } = require("./order-links");
 const { weekdayIndex } = require("../../src/shared/payroll-math.mjs");
 
 const LAST_DAY = "2026-10-23";
@@ -48,6 +49,7 @@ async function runTimeline({ ids, pool }) {
     scheduleAttendance({ on, ids, state, addDays, isHoliday, weekdayIndex, lastDay: LAST_DAY });
     scheduleCollaboration({ on, state });
     scheduleExtras({ on, ids, state });
+    scheduleOrderLinks({ on, ids, state, sales });
 
     // ก่อนเริ่มเหตุการณ์ (1 เม.ย.): อัตราแลกเปลี่ยนที่ ธปท. ประกาศ · ชุดรายการสินค้าเพิ่ม
     await insertExchangeRates(pool, { addDays, isWorkday });
@@ -503,10 +505,12 @@ function scheduleProjects(ids, state, user) {
     const position = ids.positions;
     const developer = (username) => ({ userId: user(username), positionIds: [position.developer] });
     const pm = (username) => ({ userId: user(username), positionIds: [position.pm] });
+    // กรรมการผู้จัดการเป็น PM ทุกโปรเจกต์ (เหมือนการใช้งานจริงของบริษัท: เห็นการ์ดลิงก์ลูกค้า แก้ไข/ลบโปรเจกต์ได้)
 
     on("2026-04-28", "ทีมโปรเจกต์ระบบจองทัวร์", async () => {
         const projectId = state.projects.tour;
         await projects.addMembers("thanawat", projectId, [
+            pm("hatsanai"),
             pm("nattapon"),
             developer("supawadee"),
             developer("weerayut"),
@@ -533,7 +537,7 @@ function scheduleProjects(ids, state, user) {
             project_due_date: "2026-12-31",
         });
         state.projects.internal = created.project_id;
-        await projects.addMembers("nattapon", created.project_id, [developer("piyapong"), developer("apichart")]);
+        await projects.addMembers("nattapon", created.project_id, [pm("hatsanai"), developer("piyapong"), developer("apichart")]);
         const tasks = [
             ["ระบบใบเสนอราคาและอนุมัติหลายชั้น", "done"],
             ["ระบบใบแจ้งหนี้ ใบวางบิล และใบเสร็จ", "done"],
@@ -558,6 +562,7 @@ function scheduleProjects(ids, state, user) {
     on("2026-05-12", "ทีมโปรเจกต์เว็บไซต์คลินิก", async () => {
         const projectId = state.projects.clinic;
         await projects.addMembers("siriporn", projectId, [
+            pm("hatsanai"),
             pm("nattapon"),
             developer("piyapong"),
             { userId: user("chonthicha"), positionIds: [position.designer] },
@@ -570,6 +575,7 @@ function scheduleProjects(ids, state, user) {
     on("2026-05-28", "ทีมโปรเจกต์ระบบจองห้องพัก", async () => {
         const projectId = state.projects.resort;
         await projects.addMembers("thanawat", projectId, [
+            pm("hatsanai"),
             pm("nattapon"),
             developer("piyapong"),
             developer("weerayut"),
@@ -601,6 +607,7 @@ function scheduleProjects(ids, state, user) {
     on("2026-07-20", "ทีมโปรเจกต์ระบบรับซื้อปาล์ม", async () => {
         const projectId = state.projects.palm;
         await projects.addMembers("siriporn", projectId, [
+            pm("hatsanai"),
             pm("nattapon"),
             developer("supawadee"),
             developer("weerayut"),
@@ -620,6 +627,7 @@ function scheduleProjects(ids, state, user) {
     on("2026-08-24", "ทีมโปรเจกต์แอปจองดำน้ำ", async () => {
         const projectId = state.projects.dive;
         await projects.addMembers("siriporn", projectId, [
+            pm("hatsanai"),
             pm("nattapon"),
             developer("piyapong"),
             { userId: user("chonthicha"), positionIds: [position.designer] },

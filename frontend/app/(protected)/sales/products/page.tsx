@@ -13,12 +13,15 @@ import type { ProductCategory } from "./_types";
 import ProductsTab from "./_components/products-tab";
 import CategoriesTab from "./_components/categories-tab";
 import PackagesTab from "./_components/packages-tab";
+import QuestionsTab from "./_components/questions-tab";
 
-type TabKey = "products" | "categories" | "packages";
+type TabKey = "products" | "categories" | "packages" | "questions";
 
 export default function ProductsPage() {
     const hasBit = usePermission();
     const canEdit = hasBit(BITS.productManagement);
+    // คำถามลูกค้า (ลิงก์เลือกบริการ): ผู้จัดการสินค้าแก้ได้ · ผู้ดูแลคำขอดูได้
+    const canSeeQuestions = canEdit || hasBit(BITS.manageServiceRequests);
     const [activeTab, setActiveTab] = useState<TabKey>("products");
     const [categories, setCategories] = useState<ProductCategory[]>([]);
 
@@ -55,6 +58,7 @@ export default function ProductsPage() {
                     { value: "products", label: tabs.products },
                     { value: "categories", label: tabs.categories, count: categories.length },
                     { value: "packages", label: tabs.packages },
+                    ...(canSeeQuestions ? [{ value: "questions" as const, label: "คำถามลูกค้า" }] : []),
                 ]}
             />
 
@@ -64,6 +68,7 @@ export default function ProductsPage() {
                     <CategoriesTab categories={categories} canEdit={canEdit} onSaved={reloadCategories} />
                 )}
                 {activeTab === "packages" && <PackagesTab categories={categories} canEdit={canEdit} />}
+                {activeTab === "questions" && <QuestionsTab categories={categories} canEdit={canEdit} />}
             </div>
         </div>
     );

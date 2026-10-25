@@ -428,11 +428,14 @@
             "client_id": "string",
             "client_name": "string",
             "client_phone": "string",
+            "project_channel": "string",
             "project_completed_at": "null",
             "project_created_at": "string",
             "project_created_by": "string",
             "project_description": "null",
             "project_due_date": "string",
+            "project_fastwork_order_no": "null",
+            "project_fastwork_url": "null",
             "project_id": "string",
             "project_name": "string",
             "project_progress_percent": "string",
@@ -1058,9 +1061,16 @@
                 "project_start_date": "string",
                 "project_status": "string"
             },
+            "shop": {
+                "logo_url": "null",
+                "name": "string"
+            },
             "tasks": [
                 {
                     "assignee_names": "string",
+                    "subtasks": [
+                        "object"
+                    ],
                     "task_completed_at": "null",
                     "task_due_date": "null",
                     "task_id": "string",

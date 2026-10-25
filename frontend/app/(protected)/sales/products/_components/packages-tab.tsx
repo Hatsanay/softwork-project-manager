@@ -17,6 +17,9 @@ import { productPackageSchema } from "@/lib/shared/schemas/product.mjs";
 import { PRODUCT_MESSAGES } from "../_messages";
 import type { ActiveStatus, Product, ProductCategory, ProductPackage, ProductPackageSummary } from "../_types";
 import CategorySelect from "./category-select";
+import CatalogImageField from "./catalog-image-field";
+import Switch from "@/components/ui/switch";
+import AddonRulesEditor, { type AddonRuleForm } from "./addon-rules-editor";
 import PackageItemsEditor, {
     emptyItem,
     newRowKey,
@@ -32,11 +35,13 @@ type PackageForm = {
     pkg_description: string;
     pkg_category_id: string;
     pkg_status: ActiveStatus;
+    pkg_is_public: boolean;
     items: PackageItemForm[];
+    addon_rules: AddonRuleForm[];
 };
 
 function emptyForm(): PackageForm {
-    return { pkg_name: "", pkg_description: "", pkg_category_id: "", pkg_status: "active", items: [emptyItem("item")] };
+    return { pkg_name: "", pkg_description: "", pkg_category_id: "", pkg_status: "active", pkg_is_public: false, items: [emptyItem("item")], addon_rules: [] };
 }
 
 function toForm(productPackage: ProductPackage): PackageForm {
@@ -45,6 +50,7 @@ function toForm(productPackage: ProductPackage): PackageForm {
         pkg_description: productPackage.pkg_description ?? "",
         pkg_category_id: productPackage.pkg_category_id ?? "",
         pkg_status: productPackage.pkg_status,
+        pkg_is_public: Boolean(productPackage.pkg_is_public),
         items: productPackage.items.map((item) => ({
             rowKey: newRowKey(),
             pki_type: item.pki_type,
@@ -54,6 +60,7 @@ function toForm(productPackage: ProductPackage): PackageForm {
             pki_unit: item.pki_unit ?? "",
             pki_unit_price: item.pki_unit_price ?? "",
         })),
+        addon_rules: (productPackage.addon_rules ?? []).map((rule) => ({ product_id: rule.product_id, rule: rule.rule })),
     };
 }
 
@@ -64,6 +71,7 @@ function toPayload(form: PackageForm) {
         pkg_description: form.pkg_description,
         pkg_category_id: form.pkg_category_id,
         pkg_status: form.pkg_status,
+        pkg_is_public: form.pkg_is_public,
         items: form.items.map((item) => ({
             pki_type: item.pki_type,
             pki_product_id: item.pki_product_id || null,
@@ -72,6 +80,7 @@ function toPayload(form: PackageForm) {
             pki_unit: item.pki_unit,
             pki_unit_price: item.pki_unit_price.trim() === "" ? null : item.pki_unit_price.trim(),
         })),
+        addon_rules: form.addon_rules,
     };
 }
 
@@ -107,6 +116,7 @@ export default function PackagesTab({ categories, canEdit }: PackagesTabProps) {
     const [activeProducts, setActiveProducts] = useState<ProductChoice[]>([]);
     const [referencedProducts, setReferencedProducts] = useState<ProductChoice[]>([]);
     const [savedCategoryId, setSavedCategoryId] = useState<string | null>(null);
+    const [editingImageUrl, setEditingImageUrl] = useState<string | null>(null);
     const [openError, setOpenError] = useState<ApiError | null>(null);
 
     const [deleteTarget, setDeleteTarget] = useState<ProductPackageSummary | null>(null);
@@ -137,6 +147,7 @@ export default function PackagesTab({ categories, canEdit }: PackagesTabProps) {
         setOpenError(null);
         setReferencedProducts([]);
         setSavedCategoryId(null);
+        setEditingImageUrl(null);
         await loadActiveProducts();
         editor.openCreate();
     }
@@ -151,6 +162,7 @@ export default function PackagesTab({ categories, canEdit }: PackagesTabProps) {
         await loadActiveProducts();
         setReferencedProducts(productsReferencedBy(data));
         setSavedCategoryId(data.pkg_category_id);
+        setEditingImageUrl(data.pkg_image_url);
         editor.openEdit(packageId, toForm(data));
         window.scrollTo({ top: 0, behavior: "smooth" });
     }
@@ -271,11 +283,38 @@ export default function PackagesTab({ categories, canEdit }: PackagesTabProps) {
                         </FormField>
                     </div>
 
+                    <div className="grid gap-3">
+                        <Switch
+                            id="pkg_is_public"
+                            label="แสดงบนหน้าร้าน (ลิงก์เลือกบริการ)"
+                            description={messages.isPublic}
+                            checked={form.pkg_is_public}
+                            onChange={(checked) => editor.updateField("pkg_is_public", checked)}
+                        />
+                        {form.pkg_is_public && (
+                            <CatalogImageField
+                                basePath={editor.editingId ? `/product-packages/${editor.editingId}` : null}
+                                imageUrl={editingImageUrl}
+                                onChanged={(imageUrl) => {
+                                    setEditingImageUrl(imageUrl);
+                                    setReloadCount((count) => count + 1);
+                                }}
+                            />
+                        )}
+                    </div>
+
                     <PackageItemsEditor
                         items={form.items}
                         onChange={(items) => editor.updateField("items", items)}
                         products={mergeChoices(referencedProducts, activeProducts)}
                         fieldErrors={fieldErrors}
+                    />
+
+                    <AddonRulesEditor
+                        rules={form.addon_rules}
+                        products={mergeChoices(referencedProducts, activeProducts)}
+                        error={fieldErrors.addon_rules}
+                        onChange={(rules) => editor.updateField("addon_rules", rules)}
                     />
 
                     <SaveErrorBanner error={editor.saveError} />
@@ -317,6 +356,7 @@ export default function PackagesTab({ categories, canEdit }: PackagesTabProps) {
                                         <InfoPill>มีสินค้าปิดใช้งาน</InfoPill>
                                     )}
                                     <StatusPill isActive={productPackage.pkg_status === "active"} />
+                                    {Boolean(productPackage.pkg_is_public) && <InfoPill>หน้าร้าน</InfoPill>}
                                 </>
                             }
                             canEdit={canEdit}

@@ -11,7 +11,9 @@ const MAX_LIST_LIMIT = 200;
 
 const PRODUCT_COLUMNS = `
     p.product_id, p.product_code, p.product_name, p.product_description, p.product_unit, p.product_price,
-    p.product_category_id, c.pc_name AS category_name, p.product_status, p.product_created_at, p.product_updated_at`;
+    p.product_category_id, c.pc_name AS category_name, p.product_status, p.product_is_public, p.product_image_url,
+    p.product_price_mode, p.product_percent,
+    p.product_created_at, p.product_updated_at`;
 
 /**
  * ค้นหาจากชื่อ รหัส หรือรายละเอียด · สูงสุด 200 แถวต่อครั้ง (ช่องค้นหาในใบเสนอราคาเรียกทุกครั้งที่พิมพ์)
@@ -99,7 +101,23 @@ function productValues(product) {
         product.product_price,
         product.product_category_id,
         product.product_status,
+        product.product_is_public ? 1 : 0,
+        product.product_price_mode,
+        product.product_percent,
     ];
+}
+
+/** สินค้าแบบ % อยู่ในชุดรายการไม่ได้ (ราคาชุด = ผลรวมราคาแถว คิดเป็น % ไม่ได้) */
+async function assertNotInPackage(conn, productId) {
+    const [[used]] = await conn.query(
+        "SELECT k.pkg_name FROM tb_product_package_items i JOIN tb_product_packages k ON k.pkg_id = i.pki_package_id WHERE i.pki_product_id = ? LIMIT 1",
+        [productId],
+    );
+    if (used) {
+        throw new AppError(400, "VALIDATION", "สินค้านี้อยู่ในชุดรายการ จึงคิดเป็น % ไม่ได้", {
+            product_price_mode: `อยู่ในชุด "${used.pkg_name}" · เอาออกจากชุดก่อน หรือใช้ราคาตายตัว`,
+        });
+    }
 }
 
 /**
@@ -113,8 +131,9 @@ async function createProduct(conn, product) {
     const productId = await generateDailyId("tb_products", "product_id", "PRD");
     await conn.query(
         `INSERT INTO tb_products
-            (product_id, product_code, product_name, product_description, product_unit, product_price, product_category_id, product_status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            (product_id, product_code, product_name, product_description, product_unit, product_price, product_category_id, product_status,
+             product_is_public, product_price_mode, product_percent)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [productId, ...productValues(product)],
     );
     return findProduct(conn, productId);
@@ -127,13 +146,14 @@ async function createProduct(conn, product) {
  */
 async function updateProduct(conn, productId, product) {
     await findProduct(conn, productId);
+    if (product.product_price_mode === "percent") await assertNotInPackage(conn, productId);
     await assertCategoryExists(conn, product.product_category_id, "product_category_id");
     await assertCodeAvailable(conn, product.product_code, productId);
 
     await conn.query(
         `UPDATE tb_products SET
             product_code = ?, product_name = ?, product_description = ?, product_unit = ?, product_price = ?,
-            product_category_id = ?, product_status = ?
+            product_category_id = ?, product_status = ?, product_is_public = ?, product_price_mode = ?, product_percent = ?
          WHERE product_id = ?`,
         [...productValues(product), productId],
     );
@@ -158,6 +178,8 @@ async function deleteProduct(conn, productId) {
     const usages = [];
     if (quotationCount > 0) usages.push(`ใบเสนอราคา ${quotationCount} ใบ`);
     if (packageCount > 0) usages.push(`ชุดรายการ ${packageCount} ชุด`);
+    const [[{ linkCount }]] = await conn.query("SELECT COUNT(DISTINCT oli_link_id) AS linkCount FROM tb_order_link_items WHERE oli_product_id = ?", [productId]);
+    if (linkCount > 0) usages.push(`ลิงก์เลือกบริการ ${linkCount} ลิงก์ (รายการที่ทีมเลือกให้)`);
     if (usages.length > 0) {
         throw new AppError(
             409,
@@ -177,7 +199,7 @@ async function deleteProduct(conn, productId) {
  */
 async function listCategories(conn) {
     const [rows] = await conn.query(
-        `SELECT c.pc_id, c.pc_name, c.pc_sort_order, c.pc_status,
+        `SELECT c.pc_id, c.pc_name, c.pc_sort_order, c.pc_status, c.pc_is_single_choice,
                 (SELECT COUNT(*) FROM tb_products p WHERE p.product_category_id = c.pc_id) AS product_count
          FROM tb_product_categories c
          ORDER BY c.pc_sort_order, c.pc_name`,
@@ -205,8 +227,8 @@ async function createCategory(conn, category) {
     await assertCategoryNameAvailable(conn, category.pc_name, null);
     const categoryId = await generateDailyId("tb_product_categories", "pc_id", "PCA");
     await conn.query(
-        "INSERT INTO tb_product_categories (pc_id, pc_name, pc_sort_order, pc_status) VALUES (?, ?, ?, ?)",
-        [categoryId, category.pc_name, category.pc_sort_order, category.pc_status],
+        "INSERT INTO tb_product_categories (pc_id, pc_name, pc_sort_order, pc_status, pc_is_single_choice) VALUES (?, ?, ?, ?, ?)",
+        [categoryId, category.pc_name, category.pc_sort_order, category.pc_status, category.pc_is_single_choice ? 1 : 0],
     );
     return { pc_id: categoryId };
 }
@@ -222,10 +244,11 @@ async function updateCategory(conn, categoryId, category) {
         throw new AppError(404, "CATEGORY_NOT_FOUND", "ไม่พบหมวดนี้ อาจถูกลบไปแล้ว กรุณาโหลดหน้าใหม่");
     }
     await assertCategoryNameAvailable(conn, category.pc_name, categoryId);
-    await conn.query("UPDATE tb_product_categories SET pc_name = ?, pc_sort_order = ?, pc_status = ? WHERE pc_id = ?", [
+    await conn.query("UPDATE tb_product_categories SET pc_name = ?, pc_sort_order = ?, pc_status = ?, pc_is_single_choice = ? WHERE pc_id = ?", [
         category.pc_name,
         category.pc_sort_order,
         category.pc_status,
+        category.pc_is_single_choice ? 1 : 0,
         categoryId,
     ]);
     return { pc_id: categoryId };

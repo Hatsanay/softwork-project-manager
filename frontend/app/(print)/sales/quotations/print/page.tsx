@@ -93,10 +93,11 @@ export default function QuotationPrintPage() {
         ? `${quotation.qt_number}${quotation.qt_revision > 0 ? ` Rev.${quotation.qt_revision}` : ""}`
         : labels.notIssued;
 
-    // ยอดรวมย่อยท้ายแต่ละหัวข้อ (หัวข้อถึงหัวข้อถัดไป)
+    // ยอดรวมย่อยท้ายแต่ละหัวข้อ (หัวข้อถึงหัวข้อถัดไป) · พิมพ์เมื่อหัวข้อมีหลายแถวที่มีราคา (แถวเดียว = ยอดเท่ากับแถวนั้น ไม่พิมพ์ซ้ำ)
+    // แถวในหัวข้อที่ราคา 0 = สิ่งที่รวมในชุด (เช่น "ดูแลบั๊ก 30 วัน") → ✓ ไม่มีเลขลำดับ ไม่พิมพ์ 0.00
     let itemNumber = 0;
     const rows: {
-        kind: "heading" | "note" | "item" | "subtotal";
+        kind: "heading" | "note" | "item" | "included" | "subtotal";
         key: string;
         item?: (typeof items)[number];
         number?: number;
@@ -105,7 +106,7 @@ export default function QuotationPrintPage() {
     }[] = [];
     let currentHeading: { title: string; sum: bigint; count: number } | null = null;
     const closeHeading = () => {
-        if (currentHeading && currentHeading.count > 0) {
+        if (currentHeading && currentHeading.count > 1) {
             rows.push({
                 kind: "subtotal",
                 key: `subtotal-${rows.length}`,
@@ -121,6 +122,8 @@ export default function QuotationPrintPage() {
             rows.push({ kind: "heading", key: String(item.qti_id), item });
         } else if (item.qti_type === "note") {
             rows.push({ kind: "note", key: String(item.qti_id), item });
+        } else if (currentHeading && parseHundredths(item.qti_amount, "ยอด") === 0n && parseHundredths(item.qti_unit_price ?? "0", "ราคา") === 0n) {
+            rows.push({ kind: "included", key: String(item.qti_id), item });
         } else {
             itemNumber += 1;
             if (currentHeading) {
@@ -158,6 +161,13 @@ export default function QuotationPrintPage() {
                         <span className="-rotate-30 text-[42pt] font-medium text-gray-300/60">
                             {labels.draftWatermark}
                         </span>
+                    </div>
+                )}
+                {/* ใบภายในของงาน Fastwork (S-5): พิมพ์ได้ แต่ไม่ใช่ใบที่ส่งลูกค้า */}
+                {detail.fastwork_internal && (
+                    <div className="pointer-events-none absolute top-40 right-16 -rotate-12 rounded-lg border-4 border-gray-500/70 px-6 py-2 text-center text-[20pt] font-medium text-gray-500/80">
+                        เอกสารภายใน
+                        <span className="block text-[10pt]">งาน Fastwork · ไม่ส่งลูกค้า</span>
                     </div>
                 )}
                 {quotation.qt_status === "cancelled" && (
@@ -296,6 +306,14 @@ export default function QuotationPrintPage() {
                                         </td>
                                         <td className="py-1 pr-1 text-right tabular-nums">
                                             {formatAmount(row.item.qti_amount, decimals)}
+                                        </td>
+                                    </tr>
+                                )}
+                                {row.kind === "included" && row.item && (
+                                    <tr className="print-row align-top">
+                                        <td />
+                                        <td colSpan={5} className="py-0.5 pr-2 whitespace-pre-line text-gray-700">
+                                            ✓ {row.item.qti_description}
                                         </td>
                                     </tr>
                                 )}

@@ -830,3 +830,250 @@ INSERT INTO tb_approval_levels (al_doc_type, al_level, al_min_amount_thb, al_req
 INSERT INTO tb_approval_level_roles (alr_doc_type, alr_level, alr_role_id) VALUES ('IV', 1, 'ROL202601010000001');
 
 commit;
+
+-- 2026-10-24 P-1 Fastwork: อัตราค่าธรรมเนียมเริ่มต้น (ฉบับจริงอยู่ใน deploy_schema.sql)
+ALTER TABLE tb_company_settings ADD COLUMN cs_fastwork_fee_rate decimal(5,2) NOT NULL DEFAULT '17.00' COMMENT 'ค่าธรรมเนียม Fastwork เริ่มต้น (% ของราคางวด) · แก้ได้ทุกรายการ · ตรวจอัตราจริงในบัญชี Fastwork';
+ALTER TABLE tb_company_settings ADD COLUMN cs_fastwork_fee_vat_rate decimal(5,2) NOT NULL DEFAULT '0.00' COMMENT 'VAT ของค่าธรรมเนียม Fastwork (% ของค่าธรรมเนียม) · 0 = ไม่มี';
+ALTER TABLE tb_company_settings ADD COLUMN cs_fastwork_wht_rate decimal(5,2) NOT NULL DEFAULT '0.00' COMMENT 'หัก ณ ที่จ่ายที่ Fastwork หัก (% ของราคางวด) · รอนักบัญชียืนยัน Z2';
+
+-- 2026-10-25 P-3 เงินทุน: วันที่จดบริษัท + เป้าเงินทุน (ฉบับจริงอยู่ใน deploy_schema.sql)
+ALTER TABLE tb_company_settings ADD COLUMN cs_incorporated_on date DEFAULT NULL COMMENT 'วันที่จดบริษัท (นิติบุคคล) · ว่าง = ยังเป็นบุคคลธรรมดา (ช่วงก่อนจดบริษัท)';
+ALTER TABLE tb_company_settings ADD COLUMN cs_capital_goal decimal(15,2) DEFAULT NULL COMMENT 'เป้าเงินทุนก่อนจดบริษัท · ว่าง = ยังไม่ตั้ง';
+ALTER TABLE tb_company_settings ADD COLUMN cs_capital_target_date date DEFAULT NULL COMMENT 'วันที่ตั้งใจจดบริษัท (ไม่บังคับ)';
+
+-- 2026-10-25 ลิงก์เลือกบริการ (ฉบับจริงอยู่ใน deploy_schema.sql)
+ALTER TABLE tb_products ADD COLUMN product_is_public tinyint(1) NOT NULL DEFAULT '0' COMMENT 'แสดงบนหน้าร้านของลิงก์เลือกบริการ (2026-10-25)';
+ALTER TABLE tb_products ADD COLUMN product_image_url varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'รูปบนหน้าร้าน (/uploads/catalog/...)';
+ALTER TABLE tb_product_packages ADD COLUMN pkg_is_public tinyint(1) NOT NULL DEFAULT '0' COMMENT 'แสดงบนหน้าร้านของลิงก์เลือกบริการ (2026-10-25)';
+ALTER TABLE tb_product_packages ADD COLUMN pkg_image_url varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'รูปบนหน้าร้าน (/uploads/catalog/...)';
+ALTER TABLE tb_company_settings ADD COLUMN cs_service_request_assignee_id varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ผู้รับคำขอบริการเริ่มต้น (ลิงก์ที่ไม่ได้เลือกคนเอง)';
+
+-- ลิงก์เลือกบริการ (2026-10-25 · docs/plans/2026-10-25-client-order-link.md)
+-- personal = ลูกค้าตรงรายเดียว (ส่งคำขอได้ครั้งเดียว) · public = ติดหน้าเว็บ/เพจ (หลายคำขอ) · fastwork = ผู้ซื้อบน Fastwork (ไม่มีข้อมูลติดต่อ/การจ่ายเงิน)
+-- token = ที่อยู่เต็ม /order/<token> · short_code = ที่อยู่สั้น /o/<code> (ใต้ QR) ชี้ลิงก์เดียวกัน · หมวดที่เปิด: tb_order_link_categories (ไม่มีแถว = ทุกหมวด)
+CREATE TABLE IF NOT EXISTS `tb_order_links` (
+  `ol_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `ol_token` char(32) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ol_short_code` char(8) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ol_kind` enum('personal','public','fastwork') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ol_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ชื่อเรียกภายใน เช่น หน้าเว็บ เพจ Facebook',
+  `ol_client_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'personal: ลูกค้าที่ผูก (ว่าง = ลูกค้าใหม่ยังไม่มีในระบบ)',
+  `ol_project_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'fastwork: งานเดิมที่เพิ่มขอบเขต (ว่าง = ก่อนจ้าง)',
+  `ol_buyer_name` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'fastwork ก่อนจ้าง: ชื่อผู้ซื้อที่แสดงบน Fastwork',
+  `ol_assignee_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ผู้รับคำขอจากลิงก์นี้',
+  `ol_expires_on` date DEFAULT NULL COMMENT 'วันสุดท้ายที่เปิดได้ (ว่าง = ไม่หมดอายุ)',
+  `ol_status` enum('active','disabled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `ol_allow_more` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'ลูกค้าเลือกเพิ่มเองได้ (0 = มีแต่รายการที่ทีมเลือกให้)',
+  `ol_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ol_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `ol_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`ol_id`),
+  UNIQUE KEY `uq_ol_token` (`ol_token`),
+  UNIQUE KEY `uq_ol_short_code` (`ol_short_code`),
+  KEY `fk_ol_client` (`ol_client_id`),
+  KEY `fk_ol_project` (`ol_project_id`),
+  KEY `fk_ol_assignee` (`ol_assignee_id`),
+  KEY `fk_ol_created_by` (`ol_created_by`),
+  CONSTRAINT `fk_ol_assignee` FOREIGN KEY (`ol_assignee_id`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_ol_client` FOREIGN KEY (`ol_client_id`) REFERENCES `tb_clients` (`client_id`),
+  CONSTRAINT `fk_ol_created_by` FOREIGN KEY (`ol_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_ol_project` FOREIGN KEY (`ol_project_id`) REFERENCES `tb_projects` (`project_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `tb_order_link_categories` (
+  `olc_link_id` int unsigned NOT NULL,
+  `olc_category_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  PRIMARY KEY (`olc_link_id`,`olc_category_id`),
+  KEY `fk_olc_category` (`olc_category_id`),
+  CONSTRAINT `fk_olc_category` FOREIGN KEY (`olc_category_id`) REFERENCES `tb_product_categories` (`pc_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_olc_link` FOREIGN KEY (`olc_link_id`) REFERENCES `tb_order_links` (`ol_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- คำขอบริการที่ลูกค้าส่งจากลิงก์ (2026-10-25) — ชนิดของคำขออ่านจากลิงก์ (ไม่เก็บซ้ำ)
+-- submitted = รอตรวจ · converted = ออกใบเสนอราคา/เปิดโปรเจกต์แล้ว (สถานะต่อจากนั้นอ่านจากใบเสนอราคา/โปรเจกต์) · rejected = ปฏิเสธ · closed = ไม่ได้งาน (Fastwork)
+-- access_token = หน้าสถานะของลูกค้า /order/r/<token> · submit_key = กันกดส่งซ้ำ (ซ้ำ = ตอบคำขอเดิม)
+CREATE TABLE IF NOT EXISTS `tb_service_requests` (
+  `svr_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `svr_link_id` int unsigned NOT NULL,
+  `svr_access_token` char(32) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `svr_submit_key` char(36) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `svr_status` enum('submitted','converted','rejected','closed') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'submitted',
+  `svr_status_reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เหตุผลปฏิเสธ/ปิด (ภายใน ลูกค้าไม่เห็น)',
+  `svr_contact_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `svr_contact_phone` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `svr_contact_email` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `svr_contact_line` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `svr_company_name` varchar(200) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `svr_tax_id` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'กรอกเมื่อต้องการใบกำกับในนามบริษัท',
+  `svr_address` varchar(1000) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `svr_note` varchar(2000) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ข้อความถึงทีมงานจากลูกค้า',
+  `svr_consent_at` datetime DEFAULT NULL COMMENT 'เวลายินยอมข้อมูลส่วนบุคคล (ลิงก์ fastwork ไม่เก็บข้อมูลติดต่อ = ว่าง)',
+  `svr_vat_rate` decimal(5,2) DEFAULT NULL COMMENT 'อัตรา VAT ที่ลูกค้าเห็นตอนส่ง (ว่าง = ยังไม่จด VAT)',
+  `svr_assignee_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `svr_client_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ลูกค้าที่ผูกตอนตรวจ (personal ผูกจากลิงก์)',
+  `svr_quotation_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `svr_project_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `svr_version` int unsigned NOT NULL DEFAULT '0',
+  `svr_accepted_name` varchar(150) DEFAULT NULL COMMENT 'ชื่อที่ลูกค้าพิมพ์ยืนยันตอนกดยอมรับใบเสนอราคาในลิงก์ (S-4)',
+  `svr_accepted_at` datetime DEFAULT NULL COMMENT 'เวลาที่ลูกค้ากดยอมรับในลิงก์ (เวลาไทย)',
+  `svr_submitted_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `svr_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`svr_id`),
+  UNIQUE KEY `uq_svr_access_token` (`svr_access_token`),
+  UNIQUE KEY `uq_svr_submit_key` (`svr_link_id`,`svr_submit_key`),
+  KEY `idx_svr_status` (`svr_status`,`svr_submitted_at`),
+  KEY `fk_svr_assignee` (`svr_assignee_id`),
+  KEY `fk_svr_client` (`svr_client_id`),
+  KEY `fk_svr_quotation` (`svr_quotation_id`),
+  KEY `fk_svr_project` (`svr_project_id`),
+  CONSTRAINT `fk_svr_assignee` FOREIGN KEY (`svr_assignee_id`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_svr_client` FOREIGN KEY (`svr_client_id`) REFERENCES `tb_clients` (`client_id`),
+  CONSTRAINT `fk_svr_link` FOREIGN KEY (`svr_link_id`) REFERENCES `tb_order_links` (`ol_id`),
+  CONSTRAINT `fk_svr_project` FOREIGN KEY (`svr_project_id`) REFERENCES `tb_projects` (`project_id`),
+  CONSTRAINT `fk_svr_quotation` FOREIGN KEY (`svr_quotation_id`) REFERENCES `tb_quotations` (`qt_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- รายการที่ลูกค้าเลือก (2026-10-25) — ชื่อ/หน่วย/ราคา ณ วันส่ง (คัดลอกเพราะเป็นราคาที่ลูกค้าเห็นตอนส่ง สินค้าแก้ราคาทีหลังได้)
+-- ชุดสินค้า = แถว heading (ชื่อชุด) + แถว item ที่มี svi_package_id เดียวกัน
+CREATE TABLE IF NOT EXISTS `tb_service_request_items` (
+  `svi_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `svi_request_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `svi_order` smallint unsigned NOT NULL,
+  `svi_type` enum('item','heading') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'item',
+  `svi_product_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `svi_package_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `svi_name` varchar(200) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `svi_unit` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `svi_unit_price` decimal(15,2) DEFAULT NULL COMMENT 'บาท ณ วันส่ง (heading = ว่าง)',
+  `svi_quantity` decimal(12,2) DEFAULT NULL COMMENT 'heading = จำนวนชุด',
+  `svi_adjusted_quantity` decimal(12,2) DEFAULT NULL COMMENT 'จำนวนที่ผู้รับผิดชอบปรับ (ว่าง = ตามที่ลูกค้าเลือก)',
+  `svi_adjusted_unit_price` decimal(15,2) DEFAULT NULL COMMENT 'ราคาที่ผู้รับผิดชอบปรับ (ว่าง = ราคา ณ วันส่ง)',
+  `svi_is_removed` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'ผู้รับผิดชอบเอาออก (แถวลูกค้ายังเก็บไว้ดูว่าเคยเลือก)',
+  `svi_added_by_staff` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'ผู้รับผิดชอบเพิ่มเอง (ลูกค้าไม่ได้เลือก)',
+  `svi_is_preset` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'ทีมเลือกให้ในลิงก์ (สำเนาตอนส่ง เพราะรายการของลิงก์แก้ได้ภายหลัง)',
+  `svi_percent` decimal(5,2) DEFAULT NULL COMMENT 'งานเพิ่มแบบ %: อัตรา ณ วันส่ง · ยอดคิดจากยอดรายการอื่น (หลังปรับ) ทุกครั้ง ไม่เก็บยอดซ้ำ',
+  PRIMARY KEY (`svi_id`),
+  KEY `idx_svi_request` (`svi_request_id`,`svi_order`),
+  KEY `fk_svi_product` (`svi_product_id`),
+  KEY `fk_svi_package` (`svi_package_id`),
+  CONSTRAINT `fk_svi_package` FOREIGN KEY (`svi_package_id`) REFERENCES `tb_product_packages` (`pkg_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_svi_product` FOREIGN KEY (`svi_product_id`) REFERENCES `tb_products` (`product_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_svi_request` FOREIGN KEY (`svi_request_id`) REFERENCES `tb_service_requests` (`svr_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 2026-10-25 คำถามความต้องการ (ฉบับจริงอยู่ใน deploy_schema.sql)
+
+-- คำถามความต้องการของลิงก์เลือกบริการ (2026-10-25 · S-2) — กลุ่มผูกหมวดสินค้า · กลุ่มทั่วไป (is_general) ถามทุกคำขอ
+-- ลูกค้าเลือกสินค้าหมวดไหน ขึ้นกลุ่มที่ผูกหมวดนั้น (กลุ่มเดียวกันขึ้นครั้งเดียว)
+CREATE TABLE IF NOT EXISTS `tb_requirement_groups` (
+  `rqg_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `rqg_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rqg_description` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `rqg_is_general` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1 = ถามทุกคำขอ ไม่ขึ้นกับหมวด',
+  `rqg_sort_order` smallint unsigned NOT NULL DEFAULT '0',
+  `rqg_status` enum('active','inactive') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `rqg_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `rqg_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`rqg_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `tb_requirement_group_categories` (
+  `rgc_group_id` int unsigned NOT NULL,
+  `rgc_category_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  PRIMARY KEY (`rgc_group_id`,`rgc_category_id`),
+  KEY `fk_rgc_category` (`rgc_category_id`),
+  CONSTRAINT `fk_rgc_category` FOREIGN KEY (`rgc_category_id`) REFERENCES `tb_product_categories` (`pc_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_rgc_group` FOREIGN KEY (`rgc_group_id`) REFERENCES `tb_requirement_groups` (`rqg_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ชนิดคำตอบ: short_text long_text single multi yes_no number date url file · rqq_options = ตัวเลือก (JSON array ของข้อความ) เฉพาะ single/multi
+CREATE TABLE IF NOT EXISTS `tb_requirement_questions` (
+  `rqq_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `rqq_group_id` int unsigned NOT NULL,
+  `rqq_text` varchar(300) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rqq_help` varchar(300) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ข้อความช่วยใต้คำถาม (ตัวอย่างคำตอบ)',
+  `rqq_type` enum('short_text','long_text','single','multi','yes_no','number','date','url','file') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rqq_options` json DEFAULT NULL,
+  `rqq_is_required` tinyint(1) NOT NULL DEFAULT '0',
+  `rqq_sort_order` smallint unsigned NOT NULL DEFAULT '0',
+  `rqq_status` enum('active','inactive') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `rqq_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `rqq_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`rqq_id`),
+  KEY `idx_rqq_group` (`rqq_group_id`,`rqq_sort_order`),
+  CONSTRAINT `fk_rqq_group` FOREIGN KEY (`rqq_group_id`) REFERENCES `tb_requirement_groups` (`rqg_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- คำตอบในคำขอ (2026-10-25 · S-2) — ชื่อกลุ่ม/ข้อความคำถาม/ชนิด ณ วันส่ง (คัดลอกเพราะคำถามแก้หรือลบทีหลังได้ คำตอบต้องอ่านคู่กับคำถามเดิม)
+-- sva_value: ข้อความ · multi = JSON array · yes_no = yes/no · file = ว่าง (ไฟล์อยู่ใน tb_service_request_files)
+CREATE TABLE IF NOT EXISTS `tb_service_request_answers` (
+  `sva_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `sva_request_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `sva_question_id` int unsigned DEFAULT NULL,
+  `sva_order` smallint unsigned NOT NULL,
+  `sva_group_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `sva_question_text` varchar(300) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `sva_type` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `sva_value` text COLLATE utf8mb4_unicode_ci,
+  PRIMARY KEY (`sva_id`),
+  KEY `idx_sva_request` (`sva_request_id`,`sva_order`),
+  KEY `fk_sva_question` (`sva_question_id`),
+  CONSTRAINT `fk_sva_question` FOREIGN KEY (`sva_question_id`) REFERENCES `tb_requirement_questions` (`rqq_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_sva_request` FOREIGN KEY (`sva_request_id`) REFERENCES `tb_service_requests` (`svr_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ไฟล์แนบของคำตอบ (รูป/PDF) — เก็บที่ storage/ (ไม่เปิดสาธารณะ) เปิดได้ทาง API ที่ตรวจสิทธิ์
+CREATE TABLE IF NOT EXISTS `tb_service_request_files` (
+  `svf_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `svf_answer_id` int unsigned NOT NULL,
+  `svf_file_path` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `svf_original_name` varchar(200) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `svf_size` int unsigned NOT NULL,
+  `svf_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`svf_id`),
+  KEY `idx_svf_answer` (`svf_answer_id`),
+  CONSTRAINT `fk_svf_answer` FOREIGN KEY (`svf_answer_id`) REFERENCES `tb_service_request_answers` (`sva_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 2026-10-25 หน้าร้านตรงกับของที่ขาย
+ALTER TABLE tb_product_categories ADD COLUMN pc_is_single_choice tinyint(1) NOT NULL DEFAULT '0' COMMENT 'ลูกค้าเลือกได้รายการเดียวในหมวดนี้ เช่น แพ็กเกจ (ใส่อันใหม่ = แทนอันเดิมในตะกร้า)' AFTER pc_status;
+ALTER TABLE tb_products ADD COLUMN product_price_mode enum('fixed','percent') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'fixed' COMMENT 'percent = คิดเป็น % ของยอดรายการอื่นก่อน VAT เช่น งานด่วน +30%' AFTER product_is_public;
+ALTER TABLE tb_products ADD COLUMN product_percent decimal(5,2) DEFAULT NULL COMMENT 'percent: อัตรา % (ไม่ใช้ product_price)' AFTER product_price_mode;
+
+-- 2026-10-25 รายการที่ทีมงานเลือกให้ในลิงก์ (ล็อก ลูกค้าเอาออก/แก้จำนวนไม่ได้ · ราคาปัจจุบันของสินค้า/ชุด) · มีสินค้าหรือชุดอย่างใดอย่างหนึ่ง
+CREATE TABLE IF NOT EXISTS `tb_order_link_items` (
+  `oli_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `oli_link_id` int unsigned NOT NULL,
+  `oli_product_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `oli_package_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `oli_quantity` int unsigned NOT NULL DEFAULT '1',
+  `oli_order` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`oli_id`),
+  KEY `idx_oli_link` (`oli_link_id`,`oli_order`),
+  KEY `fk_oli_product` (`oli_product_id`),
+  KEY `fk_oli_package` (`oli_package_id`),
+  CONSTRAINT `fk_oli_link` FOREIGN KEY (`oli_link_id`) REFERENCES `tb_order_links` (`ol_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_oli_package` FOREIGN KEY (`oli_package_id`) REFERENCES `tb_product_packages` (`pkg_id`),
+  CONSTRAINT `fk_oli_product` FOREIGN KEY (`oli_product_id`) REFERENCES `tb_products` (`product_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 2026-10-25 กติกางานเพิ่มต่อแพ็ก: included = มีในแพ็กแล้ว (กดซื้อไม่ได้) · not_available = ใช้กับแพ็กนี้ไม่ได้ (ซ่อน) · ไม่มีแถว = ซื้อได้
+CREATE TABLE IF NOT EXISTS `tb_package_addon_rules` (
+  `par_package_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `par_product_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `par_rule` enum('included','not_available') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  PRIMARY KEY (`par_package_id`,`par_product_id`),
+  KEY `fk_par_product` (`par_product_id`),
+  CONSTRAINT `fk_par_package` FOREIGN KEY (`par_package_id`) REFERENCES `tb_product_packages` (`pkg_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_par_product` FOREIGN KEY (`par_product_id`) REFERENCES `tb_products` (`product_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 2026-10-25 กลุ่มคำถามที่ถามเฉพาะเมื่อเลือกแพ็กนี้ (นอกจากผูกหมวด)
+CREATE TABLE IF NOT EXISTS `tb_requirement_group_packages` (
+  `rgp_group_id` int unsigned NOT NULL,
+  `rgp_package_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  PRIMARY KEY (`rgp_group_id`,`rgp_package_id`),
+  KEY `fk_rgp_package` (`rgp_package_id`),
+  CONSTRAINT `fk_rgp_group` FOREIGN KEY (`rgp_group_id`) REFERENCES `tb_requirement_groups` (`rqg_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_rgp_package` FOREIGN KEY (`rgp_package_id`) REFERENCES `tb_product_packages` (`pkg_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

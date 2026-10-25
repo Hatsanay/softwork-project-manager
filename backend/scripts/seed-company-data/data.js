@@ -71,7 +71,7 @@ const ROLES = {
         keys: [
             "dashboard", "viewAllProjects", "viewOwnProjects", "createProject", "clientManagement", "createClient", "editClient",
             "productManagement", "viewQuotations", "createQuotation", "approveQuotation", "cancelQuotation", "viewInvoices",
-            "createInvoice", "approveInvoice", "viewReceipts", "salesReports", "viewMemberKpi",
+            "createInvoice", "approveInvoice", "viewReceipts", "salesReports", "viewMemberKpi", "manageServiceRequests",
         ],
     },
     sales: {
@@ -301,16 +301,17 @@ const VENDORS = {
 // หมวดสินค้า/บริการ และรายการขาย
 const PRODUCT_CATEGORIES = ["พัฒนาซอฟต์แวร์", "ออกแบบ UX/UI", "โฮสติ้งและดูแลระบบ", "ฝึกอบรมและให้คำปรึกษา"];
 const PRODUCTS = [
-    { key: "analysis", code: "SV-ANL", name: "วิเคราะห์และออกแบบระบบ", unit: "งาน", price: "25000", category: 0 },
-    { key: "webDev", code: "SV-WEB", name: "พัฒนาเว็บแอปพลิเคชัน", unit: "Man-day", price: "4500", category: 0 },
-    { key: "mobileDev", code: "SV-MOB", name: "พัฒนาแอปพลิเคชันมือถือ (iOS / Android)", unit: "Man-day", price: "5000", category: 0 },
+    // isPublic = แสดงบนหน้าร้านของลิงก์เลือกบริการ (2026-10-25)
+    { key: "analysis", code: "SV-ANL", name: "วิเคราะห์และออกแบบระบบ", unit: "งาน", price: "25000", category: 0, isPublic: true },
+    { key: "webDev", code: "SV-WEB", name: "พัฒนาเว็บแอปพลิเคชัน", unit: "Man-day", price: "4500", category: 0, isPublic: true },
+    { key: "mobileDev", code: "SV-MOB", name: "พัฒนาแอปพลิเคชันมือถือ (iOS / Android)", unit: "Man-day", price: "5000", category: 0, isPublic: true },
     { key: "testing", code: "SV-QA", name: "ทดสอบระบบและแก้ไขข้อผิดพลาด", unit: "Man-day", price: "3500", category: 0 },
-    { key: "uxui", code: "DS-UI", name: "ออกแบบ UX/UI", unit: "หน้าจอ", price: "2500", category: 1 },
+    { key: "uxui", code: "DS-UI", name: "ออกแบบ UX/UI", unit: "หน้าจอ", price: "2500", category: 1, isPublic: true },
     { key: "deploy", code: "OP-DEP", name: "ติดตั้งระบบบนเซิร์ฟเวอร์และตั้งค่าความปลอดภัย", unit: "งาน", price: "8000", category: 2 },
-    { key: "maintenance", code: "OP-MA", name: "บริการดูแลระบบรายเดือน", unit: "เดือน", price: "6000", category: 2 },
-    { key: "hosting", code: "OP-HOST", name: "Cloud Hosting รายปี", unit: "ปี", price: "18000", category: 2 },
-    { key: "domain", code: "OP-DOM", name: "จดโดเมน .com รายปี", unit: "ปี", price: "650", category: 2 },
-    { key: "training", code: "TR-USE", name: "ฝึกอบรมการใช้งานระบบ", unit: "ครั้ง", price: "7500", category: 3 },
+    { key: "maintenance", code: "OP-MA", name: "บริการดูแลระบบรายเดือน", unit: "เดือน", price: "6000", category: 2, isPublic: true },
+    { key: "hosting", code: "OP-HOST", name: "Cloud Hosting รายปี", unit: "ปี", price: "18000", category: 2, isPublic: true },
+    { key: "domain", code: "OP-DOM", name: "จดโดเมน .com รายปี", unit: "ปี", price: "650", category: 2, isPublic: true },
+    { key: "training", code: "TR-USE", name: "ฝึกอบรมการใช้งานระบบ", unit: "ครั้ง", price: "7500", category: 3, isPublic: true },
 ];
 
 // วันหยุดบริษัท ปี 2026 (ตามวันหยุดราชการ)

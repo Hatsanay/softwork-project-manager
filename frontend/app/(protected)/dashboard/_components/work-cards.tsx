@@ -80,7 +80,7 @@ export function MyTasksCard({ tasks, onNavigate }: { tasks: SummaryTask[]; onNav
         <DashboardCard
             icon={ListTodo}
             title="งานของฉัน"
-            description="งานที่คุณรับผิดชอบและยังไม่เสร็จ — สีแดงคือเลยกำหนดแล้ว"
+            description="งานที่คุณรับผิดชอบและยังไม่เสร็จ · สีแดงคือเลยกำหนดแล้ว"
         >
             {tasks.length === 0 ? (
                 <EmptyLine>ไม่มีงานที่ต้องทำอยู่ตอนนี้</EmptyLine>
@@ -304,7 +304,7 @@ export function ActiveProjectsCard({
                                     ครบกำหนด{" "}
                                     {project.project_due_date
                                         ? formatDateOnly(project.project_due_date)
-                                        : "— ยังไม่กำหนด"}
+                                        : "- (ยังไม่กำหนด)"}
                                 </span>
                             </span>
                         </ListRowButton>

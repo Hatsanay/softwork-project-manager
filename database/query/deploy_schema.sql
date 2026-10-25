@@ -231,6 +231,9 @@ CREATE TABLE IF NOT EXISTS `tb_projects` (
   `project_share_token` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,
   `project_share_enabled` tinyint(1) NOT NULL DEFAULT '1',
   `project_use_task_weight` tinyint(1) NOT NULL DEFAULT '0',
+  `project_channel` enum('direct','fastwork') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'direct' COMMENT 'ช่องทางงาน: direct = ลูกค้าตรง (ใบเสนอราคา/ใบแจ้งหนี้) · fastwork = รับงานผ่าน fastwork.com (รายได้จากการโอนของแพลตฟอร์ม)',
+  `project_fastwork_order_no` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เลขคำสั่งซื้อบน Fastwork',
+  `project_fastwork_url` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ลิงก์หน้างานบน Fastwork',
   `project_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `project_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `project_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -510,6 +513,13 @@ CREATE TABLE IF NOT EXISTS `tb_company_settings` (
   `cs_quotation_terms_th` text COLLATE utf8mb4_unicode_ci COMMENT 'เงื่อนไขท้ายใบเสนอราคาเริ่มต้น (เอกสารภาษาไทย)',
   `cs_quotation_terms_en` text COLLATE utf8mb4_unicode_ci COMMENT 'เงื่อนไขท้ายใบเสนอราคาเริ่มต้น (เอกสารภาษาอังกฤษ)',
   `cs_allow_self_approval` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1 = ผู้สร้างอนุมัติเอกสารของตัวเองได้ (บริษัทที่มีผู้อนุมัติคนเดียว)',
+  `cs_fastwork_fee_rate` decimal(5,2) NOT NULL DEFAULT '17.00' COMMENT 'ค่าธรรมเนียม Fastwork เริ่มต้น (% ของราคางวด) · แก้ได้ทุกรายการ · ตรวจอัตราจริงในบัญชี Fastwork',
+  `cs_fastwork_fee_vat_rate` decimal(5,2) NOT NULL DEFAULT '0.00' COMMENT 'VAT ของค่าธรรมเนียม Fastwork (% ของค่าธรรมเนียม) · 0 = ไม่มี',
+  `cs_fastwork_wht_rate` decimal(5,2) NOT NULL DEFAULT '0.00' COMMENT 'หัก ณ ที่จ่ายที่ Fastwork หัก (% ของราคางวด) · รอนักบัญชียืนยัน Z2',
+  `cs_incorporated_on` date DEFAULT NULL COMMENT 'วันที่จดบริษัท (นิติบุคคล) · ว่าง = ยังเป็นบุคคลธรรมดา (ช่วงก่อนจดบริษัท)',
+  `cs_capital_goal` decimal(15,2) DEFAULT NULL COMMENT 'เป้าเงินทุนก่อนจดบริษัท · ว่าง = ยังไม่ตั้ง',
+  `cs_capital_target_date` date DEFAULT NULL COMMENT 'วันที่ตั้งใจจดบริษัท (ไม่บังคับ)',
+  `cs_service_request_assignee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ผู้รับคำขอบริการเริ่มต้น (ลิงก์ที่ไม่ได้เลือกคนเอง)',
   `cs_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`cs_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -609,6 +619,7 @@ CREATE TABLE IF NOT EXISTS `tb_product_categories` (
   `pc_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
   `pc_sort_order` int NOT NULL DEFAULT '0',
   `pc_status` enum('active','inactive') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `pc_is_single_choice` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'ลูกค้าเลือกได้รายการเดียวในหมวดนี้ เช่น แพ็กเกจ (ใส่อันใหม่ = แทนอันเดิมในตะกร้า)',
   `pc_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `pc_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`pc_id`),
@@ -625,6 +636,10 @@ CREATE TABLE IF NOT EXISTS `tb_products` (
   `product_price` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'ราคาตั้งต้น (บาท)',
   `product_category_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `product_status` enum('active','inactive') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `product_is_public` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'แสดงบนหน้าร้านของลิงก์เลือกบริการ (2026-10-25)',
+  `product_price_mode` enum('fixed','percent') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'fixed' COMMENT 'percent = คิดเป็น % ของยอดรายการอื่นก่อน VAT เช่น งานด่วน +30%',
+  `product_percent` decimal(5,2) DEFAULT NULL COMMENT 'percent: อัตรา % (ไม่ใช้ product_price)',
+  `product_image_url` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'รูปบนหน้าร้าน (/uploads/catalog/...)',
   `product_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `product_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`product_id`),
@@ -641,6 +656,8 @@ CREATE TABLE IF NOT EXISTS `tb_product_packages` (
   `pkg_description` text COLLATE utf8mb4_unicode_ci,
   `pkg_category_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `pkg_status` enum('active','inactive') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `pkg_is_public` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'แสดงบนหน้าร้านของลิงก์เลือกบริการ (2026-10-25)',
+  `pkg_image_url` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'รูปบนหน้าร้าน (/uploads/catalog/...)',
   `pkg_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `pkg_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`pkg_id`),
@@ -2352,6 +2369,444 @@ CREATE TABLE IF NOT EXISTS `tb_wfh_requests` (
   CONSTRAINT `fk_wfh_employee` FOREIGN KEY (`wfh_employee_id`) REFERENCES `tb_employees` (`emp_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- งวดงาน Fastwork (2026-10-24 · P-1) — ตกลงกับลูกค้าบน Fastwork · ส่งงานแล้ว = fwm_delivered_at
+-- เงินที่ได้จริงอยู่ใน tb_fastwork_payouts (หนึ่งงวดมีรายการเงินที่ยังไม่ยกเลิกได้รายการเดียว — ตรวจใน backend)
+CREATE TABLE IF NOT EXISTS `tb_fastwork_milestones` (
+  `fwm_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `fwm_project_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `fwm_order` smallint unsigned NOT NULL,
+  `fwm_name` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `fwm_amount` decimal(15,2) NOT NULL COMMENT 'ราคางวดตามที่ตกลงบน Fastwork (ยอดที่ลูกค้าจ่าย)',
+  `fwm_due_date` date DEFAULT NULL,
+  `fwm_delivered_at` datetime DEFAULT NULL COMMENT 'ส่งงานงวดนี้บน Fastwork แล้ว (รอลูกค้ายืนยัน)',
+  `fwm_delivered_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fwm_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fwm_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `fwm_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`fwm_id`),
+  KEY `idx_fwm_project_order` (`fwm_project_id`,`fwm_order`),
+  KEY `fk_fwm_delivered_by` (`fwm_delivered_by`),
+  KEY `fk_fwm_created_by` (`fwm_created_by`),
+  CONSTRAINT `fk_fwm_created_by` FOREIGN KEY (`fwm_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_fwm_delivered_by` FOREIGN KEY (`fwm_delivered_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_fwm_project` FOREIGN KEY (`fwm_project_id`) REFERENCES `tb_projects` (`project_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- เงินจาก Fastwork (2026-10-24 · P-1) — หนึ่งแถวต่อการโอนหนึ่งครั้ง · ไม่ออกใบแจ้งหนี้/ใบเสร็จ (Fastwork ออกให้ลูกค้าเอง)
+-- รอโอน (ลูกค้ายืนยันงวดแล้ว) → เข้าแล้ว · ยกเลิก = คืนเงินลูกค้า/ข้อพิพาท (ไม่ลบแถว ต้องมีเหตุผล)
+-- ยอดเข้าบัญชี = ราคางวด − ค่าธรรมเนียม − VAT ค่าธรรมเนียม − หัก ณ ที่จ่าย · อัตราค่าธรรมเนียมเก็บ ณ วันที่บันทึก
+CREATE TABLE IF NOT EXISTS `tb_fastwork_payouts` (
+  `fwp_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `fwp_project_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `fwp_milestone_id` int unsigned DEFAULT NULL,
+  `fwp_status` enum('pending','received','cancelled') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `fwp_gross` decimal(15,2) NOT NULL COMMENT 'ราคางวดที่ลูกค้าจ่ายเข้า Fastwork',
+  `fwp_fee_rate` decimal(5,2) NOT NULL COMMENT 'อัตราค่าธรรมเนียม ณ วันที่บันทึก (%)',
+  `fwp_fee` decimal(15,2) NOT NULL,
+  `fwp_fee_vat` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `fwp_wht` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `fwp_wht_certificate_no` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เลขที่ 50 ทวิ ที่ Fastwork ออกให้ (ถ้ามี)',
+  `fwp_net` decimal(15,2) NOT NULL COMMENT 'ยอดเข้าบัญชีจริง',
+  `fwp_approved_date` date NOT NULL COMMENT 'วันที่ลูกค้ายืนยันงวดบน Fastwork',
+  `fwp_received_date` date DEFAULT NULL,
+  `fwp_bank_account_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fwp_reference` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fwp_note` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fwp_cancel_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fwp_cancelled_at` datetime DEFAULT NULL,
+  `fwp_cancelled_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fwp_received_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fwp_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fwp_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `fwp_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `fwp_version` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`fwp_id`),
+  KEY `idx_fwp_project` (`fwp_project_id`),
+  KEY `idx_fwp_status_received` (`fwp_status`,`fwp_received_date`),
+  KEY `fk_fwp_milestone` (`fwp_milestone_id`),
+  KEY `fk_fwp_bank_account` (`fwp_bank_account_id`),
+  KEY `fk_fwp_cancelled_by` (`fwp_cancelled_by`),
+  KEY `fk_fwp_received_by` (`fwp_received_by`),
+  KEY `fk_fwp_created_by` (`fwp_created_by`),
+  CONSTRAINT `fk_fwp_bank_account` FOREIGN KEY (`fwp_bank_account_id`) REFERENCES `tb_bank_accounts` (`ba_id`),
+  CONSTRAINT `fk_fwp_cancelled_by` FOREIGN KEY (`fwp_cancelled_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_fwp_created_by` FOREIGN KEY (`fwp_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_fwp_milestone` FOREIGN KEY (`fwp_milestone_id`) REFERENCES `tb_fastwork_milestones` (`fwm_id`),
+  CONSTRAINT `fk_fwp_project` FOREIGN KEY (`fwp_project_id`) REFERENCES `tb_projects` (`project_id`),
+  CONSTRAINT `fk_fwp_received_by` FOREIGN KEY (`fwp_received_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ส่วนแบ่งกำไรรายโปรเจกต์ (2026-10-24 · P-2) — ผู้รับเป็นผู้ใช้ในระบบ หรือผู้ขาย/ฟรีแลนซ์ (อย่างใดอย่างหนึ่ง)
+-- percent = % ของกำไรหลังหักส่วนแบ่งตายตัว · fixed = จำนวนเงินตายตัว (หักก่อน) · ที่เหลือ = เก็บเข้าเงินทุน
+-- แก้ได้จนกว่าจะปิดยอด (บันทึกทั้งชุดใหม่ทุกครั้ง) · ชื่อผู้รับไม่เก็บซ้ำ ดึงจากผู้ใช้/ผู้ขายตอนอ่าน (คัดลอกชื่อเฉพาะตอนเบิกและปิดยอด)
+CREATE TABLE IF NOT EXISTS `tb_project_shares` (
+  `shr_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `shr_project_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `shr_user_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `shr_vendor_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `shr_kind` enum('percent','fixed') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `shr_percent` decimal(5,2) DEFAULT NULL,
+  `shr_amount` decimal(15,2) DEFAULT NULL,
+  `shr_note` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'หน้าที่ในงาน เช่น คนทำงาน คนหางาน',
+  `shr_order` smallint unsigned NOT NULL DEFAULT '0',
+  `shr_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `shr_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`shr_id`),
+  KEY `idx_shr_project` (`shr_project_id`),
+  KEY `fk_shr_user` (`shr_user_id`),
+  KEY `fk_shr_vendor` (`shr_vendor_id`),
+  KEY `fk_shr_created_by` (`shr_created_by`),
+  CONSTRAINT `fk_shr_created_by` FOREIGN KEY (`shr_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_shr_project` FOREIGN KEY (`shr_project_id`) REFERENCES `tb_projects` (`project_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_shr_user` FOREIGN KEY (`shr_user_id`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_shr_vendor` FOREIGN KEY (`shr_vendor_id`) REFERENCES `tb_vendors` (`vd_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- เบิกส่วนแบ่งล่วงหน้า (2026-10-24 · P-2) — จ่ายแล้วทันทีที่บันทึก · หักออกตอนปิดยอด · ยกเลิกต้องมีเหตุผล (ไม่ลบ)
+CREATE TABLE IF NOT EXISTS `tb_share_advances` (
+  `sha_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `sha_project_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `sha_user_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sha_vendor_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sha_recipient_name` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ชื่อ ณ วันจ่าย (หลักฐานการจ่าย ไม่เปลี่ยนตามชื่อปัจจุบัน)',
+  `sha_amount` decimal(15,2) NOT NULL,
+  `sha_paid_date` date NOT NULL,
+  `sha_bank_account_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sha_reference` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sha_note` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sha_status` enum('paid','cancelled') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'paid',
+  `sha_cancel_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sha_cancelled_at` datetime DEFAULT NULL,
+  `sha_cancelled_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sha_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sha_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`sha_id`),
+  KEY `idx_sha_project` (`sha_project_id`),
+  KEY `fk_sha_user` (`sha_user_id`),
+  KEY `fk_sha_vendor` (`sha_vendor_id`),
+  KEY `fk_sha_bank_account` (`sha_bank_account_id`),
+  KEY `fk_sha_cancelled_by` (`sha_cancelled_by`),
+  KEY `fk_sha_created_by` (`sha_created_by`),
+  CONSTRAINT `fk_sha_bank_account` FOREIGN KEY (`sha_bank_account_id`) REFERENCES `tb_bank_accounts` (`ba_id`),
+  CONSTRAINT `fk_sha_cancelled_by` FOREIGN KEY (`sha_cancelled_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_sha_created_by` FOREIGN KEY (`sha_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_sha_project` FOREIGN KEY (`sha_project_id`) REFERENCES `tb_projects` (`project_id`),
+  CONSTRAINT `fk_sha_user` FOREIGN KEY (`sha_user_id`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_sha_vendor` FOREIGN KEY (`sha_vendor_id`) REFERENCES `tb_vendors` (`vd_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ปิดยอดส่วนแบ่ง (2026-10-24 · P-2) — ตัวเลข ณ วันปิดยอด (ล็อก ไม่คิดใหม่) · โปรเจกต์หนึ่งมีที่ยังไม่ยกเลิกได้ครั้งเดียว (ตรวจใน backend)
+-- กำไรที่แบ่งได้ = รายได้ที่เงินเข้าจริง (ก่อน VAT) − ค่าธรรมเนียมแพลตฟอร์ม − ค่าใช้จ่ายของโปรเจกต์
+-- กำไรหลังหักส่วนตายตัว = กำไรที่แบ่งได้ − ส่วนแบ่งตายตัวทั้งหมด · เข้าเงินทุน = กำไรที่แบ่งได้ − ส่วนแบ่งทุกคน
+CREATE TABLE IF NOT EXISTS `tb_share_settlements` (
+  `sst_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `sst_project_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `sst_status` enum('settled','cancelled') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'settled',
+  `sst_settled_date` date NOT NULL,
+  `sst_revenue` decimal(15,2) NOT NULL COMMENT 'รายได้ที่เงินเข้าจริง ก่อน VAT (ลูกค้าตรง + ราคางวด Fastwork)',
+  `sst_platform_fee` decimal(15,2) NOT NULL,
+  `sst_expense_cost` decimal(15,2) NOT NULL,
+  `sst_distributable` decimal(15,2) NOT NULL,
+  `sst_fixed_total` decimal(15,2) NOT NULL,
+  `sst_after_fixed` decimal(15,2) NOT NULL,
+  `sst_company_amount` decimal(15,2) NOT NULL COMMENT 'เก็บเข้าเงินทุน (ติดลบ = โปรเจกต์ขาดทุน)',
+  `sst_note` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sst_cancel_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sst_cancelled_at` datetime DEFAULT NULL,
+  `sst_cancelled_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sst_version` int unsigned NOT NULL DEFAULT '0',
+  `sst_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sst_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`sst_id`),
+  KEY `idx_sst_project` (`sst_project_id`),
+  KEY `fk_sst_cancelled_by` (`sst_cancelled_by`),
+  KEY `fk_sst_created_by` (`sst_created_by`),
+  CONSTRAINT `fk_sst_cancelled_by` FOREIGN KEY (`sst_cancelled_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_sst_created_by` FOREIGN KEY (`sst_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_sst_project` FOREIGN KEY (`sst_project_id`) REFERENCES `tb_projects` (`project_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ส่วนแบ่งรายคนของการปิดยอด (2026-10-24 · P-2) — ยอดที่ได้ − เบิกล่วงหน้า = ต้องจ่าย (ติดลบ = ต้องคืน)
+-- ยอดโอน = ต้องจ่าย − หัก ณ ที่จ่าย (รอนักบัญชียืนยัน Z1) · ต้องจ่าย 0 = จ่ายครบอัตโนมัติ
+CREATE TABLE IF NOT EXISTS `tb_share_settlement_lines` (
+  `ssl_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `ssl_settlement_id` int unsigned NOT NULL,
+  `ssl_user_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ssl_vendor_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ssl_recipient_name` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ชื่อ ณ วันปิดยอด (ตัวเลขที่ล็อกแล้ว ไม่เปลี่ยนตามชื่อปัจจุบัน)',
+  `ssl_kind` enum('percent','fixed') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ssl_percent` decimal(5,2) DEFAULT NULL,
+  `ssl_amount` decimal(15,2) NOT NULL COMMENT 'ส่วนแบ่งที่ได้',
+  `ssl_advanced` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'เบิกล่วงหน้าไปแล้ว',
+  `ssl_due` decimal(15,2) NOT NULL COMMENT 'ต้องจ่าย = ส่วนแบ่ง − เบิกล่วงหน้า (ติดลบ = ต้องคืน)',
+  `ssl_status` enum('unpaid','paid') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'unpaid',
+  `ssl_wht` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `ssl_transfer_amount` decimal(15,2) DEFAULT NULL,
+  `ssl_paid_date` date DEFAULT NULL,
+  `ssl_bank_account_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ssl_reference` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ssl_paid_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ssl_paid_at` datetime DEFAULT NULL,
+  `ssl_version` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ssl_id`),
+  KEY `idx_ssl_settlement` (`ssl_settlement_id`),
+  KEY `fk_ssl_user` (`ssl_user_id`),
+  KEY `fk_ssl_vendor` (`ssl_vendor_id`),
+  KEY `fk_ssl_bank_account` (`ssl_bank_account_id`),
+  KEY `fk_ssl_paid_by` (`ssl_paid_by`),
+  CONSTRAINT `fk_ssl_bank_account` FOREIGN KEY (`ssl_bank_account_id`) REFERENCES `tb_bank_accounts` (`ba_id`),
+  CONSTRAINT `fk_ssl_paid_by` FOREIGN KEY (`ssl_paid_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_ssl_settlement` FOREIGN KEY (`ssl_settlement_id`) REFERENCES `tb_share_settlements` (`sst_id`),
+  CONSTRAINT `fk_ssl_user` FOREIGN KEY (`ssl_user_id`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_ssl_vendor` FOREIGN KEY (`ssl_vendor_id`) REFERENCES `tb_vendors` (`vd_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- สมุดเงินทุน (2026-10-25 · P-3) — เฉพาะรายการที่บันทึกเอง (ฝากเพิ่ม/ถอนออก)
+-- ยอดเข้าทุนจากโปรเจกต์ไม่เก็บซ้ำที่นี่: อ่านจาก tb_share_settlements.sst_company_amount ของการปิดยอดที่ยังไม่ยกเลิก
+-- ยกเลิกต้องมีเหตุผล (ไม่ลบ)
+CREATE TABLE IF NOT EXISTS `tb_capital_entries` (
+  `cpe_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `cpe_kind` enum('deposit','withdraw') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'deposit = ฝากเพิ่มเอง · withdraw = ถอนออก (ต้องมีเหตุผล)',
+  `cpe_amount` decimal(15,2) NOT NULL COMMENT 'จำนวนเงิน (บวกเสมอ ทิศทางดูจาก cpe_kind)',
+  `cpe_entry_date` date NOT NULL,
+  `cpe_note` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `cpe_status` enum('active','cancelled') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `cpe_cancel_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `cpe_cancelled_at` datetime DEFAULT NULL,
+  `cpe_cancelled_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `cpe_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `cpe_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`cpe_id`),
+  KEY `idx_cpe_status_date` (`cpe_status`,`cpe_entry_date`),
+  KEY `fk_cpe_cancelled_by` (`cpe_cancelled_by`),
+  KEY `fk_cpe_created_by` (`cpe_created_by`),
+  CONSTRAINT `fk_cpe_cancelled_by` FOREIGN KEY (`cpe_cancelled_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_cpe_created_by` FOREIGN KEY (`cpe_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ลิงก์เลือกบริการ (2026-10-25 · docs/plans/2026-10-25-client-order-link.md)
+-- personal = ลูกค้าตรงรายเดียว (ส่งคำขอได้ครั้งเดียว) · public = ติดหน้าเว็บ/เพจ (หลายคำขอ) · fastwork = ผู้ซื้อบน Fastwork (ไม่มีข้อมูลติดต่อ/การจ่ายเงิน)
+-- token = ที่อยู่เต็ม /order/<token> · short_code = ที่อยู่สั้น /o/<code> (ใต้ QR) ชี้ลิงก์เดียวกัน · หมวดที่เปิด: tb_order_link_categories (ไม่มีแถว = ทุกหมวด)
+CREATE TABLE IF NOT EXISTS `tb_order_links` (
+  `ol_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `ol_token` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ol_short_code` char(8) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ol_kind` enum('personal','public','fastwork') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ol_name` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ชื่อเรียกภายใน เช่น หน้าเว็บ เพจ Facebook',
+  `ol_client_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'personal: ลูกค้าที่ผูก (ว่าง = ลูกค้าใหม่ยังไม่มีในระบบ)',
+  `ol_project_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'fastwork: งานเดิมที่เพิ่มขอบเขต (ว่าง = ก่อนจ้าง)',
+  `ol_buyer_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'fastwork ก่อนจ้าง: ชื่อผู้ซื้อที่แสดงบน Fastwork',
+  `ol_assignee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ผู้รับคำขอจากลิงก์นี้',
+  `ol_expires_on` date DEFAULT NULL COMMENT 'วันสุดท้ายที่เปิดได้ (ว่าง = ไม่หมดอายุ)',
+  `ol_status` enum('active','disabled') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `ol_allow_more` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'ลูกค้าเลือกเพิ่มเองได้ (0 = มีแต่รายการที่ทีมเลือกให้)',
+  `ol_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ol_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `ol_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`ol_id`),
+  UNIQUE KEY `uq_ol_token` (`ol_token`),
+  UNIQUE KEY `uq_ol_short_code` (`ol_short_code`),
+  KEY `fk_ol_client` (`ol_client_id`),
+  KEY `fk_ol_project` (`ol_project_id`),
+  KEY `fk_ol_assignee` (`ol_assignee_id`),
+  KEY `fk_ol_created_by` (`ol_created_by`),
+  CONSTRAINT `fk_ol_assignee` FOREIGN KEY (`ol_assignee_id`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_ol_client` FOREIGN KEY (`ol_client_id`) REFERENCES `tb_clients` (`client_id`),
+  CONSTRAINT `fk_ol_created_by` FOREIGN KEY (`ol_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_ol_project` FOREIGN KEY (`ol_project_id`) REFERENCES `tb_projects` (`project_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `tb_order_link_categories` (
+  `olc_link_id` int unsigned NOT NULL,
+  `olc_category_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  PRIMARY KEY (`olc_link_id`,`olc_category_id`),
+  KEY `fk_olc_category` (`olc_category_id`),
+  CONSTRAINT `fk_olc_category` FOREIGN KEY (`olc_category_id`) REFERENCES `tb_product_categories` (`pc_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_olc_link` FOREIGN KEY (`olc_link_id`) REFERENCES `tb_order_links` (`ol_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- คำขอบริการที่ลูกค้าส่งจากลิงก์ (2026-10-25) — ชนิดของคำขออ่านจากลิงก์ (ไม่เก็บซ้ำ)
+-- submitted = รอตรวจ · converted = ออกใบเสนอราคา/เปิดโปรเจกต์แล้ว (สถานะต่อจากนั้นอ่านจากใบเสนอราคา/โปรเจกต์) · rejected = ปฏิเสธ · closed = ไม่ได้งาน (Fastwork)
+-- access_token = หน้าสถานะของลูกค้า /order/r/<token> · submit_key = กันกดส่งซ้ำ (ซ้ำ = ตอบคำขอเดิม)
+CREATE TABLE IF NOT EXISTS `tb_service_requests` (
+  `svr_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `svr_link_id` int unsigned NOT NULL,
+  `svr_access_token` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `svr_submit_key` char(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `svr_status` enum('submitted','converted','rejected','closed') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'submitted',
+  `svr_status_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เหตุผลปฏิเสธ/ปิด (ภายใน ลูกค้าไม่เห็น)',
+  `svr_contact_name` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `svr_contact_phone` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `svr_contact_email` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `svr_contact_line` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `svr_company_name` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `svr_tax_id` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'กรอกเมื่อต้องการใบกำกับในนามบริษัท',
+  `svr_address` varchar(1000) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `svr_note` varchar(2000) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ข้อความถึงทีมงานจากลูกค้า',
+  `svr_consent_at` datetime DEFAULT NULL COMMENT 'เวลายินยอมข้อมูลส่วนบุคคล (ลิงก์ fastwork ไม่เก็บข้อมูลติดต่อ = ว่าง)',
+  `svr_vat_rate` decimal(5,2) DEFAULT NULL COMMENT 'อัตรา VAT ที่ลูกค้าเห็นตอนส่ง (ว่าง = ยังไม่จด VAT)',
+  `svr_assignee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `svr_client_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ลูกค้าที่ผูกตอนตรวจ (personal ผูกจากลิงก์)',
+  `svr_quotation_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `svr_project_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `svr_version` int unsigned NOT NULL DEFAULT '0',
+  `svr_accepted_name` varchar(150) DEFAULT NULL COMMENT 'ชื่อที่ลูกค้าพิมพ์ยืนยันตอนกดยอมรับใบเสนอราคาในลิงก์ (S-4)',
+  `svr_accepted_at` datetime DEFAULT NULL COMMENT 'เวลาที่ลูกค้ากดยอมรับในลิงก์ (เวลาไทย)',
+  `svr_submitted_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `svr_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`svr_id`),
+  UNIQUE KEY `uq_svr_access_token` (`svr_access_token`),
+  UNIQUE KEY `uq_svr_submit_key` (`svr_link_id`,`svr_submit_key`),
+  KEY `idx_svr_status` (`svr_status`,`svr_submitted_at`),
+  KEY `fk_svr_assignee` (`svr_assignee_id`),
+  KEY `fk_svr_client` (`svr_client_id`),
+  KEY `fk_svr_quotation` (`svr_quotation_id`),
+  KEY `fk_svr_project` (`svr_project_id`),
+  CONSTRAINT `fk_svr_assignee` FOREIGN KEY (`svr_assignee_id`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_svr_client` FOREIGN KEY (`svr_client_id`) REFERENCES `tb_clients` (`client_id`),
+  CONSTRAINT `fk_svr_link` FOREIGN KEY (`svr_link_id`) REFERENCES `tb_order_links` (`ol_id`),
+  CONSTRAINT `fk_svr_project` FOREIGN KEY (`svr_project_id`) REFERENCES `tb_projects` (`project_id`),
+  CONSTRAINT `fk_svr_quotation` FOREIGN KEY (`svr_quotation_id`) REFERENCES `tb_quotations` (`qt_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- รายการที่ลูกค้าเลือก (2026-10-25) — ชื่อ/หน่วย/ราคา ณ วันส่ง (คัดลอกเพราะเป็นราคาที่ลูกค้าเห็นตอนส่ง สินค้าแก้ราคาทีหลังได้)
+-- ชุดสินค้า = แถว heading (ชื่อชุด) + แถว item ที่มี svi_package_id เดียวกัน
+CREATE TABLE IF NOT EXISTS `tb_service_request_items` (
+  `svi_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `svi_request_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `svi_order` smallint unsigned NOT NULL,
+  `svi_type` enum('item','heading') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'item',
+  `svi_product_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `svi_package_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `svi_name` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `svi_unit` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `svi_unit_price` decimal(15,2) DEFAULT NULL COMMENT 'บาท ณ วันส่ง (heading = ว่าง)',
+  `svi_quantity` decimal(12,2) DEFAULT NULL COMMENT 'heading = จำนวนชุด',
+  `svi_adjusted_quantity` decimal(12,2) DEFAULT NULL COMMENT 'จำนวนที่ผู้รับผิดชอบปรับ (ว่าง = ตามที่ลูกค้าเลือก)',
+  `svi_adjusted_unit_price` decimal(15,2) DEFAULT NULL COMMENT 'ราคาที่ผู้รับผิดชอบปรับ (ว่าง = ราคา ณ วันส่ง)',
+  `svi_is_removed` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'ผู้รับผิดชอบเอาออก (แถวลูกค้ายังเก็บไว้ดูว่าเคยเลือก)',
+  `svi_added_by_staff` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'ผู้รับผิดชอบเพิ่มเอง (ลูกค้าไม่ได้เลือก)',
+  `svi_is_preset` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'ทีมเลือกให้ในลิงก์ (สำเนาตอนส่ง เพราะรายการของลิงก์แก้ได้ภายหลัง)',
+  `svi_percent` decimal(5,2) DEFAULT NULL COMMENT 'งานเพิ่มแบบ %: อัตรา ณ วันส่ง · ยอดคิดจากยอดรายการอื่น (หลังปรับ) ทุกครั้ง ไม่เก็บยอดซ้ำ',
+  PRIMARY KEY (`svi_id`),
+  KEY `idx_svi_request` (`svi_request_id`,`svi_order`),
+  KEY `fk_svi_product` (`svi_product_id`),
+  KEY `fk_svi_package` (`svi_package_id`),
+  CONSTRAINT `fk_svi_package` FOREIGN KEY (`svi_package_id`) REFERENCES `tb_product_packages` (`pkg_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_svi_product` FOREIGN KEY (`svi_product_id`) REFERENCES `tb_products` (`product_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_svi_request` FOREIGN KEY (`svi_request_id`) REFERENCES `tb_service_requests` (`svr_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- คำถามความต้องการของลิงก์เลือกบริการ (2026-10-25 · S-2) — กลุ่มผูกหมวดสินค้า · กลุ่มทั่วไป (is_general) ถามทุกคำขอ
+-- ลูกค้าเลือกสินค้าหมวดไหน ขึ้นกลุ่มที่ผูกหมวดนั้น (กลุ่มเดียวกันขึ้นครั้งเดียว)
+CREATE TABLE IF NOT EXISTS `tb_requirement_groups` (
+  `rqg_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `rqg_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rqg_description` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `rqg_is_general` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1 = ถามทุกคำขอ ไม่ขึ้นกับหมวด',
+  `rqg_sort_order` smallint unsigned NOT NULL DEFAULT '0',
+  `rqg_status` enum('active','inactive') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `rqg_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `rqg_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`rqg_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `tb_requirement_group_categories` (
+  `rgc_group_id` int unsigned NOT NULL,
+  `rgc_category_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  PRIMARY KEY (`rgc_group_id`,`rgc_category_id`),
+  KEY `fk_rgc_category` (`rgc_category_id`),
+  CONSTRAINT `fk_rgc_category` FOREIGN KEY (`rgc_category_id`) REFERENCES `tb_product_categories` (`pc_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_rgc_group` FOREIGN KEY (`rgc_group_id`) REFERENCES `tb_requirement_groups` (`rqg_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 2026-10-25 รายการที่ทีมงานเลือกให้ในลิงก์ (ล็อก ลูกค้าเอาออก/แก้จำนวนไม่ได้ · ราคาปัจจุบันของสินค้า/ชุด) · มีสินค้าหรือชุดอย่างใดอย่างหนึ่ง
+CREATE TABLE IF NOT EXISTS `tb_order_link_items` (
+  `oli_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `oli_link_id` int unsigned NOT NULL,
+  `oli_product_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `oli_package_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `oli_quantity` int unsigned NOT NULL DEFAULT '1',
+  `oli_order` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`oli_id`),
+  KEY `idx_oli_link` (`oli_link_id`,`oli_order`),
+  KEY `fk_oli_product` (`oli_product_id`),
+  KEY `fk_oli_package` (`oli_package_id`),
+  CONSTRAINT `fk_oli_link` FOREIGN KEY (`oli_link_id`) REFERENCES `tb_order_links` (`ol_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_oli_package` FOREIGN KEY (`oli_package_id`) REFERENCES `tb_product_packages` (`pkg_id`),
+  CONSTRAINT `fk_oli_product` FOREIGN KEY (`oli_product_id`) REFERENCES `tb_products` (`product_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 2026-10-25 กติกางานเพิ่มต่อแพ็ก: included = มีในแพ็กแล้ว (กดซื้อไม่ได้) · not_available = ใช้กับแพ็กนี้ไม่ได้ (ซ่อน) · ไม่มีแถว = ซื้อได้
+CREATE TABLE IF NOT EXISTS `tb_package_addon_rules` (
+  `par_package_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `par_product_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `par_rule` enum('included','not_available') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  PRIMARY KEY (`par_package_id`,`par_product_id`),
+  KEY `fk_par_product` (`par_product_id`),
+  CONSTRAINT `fk_par_package` FOREIGN KEY (`par_package_id`) REFERENCES `tb_product_packages` (`pkg_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_par_product` FOREIGN KEY (`par_product_id`) REFERENCES `tb_products` (`product_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 2026-10-25 กลุ่มคำถามที่ถามเฉพาะเมื่อเลือกแพ็กนี้ (นอกจากผูกหมวด)
+CREATE TABLE IF NOT EXISTS `tb_requirement_group_packages` (
+  `rgp_group_id` int unsigned NOT NULL,
+  `rgp_package_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  PRIMARY KEY (`rgp_group_id`,`rgp_package_id`),
+  KEY `fk_rgp_package` (`rgp_package_id`),
+  CONSTRAINT `fk_rgp_group` FOREIGN KEY (`rgp_group_id`) REFERENCES `tb_requirement_groups` (`rqg_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_rgp_package` FOREIGN KEY (`rgp_package_id`) REFERENCES `tb_product_packages` (`pkg_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ชนิดคำตอบ: short_text long_text single multi yes_no number date url file · rqq_options = ตัวเลือก (JSON array ของข้อความ) เฉพาะ single/multi
+CREATE TABLE IF NOT EXISTS `tb_requirement_questions` (
+  `rqq_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `rqq_group_id` int unsigned NOT NULL,
+  `rqq_text` varchar(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rqq_help` varchar(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ข้อความช่วยใต้คำถาม (ตัวอย่างคำตอบ)',
+  `rqq_type` enum('short_text','long_text','single','multi','yes_no','number','date','url','file') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rqq_options` json DEFAULT NULL,
+  `rqq_is_required` tinyint(1) NOT NULL DEFAULT '0',
+  `rqq_sort_order` smallint unsigned NOT NULL DEFAULT '0',
+  `rqq_status` enum('active','inactive') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `rqq_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `rqq_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`rqq_id`),
+  KEY `idx_rqq_group` (`rqq_group_id`,`rqq_sort_order`),
+  CONSTRAINT `fk_rqq_group` FOREIGN KEY (`rqq_group_id`) REFERENCES `tb_requirement_groups` (`rqg_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- คำตอบในคำขอ (2026-10-25 · S-2) — ชื่อกลุ่ม/ข้อความคำถาม/ชนิด ณ วันส่ง (คัดลอกเพราะคำถามแก้หรือลบทีหลังได้ คำตอบต้องอ่านคู่กับคำถามเดิม)
+-- sva_value: ข้อความ · multi = JSON array · yes_no = yes/no · file = ว่าง (ไฟล์อยู่ใน tb_service_request_files)
+CREATE TABLE IF NOT EXISTS `tb_service_request_answers` (
+  `sva_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `sva_request_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `sva_question_id` int unsigned DEFAULT NULL,
+  `sva_order` smallint unsigned NOT NULL,
+  `sva_group_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `sva_question_text` varchar(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `sva_type` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `sva_value` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  PRIMARY KEY (`sva_id`),
+  KEY `idx_sva_request` (`sva_request_id`,`sva_order`),
+  KEY `fk_sva_question` (`sva_question_id`),
+  CONSTRAINT `fk_sva_question` FOREIGN KEY (`sva_question_id`) REFERENCES `tb_requirement_questions` (`rqq_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_sva_request` FOREIGN KEY (`sva_request_id`) REFERENCES `tb_service_requests` (`svr_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ไฟล์แนบของคำตอบ (รูป/PDF) — เก็บที่ storage/ (ไม่เปิดสาธารณะ) เปิดได้ทาง API ที่ตรวจสิทธิ์
+CREATE TABLE IF NOT EXISTS `tb_service_request_files` (
+  `svf_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `svf_answer_id` int unsigned NOT NULL,
+  `svf_file_path` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `svf_original_name` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `svf_size` int unsigned NOT NULL,
+  `svf_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`svf_id`),
+  KEY `idx_svf_answer` (`svf_answer_id`),
+  CONSTRAINT `fk_svf_answer` FOREIGN KEY (`svf_answer_id`) REFERENCES `tb_service_request_answers` (`sva_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ─── ส่วนที่ 2: เติมคอลัมน์ที่ยังขาด (สำหรับฐานข้อมูลที่สร้างจากโครงสร้างเวอร์ชันเก่า) ──────────────
 -- แต่ละบรรทัด: ถ้าคอลัมน์ยังไม่มี → ADD COLUMN, มีแล้ว → ไม่ทำอะไร
 
@@ -2496,6 +2951,10 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA 
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_projects' AND COLUMN_NAME = 'project_share_token') = 0, 'ALTER TABLE `tb_projects` ADD COLUMN `project_share_token` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL AFTER `project_progress_percent`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_projects' AND COLUMN_NAME = 'project_share_enabled') = 0, 'ALTER TABLE `tb_projects` ADD COLUMN `project_share_enabled` tinyint(1) NOT NULL DEFAULT ''1'' AFTER `project_share_token`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_projects' AND COLUMN_NAME = 'project_use_task_weight') = 0, 'ALTER TABLE `tb_projects` ADD COLUMN `project_use_task_weight` tinyint(1) NOT NULL DEFAULT ''0'' AFTER `project_share_enabled`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- 2026-10-24 P-1 Fastwork: ช่องทางงานของโปรเจกต์
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_projects' AND COLUMN_NAME = 'project_channel') = 0, 'ALTER TABLE `tb_projects` ADD COLUMN `project_channel` enum(''direct'',''fastwork'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''direct'' COMMENT ''ช่องทางงาน: direct = ลูกค้าตรง (ใบเสนอราคา/ใบแจ้งหนี้) · fastwork = รับงานผ่าน fastwork.com (รายได้จากการโอนของแพลตฟอร์ม)'' AFTER `project_use_task_weight`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_projects' AND COLUMN_NAME = 'project_fastwork_order_no') = 0, 'ALTER TABLE `tb_projects` ADD COLUMN `project_fastwork_order_no` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''เลขคำสั่งซื้อบน Fastwork'' AFTER `project_channel`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_projects' AND COLUMN_NAME = 'project_fastwork_url') = 0, 'ALTER TABLE `tb_projects` ADD COLUMN `project_fastwork_url` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''ลิงก์หน้างานบน Fastwork'' AFTER `project_fastwork_order_no`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_projects' AND COLUMN_NAME = 'project_created_by') = 0, 'ALTER TABLE `tb_projects` ADD COLUMN `project_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `project_use_task_weight`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_projects' AND COLUMN_NAME = 'project_created_at') = 0, 'ALTER TABLE `tb_projects` ADD COLUMN `project_created_at` datetime DEFAULT CURRENT_TIMESTAMP AFTER `project_created_by`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_projects' AND COLUMN_NAME = 'project_updated_at') = 0, 'ALTER TABLE `tb_projects` ADD COLUMN `project_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `project_created_at`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
@@ -2624,6 +3083,35 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA 
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_company_settings' AND COLUMN_NAME = 'cs_promptpay_id') = 0, 'ALTER TABLE `tb_company_settings` ADD COLUMN `cs_promptpay_id` varchar(15) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''เลขพร้อมเพย์รับเงิน (มือถือ 10 หลัก / เลขผู้เสียภาษี 13 หลัก) ว่าง = ไม่พิมพ์ QR'' AFTER `cs_default_credit_days`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_company_settings' AND COLUMN_NAME = 'cs_invoice_notes_th') = 0, 'ALTER TABLE `tb_company_settings` ADD COLUMN `cs_invoice_notes_th` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT ''หมายเหตุท้ายใบแจ้งหนี้เริ่มต้น (เอกสารภาษาไทย)'' AFTER `cs_promptpay_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_company_settings' AND COLUMN_NAME = 'cs_invoice_notes_en') = 0, 'ALTER TABLE `tb_company_settings` ADD COLUMN `cs_invoice_notes_en` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT ''หมายเหตุท้ายใบแจ้งหนี้เริ่มต้น (เอกสารภาษาอังกฤษ)'' AFTER `cs_invoice_notes_th`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- 2026-10-24 P-1 Fastwork: อัตราค่าธรรมเนียมเริ่มต้น
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_company_settings' AND COLUMN_NAME = 'cs_fastwork_fee_rate') = 0, 'ALTER TABLE `tb_company_settings` ADD COLUMN `cs_fastwork_fee_rate` decimal(5,2) NOT NULL DEFAULT ''17.00'' COMMENT ''ค่าธรรมเนียม Fastwork เริ่มต้น (% ของราคางวด) · แก้ได้ทุกรายการ · ตรวจอัตราจริงในบัญชี Fastwork'' AFTER `cs_invoice_notes_en`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_company_settings' AND COLUMN_NAME = 'cs_fastwork_fee_vat_rate') = 0, 'ALTER TABLE `tb_company_settings` ADD COLUMN `cs_fastwork_fee_vat_rate` decimal(5,2) NOT NULL DEFAULT ''0.00'' COMMENT ''VAT ของค่าธรรมเนียม Fastwork (% ของค่าธรรมเนียม) · 0 = ไม่มี'' AFTER `cs_fastwork_fee_rate`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_company_settings' AND COLUMN_NAME = 'cs_fastwork_wht_rate') = 0, 'ALTER TABLE `tb_company_settings` ADD COLUMN `cs_fastwork_wht_rate` decimal(5,2) NOT NULL DEFAULT ''0.00'' COMMENT ''หัก ณ ที่จ่ายที่ Fastwork หัก (% ของราคางวด) · รอนักบัญชียืนยัน Z2'' AFTER `cs_fastwork_fee_vat_rate`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- 2026-10-25 P-3 เงินทุน: วันที่จดบริษัท + เป้าเงินทุน
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_company_settings' AND COLUMN_NAME = 'cs_incorporated_on') = 0, 'ALTER TABLE `tb_company_settings` ADD COLUMN `cs_incorporated_on` date DEFAULT NULL COMMENT ''วันที่จดบริษัท (นิติบุคคล) · ว่าง = ยังเป็นบุคคลธรรมดา (ช่วงก่อนจดบริษัท)'' AFTER `cs_fastwork_wht_rate`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_company_settings' AND COLUMN_NAME = 'cs_capital_goal') = 0, 'ALTER TABLE `tb_company_settings` ADD COLUMN `cs_capital_goal` decimal(15,2) DEFAULT NULL COMMENT ''เป้าเงินทุนก่อนจดบริษัท · ว่าง = ยังไม่ตั้ง'' AFTER `cs_incorporated_on`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_company_settings' AND COLUMN_NAME = 'cs_capital_target_date') = 0, 'ALTER TABLE `tb_company_settings` ADD COLUMN `cs_capital_target_date` date DEFAULT NULL COMMENT ''วันที่ตั้งใจจดบริษัท (ไม่บังคับ)'' AFTER `cs_capital_goal`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- 2026-10-25 ลิงก์เลือกบริการ: หน้าร้านของสินค้า/ชุด + ผู้รับคำขอเริ่มต้น
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_products' AND COLUMN_NAME = 'product_is_public') = 0, 'ALTER TABLE `tb_products` ADD COLUMN `product_is_public` tinyint(1) NOT NULL DEFAULT ''0'' COMMENT ''แสดงบนหน้าร้านของลิงก์เลือกบริการ (2026-10-25)'' AFTER `product_status`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_products' AND COLUMN_NAME = 'product_image_url') = 0, 'ALTER TABLE `tb_products` ADD COLUMN `product_image_url` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''รูปบนหน้าร้าน (/uploads/catalog/...)'' AFTER `product_is_public`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_product_packages' AND COLUMN_NAME = 'pkg_is_public') = 0, 'ALTER TABLE `tb_product_packages` ADD COLUMN `pkg_is_public` tinyint(1) NOT NULL DEFAULT ''0'' COMMENT ''แสดงบนหน้าร้านของลิงก์เลือกบริการ (2026-10-25)'' AFTER `pkg_status`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_product_packages' AND COLUMN_NAME = 'pkg_image_url') = 0, 'ALTER TABLE `tb_product_packages` ADD COLUMN `pkg_image_url` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''รูปบนหน้าร้าน (/uploads/catalog/...)'' AFTER `pkg_is_public`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_company_settings' AND COLUMN_NAME = 'cs_service_request_assignee_id') = 0, 'ALTER TABLE `tb_company_settings` ADD COLUMN `cs_service_request_assignee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''ผู้รับคำขอบริการเริ่มต้น (ลิงก์ที่ไม่ได้เลือกคนเอง)'' AFTER `cs_capital_target_date`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- 2026-10-25 S-3 ผู้รับผิดชอบปรับรายการในคำขอ
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_service_request_items' AND COLUMN_NAME = 'svi_adjusted_quantity') = 0, 'ALTER TABLE `tb_service_request_items` ADD COLUMN `svi_adjusted_quantity` decimal(12,2) DEFAULT NULL COMMENT ''จำนวนที่ผู้รับผิดชอบปรับ (ว่าง = ตามที่ลูกค้าเลือก)'' AFTER `svi_quantity`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_service_request_items' AND COLUMN_NAME = 'svi_adjusted_unit_price') = 0, 'ALTER TABLE `tb_service_request_items` ADD COLUMN `svi_adjusted_unit_price` decimal(15,2) DEFAULT NULL COMMENT ''ราคาที่ผู้รับผิดชอบปรับ (ว่าง = ราคา ณ วันส่ง)'' AFTER `svi_adjusted_quantity`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_service_request_items' AND COLUMN_NAME = 'svi_is_removed') = 0, 'ALTER TABLE `tb_service_request_items` ADD COLUMN `svi_is_removed` tinyint(1) NOT NULL DEFAULT ''0'' COMMENT ''ผู้รับผิดชอบเอาออก (แถวลูกค้ายังเก็บไว้ดูว่าเคยเลือก)'' AFTER `svi_adjusted_unit_price`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_service_request_items' AND COLUMN_NAME = 'svi_added_by_staff') = 0, 'ALTER TABLE `tb_service_request_items` ADD COLUMN `svi_added_by_staff` tinyint(1) NOT NULL DEFAULT ''0'' COMMENT ''ผู้รับผิดชอบเพิ่มเอง (ลูกค้าไม่ได้เลือก)'' AFTER `svi_is_removed`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- 2026-10-25 S-4 ลูกค้ายอมรับใบเสนอราคาในลิงก์
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_service_requests' AND COLUMN_NAME = 'svr_accepted_name') = 0, 'ALTER TABLE `tb_service_requests` ADD COLUMN `svr_accepted_name` varchar(150) DEFAULT NULL COMMENT ''ชื่อที่ลูกค้าพิมพ์ยืนยันตอนกดยอมรับใบเสนอราคาในลิงก์ (S-4)'' AFTER `svr_version`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_service_requests' AND COLUMN_NAME = 'svr_accepted_at') = 0, 'ALTER TABLE `tb_service_requests` ADD COLUMN `svr_accepted_at` datetime DEFAULT NULL COMMENT ''เวลาที่ลูกค้ากดยอมรับในลิงก์ (เวลาไทย)'' AFTER `svr_accepted_name`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- 2026-10-25 หน้าร้านตรงกับของที่ขาย: รายการล็อกในลิงก์ · เลือกได้อย่างเดียวในหมวด · งานเพิ่มแบบ %
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_product_categories' AND COLUMN_NAME = 'pc_is_single_choice') = 0, 'ALTER TABLE `tb_product_categories` ADD COLUMN `pc_is_single_choice` tinyint(1) NOT NULL DEFAULT ''0'' COMMENT ''ลูกค้าเลือกได้รายการเดียวในหมวดนี้ เช่น แพ็กเกจ (ใส่อันใหม่ = แทนอันเดิมในตะกร้า)'' AFTER `pc_status`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_products' AND COLUMN_NAME = 'product_price_mode') = 0, 'ALTER TABLE `tb_products` ADD COLUMN `product_price_mode` enum(''fixed'',''percent'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''fixed'' COMMENT ''percent = คิดเป็น % ของยอดรายการอื่นก่อน VAT เช่น งานด่วน +30%'' AFTER `product_is_public`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_products' AND COLUMN_NAME = 'product_percent') = 0, 'ALTER TABLE `tb_products` ADD COLUMN `product_percent` decimal(5,2) DEFAULT NULL COMMENT ''percent: อัตรา % (ไม่ใช้ product_price)'' AFTER `product_price_mode`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_order_links' AND COLUMN_NAME = 'ol_allow_more') = 0, 'ALTER TABLE `tb_order_links` ADD COLUMN `ol_allow_more` tinyint(1) NOT NULL DEFAULT ''1'' COMMENT ''ลูกค้าเลือกเพิ่มเองได้ (0 = มีแต่รายการที่ทีมเลือกให้)'' AFTER `ol_status`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_service_request_items' AND COLUMN_NAME = 'svi_is_preset') = 0, 'ALTER TABLE `tb_service_request_items` ADD COLUMN `svi_is_preset` tinyint(1) NOT NULL DEFAULT ''0'' COMMENT ''ทีมเลือกให้ในลิงก์ (สำเนาตอนส่ง เพราะรายการของลิงก์แก้ได้ภายหลัง)'' AFTER `svi_added_by_staff`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_service_request_items' AND COLUMN_NAME = 'svi_percent') = 0, 'ALTER TABLE `tb_service_request_items` ADD COLUMN `svi_percent` decimal(5,2) DEFAULT NULL COMMENT ''งานเพิ่มแบบ %: อัตรา ณ วันส่ง · ยอดคิดจากยอดรายการอื่น (หลังปรับ) ทุกครั้ง ไม่เก็บยอดซ้ำ'' AFTER `svi_is_preset`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
 -- tb_invoices
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_id') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
@@ -4564,8 +5052,9 @@ FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM tb_work_schedules);
 UPDATE tb_payroll_settings
 SET ps_default_schedule_id = (SELECT MIN(ws_id) FROM tb_work_schedules WHERE ws_status = 'active')
 WHERE ps_id = 1 AND ps_default_schedule_id IS NULL;
--- วันเริ่มใช้ลงเวลา = วันที่ deploy (เฉพาะตอนยังว่างและยังไม่มีการกดเลย — ไม่ทับที่ฝ่ายบุคคลตั้งเอง)
-UPDATE tb_payroll_settings SET ps_attendance_start_date = CURDATE()
+-- วันเริ่มใช้ลงเวลา = วันที่ deploy ตามเวลาไทย (เฉพาะตอนยังว่างและยังไม่มีการกดเลย — ไม่ทับที่ฝ่ายบุคคลตั้งเอง)
+-- ไม่ใช้ CURDATE(): MySQL ที่ตั้งเป็น UTC จะได้วันก่อนหน้าเมื่อ deploy ช่วง 00:00-07:00 น.
+UPDATE tb_payroll_settings SET ps_attendance_start_date = DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+07:00'))
 WHERE ps_id = 1 AND ps_attendance_start_date IS NULL AND NOT EXISTS (SELECT 1 FROM tb_attendance_punches);
 
 
@@ -4578,6 +5067,53 @@ SELECT * FROM (
   UNION ALL SELECT 'ลาไม่รับค่าจ้าง', 'Unpaid leave', NULL, 0, NULL, 0, 4
 ) seed
 WHERE NOT EXISTS (SELECT 1 FROM tb_leave_types);
+
+-- คำถามความต้องการตั้งต้น (2026-10-25) — ใส่เฉพาะตอนยังไม่มีกลุ่มเลย · ผูกกลุ่มกับหมวดสินค้าเองในหน้าตั้งค่า
+SET @seed_requirements = (SELECT COUNT(*) = 0 FROM tb_requirement_groups);
+INSERT INTO tb_requirement_groups (rqg_id, rqg_name, rqg_description, rqg_is_general, rqg_sort_order)
+SELECT * FROM (
+    SELECT 1 AS rqg_id, 'ทั่วไป' AS rqg_name, 'ถามทุกคำขอ' AS rqg_description, 1 AS rqg_is_general, 1 AS rqg_sort_order
+    UNION ALL SELECT 2 AS rqg_id, 'เว็บไซต์' AS rqg_name, 'ผูกกับหมวดงานเว็บไซต์' AS rqg_description, 0 AS rqg_is_general, 2 AS rqg_sort_order
+    UNION ALL SELECT 3 AS rqg_id, 'แอปมือถือ' AS rqg_name, 'ผูกกับหมวดงานแอปมือถือ' AS rqg_description, 0 AS rqg_is_general, 3 AS rqg_sort_order
+    UNION ALL SELECT 4 AS rqg_id, 'ออกแบบ UX/UI' AS rqg_name, 'ผูกกับหมวดงานออกแบบ' AS rqg_description, 0 AS rqg_is_general, 4 AS rqg_sort_order
+    UNION ALL SELECT 5 AS rqg_id, 'ระบบงาน' AS rqg_name, 'ผูกกับหมวดระบบภายในองค์กร' AS rqg_description, 0 AS rqg_is_general, 5 AS rqg_sort_order
+) AS seed WHERE @seed_requirements = 1;
+INSERT INTO tb_requirement_questions (rqq_group_id, rqq_text, rqq_help, rqq_type, rqq_options, rqq_is_required, rqq_sort_order)
+SELECT * FROM (
+    SELECT 1 AS rqq_group_id, 'ธุรกิจ/องค์กรของคุณทำอะไร ลูกค้าหลักคือใคร' AS rqq_text, 'เช่น ร้านอาหารไทย ลูกค้าเป็นนักท่องเที่ยว' AS rqq_help, 'long_text' AS rqq_type, NULL AS rqq_options, 1 AS rqq_is_required, 1 AS rqq_sort_order
+    UNION ALL SELECT 1 AS rqq_group_id, 'เป้าหมายของงานนี้' AS rqq_text, NULL AS rqq_help, 'multi' AS rqq_type, '["เพิ่มยอดขาย","ลดงานเอกสาร","สร้างภาพลักษณ์","ให้ลูกค้าจอง/สั่งเอง","อื่นๆ"]' AS rqq_options, 0 AS rqq_is_required, 2 AS rqq_sort_order
+    UNION ALL SELECT 1 AS rqq_group_id, 'อยากให้เสร็จภายใน' AS rqq_text, NULL AS rqq_help, 'date' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 3 AS rqq_sort_order
+    UNION ALL SELECT 1 AS rqq_group_id, 'งบประมาณที่ตั้งไว้' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["ต่ำกว่า 20,000","20,000-50,000","50,000-100,000","มากกว่า 100,000","ยังไม่แน่ใจ"]' AS rqq_options, 0 AS rqq_is_required, 4 AS rqq_sort_order
+    UNION ALL SELECT 1 AS rqq_group_id, 'ใครเป็นคนตัดสินใจ/ตรวจรับงาน' AS rqq_text, NULL AS rqq_help, 'short_text' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 5 AS rqq_sort_order
+    UNION ALL SELECT 1 AS rqq_group_id, 'ช่องทางที่สะดวกให้ติดต่อ' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["โทร","LINE","อีเมล"]' AS rqq_options, 0 AS rqq_is_required, 6 AS rqq_sort_order
+    UNION ALL SELECT 2 AS rqq_group_id, 'มีเว็บไซต์เดิมไหม' AS rqq_text, NULL AS rqq_help, 'yes_no' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 1 AS rqq_sort_order
+    UNION ALL SELECT 2 AS rqq_group_id, 'ลิงก์เว็บไซต์เดิม (ถ้ามี)' AS rqq_text, NULL AS rqq_help, 'url' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 2 AS rqq_sort_order
+    UNION ALL SELECT 2 AS rqq_group_id, 'ประมาณกี่หน้า และมีหน้าอะไรบ้าง' AS rqq_text, 'เช่น หน้าแรก เกี่ยวกับเรา บริการ ติดต่อ' AS rqq_help, 'long_text' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 3 AS rqq_sort_order
+    UNION ALL SELECT 2 AS rqq_group_id, 'มีโดเมนแล้วไหม' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["มีแล้ว","ยังไม่มี ให้จดให้","ไม่แน่ใจ"]' AS rqq_options, 0 AS rqq_is_required, 4 AS rqq_sort_order
+    UNION ALL SELECT 2 AS rqq_group_id, 'ต้องการระบบอะไรเพิ่ม' AS rqq_text, NULL AS rqq_help, 'multi' AS rqq_type, '["ฟอร์มติดต่อ","จอง/นัดหมาย","ร้านค้าออนไลน์","ชำระเงิน","ระบบสมาชิก","หลายภาษา","บทความ/ข่าว"]' AS rqq_options, 0 AS rqq_is_required, 5 AS rqq_sort_order
+    UNION ALL SELECT 2 AS rqq_group_id, 'ใครจะแก้เนื้อหาหลังส่งมอบ' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["แก้เอง ต้องมีหลังบ้าน","ให้ทีมงานแก้"]' AS rqq_options, 0 AS rqq_is_required, 6 AS rqq_sort_order
+    UNION ALL SELECT 2 AS rqq_group_id, 'เว็บตัวอย่างที่ชอบ และชอบตรงไหน' AS rqq_text, NULL AS rqq_help, 'long_text' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 7 AS rqq_sort_order
+    UNION ALL SELECT 2 AS rqq_group_id, 'มีเนื้อหา/รูปพร้อมแล้วไหม' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["พร้อม","บางส่วน","ยังไม่มี"]' AS rqq_options, 0 AS rqq_is_required, 8 AS rqq_sort_order
+    UNION ALL SELECT 3 AS rqq_group_id, 'ต้องการลงระบบไหน' AS rqq_text, NULL AS rqq_help, 'multi' AS rqq_type, '["iOS","Android"]' AS rqq_options, 1 AS rqq_is_required, 1 AS rqq_sort_order
+    UNION ALL SELECT 3 AS rqq_group_id, 'ผู้ใช้แอปคือใคร ใช้ทำอะไรเป็นหลัก' AS rqq_text, NULL AS rqq_help, 'long_text' AS rqq_type, NULL AS rqq_options, 1 AS rqq_is_required, 2 AS rqq_sort_order
+    UNION ALL SELECT 3 AS rqq_group_id, 'ฟีเจอร์ที่ต้องมีในเวอร์ชันแรก' AS rqq_text, 'เรียงจากสำคัญที่สุด' AS rqq_help, 'long_text' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 3 AS rqq_sort_order
+    UNION ALL SELECT 3 AS rqq_group_id, 'ต้องใช้งานตอนไม่มีอินเทอร์เน็ตไหม' AS rqq_text, NULL AS rqq_help, 'yes_no' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 4 AS rqq_sort_order
+    UNION ALL SELECT 3 AS rqq_group_id, 'ต้องเชื่อมกับระบบอื่นไหม' AS rqq_text, 'เช่น LINE ระบบชำระเงิน ระบบเดิม' AS rqq_help, 'long_text' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 5 AS rqq_sort_order
+    UNION ALL SELECT 3 AS rqq_group_id, 'มีบัญชีนักพัฒนา App Store / Google Play แล้วไหม' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["มีแล้ว","ยังไม่มี","ไม่แน่ใจ"]' AS rqq_options, 0 AS rqq_is_required, 6 AS rqq_sort_order
+    UNION ALL SELECT 4 AS rqq_group_id, 'ออกแบบให้อะไร' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["เว็บไซต์","แอปมือถือ","ระบบงาน","อื่นๆ"]' AS rqq_options, 0 AS rqq_is_required, 1 AS rqq_sort_order
+    UNION ALL SELECT 4 AS rqq_group_id, 'ประมาณกี่หน้าจอ' AS rqq_text, NULL AS rqq_help, 'number' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 2 AS rqq_sort_order
+    UNION ALL SELECT 4 AS rqq_group_id, 'มีโลโก้/สีประจำแบรนด์แล้วไหม' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["มีครบ","มีโลโก้อย่างเดียว","ยังไม่มี"]' AS rqq_options, 0 AS rqq_is_required, 3 AS rqq_sort_order
+    UNION ALL SELECT 4 AS rqq_group_id, 'ไฟล์โลโก้หรือคู่มือแบรนด์' AS rqq_text, 'รูปหรือ PDF ไม่เกิน 10 MB' AS rqq_help, 'file' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 4 AS rqq_sort_order
+    UNION ALL SELECT 4 AS rqq_group_id, 'โทนที่ต้องการ' AS rqq_text, NULL AS rqq_help, 'multi' AS rqq_type, '["เรียบหรู","สดใส","เป็นทางการ","เป็นกันเอง","มินิมอล"]' AS rqq_options, 0 AS rqq_is_required, 5 AS rqq_sort_order
+    UNION ALL SELECT 4 AS rqq_group_id, 'ตัวอย่างงานที่ชอบ' AS rqq_text, 'รูปหรือ PDF' AS rqq_help, 'file' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 6 AS rqq_sort_order
+    UNION ALL SELECT 5 AS rqq_group_id, 'ตอนนี้ทำงานนี้อย่างไร และติดปัญหาอะไร' AS rqq_text, 'เช่น ใช้กระดาษ Excel โปรแกรมเดิม' AS rqq_help, 'long_text' AS rqq_type, NULL AS rqq_options, 1 AS rqq_is_required, 1 AS rqq_sort_order
+    UNION ALL SELECT 5 AS rqq_group_id, 'ผู้ใช้กี่คน แบ่งกี่บทบาท' AS rqq_text, 'เช่น แอดมิน 2 พนักงาน 15' AS rqq_help, 'long_text' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 2 AS rqq_sort_order
+    UNION ALL SELECT 5 AS rqq_group_id, 'ต้องย้ายข้อมูลเดิมเข้าระบบใหม่ไหม' AS rqq_text, NULL AS rqq_help, 'yes_no' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 3 AS rqq_sort_order
+    UNION ALL SELECT 5 AS rqq_group_id, 'ตัวอย่างไฟล์/เอกสารที่ใช้อยู่' AS rqq_text, 'รูปหรือ PDF' AS rqq_help, 'file' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 4 AS rqq_sort_order
+    UNION ALL SELECT 5 AS rqq_group_id, 'รายงานที่ต้องดู' AS rqq_text, NULL AS rqq_help, 'long_text' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 5 AS rqq_sort_order
+    UNION ALL SELECT 5 AS rqq_group_id, 'ใช้บนอุปกรณ์อะไร' AS rqq_text, NULL AS rqq_help, 'multi' AS rqq_type, '["คอมพิวเตอร์","มือถือ","แท็บเล็ต"]' AS rqq_options, 0 AS rqq_is_required, 6 AS rqq_sort_order
+    UNION ALL SELECT 5 AS rqq_group_id, 'ต้องการติดตั้งที่ไหน' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["คลาวด์","เซิร์ฟเวอร์ของบริษัท","ไม่แน่ใจ"]' AS rqq_options, 0 AS rqq_is_required, 7 AS rqq_sort_order
+) AS seed WHERE @seed_requirements = 1;
 
 -- ─── ส่วนที่ 6: ตรวจสอบ — ไม่มีแถวผลลัพธ์ = โครงสร้างครบถ้วนตามไฟล์นี้ ─────────────────────────────
 -- มีแถว = ตารางนั้นมีคอลัมน์/index ไม่ตรงกับที่คาด (missing_* คือที่ขาด, extra_* คือที่เกินมาจากของเก่า)
@@ -4596,7 +5132,7 @@ FROM (
     UNION ALL SELECT 'tb_error_logs' AS table_name, 'err_count,err_fingerprint,err_first_seen,err_id,err_last_ip,err_last_request_id,err_last_seen,err_last_user_id,err_message,err_method,err_path,err_stack,err_status' AS expected_columns, 'idx_err_last_seen(err_last_seen),primary(err_id),uq_err_fingerprint(err_fingerprint)' AS expected_indexes
     UNION ALL SELECT 'tb_project_positions' AS table_name, 'position_created_at,position_id,position_name,position_permission,position_status,position_updated_at' AS expected_columns, 'primary(position_id),uq_position_name(position_name)' AS expected_indexes
     UNION ALL SELECT 'tb_clients' AS table_name, 'client_address,client_branch_code,client_company,client_contact_name,client_country,client_created_at,client_credit_days,client_currency,client_email,client_id,client_language,client_name,client_phone,client_status,client_tax_id,client_type,client_updated_at,client_vat_treatment,client_wht_rate' AS expected_columns, 'fk_client_currency(client_currency),primary(client_id)' AS expected_indexes
-    UNION ALL SELECT 'tb_projects' AS table_name, 'client_id,project_completed_at,project_created_at,project_created_by,project_description,project_due_date,project_id,project_name,project_progress_percent,project_share_enabled,project_share_token,project_start_date,project_status,project_type,project_updated_at,project_use_task_weight' AS expected_columns, 'fk_project_creator(project_created_by),idx_project_client(client_id),idx_project_due_date(project_due_date),idx_project_status(project_status),idx_project_type(project_type),primary(project_id),uq_project_share_token(project_share_token)' AS expected_indexes
+    UNION ALL SELECT 'tb_projects' AS table_name, 'client_id,project_channel,project_completed_at,project_created_at,project_created_by,project_description,project_due_date,project_fastwork_order_no,project_fastwork_url,project_id,project_name,project_progress_percent,project_share_enabled,project_share_token,project_start_date,project_status,project_type,project_updated_at,project_use_task_weight' AS expected_columns, 'fk_project_creator(project_created_by),idx_project_client(client_id),idx_project_due_date(project_due_date),idx_project_status(project_status),idx_project_type(project_type),primary(project_id),uq_project_share_token(project_share_token)' AS expected_indexes
     UNION ALL SELECT 'tb_project_members' AS table_name, 'joined_at,project_id,project_member_id,user_id' AS expected_columns, 'idx_pm_user(user_id),primary(project_member_id),uq_project_member(project_id+user_id)' AS expected_indexes
     UNION ALL SELECT 'tb_project_member_positions' AS table_name, 'position_id,project_member_id' AS expected_columns, 'fk_pmp_position(position_id),primary(project_member_id+position_id)' AS expected_indexes
     UNION ALL SELECT 'tb_tasks' AS table_name, 'project_id,task_completed_at,task_created_at,task_description,task_due_date,task_id,task_parent_id,task_quotation_item_id,task_sort_order,task_start_date,task_status,task_title,task_updated_at,task_weight' AS expected_columns, 'fk_task_quotation_item(task_quotation_item_id),idx_task_due_date(task_due_date),idx_task_parent(task_parent_id),idx_task_project(project_id),idx_task_status_completed(task_status+task_completed_at),primary(task_id)' AS expected_indexes
@@ -4615,16 +5151,16 @@ FROM (
     UNION ALL SELECT 'tb_project_chat_reads' AS table_name, 'last_read_at,project_id,user_id' AS expected_columns, 'fk_project_chat_read_user(user_id),primary(project_id+user_id)' AS expected_indexes
     UNION ALL SELECT 'tb_task_activity_log' AS table_name, 'log_action,log_created_at,log_fullname,log_id,log_message,log_new_value,log_old_value,task_id,user_id' AS expected_columns, 'fk_tal_user(user_id),idx_tal_created(log_created_at),idx_tal_status_start(log_action+log_new_value+task_id+log_created_at),idx_tal_task(task_id),primary(log_id)' AS expected_indexes
     UNION ALL SELECT 'tb_currencies' AS table_name, 'cur_bot_unit,cur_code,cur_created_at,cur_decimals,cur_name_en,cur_name_th,cur_sort_order,cur_status,cur_subunit_en,cur_subunit_th,cur_symbol,cur_unit_en,cur_unit_th,cur_updated_at' AS expected_columns, 'primary(cur_code)' AS expected_indexes
-    UNION ALL SELECT 'tb_company_settings' AS table_name, 'cs_address_en,cs_address_th,cs_allow_self_approval,cs_default_credit_days,cs_email,cs_id,cs_invoice_notes_en,cs_invoice_notes_th,cs_logo_url,cs_name_en,cs_name_th,cs_phone,cs_promptpay_id,cs_quotation_terms_en,cs_quotation_terms_th,cs_quotation_valid_days,cs_tax_id,cs_updated_at,cs_vat_registered_from,cs_website' AS expected_columns, 'primary(cs_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_company_settings' AS table_name, 'cs_address_en,cs_address_th,cs_allow_self_approval,cs_capital_goal,cs_capital_target_date,cs_default_credit_days,cs_email,cs_fastwork_fee_rate,cs_fastwork_fee_vat_rate,cs_fastwork_wht_rate,cs_id,cs_incorporated_on,cs_invoice_notes_en,cs_invoice_notes_th,cs_logo_url,cs_name_en,cs_name_th,cs_phone,cs_promptpay_id,cs_quotation_terms_en,cs_quotation_terms_th,cs_quotation_valid_days,cs_service_request_assignee_id,cs_tax_id,cs_updated_at,cs_vat_registered_from,cs_website' AS expected_columns, 'primary(cs_id)' AS expected_indexes
     UNION ALL SELECT 'tb_vat_rates' AS table_name, 'vr_created_at,vr_created_by,vr_effective_from,vr_note,vr_rate' AS expected_columns, 'fk_vr_created_by(vr_created_by),primary(vr_effective_from)' AS expected_indexes
     UNION ALL SELECT 'tb_branches' AS table_name, 'branch_address_en,branch_address_th,branch_code,branch_created_at,branch_id,branch_name_en,branch_name_th,branch_phone,branch_status,branch_updated_at' AS expected_columns, 'primary(branch_id),uq_branch_code(branch_code)' AS expected_indexes
     UNION ALL SELECT 'tb_bank_accounts' AS table_name, 'ba_account_name,ba_account_no,ba_bank_branch,ba_bank_name,ba_created_at,ba_currency,ba_id,ba_is_default,ba_status,ba_swift_code,ba_updated_at' AS expected_columns, 'fk_ba_currency(ba_currency),primary(ba_id)' AS expected_indexes
     UNION ALL SELECT 'tb_document_sequences' AS table_name, 'ds_date,ds_doc_type,ds_last' AS expected_columns, 'primary(ds_doc_type+ds_date)' AS expected_indexes
     UNION ALL SELECT 'tb_exchange_rates' AS table_name, 'er_buying_sight,er_buying_transfer,er_currency,er_fetched_at,er_mid_rate,er_rate_date,er_selling' AS expected_columns, 'primary(er_currency+er_rate_date)' AS expected_indexes
     UNION ALL SELECT 'tb_user_signatures' AS table_name, 'sig_created_at,sig_file_path,sig_id,sig_method,sig_revoked_at,sig_revoked_by,sig_user_id' AS expected_columns, 'fk_sig_revoked_by(sig_revoked_by),idx_sig_user_active(sig_user_id+sig_revoked_at),primary(sig_id)' AS expected_indexes
-    UNION ALL SELECT 'tb_product_categories' AS table_name, 'pc_created_at,pc_id,pc_name,pc_sort_order,pc_status,pc_updated_at' AS expected_columns, 'primary(pc_id),uq_pc_name(pc_name)' AS expected_indexes
-    UNION ALL SELECT 'tb_products' AS table_name, 'product_category_id,product_code,product_created_at,product_description,product_id,product_name,product_price,product_status,product_unit,product_updated_at' AS expected_columns, 'fk_product_category(product_category_id),idx_product_name(product_name),primary(product_id),uq_product_code(product_code)' AS expected_indexes
-    UNION ALL SELECT 'tb_product_packages' AS table_name, 'pkg_category_id,pkg_created_at,pkg_description,pkg_id,pkg_name,pkg_status,pkg_updated_at' AS expected_columns, 'fk_pkg_category(pkg_category_id),primary(pkg_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_product_categories' AS table_name, 'pc_created_at,pc_id,pc_is_single_choice,pc_name,pc_sort_order,pc_status,pc_updated_at' AS expected_columns, 'primary(pc_id),uq_pc_name(pc_name)' AS expected_indexes
+    UNION ALL SELECT 'tb_products' AS table_name, 'product_category_id,product_code,product_created_at,product_description,product_id,product_image_url,product_is_public,product_name,product_percent,product_price,product_price_mode,product_status,product_unit,product_updated_at' AS expected_columns, 'fk_product_category(product_category_id),idx_product_name(product_name),primary(product_id),uq_product_code(product_code)' AS expected_indexes
+    UNION ALL SELECT 'tb_product_packages' AS table_name, 'pkg_category_id,pkg_created_at,pkg_description,pkg_id,pkg_image_url,pkg_is_public,pkg_name,pkg_status,pkg_updated_at' AS expected_columns, 'fk_pkg_category(pkg_category_id),primary(pkg_id)' AS expected_indexes
     UNION ALL SELECT 'tb_product_package_items' AS table_name, 'pki_description,pki_id,pki_order,pki_package_id,pki_product_id,pki_quantity,pki_type,pki_unit,pki_unit_price' AS expected_columns, 'fk_pki_product(pki_product_id),idx_pki_package(pki_package_id+pki_order),primary(pki_id)' AS expected_indexes
     UNION ALL SELECT 'tb_approval_levels' AS table_name, 'al_doc_type,al_level,al_min_amount_thb,al_require_distinct,al_updated_at' AS expected_columns, 'primary(al_doc_type+al_level)' AS expected_indexes
     UNION ALL SELECT 'tb_approval_level_roles' AS table_name, 'alr_doc_type,alr_level,alr_role_id' AS expected_columns, 'fk_alr_role(alr_role_id),primary(alr_doc_type+alr_level+alr_role_id)' AS expected_indexes
@@ -4659,6 +5195,25 @@ FROM (
     UNION ALL SELECT 'tb_income_tax_years' AS table_name, 'ity_created_at,ity_created_by,ity_expense_cap,ity_expense_rate,ity_note,ity_personal_allowance,ity_tax_year,ity_updated_at' AS expected_columns, 'fk_ity_created_by(ity_created_by),primary(ity_tax_year)' AS expected_indexes
     UNION ALL SELECT 'tb_income_tax_brackets' AS table_name, 'itb_from_amount,itb_rate,itb_tax_year' AS expected_columns, 'primary(itb_tax_year+itb_from_amount)' AS expected_indexes
     UNION ALL SELECT 'tb_payroll_settings' AS table_name, 'ps_attendance_start_date,ps_card_valid_years,ps_default_schedule_id,ps_hours_per_day,ps_id,ps_ot_is_sso_wage,ps_ot_rate_holiday_ot,ps_ot_rate_holiday_work,ps_ot_rate_workday,ps_ot_weekly_cap_hours,ps_pay_day,ps_timesheet_backdate_days,ps_timesheet_enabled,ps_unpaid_leave_divisor,ps_updated_at,ps_updated_by,ps_working_weekdays' AS expected_columns, 'fk_ps_updated_by(ps_updated_by),primary(ps_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_fastwork_milestones' AS table_name, 'fwm_amount,fwm_created_at,fwm_created_by,fwm_delivered_at,fwm_delivered_by,fwm_due_date,fwm_id,fwm_name,fwm_order,fwm_project_id,fwm_updated_at' AS expected_columns, 'fk_fwm_created_by(fwm_created_by),fk_fwm_delivered_by(fwm_delivered_by),idx_fwm_project_order(fwm_project_id+fwm_order),primary(fwm_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_fastwork_payouts' AS table_name, 'fwp_approved_date,fwp_bank_account_id,fwp_cancel_reason,fwp_cancelled_at,fwp_cancelled_by,fwp_created_at,fwp_created_by,fwp_fee,fwp_fee_rate,fwp_fee_vat,fwp_gross,fwp_id,fwp_milestone_id,fwp_net,fwp_note,fwp_project_id,fwp_received_by,fwp_received_date,fwp_reference,fwp_status,fwp_updated_at,fwp_version,fwp_wht,fwp_wht_certificate_no' AS expected_columns, 'fk_fwp_bank_account(fwp_bank_account_id),fk_fwp_cancelled_by(fwp_cancelled_by),fk_fwp_created_by(fwp_created_by),fk_fwp_milestone(fwp_milestone_id),fk_fwp_received_by(fwp_received_by),idx_fwp_project(fwp_project_id),idx_fwp_status_received(fwp_status+fwp_received_date),primary(fwp_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_project_shares' AS table_name, 'shr_amount,shr_created_at,shr_created_by,shr_id,shr_kind,shr_note,shr_order,shr_percent,shr_project_id,shr_user_id,shr_vendor_id' AS expected_columns, 'fk_shr_created_by(shr_created_by),fk_shr_user(shr_user_id),fk_shr_vendor(shr_vendor_id),idx_shr_project(shr_project_id),primary(shr_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_share_advances' AS table_name, 'sha_amount,sha_bank_account_id,sha_cancel_reason,sha_cancelled_at,sha_cancelled_by,sha_created_at,sha_created_by,sha_id,sha_note,sha_paid_date,sha_project_id,sha_recipient_name,sha_reference,sha_status,sha_user_id,sha_vendor_id' AS expected_columns, 'fk_sha_bank_account(sha_bank_account_id),fk_sha_cancelled_by(sha_cancelled_by),fk_sha_created_by(sha_created_by),fk_sha_user(sha_user_id),fk_sha_vendor(sha_vendor_id),idx_sha_project(sha_project_id),primary(sha_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_share_settlements' AS table_name, 'sst_after_fixed,sst_cancel_reason,sst_cancelled_at,sst_cancelled_by,sst_company_amount,sst_created_at,sst_created_by,sst_distributable,sst_expense_cost,sst_fixed_total,sst_id,sst_note,sst_platform_fee,sst_project_id,sst_revenue,sst_settled_date,sst_status,sst_version' AS expected_columns, 'fk_sst_cancelled_by(sst_cancelled_by),fk_sst_created_by(sst_created_by),idx_sst_project(sst_project_id),primary(sst_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_share_settlement_lines' AS table_name, 'ssl_advanced,ssl_amount,ssl_bank_account_id,ssl_due,ssl_id,ssl_kind,ssl_paid_at,ssl_paid_by,ssl_paid_date,ssl_percent,ssl_recipient_name,ssl_reference,ssl_settlement_id,ssl_status,ssl_transfer_amount,ssl_user_id,ssl_vendor_id,ssl_version,ssl_wht' AS expected_columns, 'fk_ssl_bank_account(ssl_bank_account_id),fk_ssl_paid_by(ssl_paid_by),fk_ssl_user(ssl_user_id),fk_ssl_vendor(ssl_vendor_id),idx_ssl_settlement(ssl_settlement_id),primary(ssl_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_capital_entries' AS table_name, 'cpe_amount,cpe_cancel_reason,cpe_cancelled_at,cpe_cancelled_by,cpe_created_at,cpe_created_by,cpe_entry_date,cpe_id,cpe_kind,cpe_note,cpe_status' AS expected_columns, 'fk_cpe_cancelled_by(cpe_cancelled_by),fk_cpe_created_by(cpe_created_by),idx_cpe_status_date(cpe_status+cpe_entry_date),primary(cpe_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_order_links' AS table_name, 'ol_allow_more,ol_assignee_id,ol_buyer_name,ol_client_id,ol_created_at,ol_created_by,ol_expires_on,ol_id,ol_kind,ol_name,ol_project_id,ol_short_code,ol_status,ol_token,ol_updated_at' AS expected_columns, 'fk_ol_assignee(ol_assignee_id),fk_ol_client(ol_client_id),fk_ol_created_by(ol_created_by),fk_ol_project(ol_project_id),primary(ol_id),uq_ol_short_code(ol_short_code),uq_ol_token(ol_token)' AS expected_indexes
+    UNION ALL SELECT 'tb_order_link_categories' AS table_name, 'olc_category_id,olc_link_id' AS expected_columns, 'fk_olc_category(olc_category_id),primary(olc_link_id+olc_category_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_service_requests' AS table_name, 'svr_accepted_at,svr_accepted_name,svr_access_token,svr_address,svr_assignee_id,svr_client_id,svr_company_name,svr_consent_at,svr_contact_email,svr_contact_line,svr_contact_name,svr_contact_phone,svr_id,svr_link_id,svr_note,svr_project_id,svr_quotation_id,svr_status,svr_status_reason,svr_submit_key,svr_submitted_at,svr_tax_id,svr_updated_at,svr_vat_rate,svr_version' AS expected_columns, 'fk_svr_assignee(svr_assignee_id),fk_svr_client(svr_client_id),fk_svr_project(svr_project_id),fk_svr_quotation(svr_quotation_id),idx_svr_status(svr_status+svr_submitted_at),primary(svr_id),uq_svr_access_token(svr_access_token),uq_svr_submit_key(svr_link_id+svr_submit_key)' AS expected_indexes
+    UNION ALL SELECT 'tb_service_request_items' AS table_name, 'svi_added_by_staff,svi_adjusted_quantity,svi_adjusted_unit_price,svi_id,svi_is_preset,svi_is_removed,svi_name,svi_order,svi_package_id,svi_percent,svi_product_id,svi_quantity,svi_request_id,svi_type,svi_unit,svi_unit_price' AS expected_columns, 'fk_svi_package(svi_package_id),fk_svi_product(svi_product_id),idx_svi_request(svi_request_id+svi_order),primary(svi_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_requirement_groups' AS table_name, 'rqg_created_at,rqg_description,rqg_id,rqg_is_general,rqg_name,rqg_sort_order,rqg_status,rqg_updated_at' AS expected_columns, 'primary(rqg_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_requirement_group_categories' AS table_name, 'rgc_category_id,rgc_group_id' AS expected_columns, 'fk_rgc_category(rgc_category_id),primary(rgc_group_id+rgc_category_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_order_link_items' AS table_name, 'oli_id,oli_link_id,oli_order,oli_package_id,oli_product_id,oli_quantity' AS expected_columns, 'fk_oli_package(oli_package_id),fk_oli_product(oli_product_id),idx_oli_link(oli_link_id+oli_order),primary(oli_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_package_addon_rules' AS table_name, 'par_package_id,par_product_id,par_rule' AS expected_columns, 'fk_par_product(par_product_id),primary(par_package_id+par_product_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_requirement_group_packages' AS table_name, 'rgp_group_id,rgp_package_id' AS expected_columns, 'fk_rgp_package(rgp_package_id),primary(rgp_group_id+rgp_package_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_requirement_questions' AS table_name, 'rqq_created_at,rqq_group_id,rqq_help,rqq_id,rqq_is_required,rqq_options,rqq_sort_order,rqq_status,rqq_text,rqq_type,rqq_updated_at' AS expected_columns, 'idx_rqq_group(rqq_group_id+rqq_sort_order),primary(rqq_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_service_request_answers' AS table_name, 'sva_group_name,sva_id,sva_order,sva_question_id,sva_question_text,sva_request_id,sva_type,sva_value' AS expected_columns, 'fk_sva_question(sva_question_id),idx_sva_request(sva_request_id+sva_order),primary(sva_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_service_request_files' AS table_name, 'svf_answer_id,svf_created_at,svf_file_path,svf_id,svf_original_name,svf_size' AS expected_columns, 'idx_svf_answer(svf_answer_id),primary(svf_id)' AS expected_indexes
     UNION ALL SELECT 'tb_company_holidays' AS table_name, 'hd_created_at,hd_created_by,hd_date,hd_name' AS expected_columns, 'fk_hd_created_by(hd_created_by),primary(hd_date)' AS expected_indexes
     UNION ALL SELECT 'tb_leave_types' AS table_name, 'lt_attachment_from_days,lt_carry_over_days,lt_created_at,lt_days_per_year,lt_id,lt_is_paid,lt_min_service_days,lt_name_en,lt_name_th,lt_sort_order,lt_status,lt_updated_at' AS expected_columns, 'primary(lt_id),uq_lt_name_th(lt_name_th)' AS expected_indexes
     UNION ALL SELECT 'tb_timesheet_weeks' AS table_name, 'tsw_approved_at,tsw_created_at,tsw_employee_id,tsw_id,tsw_return_reason,tsw_returned_at,tsw_returned_by,tsw_status,tsw_submitted_at,tsw_total_hours,tsw_updated_at,tsw_version,tsw_week_start' AS expected_columns, 'fk_tsw_returned_by(tsw_returned_by),idx_tsw_status(tsw_status+tsw_week_start),primary(tsw_id),uq_tsw_employee_week(tsw_employee_id+tsw_week_start)' AS expected_indexes

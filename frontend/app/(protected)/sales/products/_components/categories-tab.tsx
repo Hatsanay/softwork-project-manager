@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import EmptyState from "@/components/ui/empty-state";
 import FormField, { inputClass } from "@/components/ui/form-field";
+import Switch from "@/components/ui/switch";
 import { RecordList, RecordRow, StatusPill } from "@/components/ui/record-list";
 import SaveErrorBanner from "@/components/ui/save-error-banner";
 import SectionCard, { PRIMARY_BUTTON, SECONDARY_BUTTON } from "@/components/ui/section-card";
@@ -20,6 +21,7 @@ const EMPTY_FORM = {
     pc_name: "",
     pc_sort_order: "0",
     pc_status: "active" as ActiveStatus,
+    pc_is_single_choice: false,
 };
 
 type CategoryForm = typeof EMPTY_FORM;
@@ -29,6 +31,7 @@ function toForm(category: ProductCategory): CategoryForm {
         pc_name: category.pc_name,
         pc_sort_order: String(category.pc_sort_order),
         pc_status: category.pc_status,
+        pc_is_single_choice: Boolean(category.pc_is_single_choice),
     };
 }
 
@@ -141,6 +144,13 @@ export default function CategoriesTab({ categories, canEdit, onSaved }: Categori
                             </select>
                         </FormField>
                     </div>
+                    <Switch
+                        id="pc_is_single_choice"
+                        label="ลูกค้าเลือกได้รายการเดียวในหมวดนี้"
+                        description="ใช้กับหมวดแพ็กเกจ · ลูกค้ากดแพ็กใหม่ = เปลี่ยนแทนแพ็กเดิมในตะกร้า (หน้าร้านของลิงก์เลือกบริการ)"
+                        checked={form.pc_is_single_choice}
+                        onChange={(checked) => editor.updateField("pc_is_single_choice", checked)}
+                    />
                     <SaveErrorBanner error={editor.saveError} />
                     <div className="flex flex-wrap justify-end gap-2">
                         <button type="button" className={SECONDARY_BUTTON} onClick={editor.close}>
@@ -161,7 +171,7 @@ export default function CategoriesTab({ categories, canEdit, onSaved }: Categori
                         <RecordRow
                             key={category.pc_id}
                             title={category.pc_name}
-                            details={`ลำดับ ${category.pc_sort_order} · สินค้าในหมวด ${category.product_count} รายการ`}
+                            details={`ลำดับ ${category.pc_sort_order} · สินค้าในหมวด ${category.product_count} รายการ${category.pc_is_single_choice ? " · เลือกได้รายการเดียว" : ""}`}
                             pills={<StatusPill isActive={category.pc_status === "active"} />}
                             canEdit={canEdit}
                             onEdit={() => editor.openEdit(category.pc_id, toForm(category))}

@@ -12,7 +12,9 @@ import { useRouter } from "next/navigation";
 import { usePermission, BITS } from "@/app/components/permission-provider";
 import { toast } from "sonner";
 import PageHeader from "@/components/ui/page-header";
-import { Plus } from "lucide-react";
+import { Plus, ShoppingBag } from "lucide-react";
+import Link from "next/link";
+import { buttonClass } from "@/components/ui/button";
 import { ActiveStatusPill } from "@/components/ui/status-pill";
 import { CLIENT_MESSAGES } from "./_messages";
 import type { Client } from "./_types";
@@ -172,6 +174,16 @@ export default function ClientsPage() {
                 emptyMessage="ยังไม่มีข้อมูลลูกค้า"
                 actions={(row) => (
                     <div className="flex items-center gap-2 justify-end">
+                        {hasBit(BITS.manageServiceRequests) && (
+                            <Link
+                                href={`/sales/order-links?client=${row.client_id}`}
+                                className={buttonClass("ghost", "sm")}
+                                aria-label={`ส่งลิงก์เลือกบริการให้ ${row.client_name}`}
+                            >
+                                <ShoppingBag size={15} />
+                                <span className="hidden xl:inline">ลิงก์เลือกบริการ</span>
+                            </Link>
+                        )}
                         {hasBit(BITS.editClient) && (
                             <EditButton onClick={() => router.push(`/clients/edit?id=${row.client_id}`)} />
                         )}

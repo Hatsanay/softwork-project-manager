@@ -19,6 +19,9 @@ import { toast } from "sonner";
 import { PRODUCT_MESSAGES } from "../_messages";
 import type { ActiveStatus, Product, ProductCategory } from "../_types";
 import CategorySelect from "./category-select";
+import CatalogImageField from "./catalog-image-field";
+import Switch from "@/components/ui/switch";
+import StatusPill from "@/components/ui/status-pill";
 
 const EMPTY_FORM = {
     product_code: "",
@@ -28,6 +31,9 @@ const EMPTY_FORM = {
     product_price: "",
     product_category_id: "",
     product_status: "active" as ActiveStatus,
+    product_is_public: false,
+    product_price_mode: "fixed" as "fixed" | "percent",
+    product_percent: "",
 };
 
 type ProductForm = typeof EMPTY_FORM;
@@ -42,6 +48,9 @@ function toForm(product: Product): ProductForm {
         product_price: product.product_price,
         product_category_id: product.product_category_id ?? "",
         product_status: product.product_status,
+        product_is_public: Boolean(product.product_is_public),
+        product_price_mode: product.product_price_mode ?? "fixed",
+        product_percent: product.product_percent ?? "",
     };
 }
 
@@ -109,7 +118,8 @@ export default function ProductsTab({ categories, canEdit }: ProductsTabProps) {
             updateSchema: productSchema,
             createPath: "/products",
             updatePath: (productId) => `/products/${productId}`,
-            toPayload: (currentForm) => currentForm,
+            // แบบ %: ราคาตั้งต้นไม่ใช้ (ส่ง 0)
+            toPayload: (currentForm) => (currentForm.product_price_mode === "percent" ? { ...currentForm, product_price: "0" } : currentForm),
         });
     }
 
@@ -133,7 +143,7 @@ export default function ProductsTab({ categories, canEdit }: ProductsTabProps) {
     }
 
     function textInput(
-        field: "product_code" | "product_name" | "product_unit" | "product_price",
+        field: "product_code" | "product_name" | "product_unit" | "product_price" | "product_percent",
         inputMode?: "decimal",
     ) {
         return (
@@ -166,12 +176,17 @@ export default function ProductsTab({ categories, canEdit }: ProductsTabProps) {
             key: "product_price",
             header: "ราคาตั้งต้น (บาท)",
             className: "text-right tabular-nums",
-            render: (value) => formatAmount(value as string),
+            render: (value, row) => (row.product_price_mode === "percent" ? `+${Number(row.product_percent)}% ของยอด` : formatAmount(value as string)),
         },
         {
             key: "product_status",
             header: "สถานะ",
-            render: (_, row) => <ActiveStatusPill isActive={row.product_status === "active"} />,
+            render: (_, row) => (
+                <div className="flex flex-wrap gap-1.5">
+                    <ActiveStatusPill isActive={row.product_status === "active"} />
+                    {Boolean(row.product_is_public) && <StatusPill tone="info">หน้าร้าน</StatusPill>}
+                </div>
+            ),
         },
     ];
 
@@ -202,14 +217,36 @@ export default function ProductsTab({ categories, canEdit }: ProductsTabProps) {
                                 {textInput("product_code")}
                             </FormField>
                             <FormField
-                                label="ราคาตั้งต้น (บาท)"
-                                htmlFor="product_price"
-                                required
-                                hint={messages.price}
-                                error={fieldErrors.product_price}
+                                label="วิธีคิดราคา"
+                                htmlFor="product_price_mode"
+                                hint={form.product_price_mode === "percent" ? "คิดเป็น % ของยอดรายการอื่นก่อน VAT เช่น งานด่วน +30% · ลูกค้าเลือกได้ครั้งเดียว · ใส่ในชุดรายการไม่ได้" : undefined}
+                                error={fieldErrors.product_price_mode}
                             >
-                                {textInput("product_price", "decimal")}
+                                <select
+                                    id="product_price_mode"
+                                    value={form.product_price_mode}
+                                    onChange={(event) => editor.updateField("product_price_mode", event.target.value as "fixed" | "percent")}
+                                    className={inputClass(Boolean(fieldErrors.product_price_mode))}
+                                >
+                                    <option value="fixed">ราคาตายตัว (บาท)</option>
+                                    <option value="percent">% ของยอดรายการอื่น</option>
+                                </select>
                             </FormField>
+                            {form.product_price_mode === "percent" ? (
+                                <FormField label="อัตรา %" htmlFor="product_percent" required hint="เช่น 30 = เพิ่ม 30% ของยอด" error={fieldErrors.product_percent}>
+                                    {textInput("product_percent", "decimal")}
+                                </FormField>
+                            ) : (
+                                <FormField
+                                    label="ราคาตั้งต้น (บาท)"
+                                    htmlFor="product_price"
+                                    required
+                                    hint={messages.price}
+                                    error={fieldErrors.product_price}
+                                >
+                                    {textInput("product_price", "decimal")}
+                                </FormField>
+                            )}
                             <FormField
                                 label="หน่วย"
                                 htmlFor="product_unit"
@@ -251,6 +288,22 @@ export default function ProductsTab({ categories, canEdit }: ProductsTabProps) {
                                     <option value="inactive">ปิดใช้งาน</option>
                                 </select>
                             </FormField>
+                            <div className="grid gap-3 sm:col-span-2">
+                                <Switch
+                                    id="product_is_public"
+                                    label="แสดงบนหน้าร้าน (ลิงก์เลือกบริการ)"
+                                    description={messages.isPublic}
+                                    checked={form.product_is_public}
+                                    onChange={(checked) => editor.updateField("product_is_public", checked)}
+                                />
+                                {form.product_is_public && (
+                                    <CatalogImageField
+                                        basePath={editingProduct ? `/products/${editingProduct.product_id}` : null}
+                                        imageUrl={editingProduct?.product_image_url ?? null}
+                                        onChanged={() => setReloadCount((count) => count + 1)}
+                                    />
+                                )}
+                            </div>
                             <FormField
                                 label="รายละเอียด"
                                 htmlFor="product_description"

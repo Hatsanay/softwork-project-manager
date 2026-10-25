@@ -154,6 +154,17 @@ async function remove(req, res, next) {
                 message: `ลบโปรเจกต์นี้ไม่ได้ เพราะมีค่าใช้จ่าย ${expenseCount} รายการผูกอยู่ (เป็นต้นทุนโปรเจกต์) — ถ้าไม่ทำต่อแล้วให้ใช้ "ยกเลิกโปรเจกต์" แทน`,
             });
         }
+        // เงินจาก Fastwork ที่บันทึกไว้ (รายได้ · 2026-10-24 P-1) ก็ลบไม่ได้ — รวมรายการที่ยกเลิกแล้ว (เป็นประวัติการเงิน)
+        const [[{ payoutCount }]] = await pool.query(
+            "SELECT COUNT(*) AS payoutCount FROM tb_fastwork_payouts WHERE fwp_project_id = ?",
+            [req.params.id]
+        );
+        if (payoutCount > 0) {
+            return res.status(409).json({
+                code: "PROJECT_HAS_FASTWORK_PAYOUTS",
+                message: `ลบโปรเจกต์นี้ไม่ได้ เพราะบันทึกเงินจาก Fastwork ไว้ ${payoutCount} รายการ (เป็นรายได้) · ถ้าไม่ทำต่อแล้วให้ใช้ "ยกเลิกโปรเจกต์" แทน`,
+            });
+        }
         // ชั่วโมงทำงานที่ลงไว้ (ต้นทุนค่าแรง — เฟส 4 ขั้น 4-2 R-H10) ก็ลบไม่ได้เหมือนกัน
         const [[{ timesheetCount }]] = await pool.query(
             "SELECT COUNT(*) AS timesheetCount FROM tb_timesheet_entries WHERE tse_project_id = ?",

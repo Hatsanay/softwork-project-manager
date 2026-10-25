@@ -6,7 +6,8 @@ const PUBLIC_PATHS = ["/", "/login"];
 export function proxy(request: NextRequest) {
     const { pathname, search } = request.nextUrl;
 
-    if (PUBLIC_PATHS.includes(pathname) || pathname.startsWith("/share/")) {
+    // /order/ และ /o/ = ลิงก์เลือกบริการของลูกค้า (2026-10-25) ไม่ต้อง login
+    if (PUBLIC_PATHS.includes(pathname) || pathname.startsWith("/share/") || pathname.startsWith("/order/") || pathname.startsWith("/o/")) {
         return NextResponse.next();
     }
 

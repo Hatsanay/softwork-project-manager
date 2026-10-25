@@ -203,6 +203,8 @@ export type QuotationDetail = {
     approval: ApprovalEvaluation | null;
     actions: QuotationActions;
     readiness: { key: string; ok: boolean; message: string }[];
+    // ใบภายในของงาน Fastwork (S-5): ออกจากคำขอของลิงก์ Fastwork หรือผูกงาน Fastwork · ส่งลูกค้า/ตอบรับ/ออกใบแจ้งหนี้ไม่ได้
+    fastwork_internal: { request_id: string | null } | null;
 };
 
 // ข้อมูลลูกค้า/บริษัท ณ วันอนุมัติชั้นสุดท้าย (เอกสารที่อนุมัติแล้วพิมพ์จากตรงนี้เสมอ)

@@ -6,6 +6,32 @@ const { withTransaction } = require("../utils/with-transaction");
 const { productSchema, productCategorySchema, productPackageSchema } = require("../shared/schemas/product.mjs");
 const productService = require("../services/product.service");
 const packageService = require("../services/product-package.service");
+const { AppError } = require("../utils/app-error");
+const { saveCatalogImage } = require("../utils/catalog-image");
+
+// รูปบนหน้าร้าน (2026-10-25) — สินค้า: tb_products.product_image_url · ชุด: tb_product_packages.pkg_image_url
+const IMAGE_TARGETS = {
+    product: { table: "tb_products", column: "product_image_url", key: "product_id", notFound: "ไม่พบสินค้านี้ กรุณาโหลดหน้าใหม่" },
+    package: { table: "tb_product_packages", column: "pkg_image_url", key: "pkg_id", notFound: "ไม่พบชุดรายการนี้ กรุณาโหลดหน้าใหม่" },
+};
+
+function imageHandler(targetName, { remove = false } = {}) {
+    const target = IMAGE_TARGETS[targetName];
+    return async (req, res, next) => {
+        try {
+            let imageUrl = null;
+            if (!remove) {
+                if (!req.file) throw new AppError(400, "VALIDATION", "กรุณาเลือกรูป", { image: "กรุณาเลือกรูป" });
+                imageUrl = await saveCatalogImage(req.file.buffer);
+            }
+            const [result] = await pool.query(`UPDATE ${target.table} SET ${target.column} = ? WHERE ${target.key} = ?`, [imageUrl, req.params.id]);
+            if (result.affectedRows === 0) throw new AppError(404, "NOT_FOUND", target.notFound);
+            res.json({ image_url: imageUrl });
+        } catch (err) {
+            next(err);
+        }
+    };
+}
 
 // ─── สินค้า/บริการ ──────────────────────────────────────────────────────────────────────────
 
@@ -156,4 +182,8 @@ module.exports = {
     createPackage,
     updatePackage,
     deletePackage,
+    uploadProductImage: imageHandler("product"),
+    removeProductImage: imageHandler("product", { remove: true }),
+    uploadPackageImage: imageHandler("package"),
+    removePackageImage: imageHandler("package", { remove: true }),
 };

@@ -1,6 +1,7 @@
 // สร้างไฟล์ข้อมูลจำลองทั้งระบบ (2026-10-24 · docs/plans/2026-10-24-mock-data.md)
 //
-// ใช้: cd backend && npm run mock:export          (ใช้เวลาราว 5-10 นาที แสดงความคืบหน้ารายเดือน)
+// ใช้: cd backend && npm run mock:export          ชุดบริษัท (ราว 5-10 นาที แสดงความคืบหน้ารายเดือน)
+//      cd backend && npm run mock:export:pre      ชุดช่วงก่อนจด (P-4 · รายการชุดอยู่ใน scripts/mock-data/sets.js)
 //      KEEP_DB=1 npm run mock:export              เก็บฐานชั่วคราวไว้เปิดดูหน้าเว็บ (ลบเองทีหลัง)
 //
 // ขั้นตอน:
@@ -17,14 +18,13 @@ const BACKEND_DIR = path.join(__dirname, "..", "..");
 const DATABASE_DIR = path.join(BACKEND_DIR, "..", "database");
 const DEPLOY_SCHEMA_PATH = path.join(DATABASE_DIR, "query", "deploy_schema.sql");
 const RESET_PATH = path.join(DATABASE_DIR, "reset_all_data.sql");
-const OUTPUT_SQL_PATH = path.join(DATABASE_DIR, "mock_data.sql");
-const OUTPUT_FILES_DIR = path.join(DATABASE_DIR, "mock_uploads");
+const MOCK_SET = require("./sets").setFromArgs();
+const OUTPUT_SQL_PATH = path.join(DATABASE_DIR, MOCK_SET.sqlFile);
+const OUTPUT_FILES_DIR = path.join(DATABASE_DIR, MOCK_SET.uploadsDir);
 const UPLOADS_DIR = path.join(BACKEND_DIR, "uploads");
 const PRODUCTION_DATABASE = "dktimeh_softwork_pm_db";
 const RESET_GUARD_LINE = `SET @confirm_database = '${PRODUCTION_DATABASE}';`;
 const ROWS_PER_INSERT = 100;
-// ตารางที่ว่างได้ (มีเหตุผล) — ตารางอื่นว่าง = ข้อมูลจำลองยังไม่ครอบคลุม แจ้งเตือนตอนจบ
-const ALLOWED_EMPTY_TABLES = new Map([["tb_error_logs", "ระบบไม่มีข้อผิดพลาดระหว่างใส่ข้อมูล"]]);
 
 // ─── สภาพแวดล้อม: ต้องตั้งก่อน require โค้ดของระบบ (config/db อ่านชื่อฐานตอนโหลด) ──────────────────────
 require("dotenv").config({ path: path.join(BACKEND_DIR, ".env"), quiet: true });
@@ -86,11 +86,10 @@ async function dropDatabase() {
 // ─── 3. ส่งออก SQL ────────────────────────────────────────────────────────────────────────
 const SQL_HEADER = `-- ════════════════════════════════════════════════════════════════════════════════
 -- ข้อมูลจำลองทั้งระบบของ Softwork (สร้างอัตโนมัติด้วย backend: npm run mock:export · ห้ามแก้ด้วยมือ)
--- บริษัทสมมติ "ซอฟต์เวิร์ก ดิเวลลอปเมนท์" กระบี่ ทำงานจริง เม.ย.–ต.ค. 2026: ขาย จัดซื้อ โปรเจกต์ บุคคล ลงเวลา เงินเดือน
--- รายละเอียด: docs/plans/2026-10-24-mock-data.md
+-- ชุด: ${MOCK_SET.label}
+${MOCK_SET.description.map((line) => `-- ${line}`).join("\n")}
 -- ════════════════════════════════════════════════════════════════════════════════
--- ⚠ ทุกบัญชีรหัสผ่าน 12345678 (admin hatsanai siriporn thanawat kamonchanok wannipa nattapon piyapong
---   supawadee chonthicha kittisak weerayut apichart) · ลงบนเว็บที่เปิดสาธารณะ = ใครรู้ชื่อผู้ใช้ก็เข้าได้
+-- ⚠ ทุกบัญชีรหัสผ่าน 12345678 (${MOCK_SET.usernames}) · ลงบนเว็บที่เปิดสาธารณะ = ใครรู้ชื่อผู้ใช้ก็เข้าได้
 --   ใช้สาธิตช่วงสั้นๆ แล้วรัน database/reset_all_data.sql ทันที
 -- ข้อมูลบุคคล บริษัทคู่ค้า เลขบัตร เลขบัญชี เป็นของสมมติทั้งหมด (เลข 13 หลักผ่านสูตรตรวจ แต่ไม่ใช่ของใคร)
 --
@@ -99,7 +98,7 @@ const SQL_HEADER = `-- ═══════════════════
 --   2. รัน database/reset_all_data.sql ก่อน — ไฟล์นี้ยอมลงเฉพาะฐานที่เหลือแค่ admin (กันทับข้อมูลจริง)
 --   3. @confirm_database ด้านล่าง = ชื่อฐานที่จะลง (ค่าเริ่มต้น production) · ฐานอื่นแก้ชื่อบรรทัดเดียว
 -- หลังรัน:
---   - คัดลอก database/mock_uploads/uploads/* ไป backend/uploads/ และ database/mock_uploads/storage/* ไป backend/storage/
+--   - คัดลอก database/${MOCK_SET.uploadsDir}/uploads/* ไป backend/uploads/ และ database/${MOCK_SET.uploadsDir}/storage/* ไป backend/storage/
 --     (บน Plesk อัปโหลดผ่าน File Manager) — ไม่คัดลอก = รูปและไฟล์แนบแตก
 --   - วันที่ในข้อมูลตายตัวถึงวันที่สร้างไฟล์ · หลังจากนั้นหน้าลงเวลาจะขึ้น "ขาด" เพราะไม่มีการกด → สร้างไฟล์ใหม่ถ้าต้องการให้ถึงวันปัจจุบัน
 -- ════════════════════════════════════════════════════════════════════════════════
@@ -162,9 +161,9 @@ async function exportSql() {
 
     parts.push("\nSET UNIQUE_CHECKS = 1;\nSET FOREIGN_KEY_CHECKS = 1;");
     parts.push(
-        "\n-- ─── ตรวจผล ───\nSELECT (SELECT COUNT(*) FROM tb_users) AS users, (SELECT COUNT(*) FROM tb_employees) AS employees,\n" +
-            "       (SELECT COUNT(*) FROM tb_quotations) AS quotations, (SELECT COUNT(*) FROM tb_invoices) AS invoices,\n" +
-            "       (SELECT COUNT(*) FROM tb_attendance_punches) AS punches, (SELECT COUNT(*) FROM tb_payroll_runs) AS payroll_runs;\n",
+        "\n-- ─── ตรวจผล ───\nSELECT " +
+            MOCK_SET.resultCounts.map((table) => `(SELECT COUNT(*) FROM ${table}) AS ${table.replace(/^tb_/, "")}`).join(",\n       ") +
+            ";\n",
     );
     fs.writeFileSync(OUTPUT_SQL_PATH, parts.join("\n"));
     await connection.end();
@@ -201,24 +200,32 @@ async function main() {
     console.log(`1/4 สร้างฐานชั่วคราว ${DATABASE_NAME} (deploy_schema + reset_all_data)`);
     await createDatabase();
     try {
-        console.log("2/4 ใส่ข้อมูลบริษัทผ่าน API (ราว 5-10 นาที)");
+        console.log(`2/4 ใส่ข้อมูลชุด${MOCK_SET.label}ผ่าน API (${MOCK_SET.name === "company" ? "ราว 5-10 นาที" : "ราว 1-2 นาที"})`);
         // ระบบพิมพ์ log ทุกคำขอ (morgan) หลายพันบรรทัด — ซ่อนไว้ ให้เห็นเฉพาะความคืบหน้ารายเดือนและข้อผิดพลาด
         const requestLogLine = /^[0-9a-f-]{36} (GET|POST|PUT|PATCH|DELETE) /;
         const writeToConsole = process.stdout.write.bind(process.stdout);
         process.stdout.write = (chunk, ...rest) => (requestLogLine.test(String(chunk)) ? true : writeToConsole(chunk, ...rest));
         const { seedCompany } = require("../seed-company-data");
-        await seedCompany();
+        await seedCompany({ set: MOCK_SET.name });
 
         console.log(`3/4 ส่งออก ${path.relative(path.join(BACKEND_DIR, ".."), OUTPUT_SQL_PATH)}`);
         const { rowCounts, uploadPaths } = await exportSql();
-        console.log("4/4 คัดลอกไฟล์ที่ข้อมูลอ้างถึง → database/mock_uploads/");
+        console.log(`4/4 คัดลอกไฟล์ที่ข้อมูลอ้างถึง → database/${MOCK_SET.uploadsDir}/`);
         const files = copyFiles(uploadPaths);
 
         const totalRows = [...rowCounts.values()].reduce((sum, count) => sum + count, 0);
         const sizeMb = (fs.statSync(OUTPUT_SQL_PATH).size / 1024 / 1024).toFixed(1);
         console.log(`\nเสร็จใน ${elapsed(startedAt)} · ${rowCounts.size} ตาราง ${totalRows.toLocaleString()} แถว · ${sizeMb} MB · ไฟล์ ${files.copied} ไฟล์`);
-        const empty = [...rowCounts].filter(([table, count]) => count === 0 && !ALLOWED_EMPTY_TABLES.has(table)).map(([table]) => table);
-        if (empty.length > 0) console.log(`⚠ ตารางที่ยังไม่มีข้อมูล (${empty.length}): ${empty.join(" ")}`);
+        const emptyTables = [...rowCounts].filter(([, count]) => count === 0).map(([table]) => table);
+        if (MOCK_SET.requiredTables) {
+            // ชุดนี้ไม่ได้ครอบคลุมทุกฝ่าย: เตือนเฉพาะตารางที่ต้องมี · ที่เหลือบอกเป็นข้อมูล
+            const missing = MOCK_SET.requiredTables.filter((table) => emptyTables.includes(table));
+            if (missing.length > 0) console.log(`⚠ ตารางที่ชุดนี้ต้องมีแต่ยังว่าง (${missing.length}): ${missing.join(" ")}`);
+            console.log(`ตารางว่างตามเรื่อง (ไม่มีพนักงาน/เงินเดือน/ลงเวลา ฯลฯ): ${emptyTables.length} ตาราง`);
+        } else {
+            const empty = emptyTables.filter((table) => !MOCK_SET.emptyAllowed.has(table));
+            if (empty.length > 0) console.log(`⚠ ตารางที่ยังไม่มีข้อมูล (${empty.length}): ${empty.join(" ")}`);
+        }
         if (files.missing.length > 0) console.log(`⚠ ข้อมูลอ้างไฟล์ที่ไม่มีอยู่ (${files.missing.length}): ${files.missing.join(" ")}`);
     } finally {
         if (process.env.KEEP_DB === "1") {

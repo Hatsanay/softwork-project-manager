@@ -395,3 +395,227 @@ INSERT INTO tb_project_positions (position_id, position_name, position_permissio
 VALUES ('POS202601010000001', 'PM', '11111111111111111111111111111');
 
 commit;
+
+-- 2026-10-24 P-1 Fastwork: ช่องทางงานของโปรเจกต์ (ฉบับจริงอยู่ใน deploy_schema.sql)
+ALTER TABLE tb_projects ADD COLUMN project_channel enum('direct','fastwork') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'direct' COMMENT 'ช่องทางงาน: direct = ลูกค้าตรง (ใบเสนอราคา/ใบแจ้งหนี้) · fastwork = รับงานผ่าน fastwork.com (รายได้จากการโอนของแพลตฟอร์ม)';
+ALTER TABLE tb_projects ADD COLUMN project_fastwork_order_no varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เลขคำสั่งซื้อบน Fastwork';
+ALTER TABLE tb_projects ADD COLUMN project_fastwork_url varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ลิงก์หน้างานบน Fastwork';
+
+-- งวดงาน Fastwork (2026-10-24 · P-1) — ตกลงกับลูกค้าบน Fastwork · ส่งงานแล้ว = fwm_delivered_at
+-- เงินที่ได้จริงอยู่ใน tb_fastwork_payouts (หนึ่งงวดมีรายการเงินที่ยังไม่ยกเลิกได้รายการเดียว — ตรวจใน backend)
+CREATE TABLE IF NOT EXISTS `tb_fastwork_milestones` (
+  `fwm_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `fwm_project_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `fwm_order` smallint unsigned NOT NULL,
+  `fwm_name` varchar(200) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `fwm_amount` decimal(15,2) NOT NULL COMMENT 'ราคางวดตามที่ตกลงบน Fastwork (ยอดที่ลูกค้าจ่าย)',
+  `fwm_due_date` date DEFAULT NULL,
+  `fwm_delivered_at` datetime DEFAULT NULL COMMENT 'ส่งงานงวดนี้บน Fastwork แล้ว (รอลูกค้ายืนยัน)',
+  `fwm_delivered_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fwm_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fwm_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `fwm_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`fwm_id`),
+  KEY `idx_fwm_project_order` (`fwm_project_id`,`fwm_order`),
+  KEY `fk_fwm_delivered_by` (`fwm_delivered_by`),
+  KEY `fk_fwm_created_by` (`fwm_created_by`),
+  CONSTRAINT `fk_fwm_created_by` FOREIGN KEY (`fwm_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_fwm_delivered_by` FOREIGN KEY (`fwm_delivered_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_fwm_project` FOREIGN KEY (`fwm_project_id`) REFERENCES `tb_projects` (`project_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- เงินจาก Fastwork (2026-10-24 · P-1) — หนึ่งแถวต่อการโอนหนึ่งครั้ง · ไม่ออกใบแจ้งหนี้/ใบเสร็จ (Fastwork ออกให้ลูกค้าเอง)
+-- รอโอน (ลูกค้ายืนยันงวดแล้ว) → เข้าแล้ว · ยกเลิก = คืนเงินลูกค้า/ข้อพิพาท (ไม่ลบแถว ต้องมีเหตุผล)
+-- ยอดเข้าบัญชี = ราคางวด − ค่าธรรมเนียม − VAT ค่าธรรมเนียม − หัก ณ ที่จ่าย · อัตราค่าธรรมเนียมเก็บ ณ วันที่บันทึก
+CREATE TABLE IF NOT EXISTS `tb_fastwork_payouts` (
+  `fwp_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `fwp_project_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `fwp_milestone_id` int unsigned DEFAULT NULL,
+  `fwp_status` enum('pending','received','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `fwp_gross` decimal(15,2) NOT NULL COMMENT 'ราคางวดที่ลูกค้าจ่ายเข้า Fastwork',
+  `fwp_fee_rate` decimal(5,2) NOT NULL COMMENT 'อัตราค่าธรรมเนียม ณ วันที่บันทึก (%)',
+  `fwp_fee` decimal(15,2) NOT NULL,
+  `fwp_fee_vat` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `fwp_wht` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `fwp_wht_certificate_no` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เลขที่ 50 ทวิ ที่ Fastwork ออกให้ (ถ้ามี)',
+  `fwp_net` decimal(15,2) NOT NULL COMMENT 'ยอดเข้าบัญชีจริง',
+  `fwp_approved_date` date NOT NULL COMMENT 'วันที่ลูกค้ายืนยันงวดบน Fastwork',
+  `fwp_received_date` date DEFAULT NULL,
+  `fwp_bank_account_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fwp_reference` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fwp_note` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fwp_cancel_reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fwp_cancelled_at` datetime DEFAULT NULL,
+  `fwp_cancelled_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fwp_received_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fwp_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fwp_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `fwp_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `fwp_version` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`fwp_id`),
+  KEY `idx_fwp_project` (`fwp_project_id`),
+  KEY `idx_fwp_status_received` (`fwp_status`,`fwp_received_date`),
+  KEY `fk_fwp_milestone` (`fwp_milestone_id`),
+  KEY `fk_fwp_bank_account` (`fwp_bank_account_id`),
+  KEY `fk_fwp_cancelled_by` (`fwp_cancelled_by`),
+  KEY `fk_fwp_received_by` (`fwp_received_by`),
+  KEY `fk_fwp_created_by` (`fwp_created_by`),
+  CONSTRAINT `fk_fwp_bank_account` FOREIGN KEY (`fwp_bank_account_id`) REFERENCES `tb_bank_accounts` (`ba_id`),
+  CONSTRAINT `fk_fwp_cancelled_by` FOREIGN KEY (`fwp_cancelled_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_fwp_created_by` FOREIGN KEY (`fwp_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_fwp_milestone` FOREIGN KEY (`fwp_milestone_id`) REFERENCES `tb_fastwork_milestones` (`fwm_id`),
+  CONSTRAINT `fk_fwp_project` FOREIGN KEY (`fwp_project_id`) REFERENCES `tb_projects` (`project_id`),
+  CONSTRAINT `fk_fwp_received_by` FOREIGN KEY (`fwp_received_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 2026-10-24 P-2 ส่วนแบ่งกำไร (ฉบับจริงอยู่ใน deploy_schema.sql)
+
+-- ส่วนแบ่งกำไรรายโปรเจกต์ (2026-10-24 · P-2) — ผู้รับเป็นผู้ใช้ในระบบ หรือผู้ขาย/ฟรีแลนซ์ (อย่างใดอย่างหนึ่ง)
+-- percent = % ของกำไรหลังหักส่วนแบ่งตายตัว · fixed = จำนวนเงินตายตัว (หักก่อน) · ที่เหลือ = เก็บเข้าเงินทุน
+-- แก้ได้จนกว่าจะปิดยอด (บันทึกทั้งชุดใหม่ทุกครั้ง) · ชื่อผู้รับไม่เก็บซ้ำ ดึงจากผู้ใช้/ผู้ขายตอนอ่าน (คัดลอกชื่อเฉพาะตอนเบิกและปิดยอด)
+CREATE TABLE IF NOT EXISTS `tb_project_shares` (
+  `shr_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `shr_project_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `shr_user_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `shr_vendor_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `shr_kind` enum('percent','fixed') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `shr_percent` decimal(5,2) DEFAULT NULL,
+  `shr_amount` decimal(15,2) DEFAULT NULL,
+  `shr_note` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'หน้าที่ในงาน เช่น คนทำงาน คนหางาน',
+  `shr_order` smallint unsigned NOT NULL DEFAULT '0',
+  `shr_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `shr_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`shr_id`),
+  KEY `idx_shr_project` (`shr_project_id`),
+  KEY `fk_shr_user` (`shr_user_id`),
+  KEY `fk_shr_vendor` (`shr_vendor_id`),
+  KEY `fk_shr_created_by` (`shr_created_by`),
+  CONSTRAINT `fk_shr_created_by` FOREIGN KEY (`shr_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_shr_project` FOREIGN KEY (`shr_project_id`) REFERENCES `tb_projects` (`project_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_shr_user` FOREIGN KEY (`shr_user_id`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_shr_vendor` FOREIGN KEY (`shr_vendor_id`) REFERENCES `tb_vendors` (`vd_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- เบิกส่วนแบ่งล่วงหน้า (2026-10-24 · P-2) — จ่ายแล้วทันทีที่บันทึก · หักออกตอนปิดยอด · ยกเลิกต้องมีเหตุผล (ไม่ลบ)
+CREATE TABLE IF NOT EXISTS `tb_share_advances` (
+  `sha_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `sha_project_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `sha_user_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sha_vendor_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sha_recipient_name` varchar(200) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ชื่อ ณ วันจ่าย (หลักฐานการจ่าย ไม่เปลี่ยนตามชื่อปัจจุบัน)',
+  `sha_amount` decimal(15,2) NOT NULL,
+  `sha_paid_date` date NOT NULL,
+  `sha_bank_account_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sha_reference` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sha_note` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sha_status` enum('paid','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'paid',
+  `sha_cancel_reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sha_cancelled_at` datetime DEFAULT NULL,
+  `sha_cancelled_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sha_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sha_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`sha_id`),
+  KEY `idx_sha_project` (`sha_project_id`),
+  KEY `fk_sha_user` (`sha_user_id`),
+  KEY `fk_sha_vendor` (`sha_vendor_id`),
+  KEY `fk_sha_bank_account` (`sha_bank_account_id`),
+  KEY `fk_sha_cancelled_by` (`sha_cancelled_by`),
+  KEY `fk_sha_created_by` (`sha_created_by`),
+  CONSTRAINT `fk_sha_bank_account` FOREIGN KEY (`sha_bank_account_id`) REFERENCES `tb_bank_accounts` (`ba_id`),
+  CONSTRAINT `fk_sha_cancelled_by` FOREIGN KEY (`sha_cancelled_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_sha_created_by` FOREIGN KEY (`sha_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_sha_project` FOREIGN KEY (`sha_project_id`) REFERENCES `tb_projects` (`project_id`),
+  CONSTRAINT `fk_sha_user` FOREIGN KEY (`sha_user_id`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_sha_vendor` FOREIGN KEY (`sha_vendor_id`) REFERENCES `tb_vendors` (`vd_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ปิดยอดส่วนแบ่ง (2026-10-24 · P-2) — ตัวเลข ณ วันปิดยอด (ล็อก ไม่คิดใหม่) · โปรเจกต์หนึ่งมีที่ยังไม่ยกเลิกได้ครั้งเดียว (ตรวจใน backend)
+-- กำไรที่แบ่งได้ = รายได้ที่เงินเข้าจริง (ก่อน VAT) − ค่าธรรมเนียมแพลตฟอร์ม − ค่าใช้จ่ายของโปรเจกต์
+-- กำไรหลังหักส่วนตายตัว = กำไรที่แบ่งได้ − ส่วนแบ่งตายตัวทั้งหมด · เข้าเงินทุน = กำไรที่แบ่งได้ − ส่วนแบ่งทุกคน
+CREATE TABLE IF NOT EXISTS `tb_share_settlements` (
+  `sst_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `sst_project_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `sst_status` enum('settled','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'settled',
+  `sst_settled_date` date NOT NULL,
+  `sst_revenue` decimal(15,2) NOT NULL COMMENT 'รายได้ที่เงินเข้าจริง ก่อน VAT (ลูกค้าตรง + ราคางวด Fastwork)',
+  `sst_platform_fee` decimal(15,2) NOT NULL,
+  `sst_expense_cost` decimal(15,2) NOT NULL,
+  `sst_distributable` decimal(15,2) NOT NULL,
+  `sst_fixed_total` decimal(15,2) NOT NULL,
+  `sst_after_fixed` decimal(15,2) NOT NULL,
+  `sst_company_amount` decimal(15,2) NOT NULL COMMENT 'เก็บเข้าเงินทุน (ติดลบ = โปรเจกต์ขาดทุน)',
+  `sst_note` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sst_cancel_reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sst_cancelled_at` datetime DEFAULT NULL,
+  `sst_cancelled_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sst_version` int unsigned NOT NULL DEFAULT '0',
+  `sst_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sst_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`sst_id`),
+  KEY `idx_sst_project` (`sst_project_id`),
+  KEY `fk_sst_cancelled_by` (`sst_cancelled_by`),
+  KEY `fk_sst_created_by` (`sst_created_by`),
+  CONSTRAINT `fk_sst_cancelled_by` FOREIGN KEY (`sst_cancelled_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_sst_created_by` FOREIGN KEY (`sst_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_sst_project` FOREIGN KEY (`sst_project_id`) REFERENCES `tb_projects` (`project_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ส่วนแบ่งรายคนของการปิดยอด (2026-10-24 · P-2) — ยอดที่ได้ − เบิกล่วงหน้า = ต้องจ่าย (ติดลบ = ต้องคืน)
+-- ยอดโอน = ต้องจ่าย − หัก ณ ที่จ่าย (รอนักบัญชียืนยัน Z1) · ต้องจ่าย 0 = จ่ายครบอัตโนมัติ
+CREATE TABLE IF NOT EXISTS `tb_share_settlement_lines` (
+  `ssl_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `ssl_settlement_id` int unsigned NOT NULL,
+  `ssl_user_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ssl_vendor_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ssl_recipient_name` varchar(200) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ชื่อ ณ วันปิดยอด (ตัวเลขที่ล็อกแล้ว ไม่เปลี่ยนตามชื่อปัจจุบัน)',
+  `ssl_kind` enum('percent','fixed') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ssl_percent` decimal(5,2) DEFAULT NULL,
+  `ssl_amount` decimal(15,2) NOT NULL COMMENT 'ส่วนแบ่งที่ได้',
+  `ssl_advanced` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'เบิกล่วงหน้าไปแล้ว',
+  `ssl_due` decimal(15,2) NOT NULL COMMENT 'ต้องจ่าย = ส่วนแบ่ง − เบิกล่วงหน้า (ติดลบ = ต้องคืน)',
+  `ssl_status` enum('unpaid','paid') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'unpaid',
+  `ssl_wht` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `ssl_transfer_amount` decimal(15,2) DEFAULT NULL,
+  `ssl_paid_date` date DEFAULT NULL,
+  `ssl_bank_account_id` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ssl_reference` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ssl_paid_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ssl_paid_at` datetime DEFAULT NULL,
+  `ssl_version` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ssl_id`),
+  KEY `idx_ssl_settlement` (`ssl_settlement_id`),
+  KEY `fk_ssl_user` (`ssl_user_id`),
+  KEY `fk_ssl_vendor` (`ssl_vendor_id`),
+  KEY `fk_ssl_bank_account` (`ssl_bank_account_id`),
+  KEY `fk_ssl_paid_by` (`ssl_paid_by`),
+  CONSTRAINT `fk_ssl_bank_account` FOREIGN KEY (`ssl_bank_account_id`) REFERENCES `tb_bank_accounts` (`ba_id`),
+  CONSTRAINT `fk_ssl_paid_by` FOREIGN KEY (`ssl_paid_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_ssl_settlement` FOREIGN KEY (`ssl_settlement_id`) REFERENCES `tb_share_settlements` (`sst_id`),
+  CONSTRAINT `fk_ssl_user` FOREIGN KEY (`ssl_user_id`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_ssl_vendor` FOREIGN KEY (`ssl_vendor_id`) REFERENCES `tb_vendors` (`vd_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 2026-10-25 P-3 สมุดเงินทุน (ฉบับจริงอยู่ใน deploy_schema.sql)
+
+-- สมุดเงินทุน (2026-10-25 · P-3) — เฉพาะรายการที่บันทึกเอง (ฝากเพิ่ม/ถอนออก)
+-- ยอดเข้าทุนจากโปรเจกต์ไม่เก็บซ้ำที่นี่: อ่านจาก tb_share_settlements.sst_company_amount ของการปิดยอดที่ยังไม่ยกเลิก
+-- ยกเลิกต้องมีเหตุผล (ไม่ลบ)
+CREATE TABLE IF NOT EXISTS `tb_capital_entries` (
+  `cpe_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `cpe_kind` enum('deposit','withdraw') COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'deposit = ฝากเพิ่มเอง · withdraw = ถอนออก (ต้องมีเหตุผล)',
+  `cpe_amount` decimal(15,2) NOT NULL COMMENT 'จำนวนเงิน (บวกเสมอ ทิศทางดูจาก cpe_kind)',
+  `cpe_entry_date` date NOT NULL,
+  `cpe_note` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `cpe_status` enum('active','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `cpe_cancel_reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `cpe_cancelled_at` datetime DEFAULT NULL,
+  `cpe_cancelled_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `cpe_created_by` varchar(18) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `cpe_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`cpe_id`),
+  KEY `idx_cpe_status_date` (`cpe_status`,`cpe_entry_date`),
+  KEY `fk_cpe_cancelled_by` (`cpe_cancelled_by`),
+  KEY `fk_cpe_created_by` (`cpe_created_by`),
+  CONSTRAINT `fk_cpe_cancelled_by` FOREIGN KEY (`cpe_cancelled_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_cpe_created_by` FOREIGN KEY (`cpe_created_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

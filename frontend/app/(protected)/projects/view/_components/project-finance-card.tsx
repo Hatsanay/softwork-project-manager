@@ -63,6 +63,9 @@ type ProjectProfit = {
     credited_before_vat_thb: string;
     revenue_thb: string;
     cost_thb: string;
+    // งาน Fastwork (P-1): ราคางวดที่เงินเข้าแล้ว / ค่าธรรมเนียมรวม VAT · ไม่ใช่ Fastwork = null
+    fastwork_received_thb: string | null;
+    platform_fee_thb: string | null;
     expense_cost_thb: string;
     labor_cost_thb: string;
     labor_hours: string;
@@ -90,6 +93,8 @@ type ProjectFinance = {
     quotations: FinanceQuotation[];
     invoices: FinanceInvoice[];
     progress_ahead_threshold: number;
+    // ช่องทางงานของโปรเจกต์ (P-1)
+    channel: "direct" | "fastwork";
 };
 
 const MILESTONE_STATES: Record<MilestoneState, { label: string; tone: PillTone }> = {
@@ -128,7 +133,9 @@ function ProfitSection({ profit }: { profit: ProjectProfit }) {
         <div className="grid gap-3 rounded-xl border border-gray-200 p-4">
             <h3 className="text-sm font-medium text-gray-900">ต้นทุนและกำไรขั้นต้น (บาท)</h3>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {isZero(profit.credited_before_vat_thb) ? (
+                {profit.fastwork_received_thb !== null ? (
+                    <Stat label="รายได้ Fastwork (ราคางวดที่เงินเข้าแล้ว)" value={profit.revenue_thb} />
+                ) : isZero(profit.credited_before_vat_thb) ? (
                     <Stat label="ออกบิลแล้ว (ก่อน VAT)" value={profit.billed_before_vat_thb} />
                 ) : (
                     // มีใบลดหนี้: รายได้ = ออกบิล − ลดหนี้ (แสดงสูตรให้เห็น ไม่หักเงียบ — กติกาเงิน 3.8)
@@ -153,6 +160,12 @@ function ProfitSection({ profit }: { profit: ProjectProfit }) {
                 </div>
             </div>
             <ul className="grid gap-1 text-sm">
+                {profit.platform_fee_thb !== null && (
+                    <li className="flex justify-between gap-3 text-gray-700">
+                        <span>ค่าธรรมเนียม Fastwork (รวม VAT)</span>
+                        <span className="tabular-nums">{formatAmount(profit.platform_fee_thb)}</span>
+                    </li>
+                )}
                 <li className="flex justify-between gap-3 text-gray-700">
                     <span>ค่าใช้จ่าย/ใบเบิก</span>
                     <span className="tabular-nums">{formatAmount(profit.expense_cost_thb)}</span>
@@ -196,6 +209,9 @@ function ProfitSection({ profit }: { profit: ProjectProfit }) {
                 </details>
             )}
             <FieldHint>
+                {profit.platform_fee_thb !== null
+                    ? "งาน Fastwork: รายได้นับเฉพาะราคางวดที่เงินเข้าแล้ว · ค่าธรรมเนียม Fastwork เป็นต้นทุน · หัก ณ ที่จ่ายไม่ใช่ต้นทุน · "
+                    : ""}
                 ต้นทุน = ค่าใช้จ่ายและใบเบิกที่อนุมัติแล้วซึ่งผูกโปรเจกต์นี้ (รวม VAT ที่ขอคืนไม่ได้) + ค่าแรง ·
                 ค่าแรง = ชั่วโมงที่อนุมัติ × ต้นทุนต่อชั่วโมงของแต่ละคน (เงินเดือน + ประกันสังคมส่วนบริษัท) ไม่แสดงรายคน
                 {profit.labor_is_estimate ? " · เดือนที่ยังไม่ปิดรอบเงินเดือนคิดจากค่าจ้างปัจจุบัน (ประมาณการ)" : " · ค่าจริงจากรอบเงินเดือนที่อนุมัติแล้ว"}
@@ -259,10 +275,13 @@ export default function ProjectFinanceCard({ projectId }: { projectId: string })
                 </StatusBanner>
             )}
             {!finance && !loadError && <p className="text-sm text-gray-500">กำลังโหลด...</p>}
-            {finance && (!isZero(finance.profit.cost_thb) || !isZero(finance.profit.billed_before_vat_thb)) && (
+            {finance &&
+                (!isZero(finance.profit.cost_thb) ||
+                    !isZero(finance.profit.billed_before_vat_thb) ||
+                    !isZero(finance.profit.fastwork_received_thb ?? "0")) && (
                 <ProfitSection profit={finance.profit} />
             )}
-            {finance && finance.quotations.length === 0 && finance.invoices.length === 0 && (
+            {finance && finance.channel !== "fastwork" && finance.quotations.length === 0 && finance.invoices.length === 0 && (
                 <p className="text-sm text-gray-500">
                     โปรเจกต์นี้ยังไม่มีใบเสนอราคาที่ลูกค้าตอบรับหรือใบแจ้งหนี้ —
                     ผูกได้ตอนบันทึกว่าลูกค้าตอบรับใบเสนอราคา

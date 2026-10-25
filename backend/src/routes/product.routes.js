@@ -6,6 +6,7 @@
 const { requireAuth } = require("../middlewares/auth.middleware");
 const { requirePermission } = require("../middlewares/permission.middleware");
 const productController = require("../controllers/product.controller");
+const { uploadImage } = require("../middlewares/upload.middleware");
 
 /**
  * @param {import("express").Router} router
@@ -18,6 +19,9 @@ function registerProductRoutes(router) {
     router.post("/V1/products", requireAuth, canManageProducts, productController.createProduct);
     router.put("/V1/products/:id", requireAuth, canManageProducts, productController.updateProduct);
     router.delete("/V1/products/:id", requireAuth, canManageProducts, productController.deleteProduct);
+    // รูปบนหน้าร้านของลิงก์เลือกบริการ (2026-10-25)
+    router.post("/V1/products/:id/image", requireAuth, canManageProducts, uploadImage.single("image"), productController.uploadProductImage);
+    router.delete("/V1/products/:id/image", requireAuth, canManageProducts, productController.removeProductImage);
 
     router.get("/V1/product-categories", requireAuth, productController.listCategories);
     router.post("/V1/product-categories", requireAuth, canManageProducts, productController.createCategory);
@@ -29,6 +33,8 @@ function registerProductRoutes(router) {
     router.post("/V1/product-packages", requireAuth, canManageProducts, productController.createPackage);
     router.put("/V1/product-packages/:id", requireAuth, canManageProducts, productController.updatePackage);
     router.delete("/V1/product-packages/:id", requireAuth, canManageProducts, productController.deletePackage);
+    router.post("/V1/product-packages/:id/image", requireAuth, canManageProducts, uploadImage.single("image"), productController.uploadPackageImage);
+    router.delete("/V1/product-packages/:id/image", requireAuth, canManageProducts, productController.removePackageImage);
 }
 
 module.exports = { registerProductRoutes };

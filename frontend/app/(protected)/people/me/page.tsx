@@ -2,6 +2,7 @@
 
 // ภาพรวมของฉัน (2026-10-19 · docs/plans/2026-10-19-people-ux-redesign.md ข้อ 2.1)
 // ทุกคนเปิดได้: ลงเวลาสัปดาห์นี้ · วันลาคงเหลือ · สลิปล่าสุด · บัตรพนักงาน — หน้าเดียวเห็นครบ กดต่อไปหน้าเต็มได้
+import HeroEyebrow from "@/components/ui/hero-eyebrow";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CalendarCheck, CalendarClock, ChevronRight, CreditCard, ReceiptText, type LucideIcon } from "lucide-react";
@@ -111,9 +112,9 @@ function MyHero({
     children?: React.ReactNode;
 }) {
     return (
-        <section className="relative overflow-hidden rounded-3xl bg-brand-grid p-5 text-white shadow-brand sm:p-7">
+        <section className="surface-hero p-5 sm:p-7">
             <div className="flex items-center gap-4">
-                <span className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white/15 text-2xl font-medium ring-2 ring-white/40">
+                <span className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-blue-50 text-2xl font-medium text-blue-600 shadow-card ring-4 ring-white">
                     {photoUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={uploadedFileUrl(photoUrl)} alt="" className="h-full w-full object-cover" />
@@ -122,9 +123,9 @@ function MyHero({
                     )}
                 </span>
                 <div className="grid min-w-0 gap-0.5">
-                    <p className="text-sm text-blue-100">ภาพรวมของฉัน</p>
-                    <h1 className="truncate text-2xl font-medium">{name ? `คุณ${name}` : "บุคคล"}</h1>
-                    <p className="truncate text-sm text-blue-100">{subtitle}</p>
+                    <HeroEyebrow>ภาพรวมของฉัน</HeroEyebrow>
+                    <h1 className="truncate text-2xl font-medium text-gray-900 sm:text-3xl">{name ? `คุณ${name}` : "บุคคล"}</h1>
+                    <p className="truncate text-sm text-gray-500">{subtitle}</p>
                 </div>
             </div>
             {children}
@@ -135,9 +136,9 @@ function MyHero({
 function HeroFact({ label, value, isCode = false }: { label: string; value: string; isCode?: boolean }) {
     return (
         // รหัส 18 ตัวกินเต็มแถวบนมือถือ ไม่ถูกตัด
-        <div className={`grid min-w-0 gap-0.5 rounded-2xl bg-white/12 px-3.5 py-2.5 ring-1 ring-white/20 backdrop-blur ${isCode ? "col-span-2 sm:col-span-1" : ""}`}>
-            <span className="text-xs text-blue-100">{label}</span>
-            <span className={`truncate font-medium tabular-nums ${isCode ? "text-sm tracking-wide" : "text-base"}`}>{value}</span>
+        <div className={`hero-tile grid min-w-0 gap-0.5 px-3.5 py-2.5 ${isCode ? "col-span-2 sm:col-span-1" : ""}`}>
+            <span className="text-xs text-gray-500">{label}</span>
+            <span className={`truncate font-medium text-gray-900 tabular-nums ${isCode ? "text-sm tracking-wide" : "text-base"}`}>{value}</span>
         </div>
     );
 }

@@ -10,12 +10,15 @@
 // - ค่าแรง (เฟส 4 ขั้น 4-2 — H2-ก): ชั่วโมงที่อนุมัติ × ต้นทุนต่อชั่วโมงของพนักงาน (services/labor-cost.service.js) ยอดรวมเท่านั้น (H3)
 //   ตอนนี้เป็นประมาณการจากค่าจ้างปัจจุบัน — ขั้น 4-4 ใช้ตัวเลขจริงของรอบเงินเดือนที่อนุมัติแล้ว
 //   กำไรขั้นต้น = ยอดออกบิลก่อน VAT เป็นบาท − ค่าใช้จ่าย − ค่าแรง (ห้ามบวกต่างสกุลตรงๆ R-P9)
+// - งาน Fastwork (2026-10-24 · P-1): รายได้ = ราคางวดของเงินที่เข้าแล้ว (ฐานเงินสด) · ค่าธรรมเนียม + VAT ค่าธรรมเนียม = ต้นทุนบรรทัดแยก
+//   หัก ณ ที่จ่ายไม่ใช่ต้นทุน (เป็นภาษีที่ถูกหักไว้ล่วงหน้า) · งานลูกค้าตรงกับ Fastwork อยู่คนละโปรเจกต์ จึงไม่นับซ้ำ
 const { AppError } = require("../utils/app-error");
 const { todayBangkok } = require("../utils/bangkok-time");
 const { convertToBaht, divideRoundHalfUp, parseHundredths } = require("../shared/money.mjs");
 const { toDecimalText } = require("../shared/quotation-totals.mjs");
 const { estimateProjectLabor } = require("./labor-cost.service");
 const invoiceService = require("./invoice.service");
+const fastworkService = require("./fastwork.service");
 
 // งานนำหน้าการออกบิลเกินกี่จุด (%) ถึงขึ้นข้อความเตือน
 const PROGRESS_AHEAD_THRESHOLD = 10;
@@ -295,17 +298,23 @@ async function getProjectFinance(conn, projectId) {
 
     const cost = await findProjectCost(conn, projectId);
     const labor = await estimateProjectLabor(conn, projectId);
-    const totalCostThb = cost.totalThb + labor.costThb;
-    const revenueThb = billedBeforeVatThb - creditedBeforeVatThb;
+    const fastwork = await fastworkService.projectFastwork(conn, projectId);
+    const fastworkReceivedThb = fastwork?.received_gross_hundredths ?? 0n;
+    const platformFeeThb = fastwork?.platform_cost_hundredths ?? 0n;
+    const totalCostThb = cost.totalThb + labor.costThb + platformFeeThb;
+    const revenueThb = billedBeforeVatThb - creditedBeforeVatThb + fastworkReceivedThb;
     const grossProfitThb = revenueThb - totalCostThb;
 
     return {
-        // ต้นทุน + กำไรขั้นต้น (ขั้น 2-5 · ค่าแรงขั้น 4-2) — เป็นบาทเสมอ · cost_thb = ค่าใช้จ่าย + ค่าแรง
+        // ต้นทุน + กำไรขั้นต้น (ขั้น 2-5 · ค่าแรงขั้น 4-2 · Fastwork P-1) — เป็นบาทเสมอ · cost_thb = ค่าใช้จ่าย + ค่าแรง + ค่าธรรมเนียมแพลตฟอร์ม
+        // งาน Fastwork: fastwork_received_thb / platform_fee_thb มีค่า (ไม่ใช่ Fastwork = null)
         profit: {
             billed_before_vat_thb: toDecimalText(billedBeforeVatThb),
             credited_before_vat_thb: toDecimalText(creditedBeforeVatThb),
+            fastwork_received_thb: fastwork ? toDecimalText(fastworkReceivedThb) : null,
             revenue_thb: toDecimalText(revenueThb),
             cost_thb: toDecimalText(totalCostThb),
+            platform_fee_thb: fastwork ? toDecimalText(platformFeeThb) : null,
             expense_cost_thb: toDecimalText(cost.totalThb),
             labor_cost_thb: toDecimalText(labor.costThb),
             labor_hours: toDecimalText(labor.approvedHours),
@@ -333,6 +342,7 @@ async function getProjectFinance(conn, projectId) {
         },
         quotations: quotationRows,
         invoices: invoiceRows,
+        channel: fastwork ? "fastwork" : "direct",
         today,
         progress_ahead_threshold: PROGRESS_AHEAD_THRESHOLD,
     };
@@ -410,4 +420,4 @@ async function findProjectCost(conn, projectId) {
     };
 }
 
-module.exports = { getProjectFinance };
+module.exports = { getProjectFinance, findProjectCost };
