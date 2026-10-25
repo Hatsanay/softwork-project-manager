@@ -98,14 +98,28 @@ function OrderLinksContent() {
 
     const linkUrl = (link: OrderLink) => `${window.location.origin}/order/${link.ol_token}`;
 
-    // ข้อความวางในแชต Fastwork: บอกว่าลิงก์ใช้เลือกขอบเขตงาน · ราคาและการจ่ายเงินอยู่บน Fastwork · ที่อยู่สั้นสำรองเมื่อแชตซ่อนลิงก์
-    function fastworkMessage(link: OrderLink) {
+    // ข้อความพร้อมวางในแชต (ทุกชนิดลิงก์ · 26 ต.ค. 2026) · ที่อยู่สั้นสำรองเมื่อแชตซ่อนลิงก์
+    // Fastwork: ลิงก์ใช้เลือกขอบเขตงาน ราคาและการจ่ายเงินอยู่บน Fastwork · ลิงก์อื่น: เห็นยอดประมาณการ ทีมงานติดต่อกลับยืนยันราคา
+    function linkMessage(link: OrderLink) {
+        const shortAddress = `(ถ้ากดลิงก์ไม่ได้ พิมพ์ ${window.location.host}/o/${link.ol_short_code} ในเบราว์เซอร์)`;
+        if (link.ol_kind === "fastwork") {
+            return [
+                "เลือกบริการที่ต้องการ ตอบคำถามเกี่ยวกับงาน และแนบไฟล์ตัวอย่างได้ที่ลิงก์นี้ครับ",
+                linkUrl(link),
+                shortAddress,
+                "ลิงก์นี้ใช้เก็บรายละเอียดงานเท่านั้น ราคาที่ตกลงและการชำระเงินทำผ่าน Fastwork ตามปกติ",
+            ].join("\n");
+        }
         return [
-            "เลือกบริการที่ต้องการ ตอบคำถามเกี่ยวกับงาน และแนบไฟล์ตัวอย่างได้ที่ลิงก์นี้ครับ",
+            "เลือกบริการที่ต้องการ เห็นยอดประมาณการทันที แล้วบอกรายละเอียดงานได้ที่ลิงก์นี้ครับ",
             linkUrl(link),
-            `(ถ้ากดลิงก์ไม่ได้ พิมพ์ ${window.location.host}/o/${link.ol_short_code} ในเบราว์เซอร์)`,
-            "ลิงก์นี้ใช้เก็บรายละเอียดงานเท่านั้น ราคาที่ตกลงและการชำระเงินทำผ่าน Fastwork ตามปกติ",
+            shortAddress,
+            "ส่งแล้วทีมงานจะติดต่อกลับเพื่อยืนยันรายละเอียดและราคาครับ",
         ].join("\n");
+    }
+
+    async function copyMessage(link: OrderLink, doneMessage = "คัดลอกข้อความแล้ว วางในแชตได้เลย") {
+        await copyText(linkMessage(link), doneMessage);
     }
 
     async function copyLink(link: OrderLink) {
@@ -170,8 +184,9 @@ function OrderLinksContent() {
             <HowItWorks label="ลิงก์ทำงานอย่างไร">
                 <p>ลูกค้าเปิดลิงก์ได้โดยไม่ต้องสมัคร · เลือกสินค้าที่ติ๊ก &quot;แสดงบนหน้าร้าน&quot; ในหน้าสินค้า/บริการ · เห็นยอดประมาณการ · กรอกข้อมูลติดต่อแล้วส่ง</p>
                 <p>คำขอเข้าหน้า &quot;คำขอบริการ&quot; และส่งอีเมลถึงผู้รับของลิงก์ · ราคาที่ลูกค้าเห็นตอนส่งถูกเก็บไว้ แก้ราคาสินค้าทีหลังไม่กระทบ</p>
+                <p>&quot;คัดลอกข้อความ&quot; = ลิงก์พร้อมคำอธิบายสั้นๆ วางในแชตได้เลย · &quot;คัดลอกลิงก์&quot; = ลิงก์อย่างเดียว ใช้ติดหน้าเว็บหรือใส่ในข้อความที่เขียนเอง</p>
                 <p>QR code ใช้เมื่อแชตซ่อนลิงก์ ใต้รูปมีที่อยู่แบบสั้น (/o/รหัส) ให้ลูกค้าพิมพ์เองได้</p>
-                <p>ลิงก์ Fastwork: ไม่ถามข้อมูลติดต่อ ไม่มีช่องทางจ่ายเงิน · กด &quot;คัดลอกข้อความ&quot; แล้ววางในแชต Fastwork · ลิงก์ของงานเดิม (สร้างจากการ์ดงาน Fastwork) คำตอบเข้าการ์ดความต้องการของงานทันที</p>
+                <p>ลิงก์ Fastwork: ไม่ถามข้อมูลติดต่อ ไม่มีช่องทางจ่ายเงิน · ข้อความที่คัดลอกบอกลูกค้าว่าราคาและการจ่ายเงินทำผ่าน Fastwork · ลิงก์ของงานเดิม (สร้างจากการ์ดงาน Fastwork) คำตอบเข้าการ์ดความต้องการของงานทันที</p>
             </HowItWorks>
 
             <section className={`grid gap-2 p-4 sm:grid-cols-[1fr_minmax(0,18rem)] sm:items-center ${CARD_CLASS}`} aria-label="ผู้รับคำขอเริ่มต้น">
@@ -233,17 +248,14 @@ function OrderLinksContent() {
                                     )}
                                 </div>
                                 <div className="flex flex-wrap gap-2 lg:justify-end">
-                                    {link.ol_kind === "fastwork" ? (
-                                        <button type="button" className={buttonClass("secondary", "sm")} onClick={() => copyText(fastworkMessage(link), "คัดลอกข้อความแล้ว วางในแชต Fastwork ได้เลย")}>
-                                            <MessageSquareText size={15} />
-                                            คัดลอกข้อความ
-                                        </button>
-                                    ) : (
-                                        <button type="button" className={buttonClass("secondary", "sm")} onClick={() => copyLink(link)}>
-                                            <Copy size={15} />
-                                            คัดลอกลิงก์
-                                        </button>
-                                    )}
+                                    <button type="button" className={buttonClass("secondary", "sm")} onClick={() => copyMessage(link)}>
+                                        <MessageSquareText size={15} />
+                                        คัดลอกข้อความ
+                                    </button>
+                                    <button type="button" className={buttonClass("secondary", "sm")} onClick={() => copyLink(link)}>
+                                        <Copy size={15} />
+                                        คัดลอกลิงก์
+                                    </button>
                                     <button type="button" className={buttonClass("secondary", "sm")} onClick={() => setQrLink(link)}>
                                         <QrCode size={15} />
                                         QR code
@@ -268,7 +280,7 @@ function OrderLinksContent() {
                     onSaved={async (saved) => {
                         await load();
                         if (sheet.link) return;
-                        if (saved.ol_kind === "fastwork") await copyText(fastworkMessage(saved), "สร้างลิงก์และคัดลอกข้อความแล้ว วางในแชต Fastwork ได้เลย");
+                        if (saved.ol_kind === "fastwork") await copyMessage(saved, "สร้างลิงก์และคัดลอกข้อความแล้ว วางในแชต Fastwork ได้เลย");
                         else await copyLink(saved);
                     }}
                 />
