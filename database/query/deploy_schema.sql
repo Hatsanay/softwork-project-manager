@@ -2697,13 +2697,17 @@ CREATE TABLE IF NOT EXISTS `tb_service_request_items` (
   CONSTRAINT `fk_svi_request` FOREIGN KEY (`svi_request_id`) REFERENCES `tb_service_requests` (`svr_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- คำถามความต้องการของลิงก์เลือกบริการ (2026-10-25 · S-2) — กลุ่มผูกหมวดสินค้า · กลุ่มทั่วไป (is_general) ถามทุกคำขอ
--- ลูกค้าเลือกสินค้าหมวดไหน ขึ้นกลุ่มที่ผูกหมวดนั้น (กลุ่มเดียวกันขึ้นครั้งเดียว)
+-- คำถามความต้องการของลิงก์เลือกบริการ (2026-10-25 · S-2 · เงื่อนไขการถาม 2026-10-26 Q-1 docs/plans/2026-10-26-customer-questions.md)
+-- rqg_trigger: always = ถามทุกคำขอ · selection = เมื่อลูกค้าเลือกหมวด/ชุด/สินค้าที่ผูก · link_only = เฉพาะลิงก์ที่เลือกถามเพิ่ม
+-- rqg_audience: ชนิดลิงก์ที่ถาม (direct = เฉพาะลูกค้า + สาธารณะ) · rqg_is_general เลิกใช้ 2026-10-26 (ใช้ rqg_trigger) เก็บไว้ให้ backend รุ่นก่อนอ่านได้ระหว่าง deploy · ลบในรอบถัดไป
 CREATE TABLE IF NOT EXISTS `tb_requirement_groups` (
   `rqg_id` int unsigned NOT NULL AUTO_INCREMENT,
   `rqg_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `rqg_description` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `rqg_is_general` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1 = ถามทุกคำขอ ไม่ขึ้นกับหมวด',
+  `rqg_description` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'โน้ตภายใน ลูกค้าไม่เห็น',
+  `rqg_customer_intro` varchar(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'คำอธิบายที่ลูกค้าเห็นใต้ชื่อกลุ่ม (ทำไมถาม)',
+  `rqg_is_general` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'เลิกใช้ 2026-10-26 ใช้ rqg_trigger',
+  `rqg_trigger` enum('always','selection','link_only') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'selection' COMMENT 'ถามเมื่อไหร่: ทุกคำขอ / ตามที่ลูกค้าเลือก / เฉพาะลิงก์ที่ถามเพิ่ม',
+  `rqg_audience` enum('all','direct','fastwork') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'all' COMMENT 'ชนิดลิงก์ที่ถาม · direct = เฉพาะลูกค้า + สาธารณะ',
   `rqg_sort_order` smallint unsigned NOT NULL DEFAULT '0',
   `rqg_status` enum('active','inactive') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
   `rqg_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
@@ -2758,22 +2762,58 @@ CREATE TABLE IF NOT EXISTS `tb_requirement_group_packages` (
   CONSTRAINT `fk_rgp_package` FOREIGN KEY (`rgp_package_id`) REFERENCES `tb_product_packages` (`pkg_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 2026-10-26 Q-1 กลุ่มคำถามที่ถามเมื่อเลือกสินค้ารายตัว (งานเพิ่ม เช่น เว็บ 2 ภาษา → ใครแปล)
+CREATE TABLE IF NOT EXISTS `tb_requirement_group_products` (
+  `rgr_group_id` int unsigned NOT NULL,
+  `rgr_product_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  PRIMARY KEY (`rgr_group_id`,`rgr_product_id`),
+  KEY `fk_rgr_product` (`rgr_product_id`),
+  CONSTRAINT `fk_rgr_group` FOREIGN KEY (`rgr_group_id`) REFERENCES `tb_requirement_groups` (`rqg_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_rgr_product` FOREIGN KEY (`rgr_product_id`) REFERENCES `tb_products` (`product_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 2026-10-26 Q-3 กลุ่มคำถามรายลิงก์: include = ถามเพิ่ม (กลุ่มไหนก็ได้) · exclude = ไม่ถามในลิงก์นี้ (ชนะทุกเงื่อนไข) · ไม่มีแถว = ตามกติกาปกติ
+CREATE TABLE IF NOT EXISTS `tb_order_link_requirement_groups` (
+  `olq_link_id` int unsigned NOT NULL,
+  `olq_group_id` int unsigned NOT NULL,
+  `olq_mode` enum('include','exclude') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  PRIMARY KEY (`olq_link_id`,`olq_group_id`),
+  KEY `fk_olq_group` (`olq_group_id`),
+  CONSTRAINT `fk_olq_group` FOREIGN KEY (`olq_group_id`) REFERENCES `tb_requirement_groups` (`rqg_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_olq_link` FOREIGN KEY (`olq_link_id`) REFERENCES `tb_order_links` (`ol_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ชนิดคำตอบ: short_text long_text single multi yes_no number date url file · rqq_options = ตัวเลือก (JSON array ของข้อความ) เฉพาะ single/multi
+-- ข้อลูก (2026-10-26): rqq_parent_id = ข้อแม่ในกลุ่มเดียวกันที่อยู่ด้านบน · ถามเมื่อคำตอบข้อแม่อยู่ใน rqq_parent_values · ลบข้อแม่ที่มีข้อลูกไม่ได้ (RESTRICT)
 CREATE TABLE IF NOT EXISTS `tb_requirement_questions` (
   `rqq_id` int unsigned NOT NULL AUTO_INCREMENT,
   `rqq_group_id` int unsigned NOT NULL,
   `rqq_text` varchar(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `rqq_help` varchar(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ข้อความช่วยใต้คำถาม (ตัวอย่างคำตอบ)',
+  `rqq_placeholder` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ตัวอย่างคำตอบในช่อง',
   `rqq_type` enum('short_text','long_text','single','multi','yes_no','number','date','url','file') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `rqq_options` json DEFAULT NULL,
+  `rqq_allow_other` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'single/multi: มีตัวเลือก อื่นๆ (ระบุ)',
+  `rqq_unit` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'number: หน่วย เช่น หน้าจอ',
+  `rqq_min` decimal(12,2) DEFAULT NULL COMMENT 'number: ค่าต่ำสุด',
+  `rqq_max` decimal(12,2) DEFAULT NULL COMMENT 'number: ค่าสูงสุด',
+  `rqq_future_only` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'date: ต้องเป็นวันหลังวันนี้',
+  `rqq_file_kind` enum('document','design') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'document' COMMENT 'file: document = รูป/PDF 10 MB · design = เพิ่ม AI PSD SVG ZIP 20 MB ดาวน์โหลดเท่านั้น',
   `rqq_is_required` tinyint(1) NOT NULL DEFAULT '0',
+  `rqq_parent_id` int unsigned DEFAULT NULL COMMENT 'ถามเมื่อข้อนี้ (ข้อแม่) ตอบตรง rqq_parent_values',
+  `rqq_parent_values` json DEFAULT NULL COMMENT 'คำตอบของข้อแม่ที่ทำให้ถามข้อนี้ (yes_no = yes/no)',
+  `rqq_audience` enum('group','direct','fastwork') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'group' COMMENT 'ชนิดลิงก์ที่ถาม · group = ตามกลุ่ม',
+  `rqq_skip_when_preset` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'ไม่ถามเมื่อทีมงานเลือกรายการให้แล้ว (ราคาตกลงแล้ว)',
+  `rqq_prefill` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'ลิงก์เฉพาะลูกค้า: เติมคำตอบล่าสุดของลูกค้าคนนี้',
   `rqq_sort_order` smallint unsigned NOT NULL DEFAULT '0',
   `rqq_status` enum('active','inactive') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
   `rqq_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `rqq_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`rqq_id`),
   KEY `idx_rqq_group` (`rqq_group_id`,`rqq_sort_order`),
-  CONSTRAINT `fk_rqq_group` FOREIGN KEY (`rqq_group_id`) REFERENCES `tb_requirement_groups` (`rqg_id`) ON DELETE CASCADE
+  KEY `fk_rqq_parent` (`rqq_parent_id`),
+  CONSTRAINT `fk_rqq_group` FOREIGN KEY (`rqq_group_id`) REFERENCES `tb_requirement_groups` (`rqg_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_rqq_parent` FOREIGN KEY (`rqq_parent_id`) REFERENCES `tb_requirement_questions` (`rqq_id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- คำตอบในคำขอ (2026-10-25 · S-2) — ชื่อกลุ่ม/ข้อความคำถาม/ชนิด ณ วันส่ง (คัดลอกเพราะคำถามแก้หรือลบทีหลังได้ คำตอบต้องอ่านคู่กับคำถามเดิม)
@@ -2787,6 +2827,7 @@ CREATE TABLE IF NOT EXISTS `tb_service_request_answers` (
   `sva_question_text` varchar(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `sva_type` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `sva_value` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `sva_other_text` varchar(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ข้อความที่ลูกค้าพิมพ์ใน อื่นๆ (ระบุ)',
   PRIMARY KEY (`sva_id`),
   KEY `idx_sva_request` (`sva_request_id`,`sva_order`),
   KEY `fk_sva_question` (`sva_question_id`),
@@ -3112,6 +3153,31 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA 
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_order_links' AND COLUMN_NAME = 'ol_allow_more') = 0, 'ALTER TABLE `tb_order_links` ADD COLUMN `ol_allow_more` tinyint(1) NOT NULL DEFAULT ''1'' COMMENT ''ลูกค้าเลือกเพิ่มเองได้ (0 = มีแต่รายการที่ทีมเลือกให้)'' AFTER `ol_status`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_service_request_items' AND COLUMN_NAME = 'svi_is_preset') = 0, 'ALTER TABLE `tb_service_request_items` ADD COLUMN `svi_is_preset` tinyint(1) NOT NULL DEFAULT ''0'' COMMENT ''ทีมเลือกให้ในลิงก์ (สำเนาตอนส่ง เพราะรายการของลิงก์แก้ได้ภายหลัง)'' AFTER `svi_added_by_staff`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_service_request_items' AND COLUMN_NAME = 'svi_percent') = 0, 'ALTER TABLE `tb_service_request_items` ADD COLUMN `svi_percent` decimal(5,2) DEFAULT NULL COMMENT ''งานเพิ่มแบบ %: อัตรา ณ วันส่ง · ยอดคิดจากยอดรายการอื่น (หลังปรับ) ทุกครั้ง ไม่เก็บยอดซ้ำ'' AFTER `svi_is_preset`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- 2026-10-26 Q-1 คำถามลูกค้า: เงื่อนไขการถาม · ข้อลูก · อื่นๆ (ระบุ) · ไฟล์งานออกแบบ (docs/plans/2026-10-26-customer-questions.md ข้อ 6)
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_requirement_groups' AND COLUMN_NAME = 'rqg_customer_intro') = 0, 'ALTER TABLE `tb_requirement_groups` ADD COLUMN `rqg_customer_intro` varchar(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''คำอธิบายที่ลูกค้าเห็นใต้ชื่อกลุ่ม (ทำไมถาม)'' AFTER `rqg_description`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @trigger_added = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_requirement_groups' AND COLUMN_NAME = 'rqg_trigger') = 0;
+SET @q = IF(@trigger_added, 'ALTER TABLE `tb_requirement_groups` ADD COLUMN `rqg_trigger` enum(''always'',''selection'',''link_only'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''selection'' COMMENT ''ถามเมื่อไหร่: ทุกคำขอ / ตามที่ลูกค้าเลือก / เฉพาะลิงก์ที่ถามเพิ่ม'' AFTER `rqg_is_general`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- ย้ายค่าเฉพาะรอบที่เพิ่งเพิ่มคอลัมน์: ถามทุกคำขอ → always · ไม่ผูกหมวด/ชุดเลย → link_only (เดิมลูกค้าไม่เคยเห็น ความหมายเท่าเดิม) · ที่เหลือ selection
+UPDATE tb_requirement_groups g SET g.rqg_trigger = CASE
+    WHEN g.rqg_is_general = 1 THEN 'always'
+    WHEN NOT EXISTS (SELECT 1 FROM tb_requirement_group_categories c WHERE c.rgc_group_id = g.rqg_id)
+     AND NOT EXISTS (SELECT 1 FROM tb_requirement_group_packages p WHERE p.rgp_group_id = g.rqg_id) THEN 'link_only'
+    ELSE 'selection' END
+WHERE @trigger_added;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_requirement_groups' AND COLUMN_NAME = 'rqg_audience') = 0, 'ALTER TABLE `tb_requirement_groups` ADD COLUMN `rqg_audience` enum(''all'',''direct'',''fastwork'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''all'' COMMENT ''ชนิดลิงก์ที่ถาม · direct = เฉพาะลูกค้า + สาธารณะ'' AFTER `rqg_trigger`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_requirement_questions' AND COLUMN_NAME = 'rqq_placeholder') = 0, 'ALTER TABLE `tb_requirement_questions` ADD COLUMN `rqq_placeholder` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''ตัวอย่างคำตอบในช่อง'' AFTER `rqq_help`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_requirement_questions' AND COLUMN_NAME = 'rqq_allow_other') = 0, 'ALTER TABLE `tb_requirement_questions` ADD COLUMN `rqq_allow_other` tinyint(1) NOT NULL DEFAULT ''0'' COMMENT ''single/multi: มีตัวเลือก อื่นๆ (ระบุ)'' AFTER `rqq_options`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_requirement_questions' AND COLUMN_NAME = 'rqq_unit') = 0, 'ALTER TABLE `tb_requirement_questions` ADD COLUMN `rqq_unit` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''number: หน่วย เช่น หน้าจอ'' AFTER `rqq_allow_other`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_requirement_questions' AND COLUMN_NAME = 'rqq_min') = 0, 'ALTER TABLE `tb_requirement_questions` ADD COLUMN `rqq_min` decimal(12,2) DEFAULT NULL COMMENT ''number: ค่าต่ำสุด'' AFTER `rqq_unit`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_requirement_questions' AND COLUMN_NAME = 'rqq_max') = 0, 'ALTER TABLE `tb_requirement_questions` ADD COLUMN `rqq_max` decimal(12,2) DEFAULT NULL COMMENT ''number: ค่าสูงสุด'' AFTER `rqq_min`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_requirement_questions' AND COLUMN_NAME = 'rqq_future_only') = 0, 'ALTER TABLE `tb_requirement_questions` ADD COLUMN `rqq_future_only` tinyint(1) NOT NULL DEFAULT ''0'' COMMENT ''date: ต้องเป็นวันหลังวันนี้'' AFTER `rqq_max`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_requirement_questions' AND COLUMN_NAME = 'rqq_file_kind') = 0, 'ALTER TABLE `tb_requirement_questions` ADD COLUMN `rqq_file_kind` enum(''document'',''design'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''document'' COMMENT ''file: document = รูป/PDF 10 MB · design = เพิ่ม AI PSD SVG ZIP 20 MB ดาวน์โหลดเท่านั้น'' AFTER `rqq_future_only`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_requirement_questions' AND COLUMN_NAME = 'rqq_parent_id') = 0, 'ALTER TABLE `tb_requirement_questions` ADD COLUMN `rqq_parent_id` int unsigned DEFAULT NULL COMMENT ''ถามเมื่อข้อนี้ (ข้อแม่) ตอบตรง rqq_parent_values'' AFTER `rqq_is_required`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_requirement_questions' AND COLUMN_NAME = 'rqq_parent_values') = 0, 'ALTER TABLE `tb_requirement_questions` ADD COLUMN `rqq_parent_values` json DEFAULT NULL COMMENT ''คำตอบของข้อแม่ที่ทำให้ถามข้อนี้ (yes_no = yes/no)'' AFTER `rqq_parent_id`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_requirement_questions' AND COLUMN_NAME = 'rqq_audience') = 0, 'ALTER TABLE `tb_requirement_questions` ADD COLUMN `rqq_audience` enum(''group'',''direct'',''fastwork'') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT ''group'' COMMENT ''ชนิดลิงก์ที่ถาม · group = ตามกลุ่ม'' AFTER `rqq_parent_values`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_requirement_questions' AND COLUMN_NAME = 'rqq_skip_when_preset') = 0, 'ALTER TABLE `tb_requirement_questions` ADD COLUMN `rqq_skip_when_preset` tinyint(1) NOT NULL DEFAULT ''0'' COMMENT ''ไม่ถามเมื่อทีมงานเลือกรายการให้แล้ว (ราคาตกลงแล้ว)'' AFTER `rqq_audience`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_requirement_questions' AND COLUMN_NAME = 'rqq_prefill') = 0, 'ALTER TABLE `tb_requirement_questions` ADD COLUMN `rqq_prefill` tinyint(1) NOT NULL DEFAULT ''0'' COMMENT ''ลิงก์เฉพาะลูกค้า: เติมคำตอบล่าสุดของลูกค้าคนนี้'' AFTER `rqq_skip_when_preset`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_service_request_answers' AND COLUMN_NAME = 'sva_other_text') = 0, 'ALTER TABLE `tb_service_request_answers` ADD COLUMN `sva_other_text` varchar(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''ข้อความที่ลูกค้าพิมพ์ใน อื่นๆ (ระบุ)'' AFTER `sva_value`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
 -- tb_invoices
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_invoices' AND COLUMN_NAME = 'inv_id') = 0, 'ALTER TABLE `tb_invoices` ADD COLUMN `inv_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL FIRST', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
@@ -4570,6 +4636,8 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHE
 SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND INDEX_NAME = 'idx_ec_printed') = 0, 'ALTER TABLE `tb_employee_cards` ADD KEY `idx_ec_printed` (`ec_printed_at`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND INDEX_NAME = 'idx_ec_expires') = 0, 'ALTER TABLE `tb_employee_cards` ADD KEY `idx_ec_expires` (`ec_expires_on`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND INDEX_NAME = 'fk_ec_issued_by') = 0, 'ALTER TABLE `tb_employee_cards` ADD KEY `fk_ec_issued_by` (`ec_issued_by`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- tb_requirement_questions (ข้อลูก 2026-10-26)
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_requirement_questions' AND INDEX_NAME = 'fk_rqq_parent') = 0, 'ALTER TABLE `tb_requirement_questions` ADD KEY `fk_rqq_parent` (`rqq_parent_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
 -- ─── ส่วนที่ 4: เติม foreign key ที่ยังขาด (รวม FK ย้อนกลับ tb_roles -> tb_users ที่สร้างพร้อมตารางไม่ได้) ──
 -- สกุลเงินเริ่มต้น THB + USD (2026-10-13) — ต้องมีก่อนเพิ่ม FK สกุลเงินของลูกค้า (ลูกค้าเดิมทุกรายได้ค่าเริ่มต้น THB)
@@ -4876,6 +4944,8 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CON
 -- tb_employee_cards
 SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND CONSTRAINT_NAME = 'fk_ec_employee' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_employee_cards` ADD CONSTRAINT `fk_ec_employee` FOREIGN KEY (`ec_employee_id`) REFERENCES `tb_employees` (`emp_id`) ON DELETE CASCADE', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_employee_cards' AND CONSTRAINT_NAME = 'fk_ec_issued_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_employee_cards` ADD CONSTRAINT `fk_ec_issued_by` FOREIGN KEY (`ec_issued_by`) REFERENCES `tb_users` (`user_id`) ON DELETE SET NULL', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- tb_requirement_questions: ข้อลูกอ้างข้อแม่ · ลบข้อแม่ที่ยังมีข้อลูกไม่ได้ (backend บอกให้แก้ข้อลูกก่อน)
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_requirement_questions' AND CONSTRAINT_NAME = 'fk_rqq_parent' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_requirement_questions` ADD CONSTRAINT `fk_rqq_parent` FOREIGN KEY (`rqq_parent_id`) REFERENCES `tb_requirement_questions` (`rqq_id`) ON DELETE RESTRICT', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
 -- ─── ส่วนที่ 5: ข้อมูลเริ่มต้น (ใส่เฉพาะตอนตารางยังว่างเท่านั้น) ─────────────────────────────────
 -- ตั้งใจเช็ค "ตารางว่าง" ไม่ใช่ "ไม่มีแถวนี้" — ถ้าแอดมินลบ/เปลี่ยนบัญชีเริ่มต้นไปแล้วบน production
@@ -5069,25 +5139,26 @@ SELECT * FROM (
 WHERE NOT EXISTS (SELECT 1 FROM tb_leave_types);
 
 -- คำถามความต้องการตั้งต้น (2026-10-25) — ใส่เฉพาะตอนยังไม่มีกลุ่มเลย · ผูกกลุ่มกับหมวดสินค้าเองในหน้าตั้งค่า
+-- กลุ่ม 2-5 ยังไม่ผูกอะไร = link_only (ใช้กับลิงก์ที่เลือกถามเพิ่ม หรือแก้เป็น "ถามเมื่อลูกค้าเลือก" ในหน้าตั้งค่า)
 SET @seed_requirements = (SELECT COUNT(*) = 0 FROM tb_requirement_groups);
-INSERT INTO tb_requirement_groups (rqg_id, rqg_name, rqg_description, rqg_is_general, rqg_sort_order)
+INSERT INTO tb_requirement_groups (rqg_id, rqg_name, rqg_description, rqg_is_general, rqg_sort_order, rqg_trigger)
 SELECT * FROM (
-    SELECT 1 AS rqg_id, 'ทั่วไป' AS rqg_name, 'ถามทุกคำขอ' AS rqg_description, 1 AS rqg_is_general, 1 AS rqg_sort_order
-    UNION ALL SELECT 2 AS rqg_id, 'เว็บไซต์' AS rqg_name, 'ผูกกับหมวดงานเว็บไซต์' AS rqg_description, 0 AS rqg_is_general, 2 AS rqg_sort_order
-    UNION ALL SELECT 3 AS rqg_id, 'แอปมือถือ' AS rqg_name, 'ผูกกับหมวดงานแอปมือถือ' AS rqg_description, 0 AS rqg_is_general, 3 AS rqg_sort_order
-    UNION ALL SELECT 4 AS rqg_id, 'ออกแบบ UX/UI' AS rqg_name, 'ผูกกับหมวดงานออกแบบ' AS rqg_description, 0 AS rqg_is_general, 4 AS rqg_sort_order
-    UNION ALL SELECT 5 AS rqg_id, 'ระบบงาน' AS rqg_name, 'ผูกกับหมวดระบบภายในองค์กร' AS rqg_description, 0 AS rqg_is_general, 5 AS rqg_sort_order
+    SELECT 1 AS rqg_id, 'ทั่วไป' AS rqg_name, 'ถามทุกคำขอ' AS rqg_description, 1 AS rqg_is_general, 1 AS rqg_sort_order, 'always' AS rqg_trigger
+    UNION ALL SELECT 2 AS rqg_id, 'เว็บไซต์' AS rqg_name, 'ผูกกับหมวดงานเว็บไซต์' AS rqg_description, 0 AS rqg_is_general, 2 AS rqg_sort_order, 'link_only' AS rqg_trigger
+    UNION ALL SELECT 3 AS rqg_id, 'แอปมือถือ' AS rqg_name, 'ผูกกับหมวดงานแอปมือถือ' AS rqg_description, 0 AS rqg_is_general, 3 AS rqg_sort_order, 'link_only' AS rqg_trigger
+    UNION ALL SELECT 4 AS rqg_id, 'ออกแบบ UX/UI' AS rqg_name, 'ผูกกับหมวดงานออกแบบ' AS rqg_description, 0 AS rqg_is_general, 4 AS rqg_sort_order, 'link_only' AS rqg_trigger
+    UNION ALL SELECT 5 AS rqg_id, 'ระบบงาน' AS rqg_name, 'ผูกกับหมวดระบบภายในองค์กร' AS rqg_description, 0 AS rqg_is_general, 5 AS rqg_sort_order, 'link_only' AS rqg_trigger
 ) AS seed WHERE @seed_requirements = 1;
 INSERT INTO tb_requirement_questions (rqq_group_id, rqq_text, rqq_help, rqq_type, rqq_options, rqq_is_required, rqq_sort_order)
 SELECT * FROM (
     SELECT 1 AS rqq_group_id, 'ธุรกิจ/องค์กรของคุณทำอะไร ลูกค้าหลักคือใคร' AS rqq_text, 'เช่น ร้านอาหารไทย ลูกค้าเป็นนักท่องเที่ยว' AS rqq_help, 'long_text' AS rqq_type, NULL AS rqq_options, 1 AS rqq_is_required, 1 AS rqq_sort_order
-    UNION ALL SELECT 1 AS rqq_group_id, 'เป้าหมายของงานนี้' AS rqq_text, NULL AS rqq_help, 'multi' AS rqq_type, '["เพิ่มยอดขาย","ลดงานเอกสาร","สร้างภาพลักษณ์","ให้ลูกค้าจอง/สั่งเอง","อื่นๆ"]' AS rqq_options, 0 AS rqq_is_required, 2 AS rqq_sort_order
+    UNION ALL SELECT 1 AS rqq_group_id, 'เป้าหมายของงานนี้' AS rqq_text, NULL AS rqq_help, 'multi' AS rqq_type, '["เพิ่มยอดขาย","ลดงานเอกสาร","สร้างภาพลักษณ์","ให้ลูกค้าจอง/สั่งเอง"]' AS rqq_options, 0 AS rqq_is_required, 2 AS rqq_sort_order
     UNION ALL SELECT 1 AS rqq_group_id, 'อยากให้เสร็จภายใน' AS rqq_text, NULL AS rqq_help, 'date' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 3 AS rqq_sort_order
     UNION ALL SELECT 1 AS rqq_group_id, 'งบประมาณที่ตั้งไว้' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["ต่ำกว่า 20,000","20,000-50,000","50,000-100,000","มากกว่า 100,000","ยังไม่แน่ใจ"]' AS rqq_options, 0 AS rqq_is_required, 4 AS rqq_sort_order
     UNION ALL SELECT 1 AS rqq_group_id, 'ใครเป็นคนตัดสินใจ/ตรวจรับงาน' AS rqq_text, NULL AS rqq_help, 'short_text' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 5 AS rqq_sort_order
     UNION ALL SELECT 1 AS rqq_group_id, 'ช่องทางที่สะดวกให้ติดต่อ' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["โทร","LINE","อีเมล"]' AS rqq_options, 0 AS rqq_is_required, 6 AS rqq_sort_order
     UNION ALL SELECT 2 AS rqq_group_id, 'มีเว็บไซต์เดิมไหม' AS rqq_text, NULL AS rqq_help, 'yes_no' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 1 AS rqq_sort_order
-    UNION ALL SELECT 2 AS rqq_group_id, 'ลิงก์เว็บไซต์เดิม (ถ้ามี)' AS rqq_text, NULL AS rqq_help, 'url' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 2 AS rqq_sort_order
+    UNION ALL SELECT 2 AS rqq_group_id, 'ลิงก์เว็บไซต์เดิม' AS rqq_text, NULL AS rqq_help, 'url' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 2 AS rqq_sort_order
     UNION ALL SELECT 2 AS rqq_group_id, 'ประมาณกี่หน้า และมีหน้าอะไรบ้าง' AS rqq_text, 'เช่น หน้าแรก เกี่ยวกับเรา บริการ ติดต่อ' AS rqq_help, 'long_text' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 3 AS rqq_sort_order
     UNION ALL SELECT 2 AS rqq_group_id, 'มีโดเมนแล้วไหม' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["มีแล้ว","ยังไม่มี ให้จดให้","ไม่แน่ใจ"]' AS rqq_options, 0 AS rqq_is_required, 4 AS rqq_sort_order
     UNION ALL SELECT 2 AS rqq_group_id, 'ต้องการระบบอะไรเพิ่ม' AS rqq_text, NULL AS rqq_help, 'multi' AS rqq_type, '["ฟอร์มติดต่อ","จอง/นัดหมาย","ร้านค้าออนไลน์","ชำระเงิน","ระบบสมาชิก","หลายภาษา","บทความ/ข่าว"]' AS rqq_options, 0 AS rqq_is_required, 5 AS rqq_sort_order
@@ -5100,7 +5171,7 @@ SELECT * FROM (
     UNION ALL SELECT 3 AS rqq_group_id, 'ต้องใช้งานตอนไม่มีอินเทอร์เน็ตไหม' AS rqq_text, NULL AS rqq_help, 'yes_no' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 4 AS rqq_sort_order
     UNION ALL SELECT 3 AS rqq_group_id, 'ต้องเชื่อมกับระบบอื่นไหม' AS rqq_text, 'เช่น LINE ระบบชำระเงิน ระบบเดิม' AS rqq_help, 'long_text' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 5 AS rqq_sort_order
     UNION ALL SELECT 3 AS rqq_group_id, 'มีบัญชีนักพัฒนา App Store / Google Play แล้วไหม' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["มีแล้ว","ยังไม่มี","ไม่แน่ใจ"]' AS rqq_options, 0 AS rqq_is_required, 6 AS rqq_sort_order
-    UNION ALL SELECT 4 AS rqq_group_id, 'ออกแบบให้อะไร' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["เว็บไซต์","แอปมือถือ","ระบบงาน","อื่นๆ"]' AS rqq_options, 0 AS rqq_is_required, 1 AS rqq_sort_order
+    UNION ALL SELECT 4 AS rqq_group_id, 'ออกแบบให้อะไร' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["เว็บไซต์","แอปมือถือ","ระบบงาน"]' AS rqq_options, 0 AS rqq_is_required, 1 AS rqq_sort_order
     UNION ALL SELECT 4 AS rqq_group_id, 'ประมาณกี่หน้าจอ' AS rqq_text, NULL AS rqq_help, 'number' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 2 AS rqq_sort_order
     UNION ALL SELECT 4 AS rqq_group_id, 'มีโลโก้/สีประจำแบรนด์แล้วไหม' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["มีครบ","มีโลโก้อย่างเดียว","ยังไม่มี"]' AS rqq_options, 0 AS rqq_is_required, 3 AS rqq_sort_order
     UNION ALL SELECT 4 AS rqq_group_id, 'ไฟล์โลโก้หรือคู่มือแบรนด์' AS rqq_text, 'รูปหรือ PDF ไม่เกิน 10 MB' AS rqq_help, 'file' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 4 AS rqq_sort_order
@@ -5114,6 +5185,26 @@ SELECT * FROM (
     UNION ALL SELECT 5 AS rqq_group_id, 'ใช้บนอุปกรณ์อะไร' AS rqq_text, NULL AS rqq_help, 'multi' AS rqq_type, '["คอมพิวเตอร์","มือถือ","แท็บเล็ต"]' AS rqq_options, 0 AS rqq_is_required, 6 AS rqq_sort_order
     UNION ALL SELECT 5 AS rqq_group_id, 'ต้องการติดตั้งที่ไหน' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["คลาวด์","เซิร์ฟเวอร์ของบริษัท","ไม่แน่ใจ"]' AS rqq_options, 0 AS rqq_is_required, 7 AS rqq_sort_order
 ) AS seed WHERE @seed_requirements = 1;
+
+-- 2026-10-26 Q-5 ชุดตั้งต้นใช้ความสามารถใหม่ (docs/plans/2026-10-26-customer-questions.md ข้อ 11) · รันเฉพาะรอบที่เพิ่งใส่ชุดตั้งต้น ฐานเดิมไม่เปลี่ยน
+-- อ้างคำถามด้วยข้อความ (ชุดตั้งต้นไม่มีรหัสตายตัว) · ข้อลูกจับคู่ข้อแม่ในกลุ่มเดียวกันด้วย self-join
+UPDATE tb_requirement_groups SET rqg_customer_intro = 'ช่วยให้ทีมงานเข้าใจธุรกิจและเป้าหมายของงานนี้' WHERE @seed_requirements = 1 AND rqg_id = 1;
+UPDATE tb_requirement_groups SET rqg_customer_intro = 'ใช้วางโครงหน้าเว็บและระบบที่ต้องมี' WHERE @seed_requirements = 1 AND rqg_id = 2;
+UPDATE tb_requirement_groups SET rqg_customer_intro = 'ใช้ออกแบบหน้าจอให้ตรงกับแบรนด์' WHERE @seed_requirements = 1 AND rqg_id = 4;
+-- ลูกค้าเดิมไม่ต้องตอบซ้ำ · อื่นๆ (ระบุ) · วันที่ต้องเป็นอนาคต · ล็อกแพ็กแล้วไม่ถามงบ · ช่องทางติดต่อไม่ถามในลิงก์ Fastwork (กติกา Fastwork)
+UPDATE tb_requirement_questions SET rqq_prefill = 1 WHERE @seed_requirements = 1 AND rqq_group_id = 1 AND rqq_text = 'ธุรกิจ/องค์กรของคุณทำอะไร ลูกค้าหลักคือใคร';
+UPDATE tb_requirement_questions SET rqq_allow_other = 1 WHERE @seed_requirements = 1 AND rqq_group_id = 1 AND rqq_text = 'เป้าหมายของงานนี้';
+UPDATE tb_requirement_questions SET rqq_future_only = 1 WHERE @seed_requirements = 1 AND rqq_group_id = 1 AND rqq_text = 'อยากให้เสร็จภายใน';
+UPDATE tb_requirement_questions SET rqq_skip_when_preset = 1 WHERE @seed_requirements = 1 AND rqq_group_id = 1 AND rqq_text = 'งบประมาณที่ตั้งไว้';
+UPDATE tb_requirement_questions SET rqq_audience = 'direct' WHERE @seed_requirements = 1 AND rqq_group_id = 1 AND rqq_text = 'ช่องทางที่สะดวกให้ติดต่อ';
+UPDATE tb_requirement_questions child JOIN tb_requirement_questions parent ON parent.rqq_group_id = child.rqq_group_id AND parent.rqq_text = 'มีเว็บไซต์เดิมไหม'
+SET child.rqq_parent_id = parent.rqq_id, child.rqq_parent_values = '["yes"]'
+WHERE @seed_requirements = 1 AND child.rqq_group_id = 2 AND child.rqq_text = 'ลิงก์เว็บไซต์เดิม';
+UPDATE tb_requirement_questions SET rqq_allow_other = 1 WHERE @seed_requirements = 1 AND rqq_group_id = 4 AND rqq_text = 'ออกแบบให้อะไร';
+UPDATE tb_requirement_questions SET rqq_unit = 'หน้าจอ', rqq_min = 1, rqq_max = 200 WHERE @seed_requirements = 1 AND rqq_group_id = 4 AND rqq_text = 'ประมาณกี่หน้าจอ';
+UPDATE tb_requirement_questions child JOIN tb_requirement_questions parent ON parent.rqq_group_id = child.rqq_group_id AND parent.rqq_text = 'มีโลโก้/สีประจำแบรนด์แล้วไหม'
+SET child.rqq_parent_id = parent.rqq_id, child.rqq_parent_values = '["มีครบ","มีโลโก้อย่างเดียว"]', child.rqq_file_kind = 'design', child.rqq_help = 'รูป PDF หรือไฟล์งานออกแบบ (AI PSD SVG ZIP) ไม่เกิน 20 MB'
+WHERE @seed_requirements = 1 AND child.rqq_group_id = 4 AND child.rqq_text = 'ไฟล์โลโก้หรือคู่มือแบรนด์';
 
 -- ─── ส่วนที่ 6: ตรวจสอบ — ไม่มีแถวผลลัพธ์ = โครงสร้างครบถ้วนตามไฟล์นี้ ─────────────────────────────
 -- มีแถว = ตารางนั้นมีคอลัมน์/index ไม่ตรงกับที่คาด (missing_* คือที่ขาด, extra_* คือที่เกินมาจากของเก่า)
@@ -5206,13 +5297,15 @@ FROM (
     UNION ALL SELECT 'tb_order_link_categories' AS table_name, 'olc_category_id,olc_link_id' AS expected_columns, 'fk_olc_category(olc_category_id),primary(olc_link_id+olc_category_id)' AS expected_indexes
     UNION ALL SELECT 'tb_service_requests' AS table_name, 'svr_accepted_at,svr_accepted_name,svr_access_token,svr_address,svr_assignee_id,svr_client_id,svr_company_name,svr_consent_at,svr_contact_email,svr_contact_line,svr_contact_name,svr_contact_phone,svr_id,svr_link_id,svr_note,svr_project_id,svr_quotation_id,svr_status,svr_status_reason,svr_submit_key,svr_submitted_at,svr_tax_id,svr_updated_at,svr_vat_rate,svr_version' AS expected_columns, 'fk_svr_assignee(svr_assignee_id),fk_svr_client(svr_client_id),fk_svr_project(svr_project_id),fk_svr_quotation(svr_quotation_id),idx_svr_status(svr_status+svr_submitted_at),primary(svr_id),uq_svr_access_token(svr_access_token),uq_svr_submit_key(svr_link_id+svr_submit_key)' AS expected_indexes
     UNION ALL SELECT 'tb_service_request_items' AS table_name, 'svi_added_by_staff,svi_adjusted_quantity,svi_adjusted_unit_price,svi_id,svi_is_preset,svi_is_removed,svi_name,svi_order,svi_package_id,svi_percent,svi_product_id,svi_quantity,svi_request_id,svi_type,svi_unit,svi_unit_price' AS expected_columns, 'fk_svi_package(svi_package_id),fk_svi_product(svi_product_id),idx_svi_request(svi_request_id+svi_order),primary(svi_id)' AS expected_indexes
-    UNION ALL SELECT 'tb_requirement_groups' AS table_name, 'rqg_created_at,rqg_description,rqg_id,rqg_is_general,rqg_name,rqg_sort_order,rqg_status,rqg_updated_at' AS expected_columns, 'primary(rqg_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_requirement_groups' AS table_name, 'rqg_audience,rqg_created_at,rqg_customer_intro,rqg_description,rqg_id,rqg_is_general,rqg_name,rqg_sort_order,rqg_status,rqg_trigger,rqg_updated_at' AS expected_columns, 'primary(rqg_id)' AS expected_indexes
     UNION ALL SELECT 'tb_requirement_group_categories' AS table_name, 'rgc_category_id,rgc_group_id' AS expected_columns, 'fk_rgc_category(rgc_category_id),primary(rgc_group_id+rgc_category_id)' AS expected_indexes
     UNION ALL SELECT 'tb_order_link_items' AS table_name, 'oli_id,oli_link_id,oli_order,oli_package_id,oli_product_id,oli_quantity' AS expected_columns, 'fk_oli_package(oli_package_id),fk_oli_product(oli_product_id),idx_oli_link(oli_link_id+oli_order),primary(oli_id)' AS expected_indexes
     UNION ALL SELECT 'tb_package_addon_rules' AS table_name, 'par_package_id,par_product_id,par_rule' AS expected_columns, 'fk_par_product(par_product_id),primary(par_package_id+par_product_id)' AS expected_indexes
     UNION ALL SELECT 'tb_requirement_group_packages' AS table_name, 'rgp_group_id,rgp_package_id' AS expected_columns, 'fk_rgp_package(rgp_package_id),primary(rgp_group_id+rgp_package_id)' AS expected_indexes
-    UNION ALL SELECT 'tb_requirement_questions' AS table_name, 'rqq_created_at,rqq_group_id,rqq_help,rqq_id,rqq_is_required,rqq_options,rqq_sort_order,rqq_status,rqq_text,rqq_type,rqq_updated_at' AS expected_columns, 'idx_rqq_group(rqq_group_id+rqq_sort_order),primary(rqq_id)' AS expected_indexes
-    UNION ALL SELECT 'tb_service_request_answers' AS table_name, 'sva_group_name,sva_id,sva_order,sva_question_id,sva_question_text,sva_request_id,sva_type,sva_value' AS expected_columns, 'fk_sva_question(sva_question_id),idx_sva_request(sva_request_id+sva_order),primary(sva_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_requirement_group_products' AS table_name, 'rgr_group_id,rgr_product_id' AS expected_columns, 'fk_rgr_product(rgr_product_id),primary(rgr_group_id+rgr_product_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_order_link_requirement_groups' AS table_name, 'olq_group_id,olq_link_id,olq_mode' AS expected_columns, 'fk_olq_group(olq_group_id),primary(olq_link_id+olq_group_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_requirement_questions' AS table_name, 'rqq_allow_other,rqq_audience,rqq_created_at,rqq_file_kind,rqq_future_only,rqq_group_id,rqq_help,rqq_id,rqq_is_required,rqq_max,rqq_min,rqq_options,rqq_parent_id,rqq_parent_values,rqq_placeholder,rqq_prefill,rqq_skip_when_preset,rqq_sort_order,rqq_status,rqq_text,rqq_type,rqq_unit,rqq_updated_at' AS expected_columns, 'fk_rqq_parent(rqq_parent_id),idx_rqq_group(rqq_group_id+rqq_sort_order),primary(rqq_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_service_request_answers' AS table_name, 'sva_group_name,sva_id,sva_order,sva_other_text,sva_question_id,sva_question_text,sva_request_id,sva_type,sva_value' AS expected_columns, 'fk_sva_question(sva_question_id),idx_sva_request(sva_request_id+sva_order),primary(sva_id)' AS expected_indexes
     UNION ALL SELECT 'tb_service_request_files' AS table_name, 'svf_answer_id,svf_created_at,svf_file_path,svf_id,svf_original_name,svf_size' AS expected_columns, 'idx_svf_answer(svf_answer_id),primary(svf_id)' AS expected_indexes
     UNION ALL SELECT 'tb_company_holidays' AS table_name, 'hd_created_at,hd_created_by,hd_date,hd_name' AS expected_columns, 'fk_hd_created_by(hd_created_by),primary(hd_date)' AS expected_indexes
     UNION ALL SELECT 'tb_leave_types' AS table_name, 'lt_attachment_from_days,lt_carry_over_days,lt_created_at,lt_days_per_year,lt_id,lt_is_paid,lt_min_service_days,lt_name_en,lt_name_th,lt_sort_order,lt_status,lt_updated_at' AS expected_columns, 'primary(lt_id),uq_lt_name_th(lt_name_th)' AS expected_indexes

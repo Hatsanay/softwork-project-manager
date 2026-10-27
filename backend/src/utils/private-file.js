@@ -15,33 +15,69 @@ function storageDir() {
     return process.env.DOCUMENT_STORAGE_DIR?.trim() || DEFAULT_STORAGE_DIR;
 }
 
-// ลายเซ็นต้นไฟล์ (magic bytes) ของชนิดที่รับ
+// ลายเซ็นต้นไฟล์ (magic bytes) ของชนิดที่รับ · isViewable = เปิดดูในเบราว์เซอร์ได้ปลอดภัย
 const FILE_TYPES = [
     {
         extension: "pdf",
         contentType: "application/pdf",
+        isViewable: true,
         matches: (buffer) => buffer.subarray(0, 5).toString("latin1") === "%PDF-",
     },
     {
         extension: "jpg",
         contentType: "image/jpeg",
+        isViewable: true,
         matches: (buffer) => buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff,
     },
     {
         extension: "png",
         contentType: "image/png",
+        isViewable: true,
         matches: (buffer) =>
             buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
     },
 ];
 
+// ไฟล์งานออกแบบ (คำถามลูกค้าที่ตั้งรับไฟล์งานออกแบบ · 2026-10-26 Q-1) · ดาวน์โหลดได้อย่างเดียว ไม่เปิดในเบราว์เซอร์
+// AI รุ่นใหม่ข้างในเป็น PDF จึงตรงชนิด pdf ด้านบน · SVG ฝังสคริปต์ได้ ถ้าเปิดในโดเมนเราสคริปต์จะรันด้วยสิทธิ์ของคนที่ login อยู่
+const DESIGN_FILE_TYPES = [
+    {
+        extension: "psd",
+        contentType: "application/octet-stream",
+        isViewable: false,
+        matches: (buffer) => buffer.subarray(0, 4).toString("latin1") === "8BPS",
+    },
+    {
+        extension: "zip",
+        contentType: "application/octet-stream",
+        isViewable: false,
+        matches: (buffer) => buffer.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04])),
+    },
+    {
+        extension: "svg",
+        contentType: "application/octet-stream",
+        isViewable: false,
+        matches: isSvgText,
+    },
+];
+const SVG_SNIFF_BYTES = 2048;
+
+/** SVG = ข้อความ XML (ต้นไฟล์อาจมี BOM / <?xml / คอมเมนต์ / DOCTYPE) ที่มีแท็ก <svg ในช่วงต้นไฟล์ */
+function isSvgText(buffer) {
+    const head = buffer.subarray(0, SVG_SNIFF_BYTES).toString("utf8").replace(/^﻿/, "").trimStart();
+    if (!head.startsWith("<")) return false;
+    return /<svg[\s>]/i.test(head);
+}
+
 /**
  * ชนิดไฟล์จากเนื้อไฟล์ — ไม่ใช่ชนิดที่รับ = null
  * @param {Buffer} buffer
+ * @param {{ allowDesignFiles?: boolean }} [options] allowDesignFiles = รับ PSD ZIP SVG ด้วย
  */
-function detectFileType(buffer) {
+function detectFileType(buffer, { allowDesignFiles = false } = {}) {
     if (!buffer || buffer.length < 8) return null;
-    return FILE_TYPES.find((type) => type.matches(buffer)) ?? null;
+    const types = allowDesignFiles ? [...FILE_TYPES, ...DESIGN_FILE_TYPES] : FILE_TYPES;
+    return types.find((type) => type.matches(buffer)) ?? null;
 }
 
 /**
@@ -50,13 +86,15 @@ function detectFileType(buffer) {
  * @param {string} prefix ต้นชื่อไฟล์ เช่น รหัสใบเสร็จ (ช่วยหาไฟล์ตอนกู้ข้อมูล)
  * @param {Buffer} buffer
  * @param {string} fieldName ชื่อช่องในฟอร์ม (ใช้ในข้อความ error)
+ * @param {{ allowDesignFiles?: boolean }} [options] allowDesignFiles = รับไฟล์งานออกแบบ (PSD ZIP SVG) ด้วย
  * @returns {Promise<string>} path ที่เก็บใน DB เช่น "wht-certificates/RCP202610150000001-3f9a…c2.pdf" (สัมพัทธ์กับ storage/)
  */
-async function savePrivateFile(folder, prefix, buffer, fieldName) {
-    const fileType = detectFileType(buffer);
+async function savePrivateFile(folder, prefix, buffer, fieldName, { allowDesignFiles = false } = {}) {
+    const fileType = detectFileType(buffer, { allowDesignFiles });
     if (!fileType) {
-        throw new AppError(400, "VALIDATION", "ไฟล์ต้องเป็น PDF, JPG หรือ PNG", {
-            [fieldName]: "ใช้ไฟล์ PDF, JPG หรือ PNG (ไฟล์ที่เปลี่ยนนามสกุลเองใช้ไม่ได้)",
+        const allowedText = allowDesignFiles ? "PDF, JPG, PNG, AI, PSD, SVG หรือ ZIP" : "PDF, JPG หรือ PNG";
+        throw new AppError(400, "VALIDATION", `ไฟล์ต้องเป็น ${allowedText}`, {
+            [fieldName]: `ใช้ไฟล์ ${allowedText} (ไฟล์ที่เปลี่ยนนามสกุลเองใช้ไม่ได้)`,
         });
     }
     const filename = `${prefix}-${crypto.randomBytes(12).toString("hex")}.${fileType.extension}`;
@@ -78,10 +116,19 @@ function resolvePrivateFile(storedPath) {
     return fullPath;
 }
 
-/** ชนิดเนื้อหาจากนามสกุลที่ระบบตั้งเอง */
+/** ชนิดเนื้อหาจากนามสกุลที่ระบบตั้งเอง · ไม่รู้จัก = application/octet-stream (ดาวน์โหลด ไม่เปิด) */
 function contentTypeOf(storedPath) {
+    return fileTypeOfPath(storedPath)?.contentType ?? "application/octet-stream";
+}
+
+/** เปิดดูในเบราว์เซอร์ได้ปลอดภัยไหม (PDF JPG PNG) · ไฟล์งานออกแบบ/ไม่รู้จัก = ดาวน์โหลดเท่านั้น */
+function isViewableFile(storedPath) {
+    return fileTypeOfPath(storedPath)?.isViewable === true;
+}
+
+function fileTypeOfPath(storedPath) {
     const extension = path.extname(storedPath ?? "").slice(1);
-    return FILE_TYPES.find((type) => type.extension === extension)?.contentType ?? "application/octet-stream";
+    return [...FILE_TYPES, ...DESIGN_FILE_TYPES].find((type) => type.extension === extension) ?? null;
 }
 
 const MAX_FILE_NAME_LENGTH = 200;
@@ -111,6 +158,7 @@ module.exports = {
     resolvePrivateFile,
     deletePrivateFile,
     contentTypeOf,
+    isViewableFile,
     detectFileType,
     cleanUploadedFileName,
 };

@@ -14,6 +14,7 @@ import ProductsTab from "./_components/products-tab";
 import CategoriesTab from "./_components/categories-tab";
 import PackagesTab from "./_components/packages-tab";
 import QuestionsTab from "./_components/questions-tab";
+import type { QuestionsTarget } from "./_components/item-questions-panel";
 
 type TabKey = "products" | "categories" | "packages" | "questions";
 
@@ -24,6 +25,14 @@ export default function ProductsPage() {
     const canSeeQuestions = canEdit || hasBit(BITS.manageServiceRequests);
     const [activeTab, setActiveTab] = useState<TabKey>("products");
     const [categories, setCategories] = useState<ProductCategory[]>([]);
+    // จากแผ่นแก้สินค้า/ชุด → แท็บคำถาม: เลื่อนไปกลุ่มนั้น หรือเปิดแผ่นเพิ่มกลุ่มที่ผูกรายการนั้นไว้แล้ว (Q-2)
+    const [questionsTarget, setQuestionsTarget] = useState<QuestionsTarget | null>(null);
+
+    function openQuestions(target: QuestionsTarget) {
+        setQuestionsTarget(target);
+        setActiveTab("questions");
+        window.scrollTo({ top: 0 });
+    }
 
     // หมวดใช้ทั้ง 3 แท็บ (ตัวกรอง ตัวเลือกในฟอร์ม) — แก้หมวดแล้วโหลดใหม่ที่เดียว
     const reloadCategories = useCallback(async () => {
@@ -53,7 +62,10 @@ export default function ProductsPage() {
                 role="tablist"
                 idPrefix="products"
                 value={activeTab}
-                onChange={setActiveTab}
+                onChange={(tab) => {
+                    setQuestionsTarget(null);
+                    setActiveTab(tab);
+                }}
                 options={[
                     { value: "products", label: tabs.products },
                     { value: "categories", label: tabs.categories, count: categories.length },
@@ -63,12 +75,12 @@ export default function ProductsPage() {
             />
 
             <div role="tabpanel" id={`products-panel-${activeTab}`} aria-labelledby={`products-tab-${activeTab}`}>
-                {activeTab === "products" && <ProductsTab categories={categories} canEdit={canEdit} />}
+                {activeTab === "products" && <ProductsTab categories={categories} canEdit={canEdit} onOpenQuestions={openQuestions} />}
                 {activeTab === "categories" && (
                     <CategoriesTab categories={categories} canEdit={canEdit} onSaved={reloadCategories} />
                 )}
-                {activeTab === "packages" && <PackagesTab categories={categories} canEdit={canEdit} />}
-                {activeTab === "questions" && <QuestionsTab categories={categories} canEdit={canEdit} />}
+                {activeTab === "packages" && <PackagesTab categories={categories} canEdit={canEdit} onOpenQuestions={openQuestions} />}
+                {activeTab === "questions" && <QuestionsTab categories={categories} canEdit={canEdit} target={questionsTarget} />}
             </div>
         </div>
     );

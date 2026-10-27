@@ -4,6 +4,7 @@
 // สร้าง: ชนิด (เฉพาะลูกค้า / สาธารณะ / Fastwork) → ลูกค้าหรือชื่อ → ผู้รับคำขอ (ค่าเริ่มต้นจากตั้งค่า) → หมดอายุ → หมวดที่เปิด
 // แก้: ชนิดและลูกค้าเปลี่ยนไม่ได้ (เปลี่ยน = สร้างลิงก์ใหม่) · ปิดลิงก์ได้ทันที
 // รายการที่ทีมเลือกให้ (ล็อก · ลูกค้าแก้ไม่ได้ · ราคาปัจจุบัน) + ให้ลูกค้าเลือกเพิ่มเองได้ไหม (2026-10-25)
+// คำถามที่ลิงก์นี้จะถาม: ไม่ถามบางกลุ่ม / ถามกลุ่มเพิ่ม + ดูมุมมองลูกค้า (2026-10-26 Q-3 · link-questions-section.tsx)
 import { useEffect, useState } from "react";
 import { Lock, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -20,6 +21,7 @@ import { DEFAULT_LINK_DAYS, MAX_PRESET_ITEMS, MAX_SET_COUNT, orderLinkSchema, or
 import { SheetButtons, SheetFrame } from "../../../fastwork/_components/sheet-frame";
 import type { OrderLink, OrderLinkKind, ServiceRequestSettings } from "../_types";
 import { LINK_KIND_LABEL } from "../_types";
+import LinkQuestionsSection, { type QuestionRules } from "./link-questions-section";
 
 type Category = { pc_id: string; pc_name: string; pc_status: "active" | "inactive" };
 
@@ -96,6 +98,7 @@ export default function LinkSheet({
     const [presetRows, setPresetRows] = useState<PresetRow[]>(() =>
         (link?.preset_items ?? []).map((item) => ({ kind: item.kind, id: item.id, name: item.name, quantity: String(item.quantity) })),
     );
+    const [questionRules, setQuestionRules] = useState<QuestionRules>(link?.question_rules ?? { include_group_ids: [], exclude_group_ids: [] });
     const [presetChoice, setPresetChoice] = useState("");
     const [choiceRows, setChoiceRows] = useState<Map<string, ChoiceRow>>(new Map());
     const [errors, setErrors] = useState<FieldErrors>({});
@@ -146,8 +149,15 @@ export default function LinkSheet({
                   category_ids: form.category_ids,
                   ol_allow_more: form.ol_allow_more,
                   preset_items: presetItems,
+                  question_rules: questionRules,
               }
-            : { ...form, ol_client_id: form.ol_client_id || null, ol_project_id: project ? String(project.value) : null, preset_items: presetItems };
+            : {
+                  ...form,
+                  ol_client_id: form.ol_client_id || null,
+                  ol_project_id: project ? String(project.value) : null,
+                  preset_items: presetItems,
+                  question_rules: questionRules,
+              };
         const checked = (isEdit ? orderLinkUpdateSchema : orderLinkSchema).safeParse(body);
         if (!checked.success) {
             setErrors(toFieldErrors(checked.error.issues));
@@ -323,6 +333,14 @@ export default function LinkSheet({
                     <FieldHint error={errors.category_ids}>ไม่เลือก = ทุกหมวด · เห็นเฉพาะสินค้าที่ติ๊ก &quot;แสดงบนหน้าร้าน&quot; ในหน้าสินค้า/บริการ</FieldHint>
                 </fieldset>
             )}
+            <LinkQuestionsSection
+                linkKind={form.ol_kind}
+                presetItems={presetRows}
+                allowMore={form.ol_allow_more}
+                rules={questionRules}
+                error={errors.question_rules}
+                onChange={setQuestionRules}
+            />
             {isEdit && (
                 <Switch
                     id="link_status"

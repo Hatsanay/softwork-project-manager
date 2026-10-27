@@ -24,6 +24,7 @@ import { formatAmount } from "@/lib/shared/money.mjs";
 import { lineAmount } from "@/lib/shared/order-cart-math.mjs";
 import AnswersList from "@/app/order/_components/answers-list";
 import type { RequestAnswer } from "@/app/order/_types";
+import { openOrDownloadBlob } from "@/lib/open-blob";
 import { LINK_KIND_LABEL, type ClientMatch, type FastworkPlan, type ServiceRequestItem, type ServiceRequestRow } from "../../order-links/_types";
 import { requestStatusOf } from "../_status";
 import ClientPanel from "../_components/client-panel";
@@ -189,13 +190,13 @@ function ServiceRequestView() {
         toast.success(finishing === "reject" ? "ปฏิเสธคำขอแล้ว" : "ปิดคำขอแล้ว");
     }
 
-    async function openFile(fileId: number) {
-        const blob = await apiFetchBlob(`/service-requests/${encodeURIComponent(requestId)}/files/${fileId}`);
+    async function openFile(file: RequestAnswer["files"][number]) {
+        const blob = await apiFetchBlob(`/service-requests/${encodeURIComponent(requestId)}/files/${file.id}`);
         if (!blob) {
             toast.error("เปิดไฟล์ไม่สำเร็จ");
             return;
         }
-        window.open(URL.createObjectURL(blob), "_blank", "noopener");
+        openOrDownloadBlob(blob, file.name, file.is_viewable);
     }
 
     return (

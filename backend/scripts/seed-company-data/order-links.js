@@ -11,9 +11,12 @@ const { as, rawCall } = require("./api");
 const { setToday } = require("./clock");
 const { cartTotals, multiplyQuantity } = require("../../src/shared/order-cart-math.mjs");
 const { formatHundredths } = require("../../src/shared/money.mjs");
-const { applicableGroups } = require("../../src/shared/requirement-answers.mjs");
+const { visibleQuestionnaire } = require("../../src/shared/requirement-answers.mjs");
 
-/** ผูกกลุ่มคำถามกับหมวดสินค้า (กลุ่มที่ติดมากับระบบยังไม่ผูกหมวด) — mapping: ชื่อกลุ่ม → รหัสหมวด · packageMapping: ชื่อกลุ่ม → รหัสชุด */
+/**
+ * ผูกกลุ่มคำถามกับหมวดสินค้า/ชุด (กลุ่มที่ติดมากับระบบยังไม่ผูกอะไร = ถามเฉพาะลิงก์ที่ถามเพิ่ม) → ถามตามที่ลูกค้าเลือก
+ * mapping: ชื่อกลุ่ม → รหัสหมวด · packageMapping: ชื่อกลุ่ม → รหัสชุด
+ */
 async function linkRequirementGroups(username, mapping, packageMapping = {}) {
     const { data: groups } = await as(username, "GET", "/V1/requirement-groups");
     for (const group of groups) {
@@ -21,12 +24,15 @@ async function linkRequirementGroups(username, mapping, packageMapping = {}) {
         if (!categoryIds && !packageMapping[group.rqg_name]) continue;
         await as(username, "PUT", `/V1/requirement-groups/${group.rqg_id}`, {
             rqg_name: group.rqg_name,
+            rqg_customer_intro: group.rqg_customer_intro,
             rqg_description: group.rqg_description,
-            rqg_is_general: Boolean(group.rqg_is_general),
+            rqg_trigger: "selection",
+            rqg_audience: group.rqg_audience,
             rqg_sort_order: group.rqg_sort_order,
             rqg_status: group.rqg_status,
             category_ids: categoryIds ?? group.category_ids,
-            package_ids: packageMapping[group.rqg_name] ?? group.package_ids ?? [],
+            package_ids: packageMapping[group.rqg_name] ?? group.package_ids,
+            product_ids: group.product_ids,
         });
     }
 }
@@ -45,8 +51,8 @@ function sampleImage(title, color) {
  * ลูกค้าส่งคำขอผ่านลิงก์ (ไม่ login) → { svr_id, access_token }
  * @param {string} code รหัสสั้นของลิงก์
  * @param {{ items: { kind: "product" | "package", id: string, quantity: number }[], contact?: object, note?: string,
- *           answers?: Record<string, unknown>, files?: Record<string, { name: string, buffer: Buffer }[]> }} order
- *   answers / files อ้างคำถามด้วยข้อความคำถาม · ข้อบังคับที่ไม่ได้ตอบ = หยุดสคริปต์ (กันข้อมูลจำลองหลุดจากชุดคำถาม)
+ *           answers?: Record<string, unknown>, otherTexts?: Record<string, string>, files?: Record<string, { name: string, buffer: Buffer }[]> }} order
+ *   answers / otherTexts (ข้อความใน อื่นๆ ระบุ) / files อ้างคำถามด้วยข้อความคำถาม · ข้อบังคับที่ไม่ได้ตอบ = หยุดสคริปต์ (กันข้อมูลจำลองหลุดจากชุดคำถาม)
  */
 async function submitOrder(code, order) {
     const shop = await rawCall("GET", `/V1/order/${code}`);
@@ -56,14 +62,17 @@ async function submitOrder(code, order) {
     const packagesById = new Map(catalog.packages.map((productPackage) => [productPackage.pkg_id, productPackage]));
 
     const lines = [];
-    const categoryIds = [];
-    const packageIds = (shop.body.preset ?? []).filter((item) => item.kind === "package").map((item) => item.package.pkg_id);
+    const preset = shop.body.preset ?? [];
+    const categoryIds = preset.map((item) => (item.kind === "package" ? item.package.pkg_category_id : item.product.product_category_id));
+    const packageIds = preset.filter((item) => item.kind === "package").map((item) => item.package.pkg_id);
+    const productIds = preset.filter((item) => item.kind === "product").map((item) => item.product.product_id);
     for (const item of order.items) {
         if (item.kind === "product") {
             const product = productsById.get(item.id);
             if (!product) throw new Error(`สินค้า ${item.id} ไม่อยู่บนหน้าร้านของลิงก์ ${code}`);
             lines.push({ unitPrice: product.product_price, quantity: String(item.quantity) });
             categoryIds.push(product.product_category_id);
+            productIds.push(product.product_id);
             continue;
         }
         const productPackage = packagesById.get(item.id);
@@ -75,16 +84,34 @@ async function submitOrder(code, order) {
         packageIds.push(productPackage.pkg_id);
     }
 
+    // คำตอบอ้างด้วยข้อความคำถาม → รหัสคำถาม (ใช้ตัดสินข้อลูกด้วยกติกาเดียวกับหน้าร้าน)
+    const valueById = {};
+    for (const question of questionnaire.flatMap((group) => group.questions)) {
+        valueById[question.rqq_id] = order.answers?.[question.rqq_text] ?? null;
+    }
+    const visibleGroups = visibleQuestionnaire(
+        questionnaire,
+        {
+            linkKind: shop.body.link.kind,
+            categoryIds,
+            packageIds,
+            productIds,
+            hasPreset: preset.length > 0,
+            includeGroupIds: shop.body.question_rules.include_group_ids,
+            excludeGroupIds: shop.body.question_rules.exclude_group_ids,
+        },
+        valueById,
+    );
     const answers = [];
     const fileFields = [];
-    for (const group of applicableGroups(questionnaire, categoryIds.filter(Boolean), packageIds)) {
+    for (const group of visibleGroups) {
         for (const question of group.questions) {
             const files = order.files?.[question.rqq_text] ?? [];
-            const value = order.answers?.[question.rqq_text] ?? null;
+            const value = valueById[question.rqq_id];
             if (question.rqq_is_required && value === null && files.length === 0) {
                 throw new Error(`คำขอผ่านลิงก์ ${code}: ยังไม่ได้ตอบข้อบังคับ "${question.rqq_text}"`);
             }
-            if (question.rqq_type !== "file") answers.push({ question_id: question.rqq_id, value });
+            if (question.rqq_type !== "file") answers.push({ question_id: question.rqq_id, value, other_text: order.otherTexts?.[question.rqq_text] ?? null });
             for (const file of files) fileFields.push([`file_${question.rqq_id}`, file]);
         }
     }
@@ -145,6 +172,22 @@ function scheduleOrderLinks({ on, ids, state, sales }) {
             { ระบบงาน: [ids.packages.corporateWebsite] },
         );
         // ชุดเว็บไซต์องค์กรมีโฮสติ้งและโดเมนปีแรกแล้ว · แอปมือถือใช้กับชุดนี้ไม่ได้
+        // กลุ่มที่ถามเมื่อเลือกสินค้ารายตัว (2026-10-26 Q-1): บริการดูแลรายเดือน → ถามว่าดูแลเรื่องไหน (มี อื่นๆ ระบุ)
+        const maintenanceGroup = await as(SALES_MANAGER, "POST", "/V1/requirement-groups", {
+            rqg_name: "บริการดูแลรายเดือน",
+            rqg_customer_intro: "ใช้วางแผนงานดูแลและรอบรายงานประจำเดือน",
+            rqg_trigger: "selection",
+            rqg_status: "active",
+            rqg_sort_order: 9,
+            product_ids: [product("maintenance")],
+        });
+        await as(SALES_MANAGER, "POST", `/V1/requirement-groups/${maintenanceGroup.rqg_id}/questions`, {
+            rqq_text: "อยากให้ดูแลเรื่องไหนบ้าง",
+            rqq_type: "multi",
+            rqq_options: ["อัปเดตเนื้อหา", "สำรองข้อมูล", "แก้ปัญหาเว็บล่ม", "รายงานคนเข้าเว็บ"],
+            rqq_allow_other: true,
+            rqq_status: "active",
+        });
         await setAddonRules(SALES_MANAGER, ids.packages.corporateWebsite, [
             { product_id: product("hosting"), rule: "included" },
             { product_id: product("domain"), rule: "included" },
@@ -178,7 +221,7 @@ function scheduleOrderLinks({ on, ids, state, sales }) {
             note: "อยากให้ลูกค้าต่างชาติจองห้องได้เองครับ ตอนนี้รับจองทาง Facebook อย่างเดียว",
             answers: {
                 "ธุรกิจ/องค์กรของคุณทำอะไร ลูกค้าหลักคือใคร": "โฮมสเตย์ 6 ห้องริมคลองกระบี่ ลูกค้าส่วนใหญ่เป็นนักท่องเที่ยวยุโรปและคนไทยที่มาเที่ยวสุดสัปดาห์",
-                เป้าหมายของงานนี้: ["ให้ลูกค้าจอง/สั่งเอง", "สร้างภาพลักษณ์"],
+                เป้าหมายของงานนี้: ["ให้ลูกค้าจอง/สั่งเอง", "สร้างภาพลักษณ์", "อื่นๆ"],
                 อยากให้เสร็จภายใน: "2026-10-31",
                 งบประมาณที่ตั้งไว้: "มากกว่า 100,000",
                 "ใครเป็นคนตัดสินใจ/ตรวจรับงาน": "มานพ (เจ้าของ) กับภรรยา",
@@ -191,6 +234,13 @@ function scheduleOrderLinks({ on, ids, state, sales }) {
                 "มีเนื้อหา/รูปพร้อมแล้วไหม": "บางส่วน",
                 // กลุ่ม "ระบบงาน" ผูกชุดเว็บไซต์องค์กร (ถามเฉพาะคนที่เลือกชุดนี้)
                 "ตอนนี้ทำงานนี้อย่างไร และติดปัญหาอะไร": "รับจองทาง Facebook แชตทีละคน จดลงสมุด ลูกค้าต่างชาติถามเรื่องห้องว่างซ้ำทุกวัน",
+                // กลุ่ม "บริการดูแลรายเดือน" ผูกสินค้าดูแลรายเดือนที่เลือก
+                อยากให้ดูแลเรื่องไหนบ้าง: ["อัปเดตเนื้อหา", "สำรองข้อมูล", "อื่นๆ"],
+            },
+            // อื่นๆ (ระบุ) ของข้อที่เปิดไว้ (Q-1 2026-10-26)
+            otherTexts: {
+                เป้าหมายของงานนี้: "ให้ลูกค้าต่างชาติอ่านรีวิวก่อนจอง",
+                อยากให้ดูแลเรื่องไหนบ้าง: "อัปเดตราคาห้องตามฤดูกาล",
             },
         });
     });
@@ -234,12 +284,16 @@ function scheduleOrderLinks({ on, ids, state, sales }) {
 
     // ── คลินิกทันตกรรม (ลูกค้าเดิม): ลิงก์เฉพาะลูกค้า เปิดเฉพาะหมวดออกแบบ → ปฏิเสธ (งบยังไม่อนุมัติ)
     on("2026-09-08", "ส่งลิงก์เฉพาะลูกค้าให้คลินิกทันตกรรม", async () => {
+        // ลิงก์นี้ถามกลุ่ม "แอปมือถือ" เพิ่ม (กลุ่มที่ไม่ถามเอง · Q-3 2026-10-26)
+        const { data: groups } = await as(SALES_MANAGER, "GET", "/V1/requirement-groups");
+        const appGroup = groups.find((group) => group.rqg_name === "แอปมือถือ");
         state.clinicLink = await as(SALES_MANAGER, "POST", "/V1/order-links", {
             ol_kind: "personal",
             ol_client_id: ids.clients.smileClinic,
             ol_name: "ออกแบบแอปนัดหมายคลินิก",
             ol_assignee_id: ids.users.siriporn,
             category_ids: [ids.categories[1], ids.categories[0]],
+            question_rules: { include_group_ids: [appGroup.rqg_id], exclude_group_ids: [] },
         });
     });
     on("2026-09-09", "คลินิกส่งคำขอออกแบบแอปนัดหมาย", async () => {
@@ -260,7 +314,10 @@ function scheduleOrderLinks({ on, ids, state, sales }) {
                 "มีโลโก้/สีประจำแบรนด์แล้วไหม": "มีครบ",
                 โทนที่ต้องการ: ["เรียบหรู", "มินิมอล"],
                 มีเว็บไซต์เดิมไหม: "yes",
-                "ลิงก์เว็บไซต์เดิม (ถ้ามี)": "https://smiledentalkrabi.example.com",
+                ลิงก์เว็บไซต์เดิม: "https://smiledentalkrabi.example.com",
+                // กลุ่ม "แอปมือถือ" ที่ลิงก์นี้ถามเพิ่ม
+                ต้องการลงระบบไหน: ["iOS", "Android"],
+                "ผู้ใช้แอปคือใคร ใช้ทำอะไรเป็นหลัก": "คนไข้นัดตรวจและดูประวัติการรักษา · พนักงานหน้าร้านจัดคิวหมอ",
             },
         });
     });

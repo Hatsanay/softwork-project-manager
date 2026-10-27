@@ -34,7 +34,9 @@ const LINK_COLUMNS = `
     DATE_FORMAT(l.ol_created_at, '%Y-%m-%d %H:%i') AS ol_created_at, l.ol_allow_more,
     c.client_name, p.project_name, p.project_status, CONCAT(a.user_fname, ' ', a.user_lname) AS assignee_name,
     (SELECT COUNT(*) FROM tb_service_requests r WHERE r.svr_link_id = l.ol_id) AS request_count,
-    (SELECT GROUP_CONCAT(olc.olc_category_id ORDER BY olc.olc_category_id) FROM tb_order_link_categories olc WHERE olc.olc_link_id = l.ol_id) AS category_ids_text`;
+    (SELECT GROUP_CONCAT(olc.olc_category_id ORDER BY olc.olc_category_id) FROM tb_order_link_categories olc WHERE olc.olc_link_id = l.ol_id) AS category_ids_text,
+    (SELECT GROUP_CONCAT(olq.olq_group_id) FROM tb_order_link_requirement_groups olq WHERE olq.olq_link_id = l.ol_id AND olq.olq_mode = 'include') AS include_group_ids_text,
+    (SELECT GROUP_CONCAT(olq.olq_group_id) FROM tb_order_link_requirement_groups olq WHERE olq.olq_link_id = l.ol_id AND olq.olq_mode = 'exclude') AS exclude_group_ids_text`;
 
 const LINK_FROM = `
     FROM tb_order_links l
@@ -89,17 +91,24 @@ async function presetItemsOf(conn, linkIds) {
 }
 
 function present(row, today, presetItems) {
-    const { category_ids_text: categoryIdsText, ...link } = row;
+    const { category_ids_text: categoryIdsText, include_group_ids_text: includeText, exclude_group_ids_text: excludeText, ...link } = row;
     return {
         ...link,
         ol_allow_more: Boolean(link.ol_allow_more),
         request_count: Number(link.request_count),
         category_ids: categoryIdsText ? categoryIdsText.split(",") : [],
         preset_items: presetItems,
+        // กลุ่มคำถามที่ลิงก์นี้ถามเพิ่ม / ไม่ถาม (Q-3)
+        question_rules: { include_group_ids: idsOf(includeText), exclude_group_ids: idsOf(excludeText) },
         // รายการที่ทีมเลือกให้ถูกปิดใช้งาน = ลูกค้าส่งคำขอไม่ได้ (หน้ารายการลิงก์เตือน)
         has_preset_problem: presetItems.some((item) => !item.is_available),
         open_state: openStateOf(link, today),
     };
+}
+
+/** "3,7" → [3, 7] (GROUP_CONCAT ของรหัสตัวเลข) */
+function idsOf(text) {
+    return text ? text.split(",").map(Number) : [];
 }
 
 async function listLinks(conn) {
@@ -160,6 +169,22 @@ async function assertNotFastworkClient(conn, clientId) {
     }
 }
 
+/** กลุ่มคำถามรายลิงก์: กลุ่มต้องมีอยู่ (กลุ่มที่ปิดใช้งานเลือกได้ ระบบไม่ถามเองอยู่แล้ว) · เขียนทับทั้งชุด */
+async function saveQuestionRules(conn, linkId, rules) {
+    const groupIds = [...rules.include_group_ids, ...rules.exclude_group_ids];
+    if (groupIds.length > 0) {
+        const [rows] = await conn.query("SELECT rqg_id FROM tb_requirement_groups WHERE rqg_id IN (?)", [groupIds]);
+        if (rows.length !== groupIds.length) throw validationError({ question_rules: "บางกลุ่มคำถามถูกลบไปแล้ว กรุณาเลือกใหม่" });
+    }
+    await conn.query("DELETE FROM tb_order_link_requirement_groups WHERE olq_link_id = ?", [linkId]);
+    const rows = [
+        ...rules.include_group_ids.map((groupId) => [linkId, groupId, "include"]),
+        ...rules.exclude_group_ids.map((groupId) => [linkId, groupId, "exclude"]),
+    ];
+    if (rows.length === 0) return;
+    await conn.query("INSERT INTO tb_order_link_requirement_groups (olq_link_id, olq_group_id, olq_mode) VALUES ?", [rows]);
+}
+
 async function saveCategories(conn, linkId, categoryIds) {
     await conn.query("DELETE FROM tb_order_link_categories WHERE olc_link_id = ?", [linkId]);
     const unique = [...new Set(categoryIds)];
@@ -200,6 +225,7 @@ async function createLink(conn, user, input) {
             );
             await saveCategories(conn, result.insertId, input.category_ids);
             await savePresetItems(conn, result.insertId, input.preset_items);
+            await saveQuestionRules(conn, result.insertId, input.question_rules);
             return findLink(conn, result.insertId);
         } catch (error) {
             // รหัสสั้นชนของเดิม (โอกาสน้อยมาก) → สุ่มใหม่
@@ -220,6 +246,7 @@ async function updateLink(conn, linkId, input) {
     );
     await saveCategories(conn, linkId, input.category_ids);
     await savePresetItems(conn, linkId, input.preset_items);
+    await saveQuestionRules(conn, linkId, input.question_rules);
     return findLink(conn, linkId);
 }
 

@@ -10,8 +10,16 @@ const { validate } = require("../utils/validate");
 const { formatHundredths, parseHundredths } = require("../shared/money.mjs");
 const { cartTotals, multiplyQuantity, fixedSubtotal, percentAmount } = require("../shared/order-cart-math.mjs");
 const { orderContactSchema } = require("../shared/schemas/order-link.mjs");
-const { applicableGroups, answerError, storedAnswer, answerText, MAX_FILE_BYTES } = require("../shared/requirement-answers.mjs");
-const { cleanUploadedFileName, savePrivateFile } = require("../utils/private-file");
+const {
+    visibleQuestionnaire,
+    answerError,
+    storedAnswer,
+    storedOtherText,
+    answerText,
+    maxFileBytesOf,
+    MAX_TOTAL_FILE_BYTES,
+} = require("../shared/requirement-answers.mjs");
+const { cleanUploadedFileName, detectFileType, isViewableFile, savePrivateFile } = require("../utils/private-file");
 const { findVatRateOn } = require("./company.service");
 const requirementService = require("./requirement.service");
 const { acceptQuotation } = require("./quotation-accept.service");
@@ -219,6 +227,54 @@ async function shop(conn, code) {
         catalog: link.ol_allow_more ? catalog : { ...catalog, products: [], packages: [] },
         prefill: await prefillOf(conn, link),
         questionnaire: await requirementService.listGroups(conn, { activeOnly: true }),
+        question_rules: await loadLinkQuestionRules(conn, link.ol_id),
+        answer_prefill: await answerPrefillOf(conn, link),
+    };
+}
+
+/**
+ * คำตอบเดิมของลูกค้าคนนี้ สำหรับข้อที่เปิด "เติมคำตอบเดิม" (Q-4 · แบบข้อ 8)
+ * เฉพาะลิงก์เฉพาะลูกค้าที่ผูกลูกค้าไว้ (ลิงก์สาธารณะไม่รู้ว่าใคร และกันข้อมูลรั่วไปคนอื่น) · ไม่เติมไฟล์ · ใช้คำตอบล่าสุดของแต่ละข้อ
+ * @returns {Promise<Record<number, { value: string | string[], other_text: string | null }>>}
+ */
+async function answerPrefillOf(conn, link) {
+    if (link.ol_kind !== "personal" || !link.ol_client_id) return {};
+    const [rows] = await conn.query(
+        `SELECT a.sva_question_id, a.sva_type, a.sva_value, a.sva_other_text
+         FROM tb_service_request_answers a
+         JOIN tb_service_requests r ON r.svr_id = a.sva_request_id
+         JOIN tb_requirement_questions q ON q.rqq_id = a.sva_question_id
+         WHERE r.svr_client_id = ? AND q.rqq_prefill = 1 AND q.rqq_status = 'active' AND q.rqq_type <> 'file' AND a.sva_value IS NOT NULL
+         ORDER BY r.svr_submitted_at DESC, a.sva_id DESC`,
+        [link.ol_client_id],
+    );
+    const prefill = {};
+    for (const row of rows) {
+        if (prefill[row.sva_question_id]) continue;
+        prefill[row.sva_question_id] = { value: storedValueToAnswer(row.sva_type, row.sva_value), other_text: row.sva_other_text };
+    }
+    return prefill;
+}
+
+/** ค่าที่เก็บ → รูปคำตอบของหน้าร้าน (เลือกได้หลายข้อเก็บเป็น JSON array) */
+function storedValueToAnswer(type, storedValue) {
+    if (type !== "multi") return storedValue;
+    try {
+        return JSON.parse(storedValue);
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * กลุ่มคำถามที่ลิงก์นี้ถามเพิ่ม / ไม่ถาม (Q-3 · ไม่มีแถว = ตามกติกาปกติ) · หน้าร้านคิดข้อที่ขึ้นด้วยกติกาเดียวกับ backend
+ * @returns {Promise<{ include_group_ids: number[], exclude_group_ids: number[] }>}
+ */
+async function loadLinkQuestionRules(conn, linkId) {
+    const [rows] = await conn.query("SELECT olq_group_id, olq_mode FROM tb_order_link_requirement_groups WHERE olq_link_id = ?", [linkId]);
+    return {
+        include_group_ids: rows.filter((row) => row.olq_mode === "include").map((row) => row.olq_group_id),
+        exclude_group_ids: rows.filter((row) => row.olq_mode === "exclude").map((row) => row.olq_group_id),
     };
 }
 
@@ -267,37 +323,71 @@ function cartRuleError(entries, singleChoiceCategories) {
 }
 
 /**
- * ตรวจคำตอบของกลุ่มที่ต้องถาม → { rows, fields } · ไฟล์ของคำถามที่ไม่ได้ถาม/ไม่ใช่ชนิดไฟล์ = ผิด
+ * ตรวจคำตอบของข้อที่ลูกค้าเห็น → { rows, fields }
+ * ข้อที่ไม่ขึ้น (กลุ่มไม่เกี่ยว · ข้อลูกที่ข้อแม่ตอบไม่ตรง) ไม่ตรวจ ไม่เก็บ · ไฟล์ของข้อที่ไม่ได้ถาม/ไม่ใช่ชนิดไฟล์ = ผิด
+ * @param {object[]} groups ผลของ visibleQuestionnaire
+ * @param {object[]} answers [{ question_id, value, other_text }]
  * @param {object[]} files จาก multer (fieldname = file_<question_id>)
+ * @param {string} today วันนี้เวลาไทย (ข้อวันที่ที่ต้องเป็นอนาคต)
  */
-function checkAnswers(groups, answers, files) {
-    const valueById = new Map(answers.map((answer) => [answer.question_id, answer.value ?? null]));
-    const filesById = new Map();
+function checkAnswers(groups, answers, files, today) {
+    const answerById = new Map(answers.map((answer) => [answer.question_id, answer]));
+    const filesById = filesByQuestion(files);
     const fields = {};
+    const rows = [];
+    for (const group of groups) {
+        for (const question of group.questions) {
+            const answer = answerById.get(question.rqq_id);
+            const value = answer?.value ?? null;
+            const otherText = answer?.other_text ?? null;
+            const questionFiles = question.rqq_type === "file" ? (filesById.get(question.rqq_id) ?? []) : [];
+            const error = answerError(question, value, { fileCount: questionFiles.length, otherText, today }) ?? fileError(question, questionFiles);
+            if (error) fields[`answers.${question.rqq_id}`] = error;
+            rows.push({
+                group,
+                question,
+                value: storedAnswer(question, value),
+                otherText: storedOtherText(question, value, otherText),
+                files: questionFiles,
+            });
+        }
+    }
+    const askedFileQuestions = new Set(rows.filter((row) => row.question.rqq_type === "file").map((row) => row.question.rqq_id));
+    for (const questionId of filesById.keys()) {
+        if (!askedFileQuestions.has(questionId)) fields[`answers.${questionId}`] = "แนบไฟล์ในข้อนี้ไม่ได้ (ข้อนี้ไม่ได้ถามแล้ว กรุณาโหลดหน้าใหม่)";
+    }
+    const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+    if (totalBytes > MAX_TOTAL_FILE_BYTES) {
+        const firstFileQuestion = [...filesById.keys()][0];
+        fields[`answers.${firstFileQuestion}`] = `ไฟล์รวมทุกข้อใหญ่เกิน ${MAX_TOTAL_FILE_BYTES / 1024 / 1024} MB ลองย่อไฟล์หรือแนบเฉพาะที่จำเป็น`;
+    }
+    return { rows, fields };
+}
+
+/** ไฟล์จาก multer แยกตามข้อ (ชื่อช่อง file_<question_id>) */
+function filesByQuestion(files) {
+    const filesById = new Map();
     for (const file of files) {
         const questionId = Number(String(file.fieldname).replace(/^file_/, ""));
         const list = filesById.get(questionId) ?? [];
         list.push(file);
         filesById.set(questionId, list);
     }
-    const asked = new Set();
-    const rows = [];
-    for (const group of groups) {
-        for (const question of group.questions) {
-            asked.add(question.rqq_id);
-            const value = valueById.get(question.rqq_id) ?? null;
-            const questionFiles = question.rqq_type === "file" ? filesById.get(question.rqq_id) ?? [] : [];
-            const error = answerError(question, value, questionFiles.length);
-            if (error) fields[`answers.${question.rqq_id}`] = error;
-            rows.push({ group, question, value: storedAnswer(question, value), files: questionFiles });
-        }
+    return filesById;
+}
+
+/** ไฟล์ของข้อนี้: ขนาดต่อไฟล์ และชนิดจากเนื้อไฟล์ (ข้อรูป/PDF ไม่รับไฟล์งานออกแบบ) */
+function fileError(question, questionFiles) {
+    if (questionFiles.length === 0) return null;
+    const maxBytes = maxFileBytesOf(question);
+    if (questionFiles.some((file) => file.size > maxBytes)) return `ไฟล์ใหญ่เกิน ${maxBytes / 1024 / 1024} MB`;
+    const allowDesignFiles = question.rqq_file_kind === "design";
+    if (questionFiles.some((file) => !detectFileType(file.buffer, { allowDesignFiles }))) {
+        return allowDesignFiles
+            ? "ใช้ไฟล์ PDF JPG PNG AI PSD SVG หรือ ZIP (ไฟล์ที่เปลี่ยนนามสกุลเองใช้ไม่ได้)"
+            : "ใช้ไฟล์ PDF JPG หรือ PNG (ไฟล์ที่เปลี่ยนนามสกุลเองใช้ไม่ได้)";
     }
-    for (const [questionId, list] of filesById) {
-        const question = groups.flatMap((group) => group.questions).find((row) => row.rqq_id === questionId);
-        if (!asked.has(questionId) || question?.rqq_type !== "file") fields[`answers.${questionId}`] = "แนบไฟล์ในข้อนี้ไม่ได้";
-        if (list.some((file) => file.size > MAX_FILE_BYTES)) fields[`answers.${questionId}`] = "ไฟล์ใหญ่เกิน 10 MB";
-    }
-    return { rows, fields };
+    return null;
 }
 
 /** แถวของสินค้า · แบบ % = จำนวน 1 ราคาว่าง (ยอดคิดจากแถวอื่นทุกครั้ง ไม่เก็บซ้ำ) */
@@ -394,12 +484,28 @@ async function submit(conn, code, input, { files = [], savedPaths = [] } = {}) {
     const [singleChoiceCategories] = await conn.query("SELECT pc_id, pc_name FROM tb_product_categories WHERE pc_is_single_choice = 1");
     const ruleError = cartRuleError(entries, singleChoiceCategories);
     if (ruleError) throw new AppError(409, "ORDER_CART_RULE", `${ruleError} · ตรวจตะกร้าอีกครั้ง`);
-    const groups = applicableGroups(
+    const questionRules = await loadLinkQuestionRules(conn, link.ol_id);
+    const answers = input.answers ?? [];
+    const groups = visibleQuestionnaire(
         await requirementService.listGroups(conn, { activeOnly: true }),
-        entries.map((entry) => entry.category_id).filter(Boolean),
-        entries.filter((entry) => entry.kind === "package").map((entry) => entry.id),
+        {
+            linkKind: link.ol_kind,
+            categoryIds: entries.map((entry) => entry.category_id),
+            packageIds: entries.filter((entry) => entry.kind === "package").map((entry) => entry.id),
+            productIds: entries.filter((entry) => entry.kind === "product").map((entry) => entry.id),
+            hasPreset: preset.items.length > 0,
+            includeGroupIds: questionRules.include_group_ids,
+            excludeGroupIds: questionRules.exclude_group_ids,
+        },
+        Object.fromEntries(answers.map((answer) => [answer.question_id, answer.value ?? null])),
     );
-    const answerCheck = checkAnswers(groups, input.answers ?? [], files);
+    const answerCheck = checkAnswers(groups, answers, files, todayBangkok());
+    // ทีมงานแก้คำถามระหว่างที่ลูกค้ากำลังตอบ (มีข้อที่ต้องตอบที่หน้าลูกค้าไม่เคยแสดง) → ให้โหลดคำถามใหม่ คำตอบเดิมยังอยู่ในหน้า
+    const seenQuestionIds = new Set(input.seen_question_ids ?? []);
+    const unseenErrors = Object.keys(answerCheck.fields).filter((field) => !seenQuestionIds.has(Number(field.replace("answers.", ""))));
+    if (input.seen_question_ids && unseenErrors.length > 0) {
+        throw new AppError(409, "QUESTIONNAIRE_CHANGED", "ทีมงานเพิ่งปรับคำถาม กรุณาตอบข้อที่เพิ่มมา (คำตอบเดิมยังอยู่)", answerCheck.fields);
+    }
     if (Object.keys(answerCheck.fields).length > 0) {
         throw new AppError(400, "VALIDATION", "ตอบคำถามให้ครบก่อนส่ง (ดูข้อความใต้คำถาม)", answerCheck.fields);
     }
@@ -467,12 +573,24 @@ async function submit(conn, code, input, { files = [], savedPaths = [] } = {}) {
 
     for (const [index, answer] of answerCheck.rows.entries()) {
         const [answerResult] = await conn.query(
-            `INSERT INTO tb_service_request_answers (sva_request_id, sva_question_id, sva_order, sva_group_name, sva_question_text, sva_type, sva_value)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [requestId, answer.question.rqq_id, index + 1, answer.group.rqg_name, answer.question.rqq_text, answer.question.rqq_type, answer.value],
+            `INSERT INTO tb_service_request_answers
+                (sva_request_id, sva_question_id, sva_order, sva_group_name, sva_question_text, sva_type, sva_value, sva_other_text)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                requestId,
+                answer.question.rqq_id,
+                index + 1,
+                answer.group.rqg_name,
+                answer.question.rqq_text,
+                answer.question.rqq_type,
+                answer.value,
+                answer.otherText,
+            ],
         );
         for (const file of answer.files) {
-            const storedPath = await savePrivateFile("service-requests", requestId, file.buffer, `answers.${answer.question.rqq_id}`);
+            const storedPath = await savePrivateFile("service-requests", requestId, file.buffer, `answers.${answer.question.rqq_id}`, {
+                allowDesignFiles: answer.question.rqq_file_kind === "design",
+            });
             savedPaths.push(storedPath);
             await conn.query(
                 "INSERT INTO tb_service_request_files (svf_answer_id, svf_file_path, svf_original_name, svf_size) VALUES (?, ?, ?, ?)",
@@ -494,21 +612,25 @@ async function submit(conn, code, input, { files = [], savedPaths = [] } = {}) {
 /** คำตอบของคำขอ (ข้อความอ่านง่าย + ชื่อไฟล์) เรียงตามที่ถาม · ใช้ทั้งหน้าสถานะและหน้าพนักงาน */
 async function findAnswers(conn, requestId) {
     const [answers] = await conn.query(
-        `SELECT sva_id, sva_question_id, sva_group_name, sva_question_text, sva_type, sva_value
+        `SELECT sva_id, sva_question_id, sva_group_name, sva_question_text, sva_type, sva_value, sva_other_text
          FROM tb_service_request_answers WHERE sva_request_id = ? ORDER BY sva_order`,
         [requestId],
     );
     if (answers.length === 0) return [];
     const [files] = await conn.query(
-        "SELECT svf_id, svf_answer_id, svf_original_name, svf_size FROM tb_service_request_files WHERE svf_answer_id IN (?) ORDER BY svf_id",
+        `SELECT svf_id, svf_answer_id, svf_original_name, svf_size, svf_file_path
+         FROM tb_service_request_files WHERE svf_answer_id IN (?) ORDER BY svf_id`,
         [answers.map((answer) => answer.sva_id)],
     );
     return answers.map((answer) => ({
         group_name: answer.sva_group_name,
         question: answer.sva_question_text,
         type: answer.sva_type,
-        answer: answerText(answer.sva_type, answer.sva_value),
-        files: files.filter((file) => file.svf_answer_id === answer.sva_id).map((file) => ({ id: file.svf_id, name: file.svf_original_name, size: file.svf_size })),
+        answer: answerText(answer.sva_type, answer.sva_value, answer.sva_other_text),
+        // is_viewable = เปิดดูในแท็บได้ (รูป/PDF) · ไฟล์งานออกแบบต้องดาวน์โหลด (SVG ฝังสคริปต์ได้)
+        files: files
+            .filter((file) => file.svf_answer_id === answer.sva_id)
+            .map((file) => ({ id: file.svf_id, name: file.svf_original_name, size: file.svf_size, is_viewable: isViewableFile(file.svf_file_path) })),
     }));
 }
 

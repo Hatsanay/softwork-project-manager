@@ -34,6 +34,24 @@ const presetItems = z
         if (new Set(keys).size !== keys.length) context.addIssue({ code: "custom", message: "มีรายการซ้ำ รวมเป็นแถวเดียวแล้วแก้จำนวนแทน" });
     });
 
+/**
+ * กลุ่มคำถามรายลิงก์ (2026-10-26 Q-3 · docs/plans/2026-10-26-customer-questions.md ข้อ 4.7)
+ * include = ถามเพิ่ม (กลุ่มไหนก็ได้ รวมกลุ่มที่ไม่ถามเอง) · exclude = ไม่ถามในลิงก์นี้ (ชนะทุกเงื่อนไข) · กลุ่มเดียวอยู่ทั้งสองฝั่งไม่ได้
+ */
+const groupIdList = z.array(z.number().int().positive()).max(100, "เลือกกลุ่มได้ไม่เกิน 100 กลุ่ม").default([]);
+const questionRules = z
+    .object({ include_group_ids: groupIdList, exclude_group_ids: groupIdList })
+    .default({ include_group_ids: [], exclude_group_ids: [] })
+    .superRefine((rules, context) => {
+        if (rules.include_group_ids.some((id) => rules.exclude_group_ids.includes(id))) {
+            context.addIssue({ code: "custom", message: "กลุ่มเดียวกันตั้งทั้งถามเพิ่มและไม่ถามไม่ได้" });
+        }
+    })
+    .transform((rules) => ({
+        include_group_ids: [...new Set(rules.include_group_ids)],
+        exclude_group_ids: [...new Set(rules.exclude_group_ids)],
+    }));
+
 /** ไม่ให้ลูกค้าเลือกเพิ่ม = ต้องมีรายการที่ทีมเลือกให้ (ไม่งั้นลิงก์ไม่มีอะไรให้ส่ง) */
 function requirePresetWhenLocked(link, context) {
     if (!link.ol_allow_more && link.preset_items.length === 0) {
@@ -54,6 +72,7 @@ export const orderLinkSchema = z
         category_ids: categoryIds,
         preset_items: presetItems,
         ol_allow_more: z.boolean().default(true),
+        question_rules: questionRules,
     })
     .superRefine((link, context) => {
         requirePresetWhenLocked(link, context);
@@ -81,6 +100,7 @@ export const orderLinkUpdateSchema = z
         category_ids: categoryIds,
         preset_items: presetItems,
         ol_allow_more: z.boolean().default(true),
+        question_rules: questionRules,
     })
     .superRefine(requirePresetWhenLocked);
 
@@ -139,10 +159,14 @@ export const orderSubmitSchema = z.object({
             z.object({
                 question_id: z.number().int().positive(),
                 value: z.union([z.string().max(5000), z.array(z.string().max(100)).max(50), z.null()]).optional(),
+                // ข้อความใน "อื่นๆ (ระบุ)" (2026-10-26 Q-1) · ความยาวตรวจใน requirement-answers ให้ข้อความผิดอยู่ใต้คำถาม
+                other_text: z.string().max(1000).nullish(),
             }),
         )
         .max(300)
         .default([]),
+    // ข้อที่หน้าร้านแสดงตอนกดส่ง (Q-4) · มีข้อที่ต้องตอบนอกจากนี้ = ทีมงานเพิ่งปรับคำถาม → QUESTIONNAIRE_CHANGED (ไม่ส่งมา = ไม่ตรวจ)
+    seen_question_ids: z.array(z.number().int().positive()).max(300).optional(),
     // ช่องดักบอท (ซ่อนจากคน) — มีค่า = ไม่ใช่คน
     website: z.string().optional(),
 });

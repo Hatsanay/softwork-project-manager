@@ -24,6 +24,8 @@ export type OrderLink = {
     // รายการที่ทีมเลือกให้ (ล็อก) · is_available = ยังใช้งานได้
     preset_items: { kind: "product" | "package"; id: string; name: string; quantity: number; is_available: boolean }[];
     ol_allow_more: boolean;
+    // กลุ่มคำถามที่ลิงก์นี้ถามเพิ่ม / ไม่ถาม (2026-10-26 Q-3)
+    question_rules: { include_group_ids: number[]; exclude_group_ids: number[] };
     has_preset_problem: boolean;
     open_state: OrderLinkOpenState;
 };

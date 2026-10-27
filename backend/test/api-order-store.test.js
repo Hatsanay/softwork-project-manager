@@ -208,7 +208,7 @@ test("งานด่วน +30%: ยอดจากแถวอื่น · ท
 test("กลุ่มคำถามผูกแพ็ก: ถามเฉพาะเมื่อเลือกแพ็กนั้น", async () => {
     const group = expectStatus(
         await api.callApi("POST", "/V1/requirement-groups", {
-            body: { rqg_name: "ระบบที่ต้องการ", rqg_description: null, rqg_is_general: false, rqg_sort_order: 9, rqg_status: "active", category_ids: [], package_ids: [ids.business] },
+            body: { rqg_name: "ระบบที่ต้องการ", rqg_description: null, rqg_trigger: "selection", rqg_sort_order: 9, rqg_status: "active", category_ids: [], package_ids: [ids.business] },
         }),
         201,
     );

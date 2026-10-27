@@ -49,30 +49,63 @@ export type ContactPrefill = {
     address: string;
 };
 
+// คำถามความต้องการ (2026-10-26 Q-1 · docs/plans/2026-10-26-customer-questions.md) · ชื่อฟิลด์ตามคอลัมน์ฐานข้อมูล
 export type RequirementQuestion = {
     rqq_id: number;
+    rqq_group_id: number;
     rqq_text: string;
     rqq_help: string | null;
+    rqq_placeholder: string | null;
     rqq_type: "short_text" | "long_text" | "single" | "multi" | "yes_no" | "number" | "date" | "url" | "file";
     rqq_options: string[] | null;
+    rqq_allow_other: boolean;
+    rqq_unit: string | null;
+    rqq_min: string | null;
+    rqq_max: string | null;
+    rqq_future_only: boolean;
+    rqq_file_kind: "document" | "design";
     rqq_is_required: boolean;
+    rqq_parent_id: number | null;
+    rqq_parent_values: string[];
+    rqq_audience: "group" | "direct" | "fastwork";
+    rqq_skip_when_preset: boolean;
+    rqq_prefill: boolean;
+    rqq_sort_order: number;
+    rqq_status: "active" | "inactive";
+    // หน้าตั้งค่าเท่านั้น: มีคนตอบข้อนี้แล้วกี่คำขอ
+    answer_count?: number;
 };
 
 export type RequirementGroup = {
     rqg_id: number;
     rqg_name: string;
-    rqg_is_general: boolean;
+    rqg_customer_intro: string | null;
+    rqg_description: string | null;
+    rqg_trigger: "always" | "selection" | "link_only";
+    rqg_audience: "all" | "direct" | "fastwork";
+    rqg_sort_order: number;
+    rqg_status: "active" | "inactive";
     category_ids: string[];
     package_ids: string[];
+    product_ids: string[];
     questions: RequirementQuestion[];
 };
+
+/** กลุ่มที่ลูกค้าเห็น (ผล visibleQuestionnaire) · matched = รายการที่ทำให้กลุ่มนี้ขึ้น */
+export type VisibleRequirementGroup = RequirementGroup & {
+    matched: { category_ids: string[]; package_ids: string[]; product_ids: string[] };
+};
+
+/** กลุ่มที่ลิงก์นี้ถามเพิ่ม / ไม่ถาม (Q-3) */
+export type QuestionRules = { include_group_ids: number[]; exclude_group_ids: number[] };
 
 export type RequestAnswer = {
     group_name: string;
     question: string;
     type: string;
     answer: string | null;
-    files: { id: number; name: string; size: number }[];
+    // is_viewable = เปิดในแท็บได้ (รูป/PDF) · ไฟล์งานออกแบบต้องดาวน์โหลด
+    files: { id: number; name: string; size: number; is_viewable: boolean }[];
 };
 
 export type ShopResponse = {
@@ -86,6 +119,9 @@ export type ShopResponse = {
     allow_more?: boolean;
     prefill?: ContactPrefill | null;
     questionnaire?: RequirementGroup[];
+    question_rules?: QuestionRules;
+    // ลิงก์เฉพาะลูกค้า: คำตอบล่าสุดของลูกค้าคนนี้ สำหรับข้อที่เปิด "เติมคำตอบเดิม" (Q-4)
+    answer_prefill?: Record<number, { value: string | string[]; other_text: string | null }>;
 };
 
 // ตะกร้า: รหัส → จำนวน (สินค้าใช้ "p:<id>" · ชุดใช้ "k:<id>")

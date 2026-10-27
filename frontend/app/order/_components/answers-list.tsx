@@ -1,9 +1,12 @@
 // คำตอบความต้องการของคำขอ (2026-10-25 · S-2) — ใช้ทั้งหน้าสถานะของลูกค้าและหน้าคำขอของพนักงาน
 // เรียงตามที่ถาม แบ่งตามกลุ่ม · ข้อที่ไม่ได้ตอบแสดง "-" · ไฟล์: พนักงานกดเปิดได้ (onOpenFile) ลูกค้าเห็นชื่อไฟล์
-import { FileText } from "lucide-react";
+// ไฟล์งานออกแบบ (is_viewable = false) บอกว่า "ดาวน์โหลด" ให้รู้ก่อนกดว่าไม่เปิดในแท็บ
+import { Download, FileText } from "lucide-react";
 import type { RequestAnswer } from "../_types";
 
-export default function AnswersList({ answers, onOpenFile }: { answers: RequestAnswer[]; onOpenFile?: (fileId: number) => void }) {
+type AnswerFile = RequestAnswer["files"][number];
+
+export default function AnswersList({ answers, onOpenFile }: { answers: RequestAnswer[]; onOpenFile?: (file: AnswerFile) => void }) {
     const groups: { name: string; answers: RequestAnswer[] }[] = [];
     for (const answer of answers) {
         const last = groups.at(-1);
@@ -28,9 +31,10 @@ export default function AnswersList({ answers, onOpenFile }: { answers: RequestA
                                                 {answer.files.map((file) => (
                                                     <li key={file.id}>
                                                         {onOpenFile ? (
-                                                            <button type="button" className="-my-1.5 inline-flex min-h-9 items-center gap-1.5 text-blue-600 hover:underline" onClick={() => onOpenFile(file.id)}>
-                                                                <FileText size={15} aria-hidden="true" />
+                                                            <button type="button" className="-my-1.5 inline-flex min-h-9 items-center gap-1.5 text-blue-600 hover:underline" onClick={() => onOpenFile(file)}>
+                                                                {file.is_viewable ? <FileText size={15} aria-hidden="true" /> : <Download size={15} aria-hidden="true" />}
                                                                 {file.name}
+                                                                {!file.is_viewable && <span className="text-xs text-gray-500">(ดาวน์โหลด)</span>}
                                                             </button>
                                                         ) : (
                                                             <span className="inline-flex items-center gap-1.5 text-gray-700">

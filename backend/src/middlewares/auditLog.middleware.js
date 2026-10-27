@@ -273,6 +273,10 @@ const ENTITIES = [
     { re: /^\/requirement-groups\/([^/]+)\/question-order$/, type: "requirement_group", id: "1", label: { PUT: "เรียงคำถามความต้องการ" } },
     { re: /^\/requirement-groups\/([^/]+)\/questions$/, type: "requirement_question", id: "response:rqq_id", label: { POST: "เพิ่มคำถามความต้องการ" } },
     { re: /^\/requirement-questions\/([^/]+)$/, type: "requirement_question", id: "1", label: { PUT: "แก้คำถามความต้องการ", DELETE: "ลบคำถามความต้องการ" } },
+    { re: /^\/requirement-group-order$/, type: "requirement_group", label: { PUT: "เรียงกลุ่มคำถามความต้องการ" } },
+    { re: /^\/requirement-groups\/([^/]+)\/copy$/, type: "requirement_group", id: "response:rqg_id", label: { POST: "คัดลอกกลุ่มคำถามความต้องการ" } },
+    { re: /^\/requirement-questions\/([^/]+)\/copy$/, type: "requirement_question", id: "response:rqq_id", label: { POST: "คัดลอกคำถามความต้องการ" } },
+    { re: /^\/requirement-questions\/([^/]+)\/move$/, type: "requirement_question", id: "1", label: { POST: "ย้ายคำถามความต้องการไปกลุ่มอื่น" } },
     { re: /^\/order\/[^/]+\/requests$/, type: "service_request", id: "response:svr_id", label: { POST: "ลูกค้าส่งคำขอบริการ" } },
     { re: /^\/order\/requests\/[^/]+\/accept$/, type: "service_request", label: { POST: "ลูกค้ายอมรับใบเสนอราคาในลิงก์" } },
 ];

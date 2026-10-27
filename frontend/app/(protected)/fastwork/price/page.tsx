@@ -21,7 +21,7 @@ import { apiFetch, type ApiError } from "@/lib/api";
 import { formatAmount, formatHundredths } from "@/lib/shared/money.mjs";
 import { cartTotals, fixedSubtotal, lineAmount, multiplyQuantity, percentAmount } from "@/lib/shared/order-cart-math.mjs";
 import { suggestPayoutAmounts } from "@/lib/shared/fastwork-math.mjs";
-import { applicableGroups } from "@/lib/shared/requirement-answers.mjs";
+import { numberRangeText, OTHER_OPTION, visibleQuestionnaire, YES_NO_VALUES } from "@/lib/shared/requirement-answers.mjs";
 import { MAX_SET_COUNT } from "@/lib/shared/schemas/order-link.mjs";
 import { packagePrice } from "@/app/order/_components/order-shop";
 import QuantityControl from "@/app/order/_components/quantity-control";
@@ -41,21 +41,36 @@ const ANSWER_HINT: Partial<Record<RequirementQuestion["rqq_type"], string>> = {
     multi: "เลือกได้หลายข้อ",
 };
 
-/** คำถามเป็นข้อความสำหรับวางในแชต Fastwork */
+/**
+ * คำถามเป็นข้อความสำหรับวางในแชต Fastwork · ข้อลูกขึ้นทุกข้อพร้อมเงื่อนไข "(ถ้าข้อ 3 ตอบว่า มีแล้ว)" (ยังไม่รู้คำตอบ)
+ * ตัวเลือก "อื่นๆ (ระบุ)" · ตัวเลขบอกช่วง/หน่วย · ไฟล์บอกให้ส่งในแชต
+ */
 function questionsText(groups: RequirementGroup[]) {
     const parts = ["รบกวนตอบคำถามเหล่านี้เพื่อประเมินงานครับ"];
-    let number = 0;
+    const numberById = new Map<number, number>();
     for (const group of groups) {
-        if (group.questions.length === 0) continue;
         parts.push("", `[${group.rqg_name}]`);
         for (const question of group.questions) {
-            number += 1;
-            const choices = question.rqq_options?.length ? `ตัวเลือก: ${question.rqq_options.join(" / ")}` : null;
-            const hint = [ANSWER_HINT[question.rqq_type], choices].filter(Boolean).join(" · ");
-            parts.push(`${number}. ${question.rqq_text}${hint ? ` (${hint})` : ""}`);
+            const number = numberById.size + 1;
+            numberById.set(question.rqq_id, number);
+            const parent = question.rqq_parent_id ? group.questions.find((row) => row.rqq_id === question.rqq_parent_id) : undefined;
+            const condition = parent ? `(ถ้าข้อ ${numberById.get(parent.rqq_id)} ตอบว่า ${conditionLabels(parent, question.rqq_parent_values)}) ` : "";
+            const hint = [ANSWER_HINT[question.rqq_type], choicesText(question), numberRangeText(question).trim() || null].filter(Boolean).join(" · ");
+            parts.push(`${parent ? "   " : ""}${number}. ${condition}${question.rqq_text}${hint ? ` (${hint})` : ""}`);
         }
     }
     return parts.join("\n");
+}
+
+function choicesText(question: RequirementQuestion) {
+    if (!question.rqq_options?.length) return null;
+    const choices = question.rqq_allow_other ? [...question.rqq_options, `${OTHER_OPTION} (ระบุ)`] : question.rqq_options;
+    return `ตัวเลือก: ${choices.join(" / ")}`;
+}
+
+function conditionLabels(parent: RequirementQuestion, values: string[]) {
+    const labels = values.map((value) => (parent.rqq_type === "yes_no" ? YES_NO_VALUES[value as keyof typeof YES_NO_VALUES] : value));
+    return labels.join(" หรือ ");
 }
 
 export default function FastworkPricePage() {
@@ -153,7 +168,19 @@ export default function FastworkPricePage() {
         feeVatRate: settings.cs_fastwork_fee_vat_rate,
         whtRate: settings.cs_fastwork_wht_rate,
     });
-    const groups = applicableGroups(data.questionnaire, cart.map((line) => line.categoryId).filter((id): id is string => Boolean(id)));
+    // ก่อนจ้าง: ยังไม่มีรายการที่ทีมเลือกให้ · ถามแบบลิงก์ Fastwork (ไม่ถามช่องทางติดต่อนอกแพลตฟอร์ม) · ยังไม่รู้คำตอบ = ข้อลูกขึ้นทุกข้อ
+    const groups = visibleQuestionnaire(
+        data.questionnaire,
+        {
+            linkKind: "fastwork",
+            categoryIds: cart.map((line) => line.categoryId).filter((id): id is string => Boolean(id)),
+            packageIds: cart.filter((line) => line.key.startsWith("k:")).map((line) => line.key.slice(2)),
+            productIds: cart.filter((line) => line.key.startsWith("p:")).map((line) => line.key.slice(2)),
+            hasPreset: false,
+        },
+        null,
+    ) as RequirementGroup[];
+    const questionCount = groups.reduce((count, group) => count + group.questions.length, 0);
     const title = cart.map((line) => (line.quantity > 1 ? `${line.name} × ${line.quantity}` : line.name)).join(" + ");
 
     function setQuantity(key: string, quantity: number) {
@@ -271,10 +298,12 @@ export default function FastworkPricePage() {
                             )}
                             <button type="button" className={buttonClass("secondary", "md")} disabled={groups.length === 0} onClick={() => copy(questionsText(groups), "คัดลอกคำถามแล้ว วางในแชต Fastwork ได้เลย")}>
                                 <ClipboardCopy size={16} />
-                                คัดลอกคำถาม ({groups.reduce((count, group) => count + group.questions.length, 0)} ข้อ)
+                                คัดลอกคำถาม ({questionCount} ข้อ)
                             </button>
                         </div>
-                        <FieldHint>สร้างงานเมื่อผู้ซื้อจ่ายบน Fastwork แล้ว · หน้ารับงานเติมชื่องานและงวดเดียวเท่าราคาเสนอ แบ่งงวดเพิ่มได้ · คำถาม = กลุ่มทั่วไป + กลุ่มของหมวดที่เลือก</FieldHint>
+                        <FieldHint>
+                            สร้างงานเมื่อผู้ซื้อจ่ายบน Fastwork แล้ว · หน้ารับงานเติมชื่องานและงวดเดียวเท่าราคาเสนอ แบ่งงวดเพิ่มได้ · คำถาม = ข้อที่ลิงก์ Fastwork ถามสำหรับรายการที่เลือก (ข้อที่ถามตามคำตอบ มีเงื่อนไขเขียนกำกับ)
+                        </FieldHint>
                     </SectionCard>
                 </div>
             </div>

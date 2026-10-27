@@ -22,6 +22,7 @@ import CategorySelect from "./category-select";
 import CatalogImageField from "./catalog-image-field";
 import Switch from "@/components/ui/switch";
 import StatusPill from "@/components/ui/status-pill";
+import ItemQuestionsPanel, { type QuestionsTarget } from "./item-questions-panel";
 
 const EMPTY_FORM = {
     product_code: "",
@@ -57,9 +58,11 @@ function toForm(product: Product): ProductForm {
 type ProductsTabProps = {
     categories: ProductCategory[];
     canEdit: boolean;
+    // ไปแก้คำถามลูกค้าของรายการนี้ในแท็บคำถาม (Q-2)
+    onOpenQuestions: (target: QuestionsTarget) => void;
 };
 
-export default function ProductsTab({ categories, canEdit }: ProductsTabProps) {
+export default function ProductsTab({ categories, canEdit, onOpenQuestions }: ProductsTabProps) {
     const messages = PRODUCT_MESSAGES.products;
     const [products, setProducts] = useState<Product[]>([]);
     const [total, setTotal] = useState(0);
@@ -321,6 +324,7 @@ export default function ProductsTab({ categories, canEdit }: ProductsTabProps) {
                                 />
                             </FormField>
                         </div>
+                        <ItemQuestionsPanel kind="product" itemId={editor.editingId} categoryId={form.product_category_id || null} onOpenQuestions={onOpenQuestions} />
                         <SaveErrorBanner error={editor.saveError} />
                         <div className="flex flex-wrap justify-end gap-2">
                             <button type="button" className={SECONDARY_BUTTON} onClick={editor.close}>

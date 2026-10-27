@@ -20,6 +20,7 @@ import CategorySelect from "./category-select";
 import CatalogImageField from "./catalog-image-field";
 import Switch from "@/components/ui/switch";
 import AddonRulesEditor, { type AddonRuleForm } from "./addon-rules-editor";
+import ItemQuestionsPanel, { type QuestionsTarget } from "./item-questions-panel";
 import PackageItemsEditor, {
     emptyItem,
     newRowKey,
@@ -107,9 +108,11 @@ function mergeChoices(first: ProductChoice[], second: ProductChoice[]) {
 type PackagesTabProps = {
     categories: ProductCategory[];
     canEdit: boolean;
+    // ไปแก้คำถามลูกค้าของชุดนี้ในแท็บคำถาม (Q-2)
+    onOpenQuestions: (target: QuestionsTarget) => void;
 };
 
-export default function PackagesTab({ categories, canEdit }: PackagesTabProps) {
+export default function PackagesTab({ categories, canEdit, onOpenQuestions }: PackagesTabProps) {
     const messages = PRODUCT_MESSAGES.packages;
     const [packages, setPackages] = useState<ProductPackageSummary[] | null>(null);
     const [reloadCount, setReloadCount] = useState(0);
@@ -316,6 +319,7 @@ export default function PackagesTab({ categories, canEdit }: PackagesTabProps) {
                         error={fieldErrors.addon_rules}
                         onChange={(rules) => editor.updateField("addon_rules", rules)}
                     />
+                    <ItemQuestionsPanel kind="package" itemId={editor.editingId} categoryId={form.pkg_category_id || null} onOpenQuestions={onOpenQuestions} />
 
                     <SaveErrorBanner error={editor.saveError} />
                     <div className="flex flex-wrap justify-end gap-2">

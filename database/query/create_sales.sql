@@ -967,11 +967,14 @@ CREATE TABLE IF NOT EXISTS `tb_service_request_items` (
 -- ลูกค้าเลือกสินค้าหมวดไหน ขึ้นกลุ่มที่ผูกหมวดนั้น (กลุ่มเดียวกันขึ้นครั้งเดียว)
 CREATE TABLE IF NOT EXISTS `tb_requirement_groups` (
   `rqg_id` int unsigned NOT NULL AUTO_INCREMENT,
-  `rqg_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `rqg_description` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `rqg_is_general` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1 = ถามทุกคำขอ ไม่ขึ้นกับหมวด',
+  `rqg_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rqg_description` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'โน้ตภายใน ลูกค้าไม่เห็น',
+  `rqg_customer_intro` varchar(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'คำอธิบายที่ลูกค้าเห็นใต้ชื่อกลุ่ม (ทำไมถาม)',
+  `rqg_is_general` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'เลิกใช้ 2026-10-26 ใช้ rqg_trigger',
+  `rqg_trigger` enum('always','selection','link_only') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'selection' COMMENT 'ถามเมื่อไหร่: ทุกคำขอ / ตามที่ลูกค้าเลือก / เฉพาะลิงก์ที่ถามเพิ่ม',
+  `rqg_audience` enum('all','direct','fastwork') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'all' COMMENT 'ชนิดลิงก์ที่ถาม · direct = เฉพาะลูกค้า + สาธารณะ',
   `rqg_sort_order` smallint unsigned NOT NULL DEFAULT '0',
-  `rqg_status` enum('active','inactive') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `rqg_status` enum('active','inactive') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
   `rqg_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `rqg_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`rqg_id`)
@@ -990,31 +993,46 @@ CREATE TABLE IF NOT EXISTS `tb_requirement_group_categories` (
 CREATE TABLE IF NOT EXISTS `tb_requirement_questions` (
   `rqq_id` int unsigned NOT NULL AUTO_INCREMENT,
   `rqq_group_id` int unsigned NOT NULL,
-  `rqq_text` varchar(300) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `rqq_help` varchar(300) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ข้อความช่วยใต้คำถาม (ตัวอย่างคำตอบ)',
-  `rqq_type` enum('short_text','long_text','single','multi','yes_no','number','date','url','file') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rqq_text` varchar(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rqq_help` varchar(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ข้อความช่วยใต้คำถาม (ตัวอย่างคำตอบ)',
+  `rqq_placeholder` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ตัวอย่างคำตอบในช่อง',
+  `rqq_type` enum('short_text','long_text','single','multi','yes_no','number','date','url','file') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `rqq_options` json DEFAULT NULL,
+  `rqq_allow_other` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'single/multi: มีตัวเลือก อื่นๆ (ระบุ)',
+  `rqq_unit` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'number: หน่วย เช่น หน้าจอ',
+  `rqq_min` decimal(12,2) DEFAULT NULL COMMENT 'number: ค่าต่ำสุด',
+  `rqq_max` decimal(12,2) DEFAULT NULL COMMENT 'number: ค่าสูงสุด',
+  `rqq_future_only` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'date: ต้องเป็นวันหลังวันนี้',
+  `rqq_file_kind` enum('document','design') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'document' COMMENT 'file: document = รูป/PDF 10 MB · design = เพิ่ม AI PSD SVG ZIP 20 MB ดาวน์โหลดเท่านั้น',
   `rqq_is_required` tinyint(1) NOT NULL DEFAULT '0',
+  `rqq_parent_id` int unsigned DEFAULT NULL COMMENT 'ถามเมื่อข้อนี้ (ข้อแม่) ตอบตรง rqq_parent_values',
+  `rqq_parent_values` json DEFAULT NULL COMMENT 'คำตอบของข้อแม่ที่ทำให้ถามข้อนี้ (yes_no = yes/no)',
+  `rqq_audience` enum('group','direct','fastwork') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'group' COMMENT 'ชนิดลิงก์ที่ถาม · group = ตามกลุ่ม',
+  `rqq_skip_when_preset` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'ไม่ถามเมื่อทีมงานเลือกรายการให้แล้ว (ราคาตกลงแล้ว)',
+  `rqq_prefill` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'ลิงก์เฉพาะลูกค้า: เติมคำตอบล่าสุดของลูกค้าคนนี้',
   `rqq_sort_order` smallint unsigned NOT NULL DEFAULT '0',
-  `rqq_status` enum('active','inactive') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `rqq_status` enum('active','inactive') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
   `rqq_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `rqq_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`rqq_id`),
   KEY `idx_rqq_group` (`rqq_group_id`,`rqq_sort_order`),
-  CONSTRAINT `fk_rqq_group` FOREIGN KEY (`rqq_group_id`) REFERENCES `tb_requirement_groups` (`rqg_id`) ON DELETE CASCADE
+  KEY `fk_rqq_parent` (`rqq_parent_id`),
+  CONSTRAINT `fk_rqq_group` FOREIGN KEY (`rqq_group_id`) REFERENCES `tb_requirement_groups` (`rqg_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_rqq_parent` FOREIGN KEY (`rqq_parent_id`) REFERENCES `tb_requirement_questions` (`rqq_id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- คำตอบในคำขอ (2026-10-25 · S-2) — ชื่อกลุ่ม/ข้อความคำถาม/ชนิด ณ วันส่ง (คัดลอกเพราะคำถามแก้หรือลบทีหลังได้ คำตอบต้องอ่านคู่กับคำถามเดิม)
 -- sva_value: ข้อความ · multi = JSON array · yes_no = yes/no · file = ว่าง (ไฟล์อยู่ใน tb_service_request_files)
 CREATE TABLE IF NOT EXISTS `tb_service_request_answers` (
   `sva_id` int unsigned NOT NULL AUTO_INCREMENT,
-  `sva_request_id` varchar(18) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `sva_request_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `sva_question_id` int unsigned DEFAULT NULL,
   `sva_order` smallint unsigned NOT NULL,
-  `sva_group_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `sva_question_text` varchar(300) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `sva_type` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `sva_value` text COLLATE utf8mb4_unicode_ci,
+  `sva_group_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `sva_question_text` varchar(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `sva_type` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `sva_value` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `sva_other_text` varchar(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ข้อความที่ลูกค้าพิมพ์ใน อื่นๆ (ระบุ)',
   PRIMARY KEY (`sva_id`),
   KEY `idx_sva_request` (`sva_request_id`,`sva_order`),
   KEY `fk_sva_question` (`sva_question_id`),
@@ -1076,4 +1094,23 @@ CREATE TABLE IF NOT EXISTS `tb_requirement_group_packages` (
   KEY `fk_rgp_package` (`rgp_package_id`),
   CONSTRAINT `fk_rgp_group` FOREIGN KEY (`rgp_group_id`) REFERENCES `tb_requirement_groups` (`rqg_id`) ON DELETE CASCADE,
   CONSTRAINT `fk_rgp_package` FOREIGN KEY (`rgp_package_id`) REFERENCES `tb_product_packages` (`pkg_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `tb_requirement_group_products` (
+  `rgr_group_id` int unsigned NOT NULL,
+  `rgr_product_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  PRIMARY KEY (`rgr_group_id`,`rgr_product_id`),
+  KEY `fk_rgr_product` (`rgr_product_id`),
+  CONSTRAINT `fk_rgr_group` FOREIGN KEY (`rgr_group_id`) REFERENCES `tb_requirement_groups` (`rqg_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_rgr_product` FOREIGN KEY (`rgr_product_id`) REFERENCES `tb_products` (`product_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `tb_order_link_requirement_groups` (
+  `olq_link_id` int unsigned NOT NULL,
+  `olq_group_id` int unsigned NOT NULL,
+  `olq_mode` enum('include','exclude') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  PRIMARY KEY (`olq_link_id`,`olq_group_id`),
+  KEY `fk_olq_group` (`olq_group_id`),
+  CONSTRAINT `fk_olq_group` FOREIGN KEY (`olq_group_id`) REFERENCES `tb_requirement_groups` (`rqg_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_olq_link` FOREIGN KEY (`olq_link_id`) REFERENCES `tb_order_links` (`ol_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

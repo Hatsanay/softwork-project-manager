@@ -72,10 +72,12 @@ TRUNCATE TABLE `tb_leave_types`;
 TRUNCATE TABLE `tb_login_logs`;
 TRUNCATE TABLE `tb_maxID`;
 TRUNCATE TABLE `tb_order_link_items`;
+TRUNCATE TABLE `tb_order_link_requirement_groups`;
 TRUNCATE TABLE `tb_order_link_categories`;
 TRUNCATE TABLE `tb_order_links`;
 TRUNCATE TABLE `tb_payment_allocations`;
 TRUNCATE TABLE `tb_requirement_group_packages`;
+TRUNCATE TABLE `tb_requirement_group_products`;
 TRUNCATE TABLE `tb_requirement_group_categories`;
 TRUNCATE TABLE `tb_requirement_groups`;
 TRUNCATE TABLE `tb_requirement_questions`;
@@ -346,24 +348,24 @@ WHERE NOT EXISTS (SELECT 1 FROM tb_leave_types);
 
 -- คำถามความต้องการตั้งต้น (2026-10-25) — ใส่เฉพาะตอนยังไม่มีกลุ่มเลย · ผูกกลุ่มกับหมวดสินค้าเองในหน้าตั้งค่า
 SET @seed_requirements = (SELECT COUNT(*) = 0 FROM tb_requirement_groups);
-INSERT INTO tb_requirement_groups (rqg_id, rqg_name, rqg_description, rqg_is_general, rqg_sort_order)
+INSERT INTO tb_requirement_groups (rqg_id, rqg_name, rqg_description, rqg_is_general, rqg_sort_order, rqg_trigger)
 SELECT * FROM (
-    SELECT 1 AS rqg_id, 'ทั่วไป' AS rqg_name, 'ถามทุกคำขอ' AS rqg_description, 1 AS rqg_is_general, 1 AS rqg_sort_order
-    UNION ALL SELECT 2 AS rqg_id, 'เว็บไซต์' AS rqg_name, 'ผูกกับหมวดงานเว็บไซต์' AS rqg_description, 0 AS rqg_is_general, 2 AS rqg_sort_order
-    UNION ALL SELECT 3 AS rqg_id, 'แอปมือถือ' AS rqg_name, 'ผูกกับหมวดงานแอปมือถือ' AS rqg_description, 0 AS rqg_is_general, 3 AS rqg_sort_order
-    UNION ALL SELECT 4 AS rqg_id, 'ออกแบบ UX/UI' AS rqg_name, 'ผูกกับหมวดงานออกแบบ' AS rqg_description, 0 AS rqg_is_general, 4 AS rqg_sort_order
-    UNION ALL SELECT 5 AS rqg_id, 'ระบบงาน' AS rqg_name, 'ผูกกับหมวดระบบภายในองค์กร' AS rqg_description, 0 AS rqg_is_general, 5 AS rqg_sort_order
+    SELECT 1 AS rqg_id, 'ทั่วไป' AS rqg_name, 'ถามทุกคำขอ' AS rqg_description, 1 AS rqg_is_general, 1 AS rqg_sort_order, 'always' AS rqg_trigger
+    UNION ALL SELECT 2 AS rqg_id, 'เว็บไซต์' AS rqg_name, 'ผูกกับหมวดงานเว็บไซต์' AS rqg_description, 0 AS rqg_is_general, 2 AS rqg_sort_order, 'link_only' AS rqg_trigger
+    UNION ALL SELECT 3 AS rqg_id, 'แอปมือถือ' AS rqg_name, 'ผูกกับหมวดงานแอปมือถือ' AS rqg_description, 0 AS rqg_is_general, 3 AS rqg_sort_order, 'link_only' AS rqg_trigger
+    UNION ALL SELECT 4 AS rqg_id, 'ออกแบบ UX/UI' AS rqg_name, 'ผูกกับหมวดงานออกแบบ' AS rqg_description, 0 AS rqg_is_general, 4 AS rqg_sort_order, 'link_only' AS rqg_trigger
+    UNION ALL SELECT 5 AS rqg_id, 'ระบบงาน' AS rqg_name, 'ผูกกับหมวดระบบภายในองค์กร' AS rqg_description, 0 AS rqg_is_general, 5 AS rqg_sort_order, 'link_only' AS rqg_trigger
 ) AS seed WHERE @seed_requirements = 1;
 INSERT INTO tb_requirement_questions (rqq_group_id, rqq_text, rqq_help, rqq_type, rqq_options, rqq_is_required, rqq_sort_order)
 SELECT * FROM (
     SELECT 1 AS rqq_group_id, 'ธุรกิจ/องค์กรของคุณทำอะไร ลูกค้าหลักคือใคร' AS rqq_text, 'เช่น ร้านอาหารไทย ลูกค้าเป็นนักท่องเที่ยว' AS rqq_help, 'long_text' AS rqq_type, NULL AS rqq_options, 1 AS rqq_is_required, 1 AS rqq_sort_order
-    UNION ALL SELECT 1 AS rqq_group_id, 'เป้าหมายของงานนี้' AS rqq_text, NULL AS rqq_help, 'multi' AS rqq_type, '["เพิ่มยอดขาย","ลดงานเอกสาร","สร้างภาพลักษณ์","ให้ลูกค้าจอง/สั่งเอง","อื่นๆ"]' AS rqq_options, 0 AS rqq_is_required, 2 AS rqq_sort_order
+    UNION ALL SELECT 1 AS rqq_group_id, 'เป้าหมายของงานนี้' AS rqq_text, NULL AS rqq_help, 'multi' AS rqq_type, '["เพิ่มยอดขาย","ลดงานเอกสาร","สร้างภาพลักษณ์","ให้ลูกค้าจอง/สั่งเอง"]' AS rqq_options, 0 AS rqq_is_required, 2 AS rqq_sort_order
     UNION ALL SELECT 1 AS rqq_group_id, 'อยากให้เสร็จภายใน' AS rqq_text, NULL AS rqq_help, 'date' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 3 AS rqq_sort_order
     UNION ALL SELECT 1 AS rqq_group_id, 'งบประมาณที่ตั้งไว้' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["ต่ำกว่า 20,000","20,000-50,000","50,000-100,000","มากกว่า 100,000","ยังไม่แน่ใจ"]' AS rqq_options, 0 AS rqq_is_required, 4 AS rqq_sort_order
     UNION ALL SELECT 1 AS rqq_group_id, 'ใครเป็นคนตัดสินใจ/ตรวจรับงาน' AS rqq_text, NULL AS rqq_help, 'short_text' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 5 AS rqq_sort_order
     UNION ALL SELECT 1 AS rqq_group_id, 'ช่องทางที่สะดวกให้ติดต่อ' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["โทร","LINE","อีเมล"]' AS rqq_options, 0 AS rqq_is_required, 6 AS rqq_sort_order
     UNION ALL SELECT 2 AS rqq_group_id, 'มีเว็บไซต์เดิมไหม' AS rqq_text, NULL AS rqq_help, 'yes_no' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 1 AS rqq_sort_order
-    UNION ALL SELECT 2 AS rqq_group_id, 'ลิงก์เว็บไซต์เดิม (ถ้ามี)' AS rqq_text, NULL AS rqq_help, 'url' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 2 AS rqq_sort_order
+    UNION ALL SELECT 2 AS rqq_group_id, 'ลิงก์เว็บไซต์เดิม' AS rqq_text, NULL AS rqq_help, 'url' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 2 AS rqq_sort_order
     UNION ALL SELECT 2 AS rqq_group_id, 'ประมาณกี่หน้า และมีหน้าอะไรบ้าง' AS rqq_text, 'เช่น หน้าแรก เกี่ยวกับเรา บริการ ติดต่อ' AS rqq_help, 'long_text' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 3 AS rqq_sort_order
     UNION ALL SELECT 2 AS rqq_group_id, 'มีโดเมนแล้วไหม' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["มีแล้ว","ยังไม่มี ให้จดให้","ไม่แน่ใจ"]' AS rqq_options, 0 AS rqq_is_required, 4 AS rqq_sort_order
     UNION ALL SELECT 2 AS rqq_group_id, 'ต้องการระบบอะไรเพิ่ม' AS rqq_text, NULL AS rqq_help, 'multi' AS rqq_type, '["ฟอร์มติดต่อ","จอง/นัดหมาย","ร้านค้าออนไลน์","ชำระเงิน","ระบบสมาชิก","หลายภาษา","บทความ/ข่าว"]' AS rqq_options, 0 AS rqq_is_required, 5 AS rqq_sort_order
@@ -376,7 +378,7 @@ SELECT * FROM (
     UNION ALL SELECT 3 AS rqq_group_id, 'ต้องใช้งานตอนไม่มีอินเทอร์เน็ตไหม' AS rqq_text, NULL AS rqq_help, 'yes_no' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 4 AS rqq_sort_order
     UNION ALL SELECT 3 AS rqq_group_id, 'ต้องเชื่อมกับระบบอื่นไหม' AS rqq_text, 'เช่น LINE ระบบชำระเงิน ระบบเดิม' AS rqq_help, 'long_text' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 5 AS rqq_sort_order
     UNION ALL SELECT 3 AS rqq_group_id, 'มีบัญชีนักพัฒนา App Store / Google Play แล้วไหม' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["มีแล้ว","ยังไม่มี","ไม่แน่ใจ"]' AS rqq_options, 0 AS rqq_is_required, 6 AS rqq_sort_order
-    UNION ALL SELECT 4 AS rqq_group_id, 'ออกแบบให้อะไร' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["เว็บไซต์","แอปมือถือ","ระบบงาน","อื่นๆ"]' AS rqq_options, 0 AS rqq_is_required, 1 AS rqq_sort_order
+    UNION ALL SELECT 4 AS rqq_group_id, 'ออกแบบให้อะไร' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["เว็บไซต์","แอปมือถือ","ระบบงาน"]' AS rqq_options, 0 AS rqq_is_required, 1 AS rqq_sort_order
     UNION ALL SELECT 4 AS rqq_group_id, 'ประมาณกี่หน้าจอ' AS rqq_text, NULL AS rqq_help, 'number' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 2 AS rqq_sort_order
     UNION ALL SELECT 4 AS rqq_group_id, 'มีโลโก้/สีประจำแบรนด์แล้วไหม' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["มีครบ","มีโลโก้อย่างเดียว","ยังไม่มี"]' AS rqq_options, 0 AS rqq_is_required, 3 AS rqq_sort_order
     UNION ALL SELECT 4 AS rqq_group_id, 'ไฟล์โลโก้หรือคู่มือแบรนด์' AS rqq_text, 'รูปหรือ PDF ไม่เกิน 10 MB' AS rqq_help, 'file' AS rqq_type, NULL AS rqq_options, 0 AS rqq_is_required, 4 AS rqq_sort_order
@@ -390,6 +392,26 @@ SELECT * FROM (
     UNION ALL SELECT 5 AS rqq_group_id, 'ใช้บนอุปกรณ์อะไร' AS rqq_text, NULL AS rqq_help, 'multi' AS rqq_type, '["คอมพิวเตอร์","มือถือ","แท็บเล็ต"]' AS rqq_options, 0 AS rqq_is_required, 6 AS rqq_sort_order
     UNION ALL SELECT 5 AS rqq_group_id, 'ต้องการติดตั้งที่ไหน' AS rqq_text, NULL AS rqq_help, 'single' AS rqq_type, '["คลาวด์","เซิร์ฟเวอร์ของบริษัท","ไม่แน่ใจ"]' AS rqq_options, 0 AS rqq_is_required, 7 AS rqq_sort_order
 ) AS seed WHERE @seed_requirements = 1;
+
+-- 2026-10-26 Q-5 ชุดตั้งต้นใช้ความสามารถใหม่ (docs/plans/2026-10-26-customer-questions.md ข้อ 11) · รันเฉพาะรอบที่เพิ่งใส่ชุดตั้งต้น ฐานเดิมไม่เปลี่ยน
+-- อ้างคำถามด้วยข้อความ (ชุดตั้งต้นไม่มีรหัสตายตัว) · ข้อลูกจับคู่ข้อแม่ในกลุ่มเดียวกันด้วย self-join
+UPDATE tb_requirement_groups SET rqg_customer_intro = 'ช่วยให้ทีมงานเข้าใจธุรกิจและเป้าหมายของงานนี้' WHERE @seed_requirements = 1 AND rqg_id = 1;
+UPDATE tb_requirement_groups SET rqg_customer_intro = 'ใช้วางโครงหน้าเว็บและระบบที่ต้องมี' WHERE @seed_requirements = 1 AND rqg_id = 2;
+UPDATE tb_requirement_groups SET rqg_customer_intro = 'ใช้ออกแบบหน้าจอให้ตรงกับแบรนด์' WHERE @seed_requirements = 1 AND rqg_id = 4;
+-- ลูกค้าเดิมไม่ต้องตอบซ้ำ · อื่นๆ (ระบุ) · วันที่ต้องเป็นอนาคต · ล็อกแพ็กแล้วไม่ถามงบ · ช่องทางติดต่อไม่ถามในลิงก์ Fastwork (กติกา Fastwork)
+UPDATE tb_requirement_questions SET rqq_prefill = 1 WHERE @seed_requirements = 1 AND rqq_group_id = 1 AND rqq_text = 'ธุรกิจ/องค์กรของคุณทำอะไร ลูกค้าหลักคือใคร';
+UPDATE tb_requirement_questions SET rqq_allow_other = 1 WHERE @seed_requirements = 1 AND rqq_group_id = 1 AND rqq_text = 'เป้าหมายของงานนี้';
+UPDATE tb_requirement_questions SET rqq_future_only = 1 WHERE @seed_requirements = 1 AND rqq_group_id = 1 AND rqq_text = 'อยากให้เสร็จภายใน';
+UPDATE tb_requirement_questions SET rqq_skip_when_preset = 1 WHERE @seed_requirements = 1 AND rqq_group_id = 1 AND rqq_text = 'งบประมาณที่ตั้งไว้';
+UPDATE tb_requirement_questions SET rqq_audience = 'direct' WHERE @seed_requirements = 1 AND rqq_group_id = 1 AND rqq_text = 'ช่องทางที่สะดวกให้ติดต่อ';
+UPDATE tb_requirement_questions child JOIN tb_requirement_questions parent ON parent.rqq_group_id = child.rqq_group_id AND parent.rqq_text = 'มีเว็บไซต์เดิมไหม'
+SET child.rqq_parent_id = parent.rqq_id, child.rqq_parent_values = '["yes"]'
+WHERE @seed_requirements = 1 AND child.rqq_group_id = 2 AND child.rqq_text = 'ลิงก์เว็บไซต์เดิม';
+UPDATE tb_requirement_questions SET rqq_allow_other = 1 WHERE @seed_requirements = 1 AND rqq_group_id = 4 AND rqq_text = 'ออกแบบให้อะไร';
+UPDATE tb_requirement_questions SET rqq_unit = 'หน้าจอ', rqq_min = 1, rqq_max = 200 WHERE @seed_requirements = 1 AND rqq_group_id = 4 AND rqq_text = 'ประมาณกี่หน้าจอ';
+UPDATE tb_requirement_questions child JOIN tb_requirement_questions parent ON parent.rqq_group_id = child.rqq_group_id AND parent.rqq_text = 'มีโลโก้/สีประจำแบรนด์แล้วไหม'
+SET child.rqq_parent_id = parent.rqq_id, child.rqq_parent_values = '["มีครบ","มีโลโก้อย่างเดียว"]', child.rqq_file_kind = 'design', child.rqq_help = 'รูป PDF หรือไฟล์งานออกแบบ (AI PSD SVG ZIP) ไม่เกิน 20 MB'
+WHERE @seed_requirements = 1 AND child.rqq_group_id = 4 AND child.rqq_text = 'ไฟล์โลโก้หรือคู่มือแบรนด์';
 
 -- ─── 3. ตรวจผล ─────────────────────────────────────────────────────────────────────────
 SELECT u.user_username, u.user_email, r.role_name, r.role_type, u.user_must_change_password,

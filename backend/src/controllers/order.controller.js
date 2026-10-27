@@ -5,8 +5,14 @@ const { AppError } = require("../utils/app-error");
 const { validate } = require("../utils/validate");
 const { withTransaction } = require("../utils/with-transaction");
 const { sendServiceRequestEmail } = require("../utils/mailer");
-const { contentTypeOf, deletePrivateFile, resolvePrivateFile } = require("../utils/private-file");
-const { questionOrderSchema, requirementGroupSchema, requirementQuestionSchema } = require("../shared/schemas/requirement.mjs");
+const { contentTypeOf, deletePrivateFile, isViewableFile, resolvePrivateFile } = require("../utils/private-file");
+const {
+    groupOrderSchema,
+    questionMoveSchema,
+    questionOrderSchema,
+    requirementGroupSchema,
+    requirementQuestionSchema,
+} = require("../shared/schemas/requirement.mjs");
 const requirementService = require("../services/requirement.service");
 const {
     serviceRequestClientSchema,
@@ -64,12 +70,17 @@ function recordFailedLookup(ip) {
     entry.count += 1;
 }
 
-/** ส่งไฟล์แนบของคำตอบ (เปิดในแท็บ · ชื่อไฟล์เดิม) */
+/**
+ * ส่งไฟล์แนบของคำตอบ (ชื่อไฟล์เดิม) · รูป/PDF เปิดในแท็บได้ · ไฟล์งานออกแบบ (SVG PSD ZIP) ดาวน์โหลดเท่านั้น
+ * SVG ฝังสคริปต์ได้ ถ้าเบราว์เซอร์เปิดในโดเมนเรา สคริปต์จะรันด้วยสิทธิ์ของคนที่ login อยู่ (2026-10-26 Q-1)
+ */
 function sendPrivate(res, next, file) {
     const fullPath = resolvePrivateFile(file.svf_file_path);
     if (!fullPath) throw new AppError(404, "SERVICE_REQUEST_FILE_NOT_FOUND", "ไม่พบไฟล์นี้");
+    const disposition = isViewableFile(file.svf_file_path) ? "inline" : "attachment";
     res.setHeader("Content-Type", contentTypeOf(file.svf_file_path));
-    res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(file.svf_original_name)}`);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Content-Disposition", `${disposition}; filename*=UTF-8''${encodeURIComponent(file.svf_original_name)}`);
     res.sendFile(fullPath, (err) => {
         if (err && !res.headersSent) next(new AppError(404, "SERVICE_REQUEST_FILE_NOT_FOUND", "ไม่พบไฟล์นี้"));
     });
@@ -168,6 +179,17 @@ module.exports = {
         return withTransaction((conn) => requirementService.updateQuestion(conn, numericId(req.params.id), input));
     }),
     deleteRequirementQuestion: handle((req) => withTransaction((conn) => requirementService.deleteQuestion(conn, numericId(req.params.id)))),
+    // Q-2 (2026-10-26): เรียงกลุ่ม · คัดลอกกลุ่ม/คำถาม · ย้ายคำถามไปกลุ่มอื่น
+    reorderRequirementGroups: handle((req) => {
+        const input = validate(groupOrderSchema, req.body);
+        return withTransaction((conn) => requirementService.reorderGroups(conn, input.group_ids));
+    }),
+    copyRequirementGroup: handle((req) => withTransaction((conn) => requirementService.copyGroup(conn, numericId(req.params.id))), 201),
+    copyRequirementQuestion: handle((req) => withTransaction((conn) => requirementService.copyQuestion(conn, numericId(req.params.id))), 201),
+    moveRequirementQuestion: handle((req) => {
+        const input = validate(questionMoveSchema, req.body);
+        return withTransaction((conn) => requirementService.moveQuestion(conn, numericId(req.params.id), input.group_id));
+    }),
 
     // ─── หน้าร้าน (ลูกค้า) ───
     publicShop: publicHandle((req) => orderPublicService.shop(pool, req.params.code)),

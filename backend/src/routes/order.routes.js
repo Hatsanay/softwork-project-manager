@@ -44,6 +44,10 @@ function registerOrderRoutes(router) {
     router.post("/V1/requirement-groups/:id/questions", requireAuth, canManageQuestions, orderController.createRequirementQuestion);
     router.put("/V1/requirement-questions/:id", requireAuth, canManageQuestions, orderController.updateRequirementQuestion);
     router.delete("/V1/requirement-questions/:id", requireAuth, canManageQuestions, orderController.deleteRequirementQuestion);
+    router.put("/V1/requirement-group-order", requireAuth, canManageQuestions, orderController.reorderRequirementGroups);
+    router.post("/V1/requirement-groups/:id/copy", requireAuth, canManageQuestions, orderController.copyRequirementGroup);
+    router.post("/V1/requirement-questions/:id/copy", requireAuth, canManageQuestions, orderController.copyRequirementQuestion);
+    router.post("/V1/requirement-questions/:id/move", requireAuth, canManageQuestions, orderController.moveRequirementQuestion);
 
     // การ์ด "ความต้องการจากลูกค้า" ในหน้าโปรเจกต์ (S-4) — สมาชิกโปรเจกต์ (ไม่มีราคา)
     router.get("/V1/projects/:id/requirements", requireAuth, requireProjectMember, orderController.projectRequirements);

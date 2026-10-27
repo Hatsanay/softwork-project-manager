@@ -32,6 +32,15 @@ const OPEN_STATE: Record<OrderLinkOpenState, { label: string; tone: PillTone }> 
     expired: { label: "หมดอายุ", tone: "wait" },
 };
 
+/** กลุ่มคำถามรายลิงก์ในแถวรายการ (Q-3) · ไม่ได้ตั้ง = ไม่แสดง */
+function questionRulesText(rules: OrderLink["question_rules"]) {
+    const parts = [
+        rules.include_group_ids.length > 0 ? `ถามเพิ่ม ${rules.include_group_ids.length} กลุ่ม` : null,
+        rules.exclude_group_ids.length > 0 ? `ไม่ถาม ${rules.exclude_group_ids.length} กลุ่ม` : null,
+    ].filter(Boolean);
+    return parts.length > 0 ? `คำถาม: ${parts.join(" ")}` : null;
+}
+
 export default function OrderLinksPage() {
     return (
         <Suspense fallback={<PageSkeleton />}>
@@ -234,6 +243,7 @@ function OrderLinksContent() {
                                             link.ol_expires_on ? `หมดอายุหลัง ${formatDateOnly(link.ol_expires_on)}` : "ไม่หมดอายุ",
                                             link.preset_items.length > 0 ? `ล็อก: ${link.preset_items.map((item) => `${item.name} × ${item.quantity}`).join(", ")}` : null,
                                             !link.ol_allow_more ? "ลูกค้าเลือกเพิ่มไม่ได้" : link.category_ids.length > 0 ? `${link.category_ids.length} หมวด` : "ทุกหมวด",
+                                            questionRulesText(link.question_rules),
                                         ]
                                             .filter(Boolean)
                                             .join(" · ")}

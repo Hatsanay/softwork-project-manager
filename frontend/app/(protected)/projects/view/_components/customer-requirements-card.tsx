@@ -14,6 +14,7 @@ import { usePermission, BITS } from "@/app/components/permission-provider";
 import { apiFetch, apiFetchBlob } from "@/lib/api";
 import AnswersList from "@/app/order/_components/answers-list";
 import type { RequestAnswer } from "@/app/order/_types";
+import { openOrDownloadBlob } from "@/lib/open-blob";
 
 type ProjectRequirement = {
     svr_id: string;
@@ -70,13 +71,13 @@ export default function CustomerRequirementsCard({ projectId }: { projectId: str
         await load();
     }
 
-    async function openFile(fileId: number) {
-        const blob = await apiFetchBlob(`/projects/${encodeURIComponent(projectId)}/requirements/files/${fileId}`);
+    async function openFile(file: RequestAnswer["files"][number]) {
+        const blob = await apiFetchBlob(`/projects/${encodeURIComponent(projectId)}/requirements/files/${file.id}`);
         if (!blob) {
             toast.error("เปิดไฟล์ไม่สำเร็จ");
             return;
         }
-        window.open(URL.createObjectURL(blob), "_blank", "noopener");
+        openOrDownloadBlob(blob, file.name, file.is_viewable);
     }
 
     return (

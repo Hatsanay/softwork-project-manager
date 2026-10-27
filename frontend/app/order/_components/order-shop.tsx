@@ -8,6 +8,8 @@
 // ลิงก์ Fastwork: ไม่ถามข้อมูลติดต่อ · บอกว่าราคาและการชำระเงินทำผ่าน Fastwork
 // รายการที่ทีมเลือกให้ (ล็อก) อยู่บนสุดและในตะกร้าเสมอ · หมวดเลือกได้อย่างเดียว = ใส่อันใหม่แทนอันเดิม
 // งานเพิ่มที่มีในแพ็กแล้ว = กดไม่ได้ · ใช้กับแพ็กไม่ได้ = ซ่อน · งานเพิ่มแบบ % คิดจากยอดรายการอื่น (เลือกได้ครั้งเดียว)
+// คำตอบ (Q-4 2026-10-26): จำในเครื่องเหมือนตะกร้า (ไม่รวมไฟล์) ลบเมื่อส่ง · ลูกค้าเดิมได้คำตอบล่าสุดของข้อที่เปิดเติมไว้ให้
+// ทบทวนคำตอบในขั้นตรวจและส่ง · ทีมงานแก้คำถามระหว่างตอบ (QUESTIONNAIRE_CHANGED) = โหลดคำถามใหม่ คำตอบเดิมอยู่ครบ
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -40,12 +42,14 @@ import { toFieldErrors, type FieldErrors } from "@/lib/form-errors";
 import { formatAmount, formatHundredths } from "@/lib/shared/money.mjs";
 import { cartTotals, fixedSubtotal, lineAmount, multiplyQuantity, percentAmount } from "@/lib/shared/order-cart-math.mjs";
 import { MAX_SET_COUNT, orderContactSchema } from "@/lib/shared/schemas/order-link.mjs";
-import { answerError, applicableGroups } from "@/lib/shared/requirement-answers.mjs";
+import { answerError, questionnaireSummary, visibleQuestionnaire } from "@/lib/shared/requirement-answers.mjs";
+import { todayBangkokText } from "@/app/(protected)/people/employees/_card-status";
 import { publicFetch } from "../_public-api";
-import type { Cart, Catalog, CatalogPackage, CatalogProduct, PresetItem, ShopResponse } from "../_types";
+import type { Cart, Catalog, CatalogPackage, CatalogProduct, PresetItem, ShopResponse, VisibleRequirementGroup } from "../_types";
 import OrderShell from "./order-shell";
 import { CustomerSection } from "@/components/customer/customer-shell";
 import OrderQuestions, { type AnswerValue } from "./order-questions";
+import AnswersReview from "./answers-review";
 import QuantityControl from "./quantity-control";
 import { CartLines, CartSheet, CartSidePanel, CartTotalsBlock, type CartItem } from "./cart-panel";
 
@@ -54,6 +58,9 @@ type PricedLine = { unitPrice: string; quantity: string } | { percent: string };
 type AddonRule = { rule: "included" | "not_available"; packageName: string };
 
 const STORAGE_PREFIX = "order-cart:";
+const ANSWERS_PREFIX = "order-answers:";
+
+type SavedAnswers = { answers: Record<number, AnswerValue>; otherTexts: Record<number, string>; prefilledIds?: number[] };
 const ESTIMATE_NOTE = "ราคาประมาณการ ทีมงานจะยืนยันราคาสุดท้ายอีกครั้ง";
 const FASTWORK_NOTE = "ราคาและการชำระเงินทำผ่าน Fastwork · หน้านี้ใช้เลือกขอบเขตงานเท่านั้น";
 
@@ -73,6 +80,49 @@ function writeCart(code: string, cart: Cart) {
     } catch {
         // เบราว์เซอร์ไม่ให้เก็บ (โหมดส่วนตัว) — ตะกร้ายังใช้ได้ แค่ไม่จำหลังปิดหน้า
     }
+}
+
+/** คำตอบที่จำไว้ในเครื่อง (ปิดหน้าแล้วกลับมาตอบต่อได้) · อ่าน/เขียนไม่ได้ (โหมดส่วนตัว) = เริ่มใหม่ ไม่ใช่ข้อผิดพลาด */
+function readSavedAnswers(code: string): SavedAnswers | null {
+    try {
+        const raw = localStorage.getItem(ANSWERS_PREFIX + code);
+        return raw ? (JSON.parse(raw) as SavedAnswers) : null;
+    } catch {
+        return null;
+    }
+}
+
+function writeSavedAnswers(code: string, saved: SavedAnswers | null) {
+    try {
+        if (!saved) localStorage.removeItem(ANSWERS_PREFIX + code);
+        else localStorage.setItem(ANSWERS_PREFIX + code, JSON.stringify(saved));
+    } catch {
+        // เบราว์เซอร์ไม่ให้เก็บ — ตอบต่อได้ แค่ไม่จำหลังปิดหน้า
+    }
+}
+
+/**
+ * คำตอบเริ่มต้น: ที่จำไว้ในเครื่องก่อน · ข้อที่ยังไม่มีใช้คำตอบเดิมของลูกค้าคนนี้ (ลิงก์เฉพาะลูกค้า · ข้อที่เปิดเติม)
+ * prefilledIds = ข้อที่เติมจากคำขอครั้งก่อน (ขึ้นป้ายกำกับจนกว่าจะแก้)
+ */
+function initialAnswers(code: string, prefill: ShopResponse["answer_prefill"]) {
+    const saved = readSavedAnswers(code);
+    const answers: Record<number, AnswerValue> = {};
+    const otherTexts: Record<number, string> = {};
+    // ข้อที่เติมให้แล้วยังไม่ได้แก้ (จำไว้ด้วย ปิดหน้าแล้วกลับมาป้ายยังอยู่)
+    const prefilledIds = new Set<number>(saved?.prefilledIds ?? []);
+    for (const [questionId, entry] of Object.entries(prefill ?? {})) {
+        const id = Number(questionId);
+        if (saved && id in saved.answers) continue;
+        answers[id] = entry.value;
+        if (entry.other_text) otherTexts[id] = entry.other_text;
+        prefilledIds.add(id);
+    }
+    return {
+        answers: { ...answers, ...(saved?.answers ?? {}) },
+        otherTexts: { ...otherTexts, ...(saved?.otherTexts ?? {}) },
+        prefilledIds,
+    };
 }
 
 /** ตะกร้าที่ยังมีของจริงในหน้าร้าน (ของที่ถูกเอาออกจากร้านหายไปเอง) */
@@ -211,8 +261,21 @@ export default function OrderShop({ code, data, onReload }: { code: string; data
     const [isCartOpen, setIsCartOpen] = useState(false);
     const [justAdded, setJustAdded] = useState<string | null>(null);
     const justAddedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const [answers, setAnswers] = useState<Record<number, AnswerValue>>({});
+    const [initial] = useState(() => initialAnswers(code, data.answer_prefill));
+    const [answers, setAnswers] = useState<Record<number, AnswerValue>>(initial.answers);
+    const [otherTexts, setOtherTexts] = useState<Record<number, string>>(initial.otherTexts);
+    const [prefilledIds, setPrefilledIds] = useState<Set<number>>(initial.prefilledIds);
     const [files, setFiles] = useState<Record<number, File[]>>({});
+
+    useEffect(() => {
+        writeSavedAnswers(code, { answers, otherTexts, prefilledIds: [...prefilledIds] });
+    }, [code, answers, otherTexts, prefilledIds]);
+
+    /** ลูกค้าแก้ข้อไหน ป้าย "จากคำขอครั้งก่อน" ของข้อนั้นหายไป */
+    function markEdited(questionId: number) {
+        if (!prefilledIds.has(questionId)) return;
+        setPrefilledIds((current) => new Set([...current].filter((id) => id !== questionId)));
+    }
 
     const productsById = useMemo(() => new Map(catalog.products.map((row) => [row.product_id, row])), [catalog]);
     const packagesById = useMemo(() => new Map(catalog.packages.map((row) => [row.pkg_id, row])), [catalog]);
@@ -322,22 +385,61 @@ export default function OrderShop({ code, data, onReload }: { code: string; data
         });
     const shownProducts = offeredProducts.filter((row) => inFilter(row.product_category_id));
 
-    // กลุ่มคำถาม: ทั่วไป + หมวด/ชุดของสิ่งที่เลือก (กติกาเดียวกับ backend)
+    // คำถามที่ลูกค้าเห็น: กติกาเดียวกับ backend (shared/requirement-answers.mjs) · ข้อลูกขึ้นตามคำตอบตอนนี้
     const cartCategoryIds = [...presetCategoryIds, ...cartEntries.map(([key]) => categoryOfKey(key))];
-    const groups = applicableGroups(
+    const presetProducts = preset.flatMap((item) => (item.kind === "product" ? [item.product] : []));
+    const cartProductIds = [
+        ...presetProducts.map((product) => product.product_id),
+        ...cartEntries.flatMap(([key]) => (key.startsWith("p:") ? [key.slice(2)] : [])),
+    ];
+    const groups = visibleQuestionnaire(
         data.questionnaire ?? [],
-        cartCategoryIds.filter((value): value is string => Boolean(value)),
-        cartPackages.map((row) => row.pkg_id),
-    );
-    const hasQuestions = groups.some((group) => group.questions.length > 0);
+        {
+            linkKind: data.link.kind,
+            categoryIds: cartCategoryIds.filter((value): value is string => Boolean(value)),
+            packageIds: cartPackages.map((row) => row.pkg_id),
+            productIds: cartProductIds,
+            hasPreset: preset.length > 0,
+            includeGroupIds: data.question_rules?.include_group_ids ?? [],
+            excludeGroupIds: data.question_rules?.exclude_group_ids ?? [],
+        },
+        answers,
+    ) as VisibleRequirementGroup[];
+    const hasQuestions = groups.length > 0;
+    const askedQuestions = groups.flatMap((group) => group.questions);
+    const today = todayBangkokText();
+    const summary = questionnaireSummary(groups);
+    const answeredRequired = askedQuestions.filter(
+        (question) =>
+            question.rqq_is_required &&
+            answerError(question, answers[question.rqq_id] ?? null, {
+                fileCount: files[question.rqq_id]?.length ?? 0,
+                otherText: otherTexts[question.rqq_id] ?? null,
+                today,
+            }) === null,
+    ).length;
+
+    /** "ถามเพราะคุณเลือก …" ใต้หัวกลุ่ม · กลุ่มที่ถามทุกคำขอหรือทีมงานขอถามเพิ่ม = ไม่มีเหตุผลจากตะกร้า */
+    function reasonOf(group: VisibleRequirementGroup) {
+        const names = [
+            ...group.matched.package_ids.map((id) => cartPackages.find((row) => row.pkg_id === id)?.pkg_name),
+            ...group.matched.product_ids.map(
+                (id) => productsById.get(id)?.product_name ?? presetProducts.find((product) => product.product_id === id)?.product_name,
+            ),
+            ...group.matched.category_ids.map((id) => catalog.categories.find((category) => category.pc_id === id)?.pc_name),
+        ].filter((name): name is string => Boolean(name));
+        return names.length > 0 ? `ถามเพราะคุณเลือก ${[...new Set(names)].join(", ")}` : null;
+    }
 
     function questionErrors() {
         const found: FieldErrors = {};
-        for (const group of groups) {
-            for (const question of group.questions) {
-                const error = answerError(question, answers[question.rqq_id] ?? null, files[question.rqq_id]?.length ?? 0);
-                if (error) found[`answers.${question.rqq_id}`] = error;
-            }
+        for (const question of askedQuestions) {
+            const error = answerError(question, answers[question.rqq_id] ?? null, {
+                fileCount: files[question.rqq_id]?.length ?? 0,
+                otherText: otherTexts[question.rqq_id] ?? null,
+                today,
+            });
+            if (error) found[`answers.${question.rqq_id}`] = error;
         }
         return found;
     }
@@ -377,7 +479,7 @@ export default function OrderShop({ code, data, onReload }: { code: string; data
         }
         setErrors({});
         setIsSubmitting(true);
-        const askedQuestions = groups.flatMap((group) => group.questions);
+        // ส่งเฉพาะข้อที่ลูกค้าเห็นตอนนี้ (ข้อลูกที่ซ่อนไปแล้ว คำตอบค้างในเครื่องแต่ไม่ส่ง)
         const payload = {
             submit_key: submitKey,
             items: cartEntries.map(([key, quantity]) => {
@@ -388,7 +490,11 @@ export default function OrderShop({ code, data, onReload }: { code: string; data
             note,
             seen_total: formatHundredths(totals.total),
             website,
-            answers: askedQuestions.filter((question) => question.rqq_type !== "file").map((question) => ({ question_id: question.rqq_id, value: answers[question.rqq_id] ?? null })),
+            answers: askedQuestions
+                .filter((question) => question.rqq_type !== "file")
+                .map((question) => ({ question_id: question.rqq_id, value: answers[question.rqq_id] ?? null, other_text: otherTexts[question.rqq_id] ?? null })),
+            // ข้อที่หน้านี้แสดง · backend เจอข้อบังคับนอกจากนี้ = ทีมงานเพิ่งปรับคำถาม (QUESTIONNAIRE_CHANGED)
+            seen_question_ids: askedQuestions.map((question) => question.rqq_id),
         };
         // มีไฟล์แนบ = ส่งแบบ multipart (ข้อมูลอยู่ในช่อง payload) · ไม่มี = JSON
         const attached = askedQuestions.filter((question) => question.rqq_type === "file" && (files[question.rqq_id]?.length ?? 0) > 0);
@@ -408,6 +514,14 @@ export default function OrderShop({ code, data, onReload }: { code: string; data
                 router.push(`/order/r/${error.fields.access_token}`);
                 return;
             }
+            if (error.code === "QUESTIONNAIRE_CHANGED") {
+                await onReload();
+                setErrors(error.fields);
+                setBanner(error.message);
+                setStep("questions");
+                scrollToFirstError(Object.keys(error.fields));
+                return;
+            }
             if (error.code === "ORDER_PRICE_CHANGED" || error.code === "ORDER_ITEM_UNAVAILABLE" || error.code === "ORDER_CART_RULE" || error.code === "ORDER_LINK_UNAVAILABLE") {
                 setBanner(error.message);
                 await onReload();
@@ -420,6 +534,7 @@ export default function OrderShop({ code, data, onReload }: { code: string; data
             return;
         }
         writeCart(code, {});
+        writeSavedAnswers(code, null);
         router.push(`/order/r/${result.access_token}`);
     }
 
@@ -623,11 +738,22 @@ export default function OrderShop({ code, data, onReload }: { code: string; data
                         </div>
                     </div>
                     <OrderQuestions
-                        groups={groups}
+                        groups={groups.map((group) => ({ ...group, reason: reasonOf(group) }))}
                         answers={answers}
+                        otherTexts={otherTexts}
                         files={files}
                         errors={errors}
-                        onAnswer={(questionId, value) => setAnswers((current) => ({ ...current, [questionId]: value }))}
+                        today={today}
+                        progress={{ ...summary, answeredRequired }}
+                        prefilledIds={prefilledIds}
+                        onAnswer={(questionId, value) => {
+                            markEdited(questionId);
+                            setAnswers((current) => ({ ...current, [questionId]: value }));
+                        }}
+                        onOtherText={(questionId, text) => {
+                            markEdited(questionId);
+                            setOtherTexts((current) => ({ ...current, [questionId]: text }));
+                        }}
                         onFiles={(questionId, list) => setFiles((current) => ({ ...current, [questionId]: list }))}
                     />
                 </>
@@ -662,8 +788,12 @@ export default function OrderShop({ code, data, onReload }: { code: string; data
                         <CartTotalsBlock totals={totals} vatRate={data.vat_rate ?? null} note={priceNote} />
                     </CustomerSection>
 
+                    {hasQuestions && (
+                        <AnswersReview index={2} groups={groups} answers={answers} otherTexts={otherTexts} files={files} onEdit={() => setStep("questions")} />
+                    )}
+
                     {!isFastwork && (
-                        <CustomerSection index={2} id="contact" title="ข้อมูลติดต่อ" description="ทีมงานใช้ติดต่อกลับเรื่องรายละเอียดและใบเสนอราคา">
+                        <CustomerSection index={hasQuestions ? 3 : 2} id="contact" title="ข้อมูลติดต่อ" description="ทีมงานใช้ติดต่อกลับเรื่องรายละเอียดและใบเสนอราคา">
                             <div className="grid gap-3 sm:grid-cols-2">
                                 <FormField label="ชื่อผู้ติดต่อ" htmlFor="contact_name" required error={errors.contact_name}>
                                     <input id="contact_name" autoComplete="name" value={contact.contact_name} onChange={(event) => updateContact("contact_name", event.target.value)} className={inputClass(Boolean(errors.contact_name))} />
@@ -698,7 +828,7 @@ export default function OrderShop({ code, data, onReload }: { code: string; data
                         </CustomerSection>
                     )}
 
-                    <CustomerSection index={isFastwork ? 2 : 3} id="send" title="ฝากถึงทีมงาน" description="ไม่บังคับ · ตรวจแล้วกดส่งคำขอที่แถบด้านล่าง">
+                    <CustomerSection index={2 + (hasQuestions ? 1 : 0) + (isFastwork ? 0 : 1)} id="send" title="ฝากถึงทีมงาน" description="ไม่บังคับ · ตรวจแล้วกดส่งคำขอที่แถบด้านล่าง">
                         <FormField label="ข้อความถึงทีมงาน" htmlFor="order_note" hint="ไม่บังคับ เช่น อยากได้ภายในวันไหน มีตัวอย่างที่ชอบ" error={errors.note}>
                             <textarea id="order_note" rows={3} maxLength={2000} value={note} onChange={(event) => setNote(event.target.value)} className={inputClass(Boolean(errors.note))} />
                         </FormField>

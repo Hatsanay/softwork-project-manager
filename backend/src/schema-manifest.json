@@ -801,6 +801,11 @@
             "oli_product_id",
             "oli_quantity"
         ],
+        "tb_order_link_requirement_groups": [
+            "olq_group_id",
+            "olq_link_id",
+            "olq_mode"
+        ],
         "tb_order_links": [
             "ol_allow_more",
             "ol_assignee_id",
@@ -1292,27 +1297,46 @@
             "rgp_group_id",
             "rgp_package_id"
         ],
+        "tb_requirement_group_products": [
+            "rgr_group_id",
+            "rgr_product_id"
+        ],
         "tb_requirement_groups": [
+            "rqg_audience",
             "rqg_created_at",
+            "rqg_customer_intro",
             "rqg_description",
             "rqg_id",
             "rqg_is_general",
             "rqg_name",
             "rqg_sort_order",
             "rqg_status",
+            "rqg_trigger",
             "rqg_updated_at"
         ],
         "tb_requirement_questions": [
+            "rqq_allow_other",
+            "rqq_audience",
             "rqq_created_at",
+            "rqq_file_kind",
+            "rqq_future_only",
             "rqq_group_id",
             "rqq_help",
             "rqq_id",
             "rqq_is_required",
+            "rqq_max",
+            "rqq_min",
             "rqq_options",
+            "rqq_parent_id",
+            "rqq_parent_values",
+            "rqq_placeholder",
+            "rqq_prefill",
+            "rqq_skip_when_preset",
             "rqq_sort_order",
             "rqq_status",
             "rqq_text",
             "rqq_type",
+            "rqq_unit",
             "rqq_updated_at"
         ],
         "tb_roles": [
@@ -1329,6 +1353,7 @@
             "sva_group_name",
             "sva_id",
             "sva_order",
+            "sva_other_text",
             "sva_question_id",
             "sva_question_text",
             "sva_request_id",
