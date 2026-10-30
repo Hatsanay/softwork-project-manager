@@ -276,7 +276,7 @@ function VatStatus({
 }) {
     if (!registeredFrom) {
         return (
-            <StatusBanner tone="info" title="ยังไม่จด VAT — เอกสารไม่คิดภาษีมูลค่าเพิ่ม">
+            <StatusBanner tone="info" title="ยังไม่จด VAT · เอกสารไม่คิดภาษีมูลค่าเพิ่ม">
                 เมื่อจด VAT แล้ว ให้กรอกวันที่จดด้านล่าง เอกสารที่ลงวันที่ตั้งแต่วันนั้นจะคิด VAT ให้เอง
             </StatusBanner>
         );

@@ -43,7 +43,7 @@ function notFound() {
 }
 
 function wrongStatus(message) {
-    return new AppError(409, "RECEIPT_WRONG_STATUS", `${message} — กรุณาโหลดหน้าใหม่เพื่อดูสถานะล่าสุด`);
+    return new AppError(409, "RECEIPT_WRONG_STATUS", `${message} · กรุณาโหลดหน้าใหม่เพื่อดูสถานะล่าสุด`);
 }
 
 function validationError(fields) {
@@ -61,7 +61,7 @@ function assertVersion(receipt, expectedVersion) {
         throw new AppError(
             409,
             "RECEIPT_CHANGED",
-            "มีคนแก้หรือยกเลิกใบนี้ไปก่อนแล้ว — โหลดหน้าใหม่เพื่อดูข้อมูลล่าสุด (สิ่งที่คุณแก้ยังไม่ถูกบันทึก)",
+            "มีคนแก้หรือยกเลิกใบนี้ไปก่อนแล้ว · โหลดหน้าใหม่เพื่อดูข้อมูลล่าสุด (สิ่งที่คุณแก้ยังไม่ถูกบันทึก)",
         );
     }
 }
@@ -101,7 +101,7 @@ async function lockInvoices(conn, invoiceIds) {
 /** ใบที่ตัดต้อง: มีอยู่ · ออกแล้ว · ยังค้าง · ลูกค้าเดียวกับใบเสร็จ · สกุลเดียวกันทุกใบ */
 function assertInvoicesReceivable(invoiceIds, invoicesById, clientId) {
     if (invoiceIds.some((id) => !invoicesById.has(id))) {
-        throw validationError({ allocations: "ไม่พบใบแจ้งหนี้บางใบ อาจถูกลบไปแล้ว — โหลดหน้าใหม่แล้วเลือกอีกครั้ง" });
+        throw validationError({ allocations: "ไม่พบใบแจ้งหนี้บางใบ อาจถูกลบไปแล้ว · โหลดหน้าใหม่แล้วเลือกอีกครั้ง" });
     }
     const invoices = invoiceIds.map((id) => invoicesById.get(id));
     const currencyCode = invoices[0].inv_currency;
@@ -119,7 +119,7 @@ function assertInvoicesReceivable(invoiceIds, invoicesById, clientId) {
         throw new AppError(
             409,
             "RECEIPT_INVOICE_UNAVAILABLE",
-            `${problems.join(" · ")} — ใบเสร็จหนึ่งใบรับเงินได้เฉพาะใบแจ้งหนี้ที่ออกแล้ว ยังค้างชำระ ของลูกค้ารายเดียว สกุลเงินเดียว`,
+            `${problems.join(" · ")} · ใบเสร็จหนึ่งใบรับเงินได้เฉพาะใบแจ้งหนี้ที่ออกแล้ว ยังค้างชำระ ของลูกค้ารายเดียว สกุลเงินเดียว`,
             { allocations: problems.join("\n") },
         );
     }
@@ -358,7 +358,7 @@ async function cancelReceipt(conn, receiptId, reason, expectedVersion, actor) {
             throw new AppError(
                 500,
                 "RECEIPT_PAID_MISMATCH",
-                `ยอดรับแล้วของ ${invoice.inv_number} น้อยกว่ายอดในใบเสร็จนี้ — ข้อมูลไม่ตรงกัน แจ้งผู้ดูแลระบบ`,
+                `ยอดรับแล้วของ ${invoice.inv_number} น้อยกว่ายอดในใบเสร็จนี้ · ข้อมูลไม่ตรงกัน แจ้งผู้ดูแลระบบ`,
             );
         }
         await conn.query(

@@ -3,6 +3,9 @@
 // ตารางกลางของระบบ (UI ใหม่ 13 ต.ค. 2026 — docs/plans/2026-10-13-ui-refresh.md)
 // วิธีเรียกใช้เหมือนเดิมทุกอย่าง (props เดิม) — เปลี่ยนแค่หน้าตา + จอแคบกว่า 640px แสดงเป็นการ์ดทีละแถว (ไม่ต้องเลื่อนแนวนอน)
 // การ์ดบนมือถือ: คอลัมน์แรก = หัวการ์ด, คอลัมน์ที่เหลือ = ชื่อคอลัมน์ : ค่า, ปุ่มจัดการอยู่ท้ายการ์ด
+// การ์ดกะทัดรัด (2026-10-30 · docs/plans/2026-10-30-quote-pdf-mobile-refactor.md B3): คอลัมน์ที่ตั้ง mobile จัดที่ตามนั้น
+//   title = ใช้เป็นหัวการ์ดแทนคอลัมน์แรก (คอลัมน์แรกเป็นรหัส/เวลา) · trailing = ชิดขวาข้างหัวการ์ด (เช่น ยอดเงิน) · meta = บรรทัดเล็กใต้หัว วางเรียงกัน · badge = แถวป้าย + ปุ่มจัดการ · hidden = ไม่แสดง
+//   คอลัมน์ที่ไม่ตั้ง = แบบเดิม (ชื่อคอลัมน์ : ค่า)
 import { useState, useMemo } from "react";
 import { ChevronUp, ChevronDown, ChevronsUpDown, Search, ChevronLeft, ChevronRight, Inbox } from "lucide-react";
 import Skeleton from "@/components/ui/skeleton";
@@ -13,6 +16,10 @@ export type Column<T> = {
     sortable?: boolean;
     className?: string;
     render?: (value: T[keyof T & string], row: T) => React.ReactNode;
+    // ที่อยู่บนการ์ดมือถือ (ไม่ตั้ง = แถว "ชื่อคอลัมน์ : ค่า" แบบเดิม)
+    mobile?: "title" | "trailing" | "meta" | "badge" | "hidden";
+    // คำนำหน้าค่าในบรรทัด meta เช่น "ครบ" → "ครบ 12 ต.ค. 2569" (ค่าที่อ่านแล้วไม่รู้ว่าคืออะไร)
+    mobileLabel?: string;
 };
 
 type SortDir = "asc" | "desc" | null;
@@ -191,7 +198,14 @@ export default function DataTable<T extends Record<string, unknown>>({
     const to = showAll ? rowCount : Math.min(safePage * pageSize, rowCount);
     const columnCount = columns.length + (selectable ? 1 : 0) + (actions ? 1 : 0);
     const isEmpty = !loading && paged.length === 0;
-    const [titleColumn, ...detailColumns] = columns;
+    const titleColumn = columns.find((col) => col.mobile === "title") ?? columns[0];
+    const otherColumns = columns.filter((col) => col !== titleColumn);
+    const columnsAt = (place: Column<T>["mobile"]) => otherColumns.filter((col) => col.mobile === place);
+    const trailingColumns = columnsAt("trailing");
+    const metaColumns = columnsAt("meta");
+    const badgeColumns = columnsAt("badge");
+    const detailColumns = otherColumns.filter((col) => !col.mobile);
+    const isCompactCard = otherColumns.some((col) => col.mobile);
 
     return (
         <div className="flex w-full min-w-0 flex-col gap-3">
@@ -334,7 +348,7 @@ export default function DataTable<T extends Record<string, unknown>>({
                             return (
                                 <div
                                     key={String(id)}
-                                    className={`grid gap-3 px-4 py-4 ${isSelected ? "bg-blue-50" : ""}`}
+                                    className={`grid ${isCompactCard ? "gap-2 py-3" : "gap-3 py-4"} px-4 ${isSelected ? "bg-blue-50" : ""}`}
                                 >
                                     <div className="flex items-start gap-3">
                                         {selectable && (
@@ -349,7 +363,24 @@ export default function DataTable<T extends Record<string, unknown>>({
                                         <div className="min-w-0 flex-1 font-normal text-gray-900">
                                             {renderCell(titleColumn, row)}
                                         </div>
+                                        {trailingColumns.length > 0 && (
+                                            <div className="grid shrink-0 justify-items-end gap-0.5 text-right text-sm text-gray-900 tabular-nums">
+                                                {trailingColumns.map((col) => (
+                                                    <div key={col.key}>{renderCell(col, row)}</div>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
+                                    {metaColumns.length > 0 && (
+                                        <div className="flex flex-wrap items-start gap-x-4 gap-y-1 text-xs text-gray-500">
+                                            {metaColumns.map((col) => (
+                                                <div key={col.key} className="min-w-0">
+                                                    {col.mobileLabel && `${col.mobileLabel} `}
+                                                    {renderCell(col, row)}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                     {detailColumns.length > 0 && (
                                         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm">
                                             {detailColumns.map((col) => (
@@ -360,7 +391,18 @@ export default function DataTable<T extends Record<string, unknown>>({
                                             ))}
                                         </dl>
                                     )}
-                                    {actions && <div className="flex flex-wrap gap-2">{actions(row)}</div>}
+                                    {isCompactCard && (badgeColumns.length > 0 || actions) ? (
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            {badgeColumns.map((col) => (
+                                                <div key={col.key} className="min-w-0">
+                                                    {renderCell(col, row)}
+                                                </div>
+                                            ))}
+                                            {actions && <div className="ml-auto flex flex-wrap justify-end gap-2">{actions(row)}</div>}
+                                        </div>
+                                    ) : (
+                                        actions && <div className="flex flex-wrap gap-2">{actions(row)}</div>
+                                    )}
                                 </div>
                             );
                         })}

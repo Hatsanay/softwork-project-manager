@@ -57,7 +57,7 @@ export default function UserSignaturePanel({ userId, canManage }: UserSignatureP
         <SectionCard
             icon={PenLine}
             title="ลายเซ็น"
-            description="ผู้ใช้ตั้งลายเซ็นเองที่หน้าโปรไฟล์ (ต้องยืนยันรหัสผ่าน) — ผู้ดูแลยกเลิกได้แต่ตั้งแทนไม่ได้"
+            description="ผู้ใช้ตั้งลายเซ็นเองที่หน้าโปรไฟล์ (ต้องยืนยันรหัสผ่าน) · ผู้ดูแลยกเลิกได้แต่ตั้งแทนไม่ได้"
         >
             {signature ? (
                 <div className="flex flex-wrap items-end justify-between gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
@@ -76,7 +76,7 @@ export default function UserSignaturePanel({ userId, canManage }: UserSignatureP
                     )}
                 </div>
             ) : (
-                <FieldHint>ยังไม่มีลายเซ็น — เอกสารที่ผู้ใช้นี้เสนอหรืออนุมัติจะเว้นช่องไว้ให้เซ็นด้วยมือ</FieldHint>
+                <FieldHint>ยังไม่มีลายเซ็น · เอกสารที่ผู้ใช้นี้เสนอหรืออนุมัติจะเว้นช่องไว้ให้เซ็นด้วยมือ</FieldHint>
             )}
 
             <ConfirmDialog

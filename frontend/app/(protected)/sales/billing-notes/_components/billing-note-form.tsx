@@ -153,12 +153,12 @@ export default function BillingNoteForm({ options, detail }: BillingNoteFormProp
         });
         if (!checked.success) {
             setFieldErrors(toFieldErrors(checked.error.issues));
-            toast.error("ยังบันทึกไม่ได้ — แก้ช่องที่มีข้อความสีแดงก่อน");
+            toast.error("ยังบันทึกไม่ได้ · แก้ช่องที่มีข้อความสีแดงก่อน");
             return;
         }
         if (paymentDate && today && paymentDate < today) {
             setFieldErrors({ bn_payment_date: "วันนัดชำระต้องไม่ก่อนวันนี้" });
-            toast.error("ยังบันทึกไม่ได้ — แก้ช่องที่มีข้อความสีแดงก่อน");
+            toast.error("ยังบันทึกไม่ได้ · แก้ช่องที่มีข้อความสีแดงก่อน");
             return;
         }
         setFieldErrors({});
@@ -173,7 +173,7 @@ export default function BillingNoteForm({ options, detail }: BillingNoteFormProp
             setSaveError(error);
             return;
         }
-        toast.success(note ? "บันทึกร่างแล้ว" : "สร้างร่างใบวางบิลแล้ว — ตรวจแล้วกดออกใบวางบิล");
+        toast.success(note ? "บันทึกร่างแล้ว" : "สร้างร่างใบวางบิลแล้ว · ตรวจแล้วกดออกใบวางบิล");
         router.push(`/sales/billing-notes/view?id=${data.bn_id}`);
     }
 
@@ -199,7 +199,7 @@ export default function BillingNoteForm({ options, detail }: BillingNoteFormProp
                             onChange={(event) => chooseClient(event.target.value)}
                             className={inputClass(Boolean(fieldErrors.bn_client_id))}
                         >
-                            <option value="">— เลือกลูกค้า —</option>
+                            <option value="">เลือกลูกค้า</option>
                             {clients.map((client) => (
                                 <option key={client.clientId} value={client.clientId}>
                                     {client.name} ({client.invoiceCount} ใบ)
@@ -216,7 +216,7 @@ export default function BillingNoteForm({ options, detail }: BillingNoteFormProp
                                 onChange={(value) => chooseCurrency(clientId, value)}
                                 options={selectedClient.currencies.map((code) => ({ value: code, label: code }))}
                             />
-                            <FieldHint>ลูกค้ารายนี้มีใบแจ้งหนี้หลายสกุล — ใบวางบิลหนึ่งใบรวมได้สกุลเดียว</FieldHint>
+                            <FieldHint>ลูกค้ารายนี้มีใบแจ้งหนี้หลายสกุล · ใบวางบิลหนึ่งใบรวมได้สกุลเดียว</FieldHint>
                         </div>
                     )}
 
@@ -279,7 +279,7 @@ export default function BillingNoteForm({ options, detail }: BillingNoteFormProp
                                         `${invoice.inv_number ?? "ใบแจ้งหนี้"}: ${invoice.problem ?? "ใช้ไม่ได้แล้ว"}`,
                                 )
                                 .join(" · ")}{" "}
-                            — บันทึกร่างแล้วใบเหล่านี้จะถูกเอาออก
+บันทึกร่างแล้วใบเหล่านี้จะถูกเอาออก
                         </StatusBanner>
                     )}
                     {fieldErrors.invoice_ids && (
@@ -330,7 +330,7 @@ export default function BillingNoteForm({ options, detail }: BillingNoteFormProp
                             onChange={(event) => setBranchId(event.target.value)}
                             className={inputClass(Boolean(fieldErrors.bn_branch_id))}
                         >
-                            <option value="">— เลือกสาขา —</option>
+                            <option value="">เลือกสาขา</option>
                             {activeBranches.map((branch) => (
                                 <option key={branch.branch_id} value={branch.branch_id}>
                                     {branch.branch_code} · {branch.branch_name_th}

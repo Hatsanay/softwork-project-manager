@@ -87,7 +87,7 @@ async function updateBranch(conn, branchId, branch) {
         throw new AppError(
             409,
             "HEAD_OFFICE_CANNOT_CLOSE",
-            "สำนักงานใหญ่ปิดใช้งานไม่ได้ — เอกสารและผู้ใช้ที่ไม่ได้ระบุสาขาใช้สำนักงานใหญ่",
+            "สำนักงานใหญ่ปิดใช้งานไม่ได้ · เอกสารและผู้ใช้ที่ไม่ได้ระบุสาขาใช้สำนักงานใหญ่",
             {
                 branch_status: "สำนักงานใหญ่ปิดใช้งานไม่ได้",
             },
@@ -135,7 +135,7 @@ async function assertCurrencyUsable(conn, currencyCode, { mustBeActive }) {
     }
     if (mustBeActive && currency.cur_status !== "active") {
         throw new AppError(400, "VALIDATION", "สกุลเงินนี้ถูกปิดใช้งานอยู่", {
-            ba_currency: "สกุลเงินนี้ถูกปิดใช้งาน — เปิดใช้งานในแท็บสกุลเงินก่อน",
+            ba_currency: "สกุลเงินนี้ถูกปิดใช้งาน · เปิดใช้งานในแท็บสกุลเงินก่อน",
         });
     }
 }
@@ -144,7 +144,7 @@ async function assertCurrencyUsable(conn, currencyCode, { mustBeActive }) {
 function assertDefaultIsActive(bankAccount) {
     if (bankAccount.ba_is_default && bankAccount.ba_status === "inactive") {
         throw new AppError(400, "VALIDATION", "บัญชีหลักต้องเปิดใช้งาน", {
-            ba_status: "บัญชีหลักปิดใช้งานไม่ได้ — ตั้งบัญชีอื่นเป็นบัญชีหลักก่อน หรือเอาเครื่องหมายบัญชีหลักออก",
+            ba_status: "บัญชีหลักปิดใช้งานไม่ได้ · ตั้งบัญชีอื่นเป็นบัญชีหลักก่อน หรือเอาเครื่องหมายบัญชีหลักออก",
         });
     }
 }

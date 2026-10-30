@@ -52,7 +52,7 @@ export default function WithholdingReportPage() {
             <PageHeader
                 eyebrow="จัดซื้อ"
                 title="รายงานภาษีหัก ณ ที่จ่าย"
-                description="สรุป 50 ทวิ ที่บริษัทออกในเดือน แยก ภ.ง.ด.3 (บุคคลธรรมดา) และ ภ.ง.ด.53 (นิติบุคคล) — ใช้กรอกแบบยื่นและนำส่งภาษี"
+                description="สรุป 50 ทวิ ที่บริษัทออกในเดือน แยก ภ.ง.ด.3 (บุคคลธรรมดา) และ ภ.ง.ด.53 (นิติบุคคล) · ใช้กรอกแบบยื่นและนำส่งภาษี"
                 actions={
                     report &&
                     report.rows.length > 0 && (
@@ -105,12 +105,12 @@ export default function WithholdingReportPage() {
                     <FieldHint>
                         ยื่น {WHT_FORM_SHORT[report.form]} เดือนนี้ภายใน {formatDateOnly(report.due_dates.paper)}{" "}
                         (แบบกระดาษ) หรือ {formatDateOnly(report.due_dates.online)} (ยื่นออนไลน์) ·
-                        ใบที่ยกเลิกไม่อยู่ในรายงาน — ตรวจกับนักบัญชีก่อนยื่น
+                        ใบที่ยกเลิกไม่อยู่ในรายงาน · ตรวจกับนักบัญชีก่อนยื่น
                     </FieldHint>
 
                     {report.rows.length === 0 ? (
                         <StatusBanner tone="info" title={`ไม่มี ${WHT_FORM_SHORT[report.form]} ในเดือนนี้`}>
-                            ไม่มีการหัก ณ ที่จ่ายของแบบนี้ — ถ้าเคยยื่นทุกเดือน ตรวจกับนักบัญชีว่าต้องยื่นแบบ
+                            ไม่มีการหัก ณ ที่จ่ายของแบบนี้ · ถ้าเคยยื่นทุกเดือน ตรวจกับนักบัญชีว่าต้องยื่นแบบ
                             &quot;ไม่มีเงินได้&quot; ไหม
                         </StatusBanner>
                     ) : (

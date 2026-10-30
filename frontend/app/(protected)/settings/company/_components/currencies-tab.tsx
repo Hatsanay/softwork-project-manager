@@ -10,7 +10,8 @@ import type { Currency } from "../_types";
 import { toNumberOrNaN, useRecordEditor } from "@/lib/use-record-editor";
 import { InfoPill, RecordList, RecordRow, StatusPill } from "@/components/ui/record-list";
 import SaveErrorBanner from "@/components/ui/save-error-banner";
-import SectionCard, { PRIMARY_BUTTON, SECONDARY_BUTTON } from "@/components/ui/section-card";
+import SectionCard, { PRIMARY_BUTTON } from "@/components/ui/section-card";
+import EditorDrawer, { confirmDiscard, DrawerButtons } from "@/components/ui/editor-drawer";
 import { amountInWords } from "@/lib/shared/amount-in-words.mjs";
 import BotRateCheck from "./bot-rate-check";
 
@@ -118,8 +119,7 @@ export default function CurrenciesTab({ currencies, canEdit, onSaved }: Currenci
             title={COMPANY_MESSAGES.tabs.currencies}
             description={messages.description}
             actions={
-                canEdit &&
-                !editor.isOpen && (
+                canEdit && (
                     <button type="button" className={PRIMARY_BUTTON} onClick={editor.openCreate}>
                         <Plus size={16} />
                         เพิ่มสกุลเงิน
@@ -128,10 +128,21 @@ export default function CurrenciesTab({ currencies, canEdit, onSaved }: Currenci
             }
         >
             {editor.isOpen && (
-                <form onSubmit={handleSubmit} className="grid gap-4 rounded-lg bg-gray-50 p-4" noValidate>
-                    <p className="font-medium text-gray-800">
-                        {editingCurrency ? `แก้ไขสกุลเงิน ${editingCurrency.cur_code}` : "เพิ่มสกุลเงิน"}
-                    </p>
+                <EditorDrawer
+                    title={editingCurrency ? `แก้ไขสกุลเงิน ${editingCurrency.cur_code}` : "เพิ่มสกุลเงิน"}
+                    subtitle="สกุลเงินที่ออกเอกสารได้ พร้อมคำอ่านจำนวนเงิน"
+                    isDirty={editor.isDirty}
+                    onClose={editor.close}
+                    onSubmit={handleSubmit}
+                    footer={
+                        <DrawerButtons
+                            isSaving={editor.isSaving}
+                            submitLabel="บันทึกสกุลเงิน"
+                            onCancel={() => confirmDiscard(editor.isDirty) && editor.close()}
+                        />
+                    }
+                >
+                    <div className="grid gap-4 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5">
                     {isBaseCurrency && <StatusBanner tone="info" title={messages.baseCurrencyLocked} />}
                     <div className="grid gap-4 sm:grid-cols-2">
                         <FormField
@@ -261,16 +272,9 @@ export default function CurrenciesTab({ currencies, canEdit, onSaved }: Currenci
                             <p>{wordsPreview.en}</p>
                         </div>
                     )}
-                    <SaveErrorBanner error={editor.saveError} />
-                    <div className="flex flex-wrap justify-end gap-2">
-                        <button type="button" className={SECONDARY_BUTTON} onClick={editor.close}>
-                            ยกเลิก
-                        </button>
-                        <button type="submit" className={PRIMARY_BUTTON} disabled={editor.isSaving}>
-                            {editor.isSaving ? "กำลังบันทึก..." : "บันทึกสกุลเงิน"}
-                        </button>
                     </div>
-                </form>
+                    <SaveErrorBanner error={editor.saveError} />
+                </EditorDrawer>
             )}
 
             <BotRateCheck currencies={currencies} />

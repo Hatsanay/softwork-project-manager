@@ -199,7 +199,7 @@ export default function BillingNoteViewPage() {
             </div>
             {actions.can_issue && !isReady && (
                 <p className="text-xs text-amber-600">
-                    ออกได้เมื่อผ่านทุกข้อในรายการ &quot;ก่อนออกใบวางบิล&quot; — กดแก้ไขร่างเพื่อแก้
+                    ออกได้เมื่อผ่านทุกข้อในรายการ &quot;ก่อนออกใบวางบิล&quot; · กดแก้ไขร่างเพื่อแก้
                 </p>
             )}
 
@@ -396,7 +396,7 @@ function StatusGuide({ detail }: { detail: BillingNoteDetail }) {
     switch (note.bn_status) {
         case "draft":
             return (
-                <StatusBanner tone="info" title="ร่าง — ยังไม่มีเลขที่">
+                <StatusBanner tone="info" title="ร่าง · ยังไม่มีเลขที่">
                     {BILLING_NOTE_MESSAGES.dates} · ไม่ต้องอนุมัติ · {BILLING_NOTE_MESSAGES.amounts}
                 </StatusBanner>
             );
@@ -406,7 +406,7 @@ function StatusGuide({ detail }: { detail: BillingNoteDetail }) {
                     tone="done"
                     title={
                         note.bn_payment_date
-                            ? `ออกแล้ว — ลูกค้านัดชำระ ${formatDateOnly(note.bn_payment_date)}`
+                            ? `ออกแล้ว · ลูกค้านัดชำระ ${formatDateOnly(note.bn_payment_date)}`
                             : "ออกแล้ว"
                     }
                 >

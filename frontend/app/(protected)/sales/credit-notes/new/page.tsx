@@ -37,7 +37,7 @@ export default function NewCreditNotePage() {
             <PageHeader eyebrow="ขาย · ใบลดหนี้" title="ออกใบลดหนี้" description={invoiceDetail?.invoice.inv_title} />
             {!invoiceId && (
                 <StatusBanner tone="info" title="เลือกใบแจ้งหนี้ก่อน">
-                    ใบลดหนี้ออกจากหน้าใบแจ้งหนี้ที่ออกแล้ว — เปิดใบแจ้งหนี้ แล้วกด &quot;ออกใบลดหนี้&quot; ·{" "}
+                    ใบลดหนี้ออกจากหน้าใบแจ้งหนี้ที่ออกแล้ว · เปิดใบแจ้งหนี้ แล้วกด &quot;ออกใบลดหนี้&quot; ·{" "}
                     <Link href="/sales/invoices" className="py-2 text-blue-600 hover:underline">
                         ไปหน้าใบแจ้งหนี้
                     </Link>

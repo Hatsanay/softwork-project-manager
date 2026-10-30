@@ -56,7 +56,7 @@ test("กติกาอนุมัติ: ตรวจลำดับและ
     ]);
 });
 
-test("กติกาอนุมัติค่าใช้จ่าย (EX/EC): ชั้น 1 เริ่มเกิน 0 ได้ — ต่ำกว่านั้นผ่านอัตโนมัติ · เอกสารขายยังต้องเริ่มที่ 0", () => {
+test("กติกาอนุมัติค่าใช้จ่าย (EX/EC): ชั้น 1 เริ่มเกิน 0 ได้ · ต่ำกว่านั้นผ่านอัตโนมัติ · เอกสารขายยังต้องเริ่มที่ 0", () => {
     const levels = [{ al_min_amount_thb: "3000", al_require_distinct: false, role_ids: ["A"] }];
     assert.equal(approvalLevelsSchema.safeParse({ doc_type: "EX", levels }).success, true);
     assert.equal(approvalLevelsSchema.safeParse({ doc_type: "EC", levels }).success, true);

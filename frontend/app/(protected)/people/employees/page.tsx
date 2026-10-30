@@ -162,6 +162,7 @@ function EmployeesContent() {
         },
         {
             key: "emp_position",
+            mobile: "meta",
             header: "แผนก / ตำแหน่ง",
             render: (_, row) => (
                 <div className="grid gap-0.5 text-sm">
@@ -172,6 +173,7 @@ function EmployeesContent() {
         },
         {
             key: "emp_hire_date",
+            mobile: "meta",
             header: "ช่วงทำงาน",
             render: (_, row) => (
                 <div className="grid gap-0.5 text-sm tabular-nums">
@@ -186,6 +188,7 @@ function EmployeesContent() {
         },
         {
             key: "user_username",
+            mobile: "meta",
             header: "บัญชี / เลขประจำตัว",
             render: (_, row) => (
                 <div className="grid gap-0.5 text-sm">
@@ -202,6 +205,7 @@ function EmployeesContent() {
         },
         {
             key: "employment_status",
+            mobile: "badge",
             header: "สถานะ",
             render: (_, row) => (
                 <StatusPill tone={EMPLOYMENT_STATUS[row.employment_status].tone}>

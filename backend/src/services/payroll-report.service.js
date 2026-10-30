@@ -38,7 +38,7 @@ async function findPaidRun(conn, period) {
             run,
             notice:
                 run.pr_status === "approved"
-                    ? `รอบ ${run.pr_number} อนุมัติแล้วแต่ยังไม่บันทึกจ่าย — แบบนับเฉพาะเงินที่จ่ายแล้ว`
+                    ? `รอบ ${run.pr_number} อนุมัติแล้วแต่ยังไม่บันทึกจ่าย · แบบนับเฉพาะเงินที่จ่ายแล้ว`
                     : `รอบ ${run.pr_number} ยังไม่อนุมัติ`,
         };
     }
@@ -194,7 +194,7 @@ async function annualPnd1a(conn, year) {
 async function annualCertificates(conn, year, employeeId = null) {
     const rows = await annualTotals(conn, year, employeeId);
     if (employeeId && rows.length === 0) {
-        throw new AppError(404, "CERTIFICATE_NOT_FOUND", "ไม่มีเงินได้ที่จ่ายแล้วในปีนี้ — ยังออก 50 ทวิ ไม่ได้");
+        throw new AppError(404, "CERTIFICATE_NOT_FOUND", "ไม่มีเงินได้ที่จ่ายแล้วในปีนี้ · ยังออก 50 ทวิ ไม่ได้");
     }
     return {
         year,

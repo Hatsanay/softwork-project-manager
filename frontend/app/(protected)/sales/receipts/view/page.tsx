@@ -65,7 +65,7 @@ export default function ReceiptViewPage() {
             setActionError(error.message);
             return;
         }
-        toast.success("ยกเลิกใบเสร็จแล้ว — ยอดค้างของใบแจ้งหนี้กลับมาแล้ว");
+        toast.success("ยกเลิกใบเสร็จแล้ว · ยอดค้างของใบแจ้งหนี้กลับมาแล้ว");
         setIsCancelOpen(false);
         await reload();
     }
@@ -393,7 +393,7 @@ function WhtCertificateCard({ detail, onChanged }: { detail: ReceiptDetail; onCh
         const blob = await apiFetchBlob(`/receipts/${receipt.rc_id}/wht-certificate/file`);
         if (!blob) {
             viewer?.close();
-            setFileError("เปิดไฟล์ไม่สำเร็จ — ไฟล์อาจหายจากเซิร์ฟเวอร์ ลองแนบใหม่");
+            setFileError("เปิดไฟล์ไม่สำเร็จ · ไฟล์อาจหายจากเซิร์ฟเวอร์ ลองแนบใหม่");
             return;
         }
         const url = URL.createObjectURL(blob);
@@ -469,7 +469,7 @@ function WhtCertificateCard({ detail, onChanged }: { detail: ReceiptDetail; onCh
                 <dl className="grid gap-1">
                     <dt className="text-xs text-gray-500">เลขที่ / วันที่ใน 50 ทวิ</dt>
                     <dd>
-                        {receipt.rc_wht_certificate_no ?? "—"}
+                        {receipt.rc_wht_certificate_no ?? "-"}
                         {receipt.rc_wht_certificate_date ? ` · ${formatDateOnly(receipt.rc_wht_certificate_date)}` : ""}
                     </dd>
                     {receipt.rc_internal_note && (
@@ -560,7 +560,7 @@ function FxCard({ receipt }: { receipt: Receipt }) {
                 value={
                     receipt.rc_actual_rate
                         ? `${Number(receipt.rc_actual_rate).toFixed(4)} บาท/${receipt.rc_currency}`
-                        : "—"
+                        : "-"
                 }
             />
             <div className="flex justify-between gap-3 font-medium">
@@ -588,14 +588,14 @@ function StatusGuide({ receipt, hasWithholding }: { receipt: Receipt; hasWithhol
     }
     if (hasWithholding && !receipt.has_wht_file) {
         return (
-            <StatusBanner tone="warn" title="ออกแล้ว — ยังไม่ได้แนบ 50 ทวิ">
-                ลูกค้าหัก ณ ที่จ่ายไว้ ขอใบ 50 ทวิ จากลูกค้าแล้วแนบที่ส่วน &quot;หัก ณ ที่จ่าย (50 ทวิ)&quot; —
+            <StatusBanner tone="warn" title="ออกแล้ว · ยังไม่ได้แนบ 50 ทวิ">
+                ลูกค้าหัก ณ ที่จ่ายไว้ ขอใบ 50 ทวิ จากลูกค้าแล้วแนบที่ส่วน &quot;หัก ณ ที่จ่าย (50 ทวิ)&quot;
                 ใช้ตอนยื่นภาษีสิ้นปี
             </StatusBanner>
         );
     }
     return (
-        <StatusBanner tone="done" title={`ออกแล้ว — รับเงินวันที่ ${formatDateOnly(receipt.rc_receipt_date)}`}>
+        <StatusBanner tone="done" title={`ออกแล้ว · รับเงินวันที่ ${formatDateOnly(receipt.rc_receipt_date)}`}>
             กด &quot;พิมพ์ / บันทึก PDF&quot; ส่งให้ลูกค้า
             {receipt.rc_created_by_name ? ` · ผู้รับเงิน ${receipt.rc_created_by_name}` : ""}
         </StatusBanner>

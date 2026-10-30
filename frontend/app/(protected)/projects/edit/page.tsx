@@ -119,7 +119,7 @@ export default function EditProjectPage() {
                         loadOptions={loadClientOptions}
                         value={form.client_id}
                         onChange={(v) => setField("client_id", v)}
-                        placeholder="— เลือกลูกค้า (ไม่บังคับ) —"
+                        placeholder="เลือกลูกค้า (ไม่บังคับ)"
                         disabled={isPending}
                     />
                 </div>

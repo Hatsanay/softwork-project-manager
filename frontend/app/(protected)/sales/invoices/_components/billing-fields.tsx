@@ -92,7 +92,7 @@ export default function BillingFields({
                                 onChange={(event) => onChange({ inv_bank_account_id: event.target.value || null })}
                                 className={inputClass(Boolean(errors.inv_bank_account_id))}
                             >
-                                <option value="">— ไม่พิมพ์บัญชี —</option>
+                                <option value="">ไม่พิมพ์บัญชี</option>
                                 {accounts.map((account) => (
                                     <option key={account.ba_id} value={account.ba_id}>
                                         {account.ba_bank_name} · {account.ba_account_no}

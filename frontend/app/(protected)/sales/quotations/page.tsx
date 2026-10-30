@@ -90,6 +90,7 @@ export default function QuotationsPage() {
         },
         {
             key: "client_name",
+            mobile: "meta",
             header: "ลูกค้า",
             render: (_, row) => (
                 <div className="grid min-w-0 gap-0.5">
@@ -100,6 +101,7 @@ export default function QuotationsPage() {
         },
         {
             key: "qt_total",
+            mobile: "trailing",
             header: "ยอดรวม",
             className: "text-right tabular-nums",
             render: (_, row) => (
@@ -115,6 +117,7 @@ export default function QuotationsPage() {
         },
         {
             key: "qt_status",
+            mobile: "badge",
             header: "สถานะ",
             render: (_, row) => (
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -130,6 +133,7 @@ export default function QuotationsPage() {
         },
         {
             key: "qt_issue_date",
+            mobile: "meta",
             header: "วันที่ / ยืนราคาถึง",
             render: (_, row) =>
                 row.qt_issue_date ? (

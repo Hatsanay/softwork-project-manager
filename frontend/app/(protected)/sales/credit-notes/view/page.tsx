@@ -336,7 +336,7 @@ export default function CreditNoteViewPage() {
                         </div>
                         {creditNote.cn_status !== "issued" && creditNote.cn_status !== "cancelled" && (
                             <FieldHint>
-                                ยอดคิดจากยอดของใบเดิม ณ ตอนบันทึกร่าง — ระบบคิดใหม่อีกครั้งตอนส่งขออนุมัติและตอนอนุมัติ
+                                ยอดคิดจากยอดของใบเดิม ณ ตอนบันทึกร่าง · ระบบคิดใหม่อีกครั้งตอนส่งขออนุมัติและตอนอนุมัติ
                             </FieldHint>
                         )}
                     </div>
@@ -394,7 +394,7 @@ export default function CreditNoteViewPage() {
                               `ออกใบลดหนี้ทันที ได้เลขที่และวันที่ · ยอดค้างของ ${invoice.inv_number} ลด ${formatAmount(creditNote.cn_total, decimals)} ${code}`,
                               ...(needsRefund
                                   ? [
-                                        `ลูกค้าจ่ายมาแล้ว — บริษัทต้องคืนเงิน ${formatAmount(creditNote.cn_refund_required, decimals)} ${code}`,
+                                        `ลูกค้าจ่ายมาแล้ว · บริษัทต้องคืนเงิน ${formatAmount(creditNote.cn_refund_required, decimals)} ${code}`,
                                     ]
                                   : []),
                           ]
@@ -651,7 +651,7 @@ function RefundCard({ detail, onSaved }: { detail: CreditNoteDetail; onSaved: ()
                                     onChange={(event) => setBankId(event.target.value)}
                                     className={inputClass(Boolean(fieldErrors.cn_refund_bank_account_id))}
                                 >
-                                    <option value="">— เลือกบัญชี —</option>
+                                    <option value="">เลือกบัญชี</option>
                                     {banks.map((account) => (
                                         <option key={account.ba_id} value={account.ba_id}>
                                             {account.ba_bank_name} {account.ba_account_no}
@@ -767,7 +767,7 @@ function ApprovalProgress({ detail }: { detail: CreditNoteDetail }) {
                                             ? `อนุมัติโดย ${approved.cna_user_name} · ${formatDate(approved.cna_created_at)}`
                                             : isWaiting
                                               ? "รออนุมัติชั้นนี้"
-                                              : "—"}
+                                              : "-"}
                                     </span>
                                 </div>
                             </li>
@@ -810,13 +810,13 @@ function StatusGuide({ detail }: { detail: CreditNoteDetail }) {
         case "draft":
             if (creditNote.cn_returned_reason) {
                 return (
-                    <StatusBanner tone="warn" title="ถูกตีกลับ — แก้แล้วส่งขออนุมัติใหม่">
+                    <StatusBanner tone="warn" title="ถูกตีกลับ · แก้แล้วส่งขออนุมัติใหม่">
                         เหตุผล: {creditNote.cn_returned_reason}
                     </StatusBanner>
                 );
             }
             return (
-                <StatusBanner tone="info" title="ร่าง — ยังไม่มีเลขที่ และยังไม่ลดยอดของใบแจ้งหนี้">
+                <StatusBanner tone="info" title="ร่าง · ยังไม่มีเลขที่ และยังไม่ลดยอดของใบแจ้งหนี้">
                     {CREDIT_NOTE_MESSAGES.approval}
                 </StatusBanner>
             );
@@ -826,7 +826,7 @@ function StatusGuide({ detail }: { detail: CreditNoteDetail }) {
                     <StatusBanner tone="wait" title={`รอคุณอนุมัติชั้น ${creditNote.cn_approval_current_level}`}>
                         กดอนุมัติแล้วจะผ่านชั้น {approval.levels.join(", ")}
                         {approval.isFinal
-                            ? " ซึ่งเป็นชั้นสุดท้าย — ระบบออกใบลดหนี้ให้ทันที"
+                            ? " ซึ่งเป็นชั้นสุดท้าย · ระบบออกใบลดหนี้ให้ทันที"
                             : ` · ${approval.stopReason ?? ""}`}
                     </StatusBanner>
                 );
@@ -843,7 +843,7 @@ function StatusGuide({ detail }: { detail: CreditNoteDetail }) {
         case "issued":
             if (creditNote.is_refund_due) {
                 return (
-                    <StatusBanner tone="error" title="ออกแล้ว — รอคืนเงินลูกค้า">
+                    <StatusBanner tone="error" title="ออกแล้ว · รอคืนเงินลูกค้า">
                         ลูกค้าจ่ายเกินยอดหลังลดหนี้ {formatAmount(creditNote.cn_refund_required, currency.cur_decimals)}{" "}
                         {currency.cur_code} · โอนคืนแล้วบันทึกในส่วน &quot;คืนเงินลูกค้า&quot;
                     </StatusBanner>

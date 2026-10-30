@@ -46,6 +46,9 @@ export type ProductPackageSummary = {
     pkg_updated_at: string;
     item_count: number;
     inactive_product_count: number;
+    // ราคาชุดตอนนี้ (ไม่นับแถวสินค้าปิดใช้งาน) และชื่อรายการแรกๆ สำหรับการ์ด (2026-10-30)
+    pkg_total: string;
+    preview_items: string[];
 };
 
 export type ProductPackageItem = {

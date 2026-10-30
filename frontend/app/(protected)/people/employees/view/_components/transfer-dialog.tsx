@@ -83,7 +83,7 @@ export default function TransferDialog({ employee, onClose }: { employee: Employ
                 aria-labelledby="transfer-title"
                 onSubmit={save}
                 noValidate
-                className="grid max-h-[90dvh] w-full max-w-lg gap-4 overflow-y-auto rounded-t-2xl bg-white p-5 shadow-float sm:rounded-2xl sm:p-6"
+                className="grid max-h-[90dvh] w-full max-w-3xl gap-4 overflow-y-auto rounded-t-2xl bg-white p-5 shadow-float sm:rounded-2xl sm:p-6"
             >
                 <div className="grid gap-1">
                     <h2 id="transfer-title" className="text-base font-medium text-gray-900">

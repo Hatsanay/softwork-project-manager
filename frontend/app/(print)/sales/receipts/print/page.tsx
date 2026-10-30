@@ -35,7 +35,7 @@ function paidByText(detail: ReceiptDetail, labels: ReceiptPrintLabels) {
         case "cash":
             return labels.cash;
         default:
-            return `${labels.other}${receipt.rc_reference ? ` — ${receipt.rc_reference}` : ""}`;
+            return `${labels.other}${receipt.rc_reference ? `${receipt.rc_reference}` : ""}`;
     }
 }
 
@@ -70,7 +70,7 @@ export default function ReceiptPrintPage() {
     const company = receipt.rc_company_snapshot;
     const client = receipt.rc_client_snapshot;
     if (!company || !client)
-        return <p className="p-8 text-sm text-red-600">ใบเสร็จนี้ไม่มีข้อมูล ณ วันออก — แจ้งผู้ดูแลระบบ</p>;
+        return <p className="p-8 text-sm text-red-600">ใบเสร็จนี้ไม่มีข้อมูล ณ วันออก · แจ้งผู้ดูแลระบบ</p>;
 
     const language = receipt.rc_language;
     const labels = RECEIPT_PRINT_LABELS[language];

@@ -40,7 +40,7 @@ function Pnd1Content() {
     const warnings = [
         ...(report.notice ? [report.notice] : []),
         ...(report.missing_national_id.length > 0
-            ? [`ไม่มีเลขประจำตัวประชาชน: ${report.missing_national_id.join(", ")} — กรอกที่หน้าพนักงานก่อนยื่น`]
+            ? [`ไม่มีเลขประจำตัวประชาชน: ${report.missing_national_id.join(", ")} · กรอกที่หน้าพนักงานก่อนยื่น`]
             : []),
     ];
 
@@ -54,7 +54,7 @@ function Pnd1Content() {
                 <header className="flex items-start justify-between gap-6 border-b border-gray-300 pb-3">
                     <div>
                         <p className="text-[13pt] font-medium">
-                            ใบแนบ ภ.ง.ด.1 — เงินได้ตามมาตรา 40 (1) เดือน{monthLabel(report.period)}
+                            ใบแนบ ภ.ง.ด.1 · เงินได้ตามมาตรา 40 (1) เดือน{monthLabel(report.period)}
                         </p>
                         <p>
                             ผู้มีหน้าที่หักภาษี: {report.company.name} · เลขประจำตัวผู้เสียภาษี{" "}
@@ -82,7 +82,7 @@ function Pnd1Content() {
                         {report.rows.map((row, index) => (
                             <tr key={row.emp_code} className="print-row border-b border-gray-200">
                                 <td className="py-1 pl-1 tabular-nums">{index + 1}</td>
-                                <td className="py-1 tabular-nums">{row.national_id ?? "—"}</td>
+                                <td className="py-1 tabular-nums">{row.national_id ?? "-"}</td>
                                 <td className="py-1">{row.full_name}</td>
                                 <td className="py-1">
                                     {report.paid_date ? formatDocumentDate(report.paid_date, "th") : ""}

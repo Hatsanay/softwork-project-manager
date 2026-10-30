@@ -62,7 +62,7 @@ async function lockExpenses(conn, expenseIds) {
 /** รายการที่จ่ายต้อง: มีอยู่ · อนุมัติแล้ว · ยังค้าง · ของผู้รับรายนี้ · สกุลเดียวกันทุกรายการ */
 function assertPayable(expenseIds, expensesById, input) {
     if (expenseIds.some((id) => !expensesById.has(id))) {
-        throw validationError({ allocations: "ไม่พบรายการบางรายการ อาจถูกลบไปแล้ว — โหลดหน้าใหม่แล้วเลือกอีกครั้ง" });
+        throw validationError({ allocations: "ไม่พบรายการบางรายการ อาจถูกลบไปแล้ว · โหลดหน้าใหม่แล้วเลือกอีกครั้ง" });
     }
     const expenses = expenseIds.map((id) => expensesById.get(id));
     const currencyCode = expenses[0].ex_currency;
@@ -84,7 +84,7 @@ function assertPayable(expenseIds, expensesById, input) {
         throw new AppError(
             409,
             "PAYMENT_EXPENSE_UNAVAILABLE",
-            `${problems.join(" · ")} — ใบสำคัญจ่ายหนึ่งใบจ่ายได้เฉพาะรายการที่อนุมัติแล้ว ยังค้างจ่าย ของผู้รับรายเดียว สกุลเงินเดียว`,
+            `${problems.join(" · ")} · ใบสำคัญจ่ายหนึ่งใบจ่ายได้เฉพาะรายการที่อนุมัติแล้ว ยังค้างจ่าย ของผู้รับรายเดียว สกุลเงินเดียว`,
             { allocations: problems.join("\n") },
         );
     }
@@ -153,7 +153,7 @@ async function checkHeader(conn, input, currencyCode) {
         if (!account) fields.pv_bank_account_id = "ไม่พบบัญชีนี้";
         else if (account.ba_status !== "active") fields.pv_bank_account_id = "บัญชีนี้ถูกปิดใช้งานแล้ว";
         else if (account.ba_currency !== currencyCode && account.ba_currency !== BASE_CURRENCY)
-            fields.pv_bank_account_id = `บัญชีนี้เป็นสกุล ${account.ba_currency} — จ่าย ${currencyCode} ได้จากบัญชี ${currencyCode} หรือบัญชีบาท`;
+            fields.pv_bank_account_id = `บัญชีนี้เป็นสกุล ${account.ba_currency} · จ่าย ${currencyCode} ได้จากบัญชี ${currencyCode} หรือบัญชีบาท`;
     }
 
     if (input.pv_payment_date > today) fields.pv_payment_date = "วันที่จ่ายต้องไม่เป็นวันในอนาคต";
@@ -366,10 +366,10 @@ async function cancelPayment(conn, paymentId, reason, expectedVersion, actor) {
     const [[payment]] = await conn.query("SELECT * FROM tb_payments WHERE pv_id = ? FOR UPDATE", [paymentId]);
     if (!payment) throw notFound();
     if (payment.pv_status !== "issued") {
-        throw new AppError(409, "PAYMENT_WRONG_STATUS", "ใบสำคัญจ่ายนี้ถูกยกเลิกไปแล้ว — กรุณาโหลดหน้าใหม่");
+        throw new AppError(409, "PAYMENT_WRONG_STATUS", "ใบสำคัญจ่ายนี้ถูกยกเลิกไปแล้ว · กรุณาโหลดหน้าใหม่");
     }
     if (expectedVersion !== null && expectedVersion !== undefined && payment.pv_version !== expectedVersion) {
-        throw new AppError(409, "PAYMENT_CHANGED", "มีคนเปลี่ยนใบนี้ไปก่อนแล้ว — โหลดหน้าใหม่เพื่อดูข้อมูลล่าสุด");
+        throw new AppError(409, "PAYMENT_CHANGED", "มีคนเปลี่ยนใบนี้ไปก่อนแล้ว · โหลดหน้าใหม่เพื่อดูข้อมูลล่าสุด");
     }
 
     const [allocations] = await conn.query(
@@ -387,7 +387,7 @@ async function cancelPayment(conn, paymentId, reason, expectedVersion, actor) {
             throw new AppError(
                 500,
                 "PAYMENT_PAID_MISMATCH",
-                `ยอดจ่ายแล้วของ ${expense.ex_number} น้อยกว่ายอดในใบสำคัญจ่ายนี้ — ข้อมูลไม่ตรงกัน แจ้งผู้ดูแลระบบ`,
+                `ยอดจ่ายแล้วของ ${expense.ex_number} น้อยกว่ายอดในใบสำคัญจ่ายนี้ · ข้อมูลไม่ตรงกัน แจ้งผู้ดูแลระบบ`,
             );
         }
         await conn.query(

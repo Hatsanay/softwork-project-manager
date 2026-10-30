@@ -257,7 +257,7 @@ export const PERMISSION_GROUPS: PermGroup[] = [
     {
         groupLabel: "บุคคล / เงินเดือน",
         bits: [
-            { key: "manageEmployees",  label: "จัดการพนักงาน (ทะเบียน ค่าจ้าง เลขประจำตัวประชาชน บัญชีรับเงินเดือน — เห็นเงินเดือนทุกคน)", href: "/people/employees" },
+            { key: "manageEmployees",  label: "จัดการพนักงาน (ทะเบียน ค่าจ้าง เลขประจำตัวประชาชน บัญชีรับเงินเดือน · เห็นเงินเดือนทุกคน)", href: "/people/employees" },
             { key: "viewPayroll",      label: "ดูรอบเงินเดือน สลิปของทุกคน และรายงานเงินเดือน/ภาษี",                                  href: "/people/payroll" },
             { key: "runPayroll",       label: "สร้าง/คิด/แก้รอบเงินเดือน และบันทึกจ่ายเงินเดือน",                                       href: "/people/payroll/new" },
             { key: "approvePayroll",   label: "อนุมัติ/ตีกลับรอบเงินเดือน (ต้องมี role อยู่ในชั้นที่รออยู่ด้วย)",                          href: "/people/payroll/approve" },

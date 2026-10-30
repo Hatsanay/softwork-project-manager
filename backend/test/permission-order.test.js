@@ -25,7 +25,7 @@ function extractLeafKeys(sectionText) {
 function sectionBetween(text, startMarker, endMarker) {
     const start = text.indexOf(startMarker);
     const end = text.indexOf(endMarker, start);
-    assert.ok(start >= 0 && end > start, `หา ${startMarker} ใน bit.tsx ไม่เจอ — ไฟล์ถูกเปลี่ยนโครง ต้องแก้เทสต์นี้ตาม`);
+    assert.ok(start >= 0 && end > start, `หา ${startMarker} ใน bit.tsx ไม่เจอ · ไฟล์ถูกเปลี่ยนโครง ต้องแก้เทสต์นี้ตาม`);
     return text.slice(start, end);
 }
 

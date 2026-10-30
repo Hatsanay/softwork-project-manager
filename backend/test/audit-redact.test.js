@@ -29,7 +29,7 @@ test("Buffer ถูกย่อเป็นขนาด ไม่แตกเป
     assert.equal(redact(Buffer.alloc(2048)), "[ไฟล์ 2 KB]");
 });
 
-test("ข้อความธรรมดาไม่ถูกแตะ — ภาษาไทยยาว, ลิงก์, ตัวเลขสั้น", () => {
+test("ข้อความธรรมดาไม่ถูกแตะ · ภาษาไทยยาว, ลิงก์, ตัวเลขสั้น", () => {
     const thaiText = "รายละเอียดงานติดตั้งระบบ ".repeat(20);
     assert.equal(redact(thaiText.slice(0, 900)), thaiText.slice(0, 900));
     assert.equal(redact("https://example.com/uploads/a.png"), "https://example.com/uploads/a.png");

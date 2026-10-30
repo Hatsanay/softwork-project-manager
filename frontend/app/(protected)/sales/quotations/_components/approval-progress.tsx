@@ -22,7 +22,7 @@ export default function ApprovalProgress({ quotation, history }: ApprovalProgres
             <section className={`grid gap-2 p-5 ${CARD_CLASS}`}>
                 <h2 className="text-base font-medium text-gray-900">การอนุมัติ</h2>
                 <p className="text-sm text-gray-500">
-                    ยังไม่ได้ส่งขออนุมัติ — ระบบเลือกจำนวนชั้นจากยอดก่อน VAT (คิดเป็นบาท) ตอนกดส่ง
+                    ยังไม่ได้ส่งขออนุมัติ · ระบบเลือกจำนวนชั้นจากยอดก่อน VAT (คิดเป็นบาท) ตอนกดส่ง
                     ตามกติกาในตั้งค่าระบบ &gt; ข้อมูลบริษัท &gt; การอนุมัติ
                 </p>
             </section>
@@ -58,7 +58,7 @@ export default function ApprovalProgress({ quotation, history }: ApprovalProgres
                                               ? "รออนุมัติชั้นนี้"
                                               : quotation.qt_status === "pending_approval"
                                                 ? "รอชั้นก่อนหน้า"
-                                                : "—"}
+                                                : "-"}
                                     </span>
                                 </div>
                             </li>

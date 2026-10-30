@@ -189,7 +189,7 @@ async function deleteSsoRate(conn, effectiveFrom) {
         throw new AppError(404, "SSO_RATE_NOT_FOUND", "ไม่พบอัตรานี้ อาจถูกลบไปแล้ว กรุณาโหลดหน้าใหม่");
     }
     if (rates.length === 1) {
-        throw new AppError(409, "LAST_SSO_RATE", "ลบอัตราสุดท้ายไม่ได้ — เพิ่มอัตราที่ถูกต้องก่อน แล้วค่อยลบอันนี้");
+        throw new AppError(409, "LAST_SSO_RATE", "ลบอัตราสุดท้ายไม่ได้ · เพิ่มอัตราที่ถูกต้องก่อน แล้วค่อยลบอันนี้");
     }
     await conn.query("DELETE FROM tb_sso_rates WHERE sr_effective_from = ?", [effectiveFrom]);
 }
@@ -243,7 +243,7 @@ async function deleteTaxYear(conn, year) {
         throw new AppError(
             409,
             "LAST_TAX_YEAR",
-            "ลบปีภาษีสุดท้ายไม่ได้ — ระบบต้องมีขั้นภาษีอย่างน้อย 1 ปีไว้คิดภาษีเงินเดือน",
+            "ลบปีภาษีสุดท้ายไม่ได้ · ระบบต้องมีขั้นภาษีอย่างน้อย 1 ปีไว้คิดภาษีเงินเดือน",
         );
     }
     await conn.query("DELETE FROM tb_income_tax_years WHERE ity_tax_year = ?", [year]);

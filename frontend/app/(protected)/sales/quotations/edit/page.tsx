@@ -52,7 +52,7 @@ export default function EditQuotationPage() {
             )}
             {detail && !isDraft && (
                 <StatusBanner tone="info" title="ใบนี้ไม่ได้เป็นร่างแล้ว แก้ไขไม่ได้">
-                    ใบที่ส่งขออนุมัติแล้วแก้ไม่ได้ — ถ้าอนุมัติแล้วต้องการแก้ ให้ออก revision จากหน้าเอกสาร
+                    ใบที่ส่งขออนุมัติแล้วแก้ไม่ได้ · ถ้าอนุมัติแล้วต้องการแก้ ให้ออก revision จากหน้าเอกสาร
                 </StatusBanner>
             )}
             {quotationId && !error && (!detail || !options) && <PageSkeleton />}

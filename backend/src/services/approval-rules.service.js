@@ -91,7 +91,7 @@ function buildApprovalWarnings(levels, permissionLabel = "อนุมัติ�
     levels.forEach((level, index) => {
         if (level.eligible_users.length === 0) {
             warnings.push(
-                `ชั้น ${level.al_level} ยังไม่มีผู้ใช้ที่อนุมัติได้ (ไม่มีผู้ใช้ที่เปิดใช้งานใน role ที่เลือก หรือ role นั้นยังไม่ได้ติ๊กสิทธิ์ "${permissionLabel}") — ใบที่ต้องผ่านชั้นนี้จะค้าง`,
+                `ชั้น ${level.al_level} ยังไม่มีผู้ใช้ที่อนุมัติได้ (ไม่มีผู้ใช้ที่เปิดใช้งานใน role ที่เลือก หรือ role นั้นยังไม่ได้ติ๊กสิทธิ์ "${permissionLabel}") · ใบที่ต้องผ่านชั้นนี้จะค้าง`,
             );
             return;
         }
@@ -107,7 +107,7 @@ function buildApprovalWarnings(levels, permissionLabel = "อนุมัติ�
             .some((earlierLevel) => earlierLevel.eligible_users.some((user) => user.user_id === onlyApprover.user_id));
         if (isAlsoEarlierApprover) {
             warnings.push(
-                `ชั้น ${level.al_level} บังคับให้เป็นคนละคน แต่มีผู้อนุมัติได้คนเดียว (${onlyApprover.full_name}) ซึ่งอนุมัติชั้นก่อนหน้าได้ด้วย — ถ้าเขาอนุมัติชั้นก่อนหน้าไปแล้ว ใบจะค้างที่ชั้นนี้`,
+                `ชั้น ${level.al_level} บังคับให้เป็นคนละคน แต่มีผู้อนุมัติได้คนเดียว (${onlyApprover.full_name}) ซึ่งอนุมัติชั้นก่อนหน้าได้ด้วย · ถ้าเขาอนุมัติชั้นก่อนหน้าไปแล้ว ใบจะค้างที่ชั้นนี้`,
             );
         }
     });

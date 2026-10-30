@@ -148,6 +148,13 @@ export default function OrderStatusPage() {
             {quotation && (
                 <CustomerSection index={sectionIndex.quotation} id="quotation" title="ใบเสนอราคา" description={progress.stage === "quotation" ? "ตรวจรายการและยอด แล้วกดยอมรับท้ายใบ" : undefined}>
                     <QuotationSummary quotation={quotation} />
+                    <div className="grid gap-1.5">
+                        <a href={`/order/r/${token}/quotation`} target="_blank" rel="noreferrer" className={buttonClass("secondary", "md", "min-h-11 justify-self-start")}>
+                            <FileText size={16} aria-hidden="true" />
+                            ดู / บันทึก PDF ใบเสนอราคา
+                        </a>
+                        <FieldHint>เปิดใบฉบับเต็มขนาด A4 ในแท็บใหม่ กดพิมพ์แล้วเลือก &quot;บันทึกเป็น PDF&quot; เก็บไว้ได้</FieldHint>
+                    </div>
                     {progress.stage === "quotation" && <AcceptForm token={token} defaultName={data.request.contact_name ?? ""} onAccepted={load} />}
                     {progress.stage === "accepted" && (
                         <StatusBanner tone="done" title="ยอมรับแล้ว">

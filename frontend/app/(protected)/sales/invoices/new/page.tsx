@@ -46,7 +46,7 @@ function DebitNote({ referenceId }: { referenceId: string }) {
     const blockedReason =
         reference && !reference.actions.can_debit
             ? (reference.actions.debit_blocked_reason ??
-              "ใบนี้ออกใบเพิ่มหนี้ไม่ได้ — ต้องเป็นใบแจ้งหนี้ที่ออกแล้ว และคุณต้องมีสิทธิ์สร้างใบแจ้งหนี้")
+              "ใบนี้ออกใบเพิ่มหนี้ไม่ได้ · ต้องเป็นใบแจ้งหนี้ที่ออกแล้ว และคุณต้องมีสิทธิ์สร้างใบแจ้งหนี้")
             : null;
     return (
         <div className="grid w-full grid-cols-1 gap-6">
@@ -85,7 +85,7 @@ function FromQuotation({ quotationId }: { quotationId: string }) {
             <PageHeader
                 eyebrow="ขาย · ใบแจ้งหนี้"
                 title="ออกใบแจ้งหนี้จากงวด"
-                description="เลือกงวดแล้วสร้างร่าง — ตรวจเครดิตเทอม หัก ณ ที่จ่าย และบัญชีรับเงินในร่าง แล้วกดออกใบแจ้งหนี้"
+                description="เลือกงวดแล้วสร้างร่าง · ตรวจเครดิตเทอม หัก ณ ที่จ่าย และบัญชีรับเงินในร่าง แล้วกดออกใบแจ้งหนี้"
             />
             <MilestonePicker quotationId={quotationId} />
         </div>

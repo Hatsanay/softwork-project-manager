@@ -38,7 +38,7 @@ const ONE_HUNDRED_PERCENT = 10_000n; // 100.00% ในหน่วยร้อ�
 export function splitMilestoneBases({ milestoneAmounts, afterDiscount, total, currencyDecimals = 2 }) {
     const milestoneSum = milestoneAmounts.reduce((sum, amount) => sum + amount, 0n);
     if (milestoneSum !== total) {
-        throw new Error(`ผลรวมงวด (${milestoneSum}) ไม่เท่ายอดใบเสนอราคา (${total}) — ข้อมูลใบเสนอราคาไม่สมบูรณ์`);
+        throw new Error(`ผลรวมงวด (${milestoneSum}) ไม่เท่ายอดใบเสนอราคา (${total}) · ข้อมูลใบเสนอราคาไม่สมบูรณ์`);
     }
     if (total <= 0n) throw new Error("ยอดใบเสนอราคาต้องมากกว่า 0");
     if (afterDiscount < 0n || afterDiscount > total) {

@@ -184,7 +184,7 @@ test("ยอดต่ำกว่าวงเงิน: ผ่านอัตโ
     assert.equal(approved.expense.ex_auto_approved, true);
     assert.equal(approved.expense.payment_state, "unpaid");
     assert.equal(approved.expense.outstanding_amount, "2000.00");
-    assert.equal(approved.actions.can_cancel, true, "ผ่านอัตโนมัติ — ผู้บันทึกยกเลิกเองได้");
+    assert.equal(approved.actions.can_cancel, true, "ผ่านอัตโนมัติ · ผู้บันทึกยกเลิกเองได้");
 
     const edit = await as(
         people.clerk,
@@ -226,7 +226,7 @@ test("ยอดเกินวงเงิน: รออนุมัติตา
     assert.equal(draft.checks.suggested_vat, "350.00");
     assert.equal(draft.checks.is_vat_different, true, "ใส่ VAT 400 แต่ 7% ของ 5,000 = 350");
     assert.equal(draft.expense.ex_vat_rate, "7.00");
-    assert.equal(draft.expense.ex_vat_claimable, false, "บริษัทยังไม่จด VAT — ภาษีซื้อเป็นต้นทุน");
+    assert.equal(draft.expense.ex_vat_claimable, false, "บริษัทยังไม่จด VAT · ภาษีซื้อเป็นต้นทุน");
 
     const submitted = expectStatus(
         await as(people.clerk, "POST", `/V1/expenses/${expenseId}/submit`, { ex_version: draft.expense.ex_version }),
@@ -332,7 +332,7 @@ test("กันบิลซ้ำ (R-P2): ผู้ขาย + เลขเอ�
     const withoutNumberA = await createBill(people.clerk, { ex_title: "ไม่มีเลข ก" });
     const withoutNumberB = await createBill(people.clerk, { ex_title: "ไม่มีเลข ข" });
     const possible = (await detailOf(withoutNumberB)).possible_duplicates.map((row) => row.ex_id);
-    assert.ok(possible.includes(withoutNumberA), "ผู้ขาย วันที่ ยอดเดียวกัน — เตือน");
+    assert.ok(possible.includes(withoutNumberA), "ผู้ขาย วันที่ ยอดเดียวกัน · เตือน");
 });
 
 test("ผู้ขายต่างประเทศ: ไม่หัก ณ ที่จ่าย · วงเงินอนุมัติเทียบยอดบาท", async () => {

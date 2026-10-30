@@ -1,27 +1,27 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Image from "next/image";
 import { api } from "@/app/constans";
 import formatDate, { formatDateOnly, toDateInputValue } from "@/app/function";
 import DataTable, { Column } from "@/components/ui/datatable/datatable";
 import ProgressBar from "@/components/ui/ProgressBar";
 import CircularProgress from "@/components/ui/CircularProgress";
-import Button from "@/components/ui/Button/Button";
 import EditButton from "@/components/ui/Button/EditButton";
 import DeleteButton from "@/components/ui/Button/DeleteButton";
-import Input from "@/components/ui/Input/input";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
-import SearchableSelect from "@/components/ui/SearchableSelect";
-import { PROJECT_PERMISSION_BITS } from "@/app/components/project-position-bits";
 import ProjectFinanceCard from "./_components/project-finance-card";
 import FastworkProjectCard from "./_components/fastwork-project-card";
 import ProfitShareLinkCard from "./_components/profit-share-link-card";
 import CustomerRequirementsCard from "./_components/customer-requirements-card";
+import ShareEmailModal from "./_components/share-email-modal";
+import ProjectChatModal from "./_components/project-chat-modal";
+import MemberModal from "./_components/member-modal";
+import TaskFormModal from "./_components/task-form-modal";
+import TaskChatPanel from "./_components/task-chat-panel";
+import TaskIssuesSection from "./_components/task-issues-section";
 import TaskBoard from "./_components/board/task-board";
-import TaskLabelsChecklist, { type ChecklistItem } from "./_components/board/task-labels-checklist";
-import type { BoardLabel } from "./_components/board/board-types";
+import TaskLabelsChecklist from "./_components/board/task-labels-checklist";
 import { toast } from "sonner";
 import { buttonClass } from "@/components/ui/button";
 import { inputClass } from "@/components/ui/form-field";
@@ -41,261 +41,9 @@ import {
     TASK_STATUS,
 } from "./_components/project-sections";
 
-const SERVER_BASE = new URL(api).origin;
+import type { TaskStatus, ProjectDetail, TaskAssignee, Task, MemberPosition, Member, ActivityEntry, PositionOption, TaskDetail, TaskFormState } from "./_types";
+import { readTaskView, saveTaskView, EMPTY_TASK_FORM, TASK_STATUS_LABEL, TASK_STATUS_OPTIONS, ACTION_LABEL, authHeader, decodeToken, hasProjectBit, IssueCountBadge, ChatUnreadBadge } from "./_lib/view-helpers";
 
-type ProjectStatus = "planning" | "in_progress" | "on_hold" | "completed" | "cancelled";
-type ProjectType = "waterfall" | "agile";
-type TaskStatus = "todo" | "in_progress" | "review" | "done";
-
-type ProjectDetail = {
-    project_id: string;
-    project_name: string;
-    project_description: string | null;
-    project_status: ProjectStatus;
-    project_type: ProjectType;
-    project_start_date: string | null;
-    project_due_date: string | null;
-    project_progress_percent: string;
-    project_share_token: string;
-    project_share_enabled: number;
-    project_use_task_weight: number;
-    // ช่องทางงาน (2026-10-24 · P-1): fastwork = รับงานผ่าน fastwork.com (การ์ดงวดงาน + เงินจากแพลตฟอร์ม)
-    project_channel: "direct" | "fastwork";
-    client_name: string | null;
-    client_email: string | null;
-    unread_chat_count: number;
-};
-
-type TaskAssignee = { user_id: string; user_fullname: string };
-
-type Task = {
-    task_id: string;
-    task_parent_id: string | null;
-    task_status: TaskStatus;
-    task_title: string;
-    assignees: TaskAssignee[];
-    task_start_date: string | null;
-    task_due_date: string | null;
-    task_weight: number;
-    open_issue_count: number;
-    subtask_open_issue_count: number;
-    unread_chat_count: number;
-    // บอร์ดงาน (2026-10-17)
-    task_sort_order?: number;
-    task_completed_at?: string | null;
-    labels?: BoardLabel[];
-    checklist_done?: number;
-    checklist_total?: number;
-    subtask_done?: number;
-    subtask_total?: number;
-};
-
-// มุมมองงาน ตาราง/บอร์ด — จำไว้ต่อเครื่อง (K5) · อ่าน localStorage ไม่ได้ (โหมดส่วนตัว) = ตาราง
-const TASK_VIEW_STORAGE_KEY = "softwork.projectTaskView";
-
-function readTaskView(): TaskView {
-    if (typeof window === "undefined") return "table";
-    try {
-        return window.localStorage.getItem(TASK_VIEW_STORAGE_KEY) === "board" ? "board" : "table";
-    } catch {
-        return "table";
-    }
-}
-
-function saveTaskView(view: TaskView) {
-    try {
-        window.localStorage.setItem(TASK_VIEW_STORAGE_KEY, view);
-    } catch {
-        // เก็บไม่ได้ก็ใช้ได้ปกติ แค่ไม่จำค่า
-    }
-}
-
-type IssueStatus = "open" | "resolved";
-type IssueImage = { image_id: string; issue_id: string; image_url: string };
-type IssueTag = { user_id: string; user_fullname: string };
-type Issue = {
-    issue_id: string;
-    task_id: string;
-    issue_title: string;
-    issue_description: string | null;
-    issue_status: IssueStatus;
-    created_by: string | null;
-    created_by_name: string | null;
-    issue_created_at: string;
-    images: IssueImage[];
-    tags: IssueTag[];
-};
-
-const MAX_ISSUE_IMAGES = 5;
-
-type ChatImage = { image_id: string; message_id: string; image_url: string };
-type ChatMessage = {
-    message_id: string;
-    task_id: string;
-    user_id: string | null;
-    user_fullname: string | null;
-    user_avatar_url: string | null;
-    message_text: string | null;
-    message_created_at: string;
-    reply_to_message_id: string | null;
-    reply_to_text: string | null;
-    reply_to_user_fullname: string | null;
-    reply_to_image_count: number;
-    images: ChatImage[];
-};
-
-const MAX_CHAT_IMAGES = 5;
-const CHAT_POLL_INTERVAL_MS = 4000;
-const REPLY_PREVIEW_MAX_CHARS = 80;
-
-type ProjectChatMessage = {
-    message_id: string;
-    project_id: string;
-    user_id: string | null;
-    user_fullname: string | null;
-    user_avatar_url: string | null;
-    message_text: string | null;
-    message_created_at: string;
-    reply_to_message_id: string | null;
-    reply_to_text: string | null;
-    reply_to_user_fullname: string | null;
-    reply_to_image_count: number;
-    images: ChatImage[];
-};
-
-// แชทไม่มีแก้ไข/ลบข้อความ — จำนวนเท่าเดิมและข้อความล่าสุดเป็นตัวเดิม = ไม่มีอะไรเปลี่ยน
-function sameMessageList(prev: { message_id: string }[], next: { message_id: string }[]): boolean {
-    return prev.length === next.length && prev.at(-1)?.message_id === next.at(-1)?.message_id;
-}
-
-function truncateReplyPreview(text: string): string {
-    return text.length > REPLY_PREVIEW_MAX_CHARS ? `${text.slice(0, REPLY_PREVIEW_MAX_CHARS)}…` : text;
-}
-
-function scrollToChatMessage(messageId: string) {
-    const el = document.getElementById(`chat-msg-${messageId}`);
-    if (!el) return;
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    el.classList.add("ring-2", "ring-blue-500");
-    setTimeout(() => el.classList.remove("ring-2", "ring-blue-500"), 1200);
-}
-
-type IssueFormState = { issue_title: string; issue_description: string; tagged_users: IssueTag[] };
-const EMPTY_ISSUE_FORM: IssueFormState = { issue_title: "", issue_description: "", tagged_users: [] };
-
-type IssueReplyImage = { image_id: string; reply_id: string; image_url: string };
-type IssueReply = {
-    reply_id: string;
-    issue_id: string;
-    user_id: string | null;
-    user_fullname: string | null;
-    user_avatar_url: string | null;
-    reply_text: string | null;
-    reply_created_at: string;
-    images: IssueReplyImage[];
-};
-
-const MAX_ISSUE_REPLY_IMAGES = 5;
-
-type MemberPosition = { project_member_id: string; position_id: string; position_name: string };
-type Member = {
-    project_member_id: string;
-    user_id: string;
-    user_fullname: string;
-    positions: MemberPosition[];
-};
-
-type ActivityEntry = {
-    log_id: string;
-    task_id: string;
-    task_title: string;
-    log_fullname: string | null;
-    log_action: "created" | "status_changed" | "edited" | "assigned" | "comment";
-    log_old_value: string | null;
-    log_new_value: string | null;
-    log_message: string | null;
-    log_created_at: string;
-};
-
-type PositionOption = { position_id: string; position_name: string };
-type TaskDetail = Task & { task_description: string | null; checklist?: ChecklistItem[] };
-
-type TaskFormState = {
-    task_title: string;
-    task_description: string;
-    assignee_ids: string[];
-    task_start_date: string;
-    task_due_date: string;
-    task_weight: string;
-};
-
-type MemberFormState = { user_id: string; position_ids: string[] };
-
-const EMPTY_TASK_FORM: TaskFormState = {
-    task_title: "", task_description: "", assignee_ids: [],
-    task_start_date: "", task_due_date: "", task_weight: "1",
-};
-
-const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
-    todo: "รอดำเนินการ", in_progress: "กำลังทำ", review: "ตรวจสอบ", done: "เสร็จแล้ว",
-};
-const TASK_STATUS_OPTIONS: { value: TaskStatus; label: string }[] = (
-    Object.keys(TASK_STATUS_LABEL) as TaskStatus[]
-).map((value) => ({ value, label: TASK_STATUS_LABEL[value] }));
-
-const ISSUE_STATUS_LABEL: Record<IssueStatus, string> = { open: "เปิดอยู่", resolved: "แก้ไขแล้ว" };
-
-const ACTION_LABEL: Record<ActivityEntry["log_action"], string> = {
-    created: "สร้างงาน", status_changed: "เปลี่ยนสถานะงาน", edited: "แก้ไขงาน",
-    assigned: "มอบหมายงาน", comment: "แสดงความคิดเห็นใน",
-};
-
-function authHeader() {
-    return { Authorization: `Bearer ${localStorage.getItem("token")}` };
-}
-
-function decodeToken(token: string): { user_id: string } {
-    const payload = token.split(".")[1];
-    return JSON.parse(atob(payload));
-}
-
-function hasProjectBit(permission: string, key: string) {
-    const index = PROJECT_PERMISSION_BITS.findIndex((b) => b.key === key);
-    return index !== -1 && permission[index] === "1";
-}
-
-// แดง = ปัญหาของ task/subtask นั้นเอง, น้ำเงิน = ปัญหาที่รวมมาจาก subtask ของมัน (แสดงคู่กันแต่นับแยกกัน)
-function IssueCountBadge({ count, color }: { count: number; color: "red" | "blue" }) {
-    if (!count) return null;
-    const colorClass = color === "red" ? "text-red-600 bg-red-50" : "text-blue-600 bg-blue-50";
-    return (
-        <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${colorClass}`}>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
-                <path fillRule="evenodd" d="M9.401 3.003c1.155-2 4.043-2 5.198 0l7.355 12.748c1.154 2-.29 4.5-2.599 4.5H4.645c-2.309 0-3.752-2.5-2.598-4.5L9.4 3.003ZM12 8.25a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V9a.75.75 0 0 1 .75-.75Zm0 8.25a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z" clipRule="evenodd" />
-            </svg>
-            {count}
-        </span>
-    );
-}
-
-// badge จำนวนข้อความแชทที่ยังไม่ได้อ่าน — วงกลมสีแดงเล็กๆ แบบ notification ทั่วไป ไม่ใช้สีเดียวกับ IssueCountBadge เพื่อไม่ให้สับสนความหมาย
-function ChatUnreadBadge({ count }: { count: number }) {
-    if (!count) return null;
-    return (
-        <span className="inline-flex items-center justify-center min-w-4.5 h-4.5 px-1 text-[11px] font-medium text-white bg-red-600 rounded-full leading-none">
-            {count > 99 ? "99+" : count}
-        </span>
-    );
-}
-
-async function loadUserOptions(search: string, excludeUserIds: string[]) {
-    const res = await fetch(`${api}/users/for-select?${new URLSearchParams({ search })}`, { headers: authHeader() });
-    if (!res.ok) return [];
-    const rows = (await res.json()) as { user_id: string; user_fullname: string }[];
-    return rows
-        .filter((u) => !excludeUserIds.includes(u.user_id))
-        .map((u) => ({ value: u.user_id, label: u.user_fullname }));
-}
 
 export default function ViewProjectPage() {
     const router = useRouter();
@@ -315,9 +63,6 @@ export default function ViewProjectPage() {
     const [isRegeneratingLink, setIsRegeneratingLink] = useState(false);
 
     const [shareEmailModalOpen, setShareEmailModalOpen] = useState(false);
-    const [shareEmailForm, setShareEmailForm] = useState({ to: "", message: "" });
-    const [shareEmailError, setShareEmailError] = useState<string | null>(null);
-    const [isSendingShareEmail, setIsSendingShareEmail] = useState(false);
     const [showOnlyMyTasks, setShowOnlyMyTasks] = useState(false);
     const [taskView, setTaskView] = useState<TaskView>(readTaskView);
     const [agileOverviewTab, setAgileOverviewTab] = useState<"all" | "task" | "subtask">("all");
@@ -325,54 +70,21 @@ export default function ViewProjectPage() {
     const [taskModalOpen, setTaskModalOpen] = useState(false);
     const [editingTask, setEditingTask] = useState<Task | null>(null);
     const [parentTask, setParentTask] = useState<Task | null>(null);
-    const [taskForm, setTaskForm] = useState<TaskFormState>(EMPTY_TASK_FORM);
-    const [taskFormError, setTaskFormError] = useState<string | null>(null);
+    // ค่าเริ่มของฟอร์มตอนเปิด (ว่าง หรือค่าของงานที่แก้)
+    const [taskFormStart, setTaskFormStart] = useState<TaskFormState>(EMPTY_TASK_FORM);
     const [deleteTaskTarget, setDeleteTaskTarget] = useState<Task | null>(null);
     const [isDeletingTask, setIsDeletingTask] = useState(false);
 
     const [detailTask, setDetailTask] = useState<TaskDetail | null>(null);
     const [detailLoading, setDetailLoading] = useState(false);
 
-    const [detailIssues, setDetailIssues] = useState<Issue[]>([]);
-    const [issueFormOpen, setIssueFormOpen] = useState(false);
-    const [editingIssue, setEditingIssue] = useState<Issue | null>(null);
-    const [issueForm, setIssueForm] = useState<IssueFormState>(EMPTY_ISSUE_FORM);
-    const [issueFormError, setIssueFormError] = useState<string | null>(null);
-    const [issueKeepImageIds, setIssueKeepImageIds] = useState<string[]>([]);
-    const [issueNewImages, setIssueNewImages] = useState<File[]>([]);
-    const [issueTagQuery, setIssueTagQuery] = useState("");
-    const [issueTagResults, setIssueTagResults] = useState<IssueTag[]>([]);
-    const [issueTagDropdownOpen, setIssueTagDropdownOpen] = useState(false);
-    const issueTagBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const [issueRepliesByIssue, setIssueRepliesByIssue] = useState<Record<string, IssueReply[]>>({});
-    const [issueRepliesLoading, setIssueRepliesLoading] = useState(false);
-    const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
-    const [replyNewImagesByIssue, setReplyNewImagesByIssue] = useState<Record<string, File[]>>({});
-    const [isSendingReply, setIsSendingReply] = useState(false);
-    const [isSavingIssue, setIsSavingIssue] = useState(false);
-    const [deleteIssueTarget, setDeleteIssueTarget] = useState<Issue | null>(null);
-    const [isDeletingIssue, setIsDeletingIssue] = useState(false);
 
     const [chatOpen, setChatOpen] = useState(false);
-    const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-    const [chatText, setChatText] = useState("");
-    const [chatNewImages, setChatNewImages] = useState<File[]>([]);
-    const [isSendingChat, setIsSendingChat] = useState(false);
-    const [replyingToChat, setReplyingToChat] = useState<ChatMessage | null>(null);
-    const chatListRef = useRef<HTMLDivElement | null>(null);
 
     const [projectChatOpen, setProjectChatOpen] = useState(false);
-    const [projectChatMessages, setProjectChatMessages] = useState<ProjectChatMessage[]>([]);
-    const [projectChatText, setProjectChatText] = useState("");
-    const [projectChatNewImages, setProjectChatNewImages] = useState<File[]>([]);
-    const [isSendingProjectChat, setIsSendingProjectChat] = useState(false);
-    const [replyingToProjectChat, setReplyingToProjectChat] = useState<ProjectChatMessage | null>(null);
-    const projectChatListRef = useRef<HTMLDivElement | null>(null);
 
     const [memberModalOpen, setMemberModalOpen] = useState(false);
     const [editingMember, setEditingMember] = useState<Member | null>(null);
-    const [memberForm, setMemberForm] = useState<MemberFormState>({ user_id: "", position_ids: [] });
-    const [memberFormError, setMemberFormError] = useState<string | null>(null);
     const [removeMemberTarget, setRemoveMemberTarget] = useState<Member | null>(null);
     const [isRemovingMember, setIsRemovingMember] = useState(false);
 
@@ -435,71 +147,6 @@ export default function ViewProjectPage() {
             setPositions(data.data ?? []);
         })();
     }, []);
-
-    // แชทเปิดอยู่ระหว่างดู task ไหน ก็ poll ข้อความใหม่ของ task นั้นเป็นระยะ (ไม่มี websocket ใช้ polling แทน)
-    // ข้ามรอบที่แท็บถูกซ่อนอยู่ (สลับไปแท็บอื่น/ย่อหน้าต่าง) ไม่ต้องยิง backend ทุก 4 วินาทีทั้งที่ไม่มีใครดู แล้วโหลดทันทีตอนกลับมา
-    useEffect(() => {
-        if (!chatOpen || !detailTask) return;
-        const taskId = detailTask.task_id;
-        loadChatMessages(taskId);
-        const timer = setInterval(() => {
-            if (document.visibilityState === "visible") loadChatMessages(taskId);
-        }, CHAT_POLL_INTERVAL_MS);
-        const onVisible = () => {
-            if (document.visibilityState === "visible") loadChatMessages(taskId);
-        };
-        document.addEventListener("visibilitychange", onVisible);
-        return () => {
-            clearInterval(timer);
-            document.removeEventListener("visibilitychange", onVisible);
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [chatOpen, detailTask?.task_id]);
-
-    // เลื่อนไปข้อความล่าสุดเสมอเมื่อมีข้อความใหม่หรือเพิ่งเปิดแชท
-    useEffect(() => {
-        if (!chatListRef.current) return;
-        chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
-    }, [chatMessages]);
-
-    // แชทรวมของโปรเจกต์เปิดอยู่ ก็ poll ข้อความใหม่เป็นระยะเหมือนแชทของ task
-    useEffect(() => {
-        if (!projectChatOpen || !id) return;
-        loadProjectChatMessages();
-        const timer = setInterval(() => {
-            if (document.visibilityState === "visible") loadProjectChatMessages();
-        }, CHAT_POLL_INTERVAL_MS);
-        const onVisible = () => {
-            if (document.visibilityState === "visible") loadProjectChatMessages();
-        };
-        document.addEventListener("visibilitychange", onVisible);
-        return () => {
-            clearInterval(timer);
-            document.removeEventListener("visibilitychange", onVisible);
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [projectChatOpen, id]);
-
-    useEffect(() => {
-        if (!projectChatListRef.current) return;
-        projectChatListRef.current.scrollTop = projectChatListRef.current.scrollHeight;
-    }, [projectChatMessages]);
-
-    // ค้นหาคนไว้แท็ก (@) ในฟอร์มปัญหา — debounce เหมือน dashboard search, ตัด "@" นำหน้าออกก่อนค้นหา
-    useEffect(() => {
-        if (!issueFormOpen) return;
-        const q = issueTagQuery.trim().replace(/^@/, "");
-        const timer = setTimeout(async () => {
-            if (!q) { setIssueTagResults([]); return; }
-            const res = await fetch(`${api}/users/for-select?${new URLSearchParams({ search: q })}`, { headers: authHeader() });
-            if (!res.ok) return;
-            const rows = (await res.json()) as IssueTag[];
-            const excludeIds = issueForm.tagged_users.map((u) => u.user_id);
-            setIssueTagResults(rows.filter((u) => !excludeIds.includes(u.user_id)));
-        }, 300);
-        return () => clearTimeout(timer);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [issueTagQuery, issueFormOpen]);
 
     const canAddTask = hasProjectBit(permission, "addTask");
     const canEditTask = hasProjectBit(permission, "editTask");
@@ -629,8 +276,7 @@ export default function ViewProjectPage() {
     function openCreateTask(parent?: Task) {
         setEditingTask(null);
         setParentTask(parent ?? null);
-        setTaskForm(EMPTY_TASK_FORM);
-        setTaskFormError(null);
+        setTaskFormStart(EMPTY_TASK_FORM);
         setTaskModalOpen(true);
     }
 
@@ -640,7 +286,7 @@ export default function ViewProjectPage() {
         const data = await res.json();
         setEditingTask(task);
         setParentTask(null);
-        setTaskForm({
+        setTaskFormStart({
             task_title: data.task_title ?? "",
             task_description: data.task_description ?? "",
             assignee_ids: (data.assignees as TaskAssignee[] ?? []).map((a) => a.user_id),
@@ -648,385 +294,29 @@ export default function ViewProjectPage() {
             task_due_date: toDateInputValue(data.task_due_date),
             task_weight: String(data.task_weight ?? 1),
         });
-        setTaskFormError(null);
         setTaskModalOpen(true);
     }
 
     function closeTaskDetail() {
         setDetailTask(null);
-        setIssueFormOpen(false);
-        setEditingIssue(null);
         setChatOpen(false);
-        setChatMessages([]);
-        setChatText("");
-        setChatNewImages([]);
-        setReplyingToChat(null);
-        setIssueRepliesByIssue({});
-        setReplyNewImagesByIssue({});
-    }
-
-    async function loadIssues(taskId: string) {
-        const res = await fetch(`${api}/projects/${id}/tasks/${taskId}/issues`, { headers: authHeader() });
-        if (!res.ok) return;
-        const data = await res.json();
-        setDetailIssues(data.data ?? []);
     }
 
     // โหลดเธรดตอบกลับของทุกปัญหาใน task นี้พร้อมกันทีเดียว (เธรดแสดงตลอดไม่ต้องกดขยายทีละปัญหา) — endpoint นี้ mark-read ให้ทุกปัญหาในคราวเดียว
-    async function loadAllIssueReplies(taskId: string) {
-        const res = await fetch(`${api}/projects/${id}/tasks/${taskId}/issues/replies`, { headers: authHeader() });
-        if (!res.ok) return;
-        const data = await res.json();
-        setIssueRepliesByIssue(data.data ?? {});
-    }
-
     // รีโหลดเธรดของปัญหาเดียว (ใช้หลังส่งข้อความตอบกลับใหม่) ไม่ใช้ตัว batch เพราะแค่ต้องการรีเฟรชปัญหาเดียวที่เพิ่งตอบไป
-    async function loadIssueReplies(issueId: string) {
-        const res = await fetch(`${api}/projects/${id}/issues/${issueId}/replies`, { headers: authHeader() });
-        if (!res.ok) return;
-        const data = await res.json();
-        setIssueRepliesByIssue((prev) => ({ ...prev, [issueId]: data.data ?? [] }));
-    }
-
-    function handlePickReplyImages(issueId: string, files: FileList | null) {
-        if (!files) return;
-        const picked = Array.from(files);
-        const current = replyNewImagesByIssue[issueId] ?? [];
-        const remaining = MAX_ISSUE_REPLY_IMAGES - current.length;
-        if (remaining <= 0) {
-            toast.error(`แนบรูปได้สูงสุด ${MAX_ISSUE_REPLY_IMAGES} รูปต่อการตอบกลับ`);
-            return;
-        }
-        setReplyNewImagesByIssue((prev) => ({ ...prev, [issueId]: [...current, ...picked.slice(0, remaining)] }));
-    }
-
-    async function handleSendReply(e: React.FormEvent<HTMLFormElement>, issueId: string) {
-        e.preventDefault();
-        const text = (replyDrafts[issueId] ?? "").trim();
-        const images = replyNewImagesByIssue[issueId] ?? [];
-        if (!text && images.length === 0) return;
-
-        setIsSendingReply(true);
-        try {
-            const fd = new FormData();
-            if (text) fd.append("reply_text", text);
-            for (const file of images) fd.append("images", file);
-
-            const res = await fetch(`${api}/projects/${id}/issues/${issueId}/replies`, {
-                method: "POST",
-                headers: authHeader(),
-                body: fd,
-            });
-            if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                toast.error(data.message ?? "ส่งข้อความตอบกลับไม่สำเร็จ");
-                return;
-            }
-            setReplyDrafts((prev) => ({ ...prev, [issueId]: "" }));
-            setReplyNewImagesByIssue((prev) => ({ ...prev, [issueId]: [] }));
-            await loadIssueReplies(issueId);
-        } finally {
-            setIsSendingReply(false);
-        }
-    }
-
-    async function loadChatMessages(taskId: string) {
-        const res = await fetch(`${api}/projects/${id}/tasks/${taskId}/chat`, { headers: authHeader() });
-        if (!res.ok) return;
-        const data = await res.json();
-        // poll ทุก 4 วินาที ส่วนใหญ่ไม่มีข้อความใหม่ — คืน state เดิมถ้าไม่มีอะไรเปลี่ยน React จะได้ไม่ re-render ทั้งหน้า
-        // (และไม่เลื่อน scroll ลงล่างสุดใหม่ทุกรอบขณะผู้ใช้กำลังเลื่อนอ่านข้อความเก่า)
-        setChatMessages((prev) => (sameMessageList(prev, data.data ?? []) ? prev : data.data ?? []));
-        // ดึงข้อความสำเร็จ = backend mark-read ให้แล้ว เคลียร์ badge ฝั่ง state ทันทีแบบ optimistic ไม่ต้องรอ loadAll
-        setTasks((prev) =>
-            prev.some((t) => t.task_id === taskId && t.unread_chat_count)
-                ? prev.map((t) => (t.task_id === taskId ? { ...t, unread_chat_count: 0 } : t))
-                : prev
-        );
-    }
-
     async function openTaskDetail(task: Task) {
         setDetailLoading(true);
         setChatOpen(false);
-        setChatMessages([]);
-        setChatText("");
-        setChatNewImages([]);
-        setReplyingToChat(null);
-        setIssueRepliesLoading(true);
         try {
             const [res] = await Promise.all([
                 fetch(`${api}/projects/${id}/tasks/${task.task_id}`, { headers: authHeader() }),
-                loadIssues(task.task_id),
-                loadAllIssueReplies(task.task_id),
             ]);
             if (!res.ok) { toast.error("โหลดข้อมูล task ไม่สำเร็จ"); return; }
             const data = await res.json();
             setDetailTask(data);
         } finally {
             setDetailLoading(false);
-            setIssueRepliesLoading(false);
         }
-    }
-
-    function openAddIssue() {
-        setEditingIssue(null);
-        setIssueForm(EMPTY_ISSUE_FORM);
-        setIssueFormError(null);
-        setIssueKeepImageIds([]);
-        setIssueNewImages([]);
-        setIssueTagQuery("");
-        setIssueTagResults([]);
-        setIssueFormOpen(true);
-    }
-
-    function openEditIssue(issue: Issue) {
-        setEditingIssue(issue);
-        setIssueForm({ issue_title: issue.issue_title, issue_description: issue.issue_description ?? "", tagged_users: issue.tags });
-        setIssueFormError(null);
-        setIssueKeepImageIds(issue.images.map((img) => img.image_id));
-        setIssueNewImages([]);
-        setIssueTagQuery("");
-        setIssueTagResults([]);
-        setIssueFormOpen(true);
-    }
-
-    function totalIssueImageCount() {
-        return issueKeepImageIds.length + issueNewImages.length;
-    }
-
-    function handlePickIssueImages(files: FileList | null) {
-        if (!files) return;
-        // ต้องแปลงเป็น array ตรงนี้ทันที (ไม่ใช่ในตัว updater ของ setState) เพราะ caller จะเคลียร์
-        // e.target.value = "" ทันทีหลังเรียกฟังก์ชันนี้ ถ้ายังอ้าง FileList เดิมอยู่ตอน React ค่อยรัน
-        // updater จริง จะได้ FileList ว่างเปล่าไปแทน (input ถูกเคลียร์ไปแล้ว)
-        const picked = Array.from(files);
-        const remaining = MAX_ISSUE_IMAGES - totalIssueImageCount();
-        if (remaining <= 0) {
-            toast.error(`แนบรูปได้สูงสุด ${MAX_ISSUE_IMAGES} รูปต่อปัญหา`);
-            return;
-        }
-        setIssueNewImages((prev) => [...prev, ...picked.slice(0, remaining)]);
-    }
-
-    async function handleIssueSubmit(e: React.FormEvent<HTMLFormElement>) {
-        e.preventDefault();
-        if (!issueForm.issue_title.trim()) { setIssueFormError("กรุณากรอกชื่อปัญหา"); return; }
-        if (!detailTask) return;
-
-        setIsSavingIssue(true);
-        try {
-            const url = editingIssue
-                ? `${api}/projects/${id}/issues/${editingIssue.issue_id}`
-                : `${api}/projects/${id}/tasks/${detailTask.task_id}/issues`;
-            const fd = new FormData();
-            fd.append("issue_title", issueForm.issue_title.trim());
-            fd.append("issue_description", issueForm.issue_description.trim());
-            fd.append("tagged_user_ids", JSON.stringify(issueForm.tagged_users.map((u) => u.user_id)));
-            if (editingIssue) fd.append("keep_image_ids", JSON.stringify(issueKeepImageIds));
-            for (const file of issueNewImages) fd.append("images", file);
-
-            const res = await fetch(url, {
-                method: editingIssue ? "PUT" : "POST",
-                headers: authHeader(),
-                body: fd,
-            });
-            if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                setIssueFormError(data.message ?? "บันทึกไม่สำเร็จ");
-                return;
-            }
-            toast.success(editingIssue ? "แก้ไขปัญหาสำเร็จ" : "เพิ่มปัญหาสำเร็จ");
-            setIssueFormOpen(false);
-            await loadIssues(detailTask.task_id);
-        } finally {
-            setIsSavingIssue(false);
-        }
-    }
-
-    async function handleToggleIssueStatus(issue: Issue) {
-        if (!detailTask) return;
-        const issue_status: IssueStatus = issue.issue_status === "open" ? "resolved" : "open";
-        const res = await fetch(`${api}/projects/${id}/issues/${issue.issue_id}/status`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json", ...authHeader() },
-            body: JSON.stringify({ issue_status }),
-        });
-        if (!res.ok) {
-            const data = await res.json().catch(() => ({}));
-            toast.error(data.message ?? "เปลี่ยนสถานะไม่สำเร็จ");
-            return;
-        }
-        await loadIssues(detailTask.task_id);
-        // ใช้ loadAll แทนการ patch tasks state เอง เพราะถ้า detailTask เป็น subtask ต้องอัปเดต
-        // subtask_open_issue_count ของ task แม่ในตารางหลักด้วย ไม่ใช่แค่ open_issue_count ของตัวมันเอง
-        await loadAll(id as string);
-    }
-
-    async function handleDeleteIssue() {
-        if (!detailTask || !deleteIssueTarget) return;
-        setIsDeletingIssue(true);
-        try {
-            const res = await fetch(`${api}/projects/${id}/issues/${deleteIssueTarget.issue_id}`, {
-                method: "DELETE",
-                headers: authHeader(),
-            });
-            if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                toast.error(data.message ?? "ลบไม่สำเร็จ");
-                return;
-            }
-            toast.success("ลบปัญหาสำเร็จ");
-            await loadIssues(detailTask.task_id);
-            // เหมือน handleToggleIssueStatus — ใช้ loadAll เพราะอาจต้องอัปเดต subtask_open_issue_count ของ task แม่ด้วย
-            if (deleteIssueTarget.issue_status === "open") await loadAll(id as string);
-        } finally {
-            setIsDeletingIssue(false);
-            setDeleteIssueTarget(null);
-        }
-    }
-
-    function handlePickChatImages(files: FileList | null) {
-        if (!files) return;
-        // แปลงเป็น array ทันทีเหมือน handlePickIssueImages — กัน FileList ถูกเคลียร์ก่อน setState updater ทำงานจริง
-        const picked = Array.from(files);
-        const remaining = MAX_CHAT_IMAGES - chatNewImages.length;
-        if (remaining <= 0) {
-            toast.error(`แนบรูปได้สูงสุด ${MAX_CHAT_IMAGES} รูปต่อข้อความ`);
-            return;
-        }
-        setChatNewImages((prev) => [...prev, ...picked.slice(0, remaining)]);
-    }
-
-    async function handleSendChat(e: React.FormEvent<HTMLFormElement>) {
-        e.preventDefault();
-        if (!detailTask) return;
-        if (!chatText.trim() && chatNewImages.length === 0) return;
-
-        setIsSendingChat(true);
-        try {
-            const fd = new FormData();
-            fd.append("message_text", chatText.trim());
-            if (replyingToChat) fd.append("reply_to_message_id", replyingToChat.message_id);
-            for (const file of chatNewImages) fd.append("images", file);
-
-            const res = await fetch(`${api}/projects/${id}/tasks/${detailTask.task_id}/chat`, {
-                method: "POST",
-                headers: authHeader(),
-                body: fd,
-            });
-            if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                toast.error(data.message ?? "ส่งข้อความไม่สำเร็จ");
-                return;
-            }
-            setChatText("");
-            setChatNewImages([]);
-            setReplyingToChat(null);
-            await loadChatMessages(detailTask.task_id);
-        } finally {
-            setIsSendingChat(false);
-        }
-    }
-
-    function handleChatComposerKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-        if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            e.currentTarget.form?.requestSubmit();
-        }
-    }
-
-    function closeProjectChat() {
-        setProjectChatOpen(false);
-        setProjectChatMessages([]);
-        setProjectChatText("");
-        setProjectChatNewImages([]);
-        setReplyingToProjectChat(null);
-    }
-
-    async function loadProjectChatMessages() {
-        if (!id) return;
-        const res = await fetch(`${api}/projects/${id}/chat`, { headers: authHeader() });
-        if (!res.ok) return;
-        const data = await res.json();
-        setProjectChatMessages((prev) => (sameMessageList(prev, data.data ?? []) ? prev : data.data ?? []));
-        // ดึงข้อความสำเร็จ = backend mark-read ให้แล้ว เคลียร์ badge ฝั่ง state ทันทีแบบ optimistic เหมือน loadChatMessages
-        setProject((prev) => (prev?.unread_chat_count ? { ...prev, unread_chat_count: 0 } : prev));
-    }
-
-    function handlePickProjectChatImages(files: FileList | null) {
-        if (!files) return;
-        const picked = Array.from(files);
-        const remaining = MAX_CHAT_IMAGES - projectChatNewImages.length;
-        if (remaining <= 0) {
-            toast.error(`แนบรูปได้สูงสุด ${MAX_CHAT_IMAGES} รูปต่อข้อความ`);
-            return;
-        }
-        setProjectChatNewImages((prev) => [...prev, ...picked.slice(0, remaining)]);
-    }
-
-    async function handleSendProjectChat(e: React.FormEvent<HTMLFormElement>) {
-        e.preventDefault();
-        if (!id) return;
-        if (!projectChatText.trim() && projectChatNewImages.length === 0) return;
-
-        setIsSendingProjectChat(true);
-        try {
-            const fd = new FormData();
-            fd.append("message_text", projectChatText.trim());
-            if (replyingToProjectChat) fd.append("reply_to_message_id", replyingToProjectChat.message_id);
-            for (const file of projectChatNewImages) fd.append("images", file);
-
-            const res = await fetch(`${api}/projects/${id}/chat`, {
-                method: "POST",
-                headers: authHeader(),
-                body: fd,
-            });
-            if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                toast.error(data.message ?? "ส่งข้อความไม่สำเร็จ");
-                return;
-            }
-            setProjectChatText("");
-            setProjectChatNewImages([]);
-            setReplyingToProjectChat(null);
-            await loadProjectChatMessages();
-        } finally {
-            setIsSendingProjectChat(false);
-        }
-    }
-
-    function handleProjectChatComposerKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-        if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            e.currentTarget.form?.requestSubmit();
-        }
-    }
-
-    function handleTaskSubmit(e: React.FormEvent<HTMLFormElement>) {
-        e.preventDefault();
-        if (!taskForm.task_title.trim()) { setTaskFormError("กรุณากรอกชื่องาน"); return; }
-        setTaskFormError(null);
-
-        startTransition(async () => {
-            const url = editingTask
-                ? `${api}/projects/${id}/tasks/${editingTask.task_id}`
-                : `${api}/projects/${id}/tasks`;
-            const task_weight = project?.project_use_task_weight ? (Number(taskForm.task_weight) || 1) : 1;
-            const body = editingTask
-                ? { ...taskForm, task_weight }
-                : { ...taskForm, task_weight, task_parent_id: parentTask?.task_id ?? null };
-            const res = await fetch(url, {
-                method: editingTask ? "PUT" : "POST",
-                headers: { "Content-Type": "application/json", ...authHeader() },
-                body: JSON.stringify(body),
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) { setTaskFormError(data.message ?? "เกิดข้อผิดพลาด กรุณาลองใหม่"); return; }
-
-            toast.success(editingTask ? "แก้ไข task สำเร็จ" : "เพิ่ม task สำเร็จ");
-            setTaskModalOpen(false);
-            await loadAll(id as string);
-        });
     }
 
     async function handleDeleteTask() {
@@ -1051,52 +341,12 @@ export default function ViewProjectPage() {
 
     function openAddMember() {
         setEditingMember(null);
-        setMemberForm({ user_id: "", position_ids: [] });
-        setMemberFormError(null);
         setMemberModalOpen(true);
     }
 
     function openEditMemberPositions(member: Member) {
         setEditingMember(member);
-        setMemberForm({ user_id: member.user_id, position_ids: member.positions.map((p) => p.position_id) });
-        setMemberFormError(null);
         setMemberModalOpen(true);
-    }
-
-    function toggleMemberPosition(positionId: string) {
-        setMemberForm((prev) => ({
-            ...prev,
-            position_ids: prev.position_ids.includes(positionId)
-                ? prev.position_ids.filter((p) => p !== positionId)
-                : [...prev.position_ids, positionId],
-        }));
-    }
-
-    function handleMemberSubmit(e: React.FormEvent<HTMLFormElement>) {
-        e.preventDefault();
-        if (!editingMember && !memberForm.user_id) { setMemberFormError("กรุณาเลือกผู้ใช้งาน"); return; }
-        setMemberFormError(null);
-
-        startTransition(async () => {
-            const res = editingMember
-                ? await fetch(`${api}/projects/${id}/members/${editingMember.project_member_id}`, {
-                    method: "PUT",
-                    headers: { "Content-Type": "application/json", ...authHeader() },
-                    body: JSON.stringify({ position_ids: memberForm.position_ids }),
-                })
-                : await fetch(`${api}/projects/${id}/members`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", ...authHeader() },
-                    body: JSON.stringify(memberForm),
-                });
-
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) { setMemberFormError(data.message ?? "เกิดข้อผิดพลาด กรุณาลองใหม่"); return; }
-
-            toast.success(editingMember ? "แก้ไขตำแหน่งสำเร็จ" : "เพิ่มสมาชิกสำเร็จ");
-            setMemberModalOpen(false);
-            await loadAll(id as string);
-        });
     }
 
     async function handleRemoveMember() {
@@ -1198,43 +448,13 @@ export default function ViewProjectPage() {
             toast.error("กรุณาเปิดใช้งานลิงก์สำหรับลูกค้าก่อนส่งอีเมล");
             return;
         }
-        setShareEmailForm({ to: project.client_email ?? "", message: "" });
-        setShareEmailError(null);
         setShareEmailModalOpen(true);
-    }
-
-    async function handleSendShareEmail(e: React.FormEvent) {
-        e.preventDefault();
-        setShareEmailError(null);
-        if (!shareEmailForm.to.trim()) {
-            setShareEmailError("กรุณากรอกอีเมลผู้รับ");
-            return;
-        }
-        setIsSendingShareEmail(true);
-        try {
-            const res = await fetch(`${api}/projects/${id}/share/send-email`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", ...authHeader() },
-                body: JSON.stringify({ to: shareEmailForm.to.trim(), message: shareEmailForm.message.trim() }),
-            });
-            const data = await res.json().catch(() => ({}));
-            if (res.ok) {
-                toast.success("ส่งลิงก์ให้ลูกค้าทางอีเมลแล้ว");
-                setShareEmailModalOpen(false);
-            } else {
-                setShareEmailError(data.message ?? "ส่งอีเมลไม่สำเร็จ กรุณาลองใหม่");
-            }
-        } catch {
-            setShareEmailError("เกิดข้อผิดพลาด กรุณาลองใหม่");
-        } finally {
-            setIsSendingShareEmail(false);
-        }
     }
 
     if (!id || notFound) {
         return (
             <StatusBanner tone="error" title="ไม่พบโปรเจกต์นี้">
-                โปรเจกต์อาจถูกลบไปแล้ว หรือคุณไม่ได้เป็นสมาชิก — กลับไปเลือกจากหน้ารายการโปรเจกต์
+                โปรเจกต์อาจถูกลบไปแล้ว หรือคุณไม่ได้เป็นสมาชิก · กลับไปเลือกจากหน้ารายการโปรเจกต์
             </StatusBanner>
         );
     }
@@ -1264,6 +484,7 @@ export default function ViewProjectPage() {
         },
         {
             key: "open_issue_count",
+            mobile: "badge",
             header: "ปัญหา",
             render: (_v, row) => {
                 if (!row.open_issue_count && !row.subtask_open_issue_count) return <span className="text-gray-300">-</span>;
@@ -1277,6 +498,7 @@ export default function ViewProjectPage() {
         },
         {
             key: "unread_chat_count",
+            mobile: "badge",
             header: "แชท",
             render: (_v, row) => {
                 if (!row.unread_chat_count) return <span className="text-gray-300">-</span>;
@@ -1285,6 +507,7 @@ export default function ViewProjectPage() {
         },
         {
             key: "assignees",
+            mobile: "meta",
             header: "ผู้รับผิดชอบ",
             render: (v, row) => {
                 const list = v as TaskAssignee[];
@@ -1305,6 +528,7 @@ export default function ViewProjectPage() {
         },
         {
             key: "task_status",
+            mobile: "badge",
             header: "สถานะ",
             render: (v, row) => {
                 const status = v as TaskStatus;
@@ -1328,19 +552,21 @@ export default function ViewProjectPage() {
         },
         {
             key: "task_id",
+            mobile: "trailing",
             header: "ความคืบหน้า",
             className: "min-w-[140px]",
             render: (_v, row) => <ProgressBar percent={getTaskProgress(row).percent} />,
         },
         ...(project.project_use_task_weight ? [{ key: "task_weight", header: "น้ำหนัก" } as Column<Task>] : []),
-        { key: "task_start_date", header: "วันเริ่ม", render: (v) => formatDateOnly(v) },
-        { key: "task_due_date", header: "ครบกำหนด", render: (v) => formatDateOnly(v) },
+        { key: "task_start_date", mobile: "meta", mobileLabel: "เริ่ม", header: "วันเริ่ม", render: (v) => formatDateOnly(v) },
+        { key: "task_due_date", mobile: "meta", mobileLabel: "ครบ", header: "ครบกำหนด", render: (v) => formatDateOnly(v) },
     ];
 
     const memberColumns: Column<Member>[] = [
         { key: "user_fullname", header: "ชื่อ" },
         {
             key: "positions",
+            mobile: "meta",
             header: "ตำแหน่ง",
             render: (v) => {
                 const list = v as MemberPosition[];
@@ -1502,120 +728,17 @@ export default function ViewProjectPage() {
             <ProjectActivityCard activity={activity} />
 
             {/* Modal เพิ่ม/แก้ไข Task */}
-            {taskModalOpen && (
-                <div
-                    className="fixed inset-0 z-50 flex items-end justify-center bg-gray-900/40 backdrop-blur-sm sm:items-center sm:p-4"
-                    onClick={() => setTaskModalOpen(false)}
-                >
-                    <div
-                        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-float w-full max-w-lg p-6 space-y-4 max-h-[90dvh] overflow-y-auto"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <h2 className="text-base font-medium text-gray-900">
-                            {editingTask ? "แก้ไข Task" : parentTask ? "เพิ่ม Subtask" : "เพิ่ม Task"}
-                        </h2>
-                        {parentTask && (
-                            <p className="text-sm text-gray-500 -mt-2">
-                                ของ Task: <span className="font-medium">{parentTask.task_title}</span>
-                            </p>
-                        )}
-                        <form onSubmit={handleTaskSubmit} className="space-y-4">
-                            <div className="flex flex-col gap-1">
-                                <label className="text-sm font-medium text-gray-700">ชื่องาน</label>
-                                <Input
-                                    value={taskForm.task_title}
-                                    onChange={(e) => setTaskForm((p) => ({ ...p, task_title: e.target.value }))}
-                                    required
-                                />
-                            </div>
-
-                            <div className="flex flex-col gap-1">
-                                <label className="text-sm font-medium text-gray-700">รายละเอียด</label>
-                                <textarea
-                                    value={taskForm.task_description}
-                                    onChange={(e) => setTaskForm((p) => ({ ...p, task_description: e.target.value }))}
-                                    rows={3}
-                                    className={inputClass(false)}
-                                />
-                            </div>
-
-                            <div className="flex flex-col gap-1">
-                                <label className="text-sm font-medium text-gray-700 mb-2">ผู้รับผิดชอบ (เลือกได้หลายคน)</label>
-                                <div className="rounded-lg border border-gray-100 divide-y divide-gray-50 overflow-hidden max-h-40 overflow-y-auto">
-                                    {members.length === 0 ? (
-                                        <p className="px-4 py-2.5 text-sm text-gray-400">ยังไม่มีสมาชิกในโปรเจกต์นี้</p>
-                                    ) : (
-                                        members.map((m) => (
-                                            <label
-                                                key={m.user_id}
-                                                className="flex items-center gap-3 cursor-pointer px-4 py-2.5 hover:bg-blue-50"
-                                            >
-                                                <input
-                                                    type="checkbox"
-                                                    checked={taskForm.assignee_ids.includes(m.user_id)}
-                                                    onChange={() => setTaskForm((p) => ({
-                                                        ...p,
-                                                        assignee_ids: p.assignee_ids.includes(m.user_id)
-                                                            ? p.assignee_ids.filter((uid) => uid !== m.user_id)
-                                                            : [...p.assignee_ids, m.user_id],
-                                                    }))}
-                                                    className="w-4 h-4 accent-blue-500"
-                                                />
-                                                <span className="text-sm text-gray-700">{m.user_fullname}</span>
-                                            </label>
-                                        ))
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="flex flex-col gap-1">
-                                    <label className="text-sm font-medium text-gray-700">วันเริ่ม</label>
-                                    <Input
-                                        type="date"
-                                        value={taskForm.task_start_date}
-                                        onChange={(e) => setTaskForm((p) => ({ ...p, task_start_date: e.target.value }))}
-                                    />
-                                </div>
-                                <div className="flex flex-col gap-1">
-                                    <label className="text-sm font-medium text-gray-700">วันครบกำหนด</label>
-                                    <Input
-                                        type="date"
-                                        value={taskForm.task_due_date}
-                                        onChange={(e) => setTaskForm((p) => ({ ...p, task_due_date: e.target.value }))}
-                                    />
-                                </div>
-                            </div>
-
-                            {!!project.project_use_task_weight && (
-                                <div className="flex flex-col gap-1">
-                                    <label className="text-sm font-medium text-gray-700">น้ำหนัก (ถ่วง % ความคืบหน้า)</label>
-                                    <Input
-                                        type="number"
-                                        min={1}
-                                        value={taskForm.task_weight}
-                                        onChange={(e) => setTaskForm((p) => ({ ...p, task_weight: e.target.value }))}
-                                    />
-                                </div>
-                            )}
-
-                            {taskFormError && <p className="text-sm text-red-600">{taskFormError}</p>}
-
-                            <div className="flex justify-end gap-3 pt-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setTaskModalOpen(false)}
-                                    className={buttonClass("secondary", "md")}
-                                >
-                                    ยกเลิก
-                                </button>
-                                <Button type="submit" disabled={isPending}>
-                                    {isPending ? "กำลังบันทึก..." : "บันทึก"}
-                                </Button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
+            {taskModalOpen && project && id && (
+                <TaskFormModal
+                    projectId={id}
+                    editingTask={editingTask}
+                    parentTask={parentTask}
+                    initialForm={taskFormStart}
+                    members={members}
+                    useTaskWeight={Boolean(project.project_use_task_weight)}
+                    onSaved={() => loadAll(id)}
+                    onClose={() => setTaskModalOpen(false)}
+                />
             )}
 
             {/* Modal รายละเอียด Task */}
@@ -1625,7 +748,7 @@ export default function ViewProjectPage() {
                     onClick={closeTaskDetail}
                 >
                     <div
-                        className={`bg-white rounded-t-2xl sm:rounded-2xl shadow-float w-full max-h-[90dvh] flex overflow-hidden ${chatOpen ? "max-w-4xl" : "max-w-lg"}`}
+                        className={`bg-white rounded-t-2xl sm:rounded-2xl shadow-float w-full max-h-[90dvh] flex overflow-hidden ${chatOpen ? "max-w-7xl" : "max-w-5xl"}`}
                         onClick={(e) => e.stopPropagation()}
                     >
                         {detailLoading || !detailTask ? (
@@ -1783,372 +906,16 @@ export default function ViewProjectPage() {
 
                                 <hr className="border-gray-100" />
 
-                                <div className="space-y-2">
-                                    <div className="flex items-center justify-between">
-                                        <h3 className="text-sm font-medium text-gray-900">ปัญหา</h3>
-                                        {canAddIssueTo(detailTask) && !issueFormOpen && (
-                                            <button type="button" onClick={openAddIssue} className="text-xs text-blue-600 hover:underline">
-                                                + แจ้งปัญหา
-                                            </button>
-                                        )}
-                                    </div>
-
-                                    {issueFormOpen && (
-                                        <form onSubmit={handleIssueSubmit} className="space-y-2 bg-gray-50 border border-gray-100 rounded-lg p-3">
-                                            <Input
-                                                value={issueForm.issue_title}
-                                                onChange={(e) => setIssueForm((p) => ({ ...p, issue_title: e.target.value }))}
-                                                placeholder="ชื่อปัญหา"
-                                                required
-                                            />
-                                            <textarea
-                                                value={issueForm.issue_description}
-                                                onChange={(e) => setIssueForm((p) => ({ ...p, issue_description: e.target.value }))}
-                                                rows={2}
-                                                placeholder="รายละเอียด (ไม่บังคับ)"
-                                                className={inputClass()}
-                                            />
-
-                                            <div className="space-y-1">
-                                                <label className="text-xs font-medium text-gray-600">แท็กคน (@)</label>
-                                                {issueForm.tagged_users.length > 0 && (
-                                                    <div className="flex flex-wrap gap-1.5">
-                                                        {issueForm.tagged_users.map((u) => (
-                                                            <span
-                                                                key={u.user_id}
-                                                                className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full"
-                                                            >
-                                                                @{u.user_fullname}
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => setIssueForm((p) => ({
-                                                                        ...p,
-                                                                        tagged_users: p.tagged_users.filter((t) => t.user_id !== u.user_id),
-                                                                    }))}
-                                                                    className="text-blue-600 hover:text-red-600"
-                                                                >
-                                                                    ×
-                                                                </button>
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                                <div className="relative">
-                                                    <input
-                                                        type="text"
-                                                        value={issueTagQuery}
-                                                        onChange={(e) => { setIssueTagQuery(e.target.value); setIssueTagDropdownOpen(true); }}
-                                                        onFocus={() => { if (issueTagBlurTimer.current) clearTimeout(issueTagBlurTimer.current); setIssueTagDropdownOpen(true); }}
-                                                        onBlur={() => { issueTagBlurTimer.current = setTimeout(() => setIssueTagDropdownOpen(false), 150); }}
-                                                        placeholder="พิมพ์ @ ตามด้วยชื่อเพื่อแท็กคน..."
-                                                        className={inputClass()}
-                                                    />
-                                                    {issueTagDropdownOpen && issueTagQuery.trim() && (
-                                                        <div className="absolute z-10 mt-1 w-full bg-white rounded-lg shadow-lg border border-gray-100 max-h-40 overflow-y-auto">
-                                                            {issueTagResults.length === 0 ? (
-                                                                <p className="px-3 py-2 text-xs text-gray-400">ไม่พบผู้ใช้งาน</p>
-                                                            ) : (
-                                                                issueTagResults.map((u) => (
-                                                                    <button
-                                                                        key={u.user_id}
-                                                                        type="button"
-                                                                        onClick={() => {
-                                                                            if (issueTagBlurTimer.current) clearTimeout(issueTagBlurTimer.current);
-                                                                            setIssueForm((p) => ({ ...p, tagged_users: [...p.tagged_users, u] }));
-                                                                            setIssueTagQuery("");
-                                                                            setIssueTagResults([]);
-                                                                            setIssueTagDropdownOpen(false);
-                                                                        }}
-                                                                        className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50"
-                                                                    >
-                                                                        @{u.user_fullname}
-                                                                    </button>
-                                                                ))
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            <div className="space-y-1.5">
-                                                <div className="flex items-center justify-between">
-                                                    <label className="text-xs font-medium text-gray-600">รูปแนบ</label>
-                                                    <span className="text-[11px] text-gray-400">{totalIssueImageCount()}/{MAX_ISSUE_IMAGES}</span>
-                                                </div>
-                                                {(editingIssue?.images.some((img) => issueKeepImageIds.includes(img.image_id)) || issueNewImages.length > 0) && (
-                                                    <div className="flex flex-wrap gap-2">
-                                                        {editingIssue?.images
-                                                            .filter((img) => issueKeepImageIds.includes(img.image_id))
-                                                            .map((img) => (
-                                                                <div key={img.image_id} className="relative w-16 h-16 shrink-0">
-                                                                    <Image
-                                                                        src={`${SERVER_BASE}${img.image_url}`}
-                                                                        alt=""
-                                                                        width={64}
-                                                                        height={64}
-                                                                        unoptimized
-                                                                        className="w-16 h-16 object-cover rounded border border-gray-200"
-                                                                    />
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => setIssueKeepImageIds((prev) => prev.filter((i) => i !== img.image_id))}
-                                                                        className="absolute -top-1.5 -right-1.5 w-4 h-4 flex items-center justify-center rounded-full bg-gray-700 text-white text-[10px] leading-none hover:bg-red-600"
-                                                                    >
-                                                                        ×
-                                                                    </button>
-                                                                </div>
-                                                            ))}
-                                                        {issueNewImages.map((file, idx) => (
-                                                            <div key={idx} className="relative w-16 h-16 shrink-0">
-                                                                <Image
-                                                                    src={URL.createObjectURL(file)}
-                                                                    alt=""
-                                                                    width={64}
-                                                                    height={64}
-                                                                    unoptimized
-                                                                    className="w-16 h-16 object-cover rounded border border-gray-200"
-                                                                />
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => setIssueNewImages((prev) => prev.filter((_, i) => i !== idx))}
-                                                                    className="absolute -top-1.5 -right-1.5 w-4 h-4 flex items-center justify-center rounded-full bg-gray-700 text-white text-[10px] leading-none hover:bg-red-600"
-                                                                >
-                                                                    ×
-                                                                </button>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                                {totalIssueImageCount() < MAX_ISSUE_IMAGES && (
-                                                    <input
-                                                        type="file"
-                                                        accept="image/*"
-                                                        multiple
-                                                        onChange={(e) => { handlePickIssueImages(e.target.files); e.target.value = ""; }}
-                                                        className="text-xs text-gray-500 file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-blue-50 file:text-blue-600 file:text-xs hover:file:bg-blue-100"
-                                                    />
-                                                )}
-                                            </div>
-
-                                            {issueFormError && <p className="text-xs text-red-600">{issueFormError}</p>}
-                                            <div className="flex justify-end gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setIssueFormOpen(false)}
-                                                    className="px-3 py-1.5 text-xs text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
-                                                >
-                                                    ยกเลิก
-                                                </button>
-                                                <Button type="submit" disabled={isSavingIssue}>
-                                                    {isSavingIssue ? "กำลังบันทึก..." : editingIssue ? "บันทึก" : "แจ้งปัญหา"}
-                                                </Button>
-                                            </div>
-                                        </form>
-                                    )}
-
-                                    {detailIssues.length === 0 ? (
-                                        <p className="text-sm text-gray-400">ยังไม่มีปัญหาที่แจ้งไว้</p>
-                                    ) : (
-                                        <ul className="divide-y divide-gray-50 rounded-lg border border-gray-100 overflow-hidden">
-                                            {detailIssues.map((issue) => (
-                                                <li key={issue.issue_id} className="px-4 py-2.5 space-y-1">
-                                                    <div className="flex items-start justify-between gap-2">
-                                                        <div className="min-w-0">
-                                                            <p className="text-sm font-medium text-gray-700">{issue.issue_title}</p>
-                                                            {issue.issue_description && (
-                                                                <p className="text-xs text-gray-500 whitespace-pre-wrap mt-0.5">{issue.issue_description}</p>
-                                                            )}
-                                                            {issue.images.length > 0 && (
-                                                                <div className="flex flex-wrap gap-1.5 mt-1.5">
-                                                                    {issue.images.map((img) => (
-                                                                        <button
-                                                                            key={img.image_id}
-                                                                            type="button"
-                                                                            onClick={() => window.open(`${SERVER_BASE}${img.image_url}`, "_blank")}
-                                                                        >
-                                                                            <Image
-                                                                                src={`${SERVER_BASE}${img.image_url}`}
-                                                                                alt=""
-                                                                                width={48}
-                                                                                height={48}
-                                                                                unoptimized
-                                                                                className="w-12 h-12 object-cover rounded border border-gray-200 hover:opacity-80"
-                                                                            />
-                                                                        </button>
-                                                                    ))}
-                                                                </div>
-                                                            )}
-                                                            {issue.tags.length > 0 && (
-                                                                <div className="flex flex-wrap gap-1 mt-1.5">
-                                                                    {issue.tags.map((t) => (
-                                                                        <span
-                                                                            key={t.user_id}
-                                                                            className="text-[11px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full"
-                                                                        >
-                                                                            @{t.user_fullname}
-                                                                        </span>
-                                                                    ))}
-                                                                </div>
-                                                            )}
-                                                            <p className="text-[11px] text-gray-400 mt-1">
-                                                                {issue.created_by_name ?? "ผู้ใช้งานที่ถูกลบ"} · {formatDate(issue.issue_created_at)}
-                                                            </p>
-                                                        </div>
-                                                        <StatusPill tone={issue.issue_status === "open" ? "danger" : "success"}>
-                                                            {ISSUE_STATUS_LABEL[issue.issue_status]}
-                                                        </StatusPill>
-                                                    </div>
-                                                    <div className="flex items-center gap-3 pt-1">
-                                                        {canChangeIssueStatusOf(detailTask) && (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleToggleIssueStatus(issue)}
-                                                                className="text-xs text-blue-600 hover:underline"
-                                                            >
-                                                                {issue.issue_status === "open" ? "ทำเครื่องหมายว่าแก้ไขแล้ว" : "เปิดใหม่"}
-                                                            </button>
-                                                        )}
-                                                        {canEditIssuesOf(detailTask) && (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => openEditIssue(issue)}
-                                                                className="text-xs text-gray-500 hover:underline"
-                                                            >
-                                                                แก้ไข
-                                                            </button>
-                                                        )}
-                                                        {canDeleteIssuesOf(detailTask) && (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => setDeleteIssueTarget(issue)}
-                                                                className="text-xs text-red-600 hover:underline"
-                                                            >
-                                                                ลบ
-                                                            </button>
-                                                        )}
-                                                    </div>
-
-                                                    {(() => {
-                                                        const replies = issueRepliesByIssue[issue.issue_id] ?? [];
-                                                        const newImages = replyNewImagesByIssue[issue.issue_id] ?? [];
-                                                        return (
-                                                        <div className="mt-2 pl-3 border-l-2 border-gray-100 space-y-2">
-                                                            {issueRepliesLoading ? (
-                                                                <p className="text-xs text-gray-400">กำลังโหลด...</p>
-                                                            ) : replies.length === 0 ? (
-                                                                <p className="text-xs text-gray-400">ยังไม่มีการตอบกลับ</p>
-                                                            ) : (
-                                                                replies.map((reply) => (
-                                                                    <div key={reply.reply_id} className="flex items-start gap-2">
-                                                                        <Image
-                                                                            src={reply.user_avatar_url ? `${SERVER_BASE}${reply.user_avatar_url}` : "/defult.png"}
-                                                                            alt=""
-                                                                            width={20}
-                                                                            height={20}
-                                                                            unoptimized={!!reply.user_avatar_url}
-                                                                            className="w-5 h-5 rounded-full object-cover border border-gray-200 shrink-0 mt-0.5"
-                                                                        />
-                                                                        <div className="min-w-0">
-                                                                            <p className="text-xs text-gray-700">
-                                                                                <span className="font-medium">{reply.user_fullname ?? "ผู้ใช้งานที่ถูกลบ"}</span>{" "}
-                                                                                <span className="text-gray-400">{formatDate(reply.reply_created_at)}</span>
-                                                                            </p>
-                                                                            {reply.reply_text && (
-                                                                                <p className="text-xs text-gray-600 whitespace-pre-wrap">{reply.reply_text}</p>
-                                                                            )}
-                                                                            {reply.images.length > 0 && (
-                                                                                <div className="flex flex-wrap gap-1.5 mt-1">
-                                                                                    {reply.images.map((img) => (
-                                                                                        <button
-                                                                                            key={img.image_id}
-                                                                                            type="button"
-                                                                                            onClick={() => window.open(`${SERVER_BASE}${img.image_url}`, "_blank")}
-                                                                                        >
-                                                                                            <Image
-                                                                                                src={`${SERVER_BASE}${img.image_url}`}
-                                                                                                alt=""
-                                                                                                width={40}
-                                                                                                height={40}
-                                                                                                unoptimized
-                                                                                                className="w-10 h-10 object-cover rounded border border-gray-200 hover:opacity-80"
-                                                                                            />
-                                                                                        </button>
-                                                                                    ))}
-                                                                                </div>
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-                                                                ))
-                                                            )}
-                                                            <form
-                                                                onSubmit={(e) => handleSendReply(e, issue.issue_id)}
-                                                                className="space-y-1.5 pt-1"
-                                                            >
-                                                                {newImages.length > 0 && (
-                                                                    <div className="flex flex-wrap gap-1.5">
-                                                                        {newImages.map((file, idx) => (
-                                                                            <div key={idx} className="relative w-10 h-10">
-                                                                                <Image
-                                                                                    src={URL.createObjectURL(file)}
-                                                                                    alt=""
-                                                                                    width={40}
-                                                                                    height={40}
-                                                                                    unoptimized
-                                                                                    className="w-10 h-10 object-cover rounded border border-gray-200"
-                                                                                />
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => setReplyNewImagesByIssue((prev) => ({
-                                                                                        ...prev,
-                                                                                        [issue.issue_id]: (prev[issue.issue_id] ?? []).filter((_, i) => i !== idx),
-                                                                                    }))}
-                                                                                    className="absolute -top-1.5 -right-1.5 w-4 h-4 flex items-center justify-center rounded-full bg-red-600 text-white text-[10px] leading-none"
-                                                                                >
-                                                                                    ×
-                                                                                </button>
-                                                                            </div>
-                                                                        ))}
-                                                                    </div>
-                                                                )}
-                                                                <div className="flex items-center gap-2">
-                                                                    <label className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg border border-gray-300 text-gray-400 hover:text-blue-500 hover:border-blue-400 cursor-pointer">
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-4 h-4">
-                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                                                                        </svg>
-                                                                        <input
-                                                                            type="file"
-                                                                            accept="image/*"
-                                                                            multiple
-                                                                            className="hidden"
-                                                                            onChange={(e) => { handlePickReplyImages(issue.issue_id, e.target.files); e.target.value = ""; }}
-                                                                        />
-                                                                    </label>
-                                                                    <input
-                                                                        type="text"
-                                                                        value={replyDrafts[issue.issue_id] ?? ""}
-                                                                        onChange={(e) =>
-                                                                            setReplyDrafts((prev) => ({ ...prev, [issue.issue_id]: e.target.value }))
-                                                                        }
-                                                                        placeholder="พิมพ์ข้อความตอบกลับ..."
-                                                                        className="flex-1 px-2.5 py-1.5 text-xs border rounded focus:outline-none focus:ring-2 border-gray-300 focus:border-blue-400 focus:ring-blue-500/20"
-                                                                    />
-                                                                    <button
-                                                                        type="submit"
-                                                                        disabled={isSendingReply || (!(replyDrafts[issue.issue_id] ?? "").trim() && newImages.length === 0)}
-                                                                        className="shrink-0 px-3 py-1.5 text-xs font-medium text-white bg-blue-500 rounded hover:bg-blue-600 disabled:opacity-40"
-                                                                    >
-                                                                        ส่ง
-                                                                    </button>
-                                                                </div>
-                                                            </form>
-                                                        </div>
-                                                        );
-                                                    })()}
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    )}
-                                </div>
+                                <TaskIssuesSection
+                                    key={detailTask.task_id}
+                                    projectId={id ?? ""}
+                                    task={detailTask}
+                                    canAdd={canAddIssueTo(detailTask)}
+                                    canEdit={canEditIssuesOf(detailTask)}
+                                    canDelete={canDeleteIssuesOf(detailTask)}
+                                    canChangeStatus={canChangeIssueStatusOf(detailTask)}
+                                    onCountsChanged={() => loadAll(id as string)}
+                                />
 
                                 <hr className="border-gray-100" />
 
@@ -2204,191 +971,21 @@ export default function ViewProjectPage() {
                                 </div>
                             </div>
 
-                            {chatOpen && (
-                                <div className="w-[320px] shrink-0 border-l border-gray-100 flex flex-col">
-                                    <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between shrink-0">
-                                        <h3 className="text-sm font-medium text-gray-900">แชท</h3>
-                                        <button
-                                            type="button"
-                                            onClick={() => setChatOpen(false)}
-                                            className="text-gray-400 hover:text-gray-600"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-4 h-4">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-                                            </svg>
-                                        </button>
-                                    </div>
-
-                                    <div ref={chatListRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-                                        {chatMessages.length === 0 ? (
-                                            <p className="text-sm text-gray-400 text-center pt-6">ยังไม่มีข้อความ</p>
-                                        ) : (
-                                            chatMessages.map((msg) => {
-                                                const isOwn = msg.user_id === currentUserId;
-                                                const avatarSrc = msg.user_avatar_url ? `${SERVER_BASE}${msg.user_avatar_url}` : "/defult.png";
-                                                const avatar = (
-                                                    <Image
-                                                        src={avatarSrc}
-                                                        alt=""
-                                                        width={28}
-                                                        height={28}
-                                                        unoptimized={!!msg.user_avatar_url}
-                                                        className="w-7 h-7 rounded-full object-cover border border-gray-200 shrink-0"
-                                                    />
-                                                );
-                                                const bubble = (
-                                                    <div className={`max-w-[75%] rounded-2xl px-3 py-2 ${isOwn ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-800"}`}>
-                                                        {!isOwn && (
-                                                            <p className="text-[11px] font-medium text-gray-500 mb-0.5">
-                                                                {msg.user_fullname ?? "ผู้ใช้งานที่ถูกลบ"}
-                                                            </p>
-                                                        )}
-                                                        {msg.reply_to_message_id && (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => scrollToChatMessage(msg.reply_to_message_id!)}
-                                                                className={`block w-full text-left mb-1 pl-2 border-l-2 rounded ${
-                                                                    isOwn ? "border-blue-200 bg-blue-50" : "border-gray-300 bg-white/60"
-                                                                }`}
-                                                            >
-                                                                <p className={`text-[11px] font-medium ${isOwn ? "text-blue-50" : "text-gray-600"}`}>
-                                                                    {msg.reply_to_user_fullname ?? "ผู้ใช้งานที่ถูกลบ"}
-                                                                </p>
-                                                                <p className={`text-[11px] truncate ${isOwn ? "text-blue-100" : "text-gray-500"}`}>
-                                                                    {msg.reply_to_text ? truncateReplyPreview(msg.reply_to_text) : msg.reply_to_image_count > 0 ? "[รูปภาพ]" : ""}
-                                                                </p>
-                                                            </button>
-                                                        )}
-                                                        {msg.message_text && (
-                                                            <p className="text-sm whitespace-pre-wrap wrap-break-word">{msg.message_text}</p>
-                                                        )}
-                                                        {msg.images.length > 0 && (
-                                                            <div className="flex flex-wrap gap-1.5 mt-1.5">
-                                                                {msg.images.map((img) => (
-                                                                    <button
-                                                                        key={img.image_id}
-                                                                        type="button"
-                                                                        onClick={() => window.open(`${SERVER_BASE}${img.image_url}`, "_blank")}
-                                                                    >
-                                                                        <Image
-                                                                            src={`${SERVER_BASE}${img.image_url}`}
-                                                                            alt=""
-                                                                            width={96}
-                                                                            height={96}
-                                                                            unoptimized
-                                                                            className="w-20 h-20 object-cover rounded-lg"
-                                                                        />
-                                                                    </button>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                        <div className="flex items-center gap-2 mt-1">
-                                                            <p className={`text-[10px] ${isOwn ? "text-blue-100" : "text-gray-400"}`}>
-                                                                {formatDate(msg.message_created_at)}
-                                                            </p>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => setReplyingToChat(msg)}
-                                                                className={`text-[10px] font-medium hover:underline ${isOwn ? "text-blue-100" : "text-gray-400"}`}
-                                                            >
-                                                                ตอบกลับ
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                );
-                                                return (
-                                                    <div
-                                                        key={msg.message_id}
-                                                        id={`chat-msg-${msg.message_id}`}
-                                                        className={`flex items-end gap-2 rounded-lg transition-shadow ${isOwn ? "justify-end" : "justify-start"}`}
-                                                    >
-                                                        {isOwn ? (<>{bubble}{avatar}</>) : (<>{avatar}{bubble}</>)}
-                                                    </div>
-                                                );
-                                            })
-                                        )}
-                                    </div>
-
-                                    <form onSubmit={handleSendChat} className="border-t border-gray-100 p-3 space-y-2 shrink-0">
-                                        {replyingToChat && (
-                                            <div className="flex items-start justify-between gap-2 pl-2 border-l-2 border-blue-400 bg-blue-50 rounded px-2 py-1.5">
-                                                <div className="min-w-0">
-                                                    <p className="text-[11px] font-medium text-blue-600">
-                                                        ตอบกลับ {replyingToChat.user_fullname ?? "ผู้ใช้งานที่ถูกลบ"}
-                                                    </p>
-                                                    <p className="text-xs text-gray-500 truncate">
-                                                        {replyingToChat.message_text
-                                                            ? truncateReplyPreview(replyingToChat.message_text)
-                                                            : replyingToChat.images.length > 0 ? "[รูปภาพ]" : ""}
-                                                    </p>
-                                                </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setReplyingToChat(null)}
-                                                    className="shrink-0 text-gray-400 hover:text-gray-600"
-                                                >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-3.5 h-3.5">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-                                                    </svg>
-                                                </button>
-                                            </div>
-                                        )}
-                                        {chatNewImages.length > 0 && (
-                                            <div className="flex flex-wrap gap-2">
-                                                {chatNewImages.map((file, idx) => (
-                                                    <div key={idx} className="relative w-12 h-12 shrink-0">
-                                                        <Image
-                                                            src={URL.createObjectURL(file)}
-                                                            alt=""
-                                                            width={48}
-                                                            height={48}
-                                                            unoptimized
-                                                            className="w-12 h-12 object-cover rounded border border-gray-200"
-                                                        />
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setChatNewImages((prev) => prev.filter((_, i) => i !== idx))}
-                                                            className="absolute -top-1.5 -right-1.5 w-4 h-4 flex items-center justify-center rounded-full bg-gray-700 text-white text-[10px] leading-none hover:bg-red-600"
-                                                        >
-                                                            ×
-                                                        </button>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                        <div className="flex items-end gap-2">
-                                            <textarea
-                                                value={chatText}
-                                                onChange={(e) => setChatText(e.target.value)}
-                                                onKeyDown={handleChatComposerKeyDown}
-                                                rows={1}
-                                                placeholder="พิมพ์ข้อความ..."
-                                                className="flex-1 resize-none px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 border-gray-300 focus:border-blue-400 focus:ring-blue-500/20"
-                                            />
-                                            <label className="shrink-0 w-9 h-9 flex items-center justify-center rounded-lg border border-gray-300 text-gray-500 hover:bg-gray-50 cursor-pointer">
-                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-4 h-4">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                                                </svg>
-                                                <input
-                                                    type="file"
-                                                    accept="image/*"
-                                                    multiple
-                                                    className="hidden"
-                                                    onChange={(e) => { handlePickChatImages(e.target.files); e.target.value = ""; }}
-                                                />
-                                            </label>
-                                            <button
-                                                type="submit"
-                                                disabled={isSendingChat || (!chatText.trim() && chatNewImages.length === 0)}
-                                                className="shrink-0 w-9 h-9 flex items-center justify-center rounded-lg bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-40"
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-                                                    <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
-                                                </svg>
-                                            </button>
-                                        </div>
-                                    </form>
-                                </div>
+                            {chatOpen && detailTask && id && (
+                                <TaskChatPanel
+                                    key={detailTask.task_id}
+                                    projectId={id}
+                                    taskId={detailTask.task_id}
+                                    currentUserId={currentUserId}
+                                    onRead={(taskId) =>
+                                        setTasks((prev) =>
+                                            prev.some((t) => t.task_id === taskId && t.unread_chat_count)
+                                                ? prev.map((t) => (t.task_id === taskId ? { ...t, unread_chat_count: 0 } : t))
+                                                : prev,
+                                        )
+                                    }
+                                    onClose={() => setChatOpen(false)}
+                                />
                             )}
                             </>
                         )}
@@ -2397,347 +994,30 @@ export default function ViewProjectPage() {
             )}
 
             {/* Modal เพิ่ม/แก้ไขสมาชิก */}
-            {memberModalOpen && (
-                <div
-                    className="fixed inset-0 z-50 flex items-end justify-center bg-gray-900/40 backdrop-blur-sm sm:items-center sm:p-4"
-                    onClick={() => setMemberModalOpen(false)}
-                >
-                    <div
-                        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-float w-full max-w-md p-6 space-y-4 max-h-[90dvh] overflow-y-auto"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <h2 className="text-base font-medium text-gray-900">
-                            {editingMember ? "แก้ไขตำแหน่งสมาชิก" : "เพิ่มสมาชิก"}
-                        </h2>
-                        <form onSubmit={handleMemberSubmit} className="space-y-4">
-                            {editingMember ? (
-                                <p className="text-sm text-gray-600">
-                                    ผู้ใช้งาน: <span className="font-medium">{editingMember.user_fullname}</span>
-                                </p>
-                            ) : (
-                                <div className="flex flex-col gap-1">
-                                    <label className="text-sm font-medium text-gray-700 mb-1">ผู้ใช้งาน</label>
-                                    <SearchableSelect
-                                        loadOptions={(search) => loadUserOptions(search, members.map((m) => m.user_id))}
-                                        value={memberForm.user_id}
-                                        onChange={(v) => setMemberForm((p) => ({ ...p, user_id: v }))}
-                                        placeholder="— เลือกผู้ใช้งาน —"
-                                    />
-                                </div>
-                            )}
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">ตำแหน่งในโปรเจกต์นี้</label>
-                                <div className="rounded-lg border border-gray-100 divide-y divide-gray-50 overflow-hidden">
-                                    {positions.map((pos) => (
-                                        <label
-                                            key={pos.position_id}
-                                            className="flex items-center gap-3 cursor-pointer px-4 py-2.5 hover:bg-blue-50"
-                                        >
-                                            <input
-                                                type="checkbox"
-                                                checked={memberForm.position_ids.includes(pos.position_id)}
-                                                onChange={() => toggleMemberPosition(pos.position_id)}
-                                                className="w-4 h-4 accent-blue-500"
-                                            />
-                                            <span className="text-sm text-gray-700">{pos.position_name}</span>
-                                        </label>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {memberFormError && <p className="text-sm text-red-600">{memberFormError}</p>}
-
-                            <div className="flex justify-end gap-3 pt-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setMemberModalOpen(false)}
-                                    className={buttonClass("secondary", "md")}
-                                >
-                                    ยกเลิก
-                                </button>
-                                <Button type="submit" disabled={isPending}>
-                                    {isPending ? "กำลังบันทึก..." : "บันทึก"}
-                                </Button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
+            {memberModalOpen && id && (
+                <MemberModal
+                    projectId={id}
+                    member={editingMember}
+                    members={members}
+                    positions={positions}
+                    onSaved={() => loadAll(id)}
+                    onClose={() => setMemberModalOpen(false)}
+                />
             )}
 
             {/* Modal ส่งลิงก์ให้ลูกค้าทางอีเมล */}
-            {shareEmailModalOpen && (
-                <div
-                    className="fixed inset-0 z-50 flex items-end justify-center bg-gray-900/40 backdrop-blur-sm sm:items-center sm:p-4"
-                    onClick={() => setShareEmailModalOpen(false)}
-                >
-                    <div
-                        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-float w-full max-w-md p-6 space-y-4 max-h-[90dvh] overflow-y-auto"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <div className="flex items-start gap-3">
-                            <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-5 h-5">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 0 0 2.22 0L21 8M5 19h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2Z" />
-                                </svg>
-                            </div>
-                            <div>
-                                <h2 className="text-base font-medium text-gray-900">ส่งลิงก์ให้ลูกค้าทางอีเมล</h2>
-                                <p className="text-sm text-gray-500">ลูกค้าจะได้รับลิงก์ติดตามความคืบหน้าของ &ldquo;{project.project_name}&rdquo; แบบดูอย่างเดียว ไม่ต้องเข้าสู่ระบบ</p>
-                            </div>
-                        </div>
-
-                        <form onSubmit={handleSendShareEmail} className="space-y-4">
-                            <div className="flex flex-col gap-1">
-                                <label className="text-sm font-medium text-gray-700">อีเมลผู้รับ</label>
-                                <Input
-                                    type="email"
-                                    value={shareEmailForm.to}
-                                    onChange={(e) => setShareEmailForm((p) => ({ ...p, to: e.target.value }))}
-                                    placeholder="client@example.com"
-                                    required
-                                />
-                                {!project.client_email && (
-                                    <p className="text-xs text-amber-600">ยังไม่มีอีเมลลูกค้าในระบบ กรุณากรอกอีเมลเอง</p>
-                                )}
-                            </div>
-
-                            <div className="flex flex-col gap-1">
-                                <label className="text-sm font-medium text-gray-700">ข้อความถึงลูกค้า (ไม่บังคับ)</label>
-                                <textarea
-                                    value={shareEmailForm.message}
-                                    onChange={(e) => setShareEmailForm((p) => ({ ...p, message: e.target.value }))}
-                                    rows={3}
-                                    placeholder="เช่น อัปเดตความคืบหน้าล่าสุดของโปรเจกต์ให้ทราบครับ"
-                                    className={inputClass(false)}
-                                />
-                            </div>
-
-                            <div className="rounded-lg bg-gray-50 border border-gray-100 p-3 space-y-1.5">
-                                <p className="text-xs font-medium text-gray-500">ข้อมูลที่จะแนบไปในอีเมล</p>
-                                <div className="flex items-center justify-between text-sm text-gray-600">
-                                    <span>ความคืบหน้าปัจจุบัน</span>
-                                    <span className="font-medium text-gray-800">{Number(project.project_progress_percent)}%</span>
-                                </div>
-                                <div className="flex items-center justify-between text-sm text-gray-600">
-                                    <span>วันครบกำหนด</span>
-                                    <span className="font-medium text-gray-800">{formatDateOnly(project.project_due_date)}</span>
-                                </div>
-                                <div className="pt-1 text-xs text-gray-400 break-all">{shareUrl}</div>
-                            </div>
-
-                            {shareEmailError && <p className="text-sm text-red-600">{shareEmailError}</p>}
-
-                            <div className="flex justify-end gap-3 pt-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setShareEmailModalOpen(false)}
-                                    className={buttonClass("secondary", "md")}
-                                >
-                                    ยกเลิก
-                                </button>
-                                <Button type="submit" disabled={isSendingShareEmail}>
-                                    {isSendingShareEmail ? "กำลังส่ง..." : "ส่งอีเมล"}
-                                </Button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
+            {shareEmailModalOpen && project && (
+                <ShareEmailModal project={project} shareUrl={shareUrl} onClose={() => setShareEmailModalOpen(false)} />
             )}
 
-            {projectChatOpen && (
-                <div
-                    className="fixed inset-0 z-50 flex items-end justify-center bg-gray-900/40 backdrop-blur-sm sm:items-center sm:p-4"
-                    onClick={closeProjectChat}
-                >
-                    <div
-                        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-float w-full max-w-lg h-[80dvh] max-h-150 flex flex-col overflow-hidden"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between shrink-0">
-                            <h3 className="text-sm font-medium text-gray-700 truncate">แชทโปรเจกต์ · {project.project_name}</h3>
-                            <button
-                                type="button"
-                                onClick={closeProjectChat}
-                                className="text-gray-400 hover:text-gray-600 shrink-0"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-4 h-4">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-                                </svg>
-                            </button>
-                        </div>
-
-                        <div ref={projectChatListRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-                            {projectChatMessages.length === 0 ? (
-                                <p className="text-sm text-gray-400 text-center pt-6">ยังไม่มีข้อความ</p>
-                            ) : (
-                                projectChatMessages.map((msg) => {
-                                    const isOwn = msg.user_id === currentUserId;
-                                    const avatarSrc = msg.user_avatar_url ? `${SERVER_BASE}${msg.user_avatar_url}` : "/defult.png";
-                                    const avatar = (
-                                        <Image
-                                            src={avatarSrc}
-                                            alt=""
-                                            width={28}
-                                            height={28}
-                                            unoptimized={!!msg.user_avatar_url}
-                                            className="w-7 h-7 rounded-full object-cover border border-gray-200 shrink-0"
-                                        />
-                                    );
-                                    const bubble = (
-                                        <div className={`max-w-[75%] rounded-2xl px-3 py-2 ${isOwn ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-800"}`}>
-                                            {!isOwn && (
-                                                <p className="text-[11px] font-medium text-gray-500 mb-0.5">
-                                                    {msg.user_fullname ?? "ผู้ใช้งานที่ถูกลบ"}
-                                                </p>
-                                            )}
-                                            {msg.reply_to_message_id && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => scrollToChatMessage(msg.reply_to_message_id!)}
-                                                    className={`block w-full text-left mb-1 pl-2 border-l-2 rounded ${
-                                                        isOwn ? "border-blue-200 bg-blue-50" : "border-gray-300 bg-white/60"
-                                                    }`}
-                                                >
-                                                    <p className={`text-[11px] font-medium ${isOwn ? "text-blue-50" : "text-gray-600"}`}>
-                                                        {msg.reply_to_user_fullname ?? "ผู้ใช้งานที่ถูกลบ"}
-                                                    </p>
-                                                    <p className={`text-[11px] truncate ${isOwn ? "text-blue-100" : "text-gray-500"}`}>
-                                                        {msg.reply_to_text ? truncateReplyPreview(msg.reply_to_text) : msg.reply_to_image_count > 0 ? "[รูปภาพ]" : ""}
-                                                    </p>
-                                                </button>
-                                            )}
-                                            {msg.message_text && (
-                                                <p className="text-sm whitespace-pre-wrap wrap-break-word">{msg.message_text}</p>
-                                            )}
-                                            {msg.images.length > 0 && (
-                                                <div className="flex flex-wrap gap-1.5 mt-1.5">
-                                                    {msg.images.map((img) => (
-                                                        <button
-                                                            key={img.image_id}
-                                                            type="button"
-                                                            onClick={() => window.open(`${SERVER_BASE}${img.image_url}`, "_blank")}
-                                                        >
-                                                            <Image
-                                                                src={`${SERVER_BASE}${img.image_url}`}
-                                                                alt=""
-                                                                width={96}
-                                                                height={96}
-                                                                unoptimized
-                                                                className="w-20 h-20 object-cover rounded-lg"
-                                                            />
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            )}
-                                            <div className="flex items-center gap-2 mt-1">
-                                                <p className={`text-[10px] ${isOwn ? "text-blue-100" : "text-gray-400"}`}>
-                                                    {formatDate(msg.message_created_at)}
-                                                </p>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setReplyingToProjectChat(msg)}
-                                                    className={`text-[10px] font-medium hover:underline ${isOwn ? "text-blue-100" : "text-gray-400"}`}
-                                                >
-                                                    ตอบกลับ
-                                                </button>
-                                            </div>
-                                        </div>
-                                    );
-                                    return (
-                                        <div
-                                            key={msg.message_id}
-                                            id={`chat-msg-${msg.message_id}`}
-                                            className={`flex items-end gap-2 rounded-lg transition-shadow ${isOwn ? "justify-end" : "justify-start"}`}
-                                        >
-                                            {isOwn ? (<>{bubble}{avatar}</>) : (<>{avatar}{bubble}</>)}
-                                        </div>
-                                    );
-                                })
-                            )}
-                        </div>
-
-                        <form onSubmit={handleSendProjectChat} className="border-t border-gray-100 p-3 space-y-2 shrink-0">
-                            {replyingToProjectChat && (
-                                <div className="flex items-start justify-between gap-2 pl-2 border-l-2 border-blue-400 bg-blue-50 rounded px-2 py-1.5">
-                                    <div className="min-w-0">
-                                        <p className="text-[11px] font-medium text-blue-600">
-                                            ตอบกลับ {replyingToProjectChat.user_fullname ?? "ผู้ใช้งานที่ถูกลบ"}
-                                        </p>
-                                        <p className="text-xs text-gray-500 truncate">
-                                            {replyingToProjectChat.message_text
-                                                ? truncateReplyPreview(replyingToProjectChat.message_text)
-                                                : replyingToProjectChat.images.length > 0 ? "[รูปภาพ]" : ""}
-                                        </p>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => setReplyingToProjectChat(null)}
-                                        className="shrink-0 text-gray-400 hover:text-gray-600"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-3.5 h-3.5">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-                                        </svg>
-                                    </button>
-                                </div>
-                            )}
-                            {projectChatNewImages.length > 0 && (
-                                <div className="flex flex-wrap gap-2">
-                                    {projectChatNewImages.map((file, idx) => (
-                                        <div key={idx} className="relative w-12 h-12 shrink-0">
-                                            <Image
-                                                src={URL.createObjectURL(file)}
-                                                alt=""
-                                                width={48}
-                                                height={48}
-                                                unoptimized
-                                                className="w-12 h-12 object-cover rounded border border-gray-200"
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() => setProjectChatNewImages((prev) => prev.filter((_, i) => i !== idx))}
-                                                className="absolute -top-1.5 -right-1.5 w-4 h-4 flex items-center justify-center rounded-full bg-gray-700 text-white text-[10px] leading-none hover:bg-red-600"
-                                            >
-                                                ×
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                            <div className="flex items-end gap-2">
-                                <textarea
-                                    value={projectChatText}
-                                    onChange={(e) => setProjectChatText(e.target.value)}
-                                    onKeyDown={handleProjectChatComposerKeyDown}
-                                    rows={1}
-                                    placeholder="พิมพ์ข้อความ..."
-                                    className="flex-1 resize-none px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 border-gray-300 focus:border-blue-400 focus:ring-blue-500/20"
-                                />
-                                <label className="shrink-0 w-9 h-9 flex items-center justify-center rounded-lg border border-gray-300 text-gray-500 hover:bg-gray-50 cursor-pointer">
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-4 h-4">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                                    </svg>
-                                    <input
-                                        type="file"
-                                        accept="image/*"
-                                        multiple
-                                        className="hidden"
-                                        onChange={(e) => { handlePickProjectChatImages(e.target.files); e.target.value = ""; }}
-                                    />
-                                </label>
-                                <button
-                                    type="submit"
-                                    disabled={isSendingProjectChat || (!projectChatText.trim() && projectChatNewImages.length === 0)}
-                                    className="shrink-0 w-9 h-9 flex items-center justify-center rounded-lg bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-40"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-                                        <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
-                                    </svg>
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
+            {projectChatOpen && project && (
+                <ProjectChatModal
+                    projectId={project.project_id}
+                    projectName={project.project_name}
+                    currentUserId={currentUserId}
+                    onRead={() => setProject((prev) => (prev?.unread_chat_count ? { ...prev, unread_chat_count: 0 } : prev))}
+                    onClose={() => setProjectChatOpen(false)}
+                />
             )}
 
             <ConfirmDialog
@@ -2774,16 +1054,6 @@ export default function ViewProjectPage() {
                 loading={isRemovingMember}
                 onConfirm={handleRemoveMember}
                 onCancel={() => setRemoveMemberTarget(null)}
-            />
-
-            <ConfirmDialog
-                open={!!deleteIssueTarget}
-                title="ลบปัญหานี้?"
-                description={deleteIssueTarget ? `"${deleteIssueTarget.issue_title}" จะถูกลบและไม่สามารถกู้คืนได้` : undefined}
-                confirmLabel="ลบ"
-                loading={isDeletingIssue}
-                onConfirm={handleDeleteIssue}
-                onCancel={() => setDeleteIssueTarget(null)}
             />
         </div>
     );

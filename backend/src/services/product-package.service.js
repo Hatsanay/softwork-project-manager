@@ -5,12 +5,47 @@
 const { AppError } = require("../utils/app-error");
 const { generateDailyId } = require("../utils/generateDailyId");
 const { assertCategoryExists } = require("./product.service");
+const { formatHundredths } = require("../shared/money.mjs");
+const { lineAmount } = require("../shared/order-cart-math.mjs");
+
+// รายการในชุดที่ส่งไปให้การ์ดในหน้าสินค้าแสดงเป็นตัวอย่าง
+const PREVIEW_ITEM_COUNT = 4;
 
 /**
- * ชุดรายการทั้งหมด พร้อมจำนวนแถว และจำนวนแถวที่อ้างสินค้าที่ปิดใช้งานแล้ว
+ * ชุดรายการทั้งหมด พร้อมจำนวนแถว จำนวนแถวที่อ้างสินค้าที่ปิดใช้งานแล้ว
+ * ราคาชุดตอนนี้ (pkg_total: แถวรายการ × ราคาปัจจุบันของสินค้า หรือราคาในแถว · ไม่นับแถวสินค้าปิดใช้งาน เพราะใส่ใบเสนอราคาจะถูกข้าม)
+ * และชื่อรายการแรกๆ (preview_items) สำหรับการ์ด
  * @param {import("mysql2/promise").Pool} conn
  */
 async function listPackages(conn) {
+    const packages = await listPackageRows(conn);
+    if (packages.length === 0) return packages;
+    const [itemRows] = await conn.query(
+        `SELECT i.pki_package_id, i.pki_description, i.pki_quantity, i.pki_unit_price, i.pki_product_id, p.product_price, p.product_status
+         FROM tb_product_package_items i
+         LEFT JOIN tb_products p ON p.product_id = i.pki_product_id
+         WHERE i.pki_type = 'item'
+         ORDER BY i.pki_package_id, i.pki_order`,
+    );
+    const totals = new Map();
+    const previews = new Map();
+    for (const row of itemRows) {
+        const preview = previews.get(row.pki_package_id) ?? [];
+        if (preview.length < PREVIEW_ITEM_COUNT) preview.push(row.pki_description.split("\n")[0]);
+        previews.set(row.pki_package_id, preview);
+        if (row.product_status === "inactive") continue;
+        const unitPrice = row.pki_product_id ? row.product_price : row.pki_unit_price;
+        const amount = lineAmount(unitPrice ?? "0", row.pki_quantity ?? "0");
+        totals.set(row.pki_package_id, (totals.get(row.pki_package_id) ?? 0n) + amount);
+    }
+    return packages.map((row) => ({
+        ...row,
+        pkg_total: formatHundredths(totals.get(row.pkg_id) ?? 0n),
+        preview_items: previews.get(row.pkg_id) ?? [],
+    }));
+}
+
+async function listPackageRows(conn) {
     const [rows] = await conn.query(
         `SELECT k.pkg_id, k.pkg_name, k.pkg_description, k.pkg_category_id, c.pc_name AS category_name, k.pkg_status,
                 k.pkg_is_public, k.pkg_image_url, k.pkg_updated_at,

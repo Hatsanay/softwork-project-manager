@@ -75,7 +75,7 @@ export function calculatePayment({
         const field = `allocations.${index}.pva_amount`;
         const outstanding = allocation.expenseTotal - allocation.paidBefore;
         if (allocation.amount <= 0n) errors[field] = "ยอดจ่ายต้องมากกว่า 0";
-        else if (allocation.amount > outstanding) errors[field] = "ยอดจ่ายมากกว่ายอดค้างของรายการนี้ — จ่ายเกินไม่ได้";
+        else if (allocation.amount > outstanding) errors[field] = "ยอดจ่ายมากกว่ายอดค้างของรายการนี้ · จ่ายเกินไม่ได้";
         else if (!isWholeCurrencyUnit(allocation.amount, currencyDecimals)) errors[field] = unitMessage;
         if (errors[field]) {
             return { ...allocation, base: 0n, amountThb: 0n, closesExpense: false };
@@ -114,7 +114,7 @@ export function calculatePayment({
         else if (withholding < 0n) errors[field] = "ยอดหักต้องไม่ติดลบ";
         else if (withholding > group.base) errors[field] = "ยอดหักมากกว่าเงินได้ที่จ่าย";
         else if (isForeign && withholding > 0n)
-            errors[field] = "จ่ายสกุลต่างประเทศไม่หัก ณ ที่จ่ายในระบบ — ตรวจกับนักบัญชี";
+            errors[field] = "จ่ายสกุลต่างประเทศไม่หัก ณ ที่จ่ายในระบบ · ตรวจกับนักบัญชี";
         else if (!isWholeCurrencyUnit(withholding, currencyDecimals)) errors[field] = unitMessage;
         return {
             ...group,

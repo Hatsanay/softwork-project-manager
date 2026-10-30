@@ -32,7 +32,7 @@ export default function EditEmployeePage() {
             <PageHeader
                 eyebrow="บุคคล · พนักงาน"
                 title="แก้ไขข้อมูลพนักงาน"
-                description="เงินเดือนไม่ได้แก้ที่หน้านี้ — เพิ่มอัตราใหม่ในหน้าพนักงาน (ประวัติเดิมไม่หาย)"
+                description="เงินเดือนไม่ได้แก้ที่หน้านี้ · เพิ่มอัตราใหม่ในหน้าพนักงาน (ประวัติเดิมไม่หาย)"
             />
             {!employeeId && (
                 <StatusBanner tone="error" title="ไม่พบพนักงานนี้">

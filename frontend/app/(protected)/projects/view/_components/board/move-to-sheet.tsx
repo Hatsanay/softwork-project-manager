@@ -35,7 +35,7 @@ export default function MoveToSheet({
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="move-to-title"
-                className="grid max-h-[90dvh] w-full max-w-sm gap-3 overflow-y-auto rounded-t-2xl bg-white p-5 shadow-float sm:rounded-2xl"
+                className="grid max-h-[90dvh] w-full max-w-lg gap-3 overflow-y-auto rounded-t-2xl bg-white p-5 sm:p-6 shadow-float sm:rounded-2xl"
                 onClick={(event) => event.stopPropagation()}
             >
                 <div className="grid gap-0.5">

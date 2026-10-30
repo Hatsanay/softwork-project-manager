@@ -224,7 +224,7 @@ test("อัตรา: สกุลที่ ธปท. ประกาศต่
     assert.equal(response.body.all_rates.buying_sight, null);
 });
 
-test("อัตรา: ธปท. ไม่รับคีย์ — มีอัตราเก่าในแคชก็ยังใช้ได้พร้อมเหตุผล · ไม่มีเลยบอกให้กรอกเอง", async () => {
+test("อัตรา: ธปท. ไม่รับคีย์ · มีอัตราเก่าในแคชก็ยังใช้ได้พร้อมเหตุผล · ไม่มีเลยบอกให้กรอกเอง", async () => {
     useBot("rejected");
     const today = await api.callApi("GET", `/V1/exchange-rates?currency=USD&date=${todayBangkok()}`);
     assert.equal(today.body.available, true);

@@ -98,11 +98,12 @@ export default function VendorsPage() {
         },
         {
             key: "vd_tax_id",
+            mobile: "meta",
             header: "ภาษี",
             render: (_, row) => (
                 <div className="grid gap-0.5 text-sm">
                     <span className="tabular-nums">
-                        {row.vd_tax_id ?? "—"}
+                        {row.vd_tax_id ?? "-"}
                         {branchLabel(row.vd_branch_code)}
                     </span>
                     <span className="text-xs text-gray-500">{whtFormLabel(row.wht_form)}</span>
@@ -111,6 +112,7 @@ export default function VendorsPage() {
         },
         {
             key: "vd_bank_account_no",
+            mobile: "meta",
             header: "บัญชีรับเงิน",
             render: (_, row) =>
                 row.vd_bank_account_no ? (
@@ -126,6 +128,7 @@ export default function VendorsPage() {
         },
         {
             key: "vd_status",
+            mobile: "badge",
             header: "สถานะ",
             render: (_, row) => <ActiveStatusPill isActive={row.vd_status === "active"} />,
         },

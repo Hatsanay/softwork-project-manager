@@ -96,7 +96,7 @@ export default function QrSheet({
                 aria-modal="true"
                 aria-labelledby="qr-title"
                 onClick={(event) => event.stopPropagation()}
-                className="grid max-h-[92dvh] w-full max-w-md gap-4 overflow-y-auto rounded-t-2xl bg-white p-5 shadow-float sm:rounded-2xl"
+                className="grid max-h-[92dvh] w-full max-w-xl gap-4 overflow-y-auto rounded-t-2xl bg-white p-5 sm:p-6 shadow-float sm:rounded-2xl"
             >
                 <div className="flex items-start justify-between gap-3">
                     <h2 id="qr-title" className="text-base font-medium text-gray-900">

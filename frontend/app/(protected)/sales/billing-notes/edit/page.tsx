@@ -52,7 +52,7 @@ export default function EditBillingNotePage() {
             )}
             {detail && !isDraft && (
                 <StatusBanner tone="info" title="ใบนี้ไม่ได้เป็นร่างแล้ว แก้ไขไม่ได้">
-                    ใบที่ออกแล้วแก้ไม่ได้ — ยกเลิกใบนี้แล้วสร้างใบวางบิลใหม่
+                    ใบที่ออกแล้วแก้ไม่ได้ · ยกเลิกใบนี้แล้วสร้างใบวางบิลใหม่
                 </StatusBanner>
             )}
             {billingNoteId && !error && (!detail || !options) && <PageSkeleton />}

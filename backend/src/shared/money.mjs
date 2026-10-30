@@ -90,6 +90,38 @@ export function formatAmount(amount, currencyDecimals = 2) {
     return `${sign}${grouped}.${fraction.slice(0, currencyDecimals)}`;
 }
 
+/**
+ * จำนวน (ไม่ใช่เงิน) → ข้อความใส่ช่องกรอก: ตัดศูนย์ท้ายทศนิยม ("8.00" → "8" · "1.50" → "1.5") ไม่คั่นหลักพัน (2026-10-30)
+ * ไม่ใช่ตัวเลข = คืนข้อความเดิม (ให้ชุดตรวจบอกผิดเอง)
+ * @param {string | number | null | undefined} quantity
+ * @returns {string}
+ */
+export function trimQuantity(quantity) {
+    const text = String(quantity ?? "").trim();
+    if (!DECIMAL_NUMBER.test(text)) return text;
+    const [whole, fraction = ""] = text.split(".");
+    const isNegative = whole.startsWith("-");
+    const digits = (isNegative ? whole.slice(1) : whole).replace(/^0+(?=\d)/, "");
+    const trimmedFraction = fraction.replace(/0+$/, "");
+    const sign = isNegative && (digits !== "0" || trimmedFraction) ? "-" : "";
+    return `${sign}${digits}${trimmedFraction ? `.${trimmedFraction}` : ""}`;
+}
+
+/**
+ * จำนวน (ไม่ใช่เงิน) → ข้อความแสดงผล: คั่นหลักพัน ไม่มีทศนิยมถ้าเป็นจำนวนเต็ม ("1200.00" → "1,200" · "1.50" → "1.5")
+ * จำนวนเก็บเป็น DECIMAL 2 ตำแหน่ง แต่ส่วนใหญ่เป็นจำนวนเต็ม แสดง ".00" แล้วอ่านยาก
+ * @param {string | number | null | undefined} quantity
+ * @returns {string}
+ */
+export function formatQuantity(quantity) {
+    const text = trimQuantity(quantity);
+    if (!DECIMAL_NUMBER.test(text)) return text;
+    const [whole, fraction] = text.split(".");
+    const isNegative = whole.startsWith("-");
+    const grouped = (isNegative ? whole.slice(1) : whole).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return `${isNegative ? "-" : ""}${grouped}${fraction ? `.${fraction}` : ""}`;
+}
+
 // ─── การปัดเศษ ───────────────────────────────────────────────────────────────────────────────
 
 /**

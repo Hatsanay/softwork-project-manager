@@ -1,4 +1,5 @@
 // สถานะของฟอร์มใบเสนอราคา — ช่องตัวเลขเก็บเป็นข้อความตามที่ผู้ใช้พิมพ์ · แปลงเป็นรูปของ API ที่ toPayload เท่านั้น
+import { trimQuantity } from "@/lib/shared/money.mjs";
 import type { DiscountType, ItemType, QuotationDetail } from "./_types";
 
 export type ItemForm = {
@@ -136,7 +137,7 @@ export function formFromDetail(detail: QuotationDetail): QuotationForm {
             qti_product_id: item.qti_product_id,
             qti_package_id: item.qti_package_id,
             qti_description: item.qti_description,
-            qti_quantity: item.qti_quantity ?? "",
+            qti_quantity: trimQuantity(item.qti_quantity),
             qti_unit: item.qti_unit ?? "",
             qti_unit_price: item.qti_unit_price ?? "",
             qti_list_price: item.qti_list_price ?? "",

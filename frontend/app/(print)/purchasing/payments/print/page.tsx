@@ -28,7 +28,7 @@ function paidByText(detail: PaymentDetail) {
         case "cash":
             return METHOD_LABELS.cash;
         default:
-            return `${METHOD_LABELS.other}${payment.pv_reference ? ` — ${payment.pv_reference}` : ""}`;
+            return `${METHOD_LABELS.other}${payment.pv_reference ? `${payment.pv_reference}` : ""}`;
     }
 }
 

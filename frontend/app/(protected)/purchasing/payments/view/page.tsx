@@ -93,7 +93,7 @@ export default function PaymentViewPage() {
         <div className="grid w-full grid-cols-1 gap-6">
             <PageHeader
                 eyebrow={`จัดซื้อ · ใบสำคัญจ่าย · ${payment.pv_number}`}
-                title={`จ่าย ${payeeName ?? "—"}`}
+                title={`จ่าย ${payeeName ?? "-"}`}
                 description={`${formatDateOnly(payment.pv_payment_date)} · ${METHOD_LABELS[payment.pv_method]} · สาขา ${payment.branch_code} ${payment.branch_name_th}`}
                 actions={
                     <StatusPill tone={isCancelled ? "danger" : "success"}>
@@ -109,8 +109,8 @@ export default function PaymentViewPage() {
                 </StatusBanner>
             ) : (
                 <StatusBanner tone="done" title={`จ่ายแล้ว ${formatAmount(payment.pv_net_paid, decimals)} ${code}`}>
-                    บันทึกโดย {payment.pv_created_by_name ?? "—"} · {formatDate(payment.pv_created_at)}
-                    {certificate ? ` · ออก 50 ทวิ ${certificate.wt_number} แล้ว — พิมพ์ฉบับที่ 1 ส่งให้ผู้รับ` : ""}
+                    บันทึกโดย {payment.pv_created_by_name ?? "-"} · {formatDate(payment.pv_created_at)}
+                    {certificate ? ` · ออก 50 ทวิ ${certificate.wt_number} แล้ว · พิมพ์ฉบับที่ 1 ส่งให้ผู้รับ` : ""}
                 </StatusBanner>
             )}
 

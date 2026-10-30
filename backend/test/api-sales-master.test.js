@@ -244,6 +244,12 @@ test("สินค้า: รหัสห้ามซ้ำ · ราคาท�
 
     const search = await api.callApi("GET", "/V1/products?search=WEB-01");
     assert.equal(search.body.total, 1);
+
+    // กรองหน้าร้าน: สินค้านี้ไม่ได้เปิดหน้าร้าน
+    const notPublic = await api.callApi("GET", "/V1/products?search=WEB-01&public=no");
+    assert.equal(notPublic.body.total, 1);
+    const onStore = await api.callApi("GET", "/V1/products?search=WEB-01&public=yes");
+    assert.equal(onStore.body.total, 0);
 });
 
 test("หมวดหมู่: ชื่อห้ามซ้ำ · ลบหมวดแล้วสินค้ากลายเป็นไม่มีหมวด", async () => {
@@ -347,6 +353,11 @@ test("ชุดรายการ: ตรวจแถว · บันทึก�
     assert.equal(saved.body.items[0].pki_quantity, null);
     assert.equal(saved.body.items[0].pki_unit_price, null);
     assert.equal(saved.body.items[1].product_name, "โฮสติ้ง");
+    // ราคาชุด = 12 × 3,000 (ราคาสินค้า) + 1 × 500 (ราคาในแถว) · หัวข้อ/หมายเหตุไม่นับ
+    const firstList = await api.callApi("GET", "/V1/product-packages");
+    const firstListed = firstList.body.data.find((row) => row.pkg_id === packageId);
+    assert.equal(firstListed.pkg_total, "36500.00");
+    assert.deepEqual(firstListed.preview_items, ["โฮสติ้ง 1 ปี", "จดโดเมน"]);
 
     const updated = await api.callApi("PUT", `/V1/product-packages/${packageId}`, {
         body: {
@@ -367,7 +378,11 @@ test("ชุดรายการ: ตรวจแถว · บันทึก�
     assert.equal(afterUpdate.body.items.length, 1);
 
     const list = await api.callApi("GET", "/V1/product-packages");
-    assert.equal(list.body.data.find((row) => row.pkg_id === packageId).item_count, 1);
+    const listed = list.body.data.find((row) => row.pkg_id === packageId);
+    assert.equal(listed.item_count, 1);
+    // ราคาชุดตอนนี้ = 1 × ราคาโฮสติ้งปัจจุบัน · ตัวอย่างรายการสำหรับการ์ด
+    assert.equal(listed.pkg_total, "3000.00");
+    assert.deepEqual(listed.preview_items, ["โฮสติ้ง"]);
 
     const removeProduct = await api.callApi("DELETE", `/V1/products/${hosting.body.product_id}`);
     assert.equal(removeProduct.status, 409);

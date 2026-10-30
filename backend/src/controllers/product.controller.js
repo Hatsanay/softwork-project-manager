@@ -43,6 +43,7 @@ async function listProducts(req, res, next) {
             search: String(req.query.search ?? ""),
             categoryId: req.query.category_id ? String(req.query.category_id) : undefined,
             status: req.query.status,
+            isPublic: req.query.public,
         });
         res.json(result);
     } catch (err) {

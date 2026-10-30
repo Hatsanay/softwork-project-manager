@@ -67,7 +67,7 @@ export default function QuotationInvoiceForm({ options, detail }: QuotationInvoi
         });
         if (!checked.success) {
             setFieldErrors(toFieldErrors(checked.error.issues));
-            toast.error("ยังบันทึกไม่ได้ — แก้ช่องที่มีข้อความสีแดงก่อน");
+            toast.error("ยังบันทึกไม่ได้ · แก้ช่องที่มีข้อความสีแดงก่อน");
             return;
         }
         setFieldErrors({});

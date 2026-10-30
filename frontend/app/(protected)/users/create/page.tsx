@@ -225,7 +225,7 @@ export default function CreateUserPage() {
                         loadOptions={loadRolesOptions}
                         value={form.user_role_id}
                         onChange={(v) => setField("user_role_id", v)}
-                        placeholder="— เลือกสิทธิ์ —"
+                        placeholder="เลือกสิทธิ์"
                         disabled={isPending}
                         error={!!errors.user_role_id}
                     />
@@ -258,7 +258,7 @@ export default function CreateUserPage() {
                 variant="info"
                 title="สร้างผู้ใช้งานสำเร็จ"
                 description={created
-                    ? `${credentialLines(created).join("  /  ")} — ตอนเข้าระบบครั้งแรก ผู้ใช้ต้องตั้งรหัสผ่านใหม่${created.user_email ? "" : " และยืนยันอีเมลของตัวเองด้วยรหัส OTP"} แล้วอัปโหลดรูปโปรไฟล์ (ข้ามได้) กรุณาคัดลอกไปให้ผู้ใช้ก่อนปิดหน้าต่างนี้`
+                    ? `${credentialLines(created).join("  /  ")} · ตอนเข้าระบบครั้งแรก ผู้ใช้ต้องตั้งรหัสผ่านใหม่${created.user_email ? "" : " และยืนยันอีเมลของตัวเองด้วยรหัส OTP"} แล้วอัปโหลดรูปโปรไฟล์ (ข้ามได้) กรุณาคัดลอกไปให้ผู้ใช้ก่อนปิดหน้าต่างนี้`
                     : ""}
                 confirmLabel="คัดลอกข้อมูลเข้าสู่ระบบ"
                 cancelLabel="ปิด"

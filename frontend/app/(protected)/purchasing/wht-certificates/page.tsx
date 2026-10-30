@@ -50,13 +50,14 @@ export default function CertificatesPage() {
             render: (_, row) => (
                 <div className="grid min-w-0 gap-0.5">
                     <span className="text-xs text-gray-500 tabular-nums">{row.wt_number}</span>
-                    <span className="font-medium text-gray-800">{row.payee_name ?? "—"}</span>
+                    <span className="font-medium text-gray-800">{row.payee_name ?? "-"}</span>
                     {row.payee_tax_id && <span className="text-xs text-gray-500">{row.payee_tax_id}</span>}
                 </div>
             ),
         },
         {
             key: "wt_total_tax",
+            mobile: "trailing",
             header: "เงินได้ / ภาษีที่หัก",
             className: "text-right tabular-nums",
             render: (_, row) => (
@@ -68,6 +69,7 @@ export default function CertificatesPage() {
         },
         {
             key: "wt_form",
+            mobile: "badge",
             header: "แบบ / สถานะ",
             render: (_, row) => (
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -78,6 +80,7 @@ export default function CertificatesPage() {
         },
         {
             key: "wt_payment_date",
+            mobile: "meta",
             header: "วันที่จ่าย",
             render: (_, row) => (
                 <div className="grid gap-0.5 text-sm">

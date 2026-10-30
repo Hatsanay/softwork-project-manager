@@ -141,7 +141,7 @@ async function acceptQuotation(conn, quotationId, choice, actor, { isCustomerAcc
             throw new AppError(
                 403,
                 "CANNOT_CREATE_PROJECT",
-                "คุณไม่มีสิทธิ์สร้างโปรเจกต์ — เลือกผูกโปรเจกต์เดิม หรือไม่ผูก แล้วให้ผู้มีสิทธิ์สร้างโปรเจกต์ภายหลัง",
+                "คุณไม่มีสิทธิ์สร้างโปรเจกต์ · เลือกผูกโปรเจกต์เดิม หรือไม่ผูก แล้วให้ผู้มีสิทธิ์สร้างโปรเจกต์ภายหลัง",
             );
         }
         const created = await projectService.insertProject(
@@ -173,7 +173,7 @@ async function acceptQuotation(conn, quotationId, choice, actor, { isCustomerAcc
             throw new AppError(
                 403,
                 "PROJECT_NOT_ACCESSIBLE",
-                "คุณไม่ได้เป็นสมาชิกโปรเจกต์นี้ — ให้ PM ของโปรเจกต์เป็นคนผูก หรือเพิ่มคุณเป็นสมาชิกก่อน",
+                "คุณไม่ได้เป็นสมาชิกโปรเจกต์นี้ · ให้ PM ของโปรเจกต์เป็นคนผูก หรือเพิ่มคุณเป็นสมาชิกก่อน",
             );
         }
         projectId = choice.project_id;

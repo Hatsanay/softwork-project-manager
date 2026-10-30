@@ -186,7 +186,7 @@ test("ใบเสร็จเดียวกันเบิกซ้ำไม�
         ex_title: "ค่าวินมอเตอร์ไซค์",
     });
     const submitted = expectStatus(await as(people.staff, "POST", `/V1/claims/${substitute}/submit`, {}), 200);
-    assert.equal(submitted.auto_approved, false, "กติกา EC เริ่มที่ 0 — ทุกใบต้องอนุมัติ");
+    assert.equal(submitted.auto_approved, false, "กติกา EC เริ่มที่ 0 · ทุกใบต้องอนุมัติ");
 
     const vendor = expectStatus(await api.callApi("POST", "/V1/vendors", { body: { vd_name: "ร้านค้าทดสอบ" } }), 201);
     const bill = expectStatus(

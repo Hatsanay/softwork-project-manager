@@ -49,14 +49,14 @@ export default function LoginLogTab() {
     }, [page, pageSize, search, action, from, to]);
 
     const columns: Column<LoginLog>[] = [
-        { key: "log_created_at", header: "เวลา", className: "whitespace-nowrap", render: (v) => formatLogTime(v) },
-        { key: "log_email", header: "อีเมล / ชื่อผู้ใช้ที่กรอก" },
-        { key: "by_fullname", header: "ชื่อผู้ใช้งาน", render: (v) => (v as string) || "-" },
+        { key: "log_created_at", mobile: "meta", header: "เวลา", className: "whitespace-nowrap", render: (v) => formatLogTime(v) },
+        { key: "log_email", mobile: "title", header: "อีเมล / ชื่อผู้ใช้ที่กรอก" },
+        { key: "by_fullname", mobile: "meta", header: "ชื่อผู้ใช้งาน", render: (v) => (v as string) || "-" },
         {
-            key: "log_action", header: "การกระทำ",
+            key: "log_action", mobile: "badge", header: "การกระทำ",
             render: (v) => <span className={ACTION_COLOR[v as LoginLog["log_action"]]}>{ACTION_LABEL[v as LoginLog["log_action"]] ?? String(v)}</span>,
         },
-        { key: "log_ip_address", header: "IP", render: (v) => (v as string) || "-" },
+        { key: "log_ip_address", mobile: "hidden", header: "IP", render: (v) => (v as string) || "-" },
     ];
 
     return (

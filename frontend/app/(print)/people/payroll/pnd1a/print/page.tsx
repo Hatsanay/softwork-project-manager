@@ -42,7 +42,7 @@ function Pnd1aContent() {
             ? [`รอบที่ยังไม่บันทึกจ่าย (ไม่นับในแบบ): ${report.unpaid_runs.join(", ")}`]
             : []),
         ...(report.missing_national_id.length > 0
-            ? [`ไม่มีเลขประจำตัวประชาชน: ${report.missing_national_id.join(", ")} — กรอกที่หน้าพนักงานก่อนยื่น`]
+            ? [`ไม่มีเลขประจำตัวประชาชน: ${report.missing_national_id.join(", ")} · กรอกที่หน้าพนักงานก่อนยื่น`]
             : []),
     ];
 
@@ -56,7 +56,7 @@ function Pnd1aContent() {
                 <header className="flex items-start justify-between gap-6 border-b border-gray-300 pb-3">
                     <div>
                         <p className="text-[13pt] font-medium">
-                            ใบแนบ ภ.ง.ด.1ก — เงินได้ตามมาตรา 40 (1) ประจำปีภาษี {report.year + 543}
+                            ใบแนบ ภ.ง.ด.1ก · เงินได้ตามมาตรา 40 (1) ประจำปีภาษี {report.year + 543}
                         </p>
                         <p>
                             ผู้มีหน้าที่หักภาษี: {report.company.name} · เลขประจำตัวผู้เสียภาษี{" "}
@@ -80,7 +80,7 @@ function Pnd1aContent() {
                         {report.rows.map((row, index) => (
                             <tr key={row.emp_id} className="print-row border-b border-gray-200 align-top">
                                 <td className="py-1 pl-1 tabular-nums">{index + 1}</td>
-                                <td className="py-1 tabular-nums">{row.national_id ?? "—"}</td>
+                                <td className="py-1 tabular-nums">{row.national_id ?? "-"}</td>
                                 <td className="py-1">
                                     <p>{row.full_name}</p>
                                     <p className="text-[8.5pt] text-gray-600">{row.address ?? "(ยังไม่มีที่อยู่)"}</p>

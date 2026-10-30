@@ -18,7 +18,7 @@ import { CARD_CLASS } from "@/components/ui/card";
 import { buttonClass } from "@/components/ui/button";
 import { apiFetch, type ApiError } from "@/lib/api";
 import { toFieldErrors, type FieldErrors } from "@/lib/form-errors";
-import { formatAmount } from "@/lib/shared/money.mjs";
+import { formatAmount, trimQuantity } from "@/lib/shared/money.mjs";
 import { calculateExpense } from "@/lib/shared/expense-totals.mjs";
 import { buildApprovalPlan } from "@/lib/shared/approval-flow.mjs";
 import { EXPENSE_DOC_TYPES, MAX_EXPENSE_ATTACHMENTS, expenseBillDraftSchema } from "@/lib/shared/schemas/expense.mjs";
@@ -142,7 +142,7 @@ function stateFromDetail(detail: ExpenseDetail): FormState {
             exl_project_id: line.exl_project_id ?? "",
             project_label: line.project_name,
             exl_description: line.exl_description,
-            exl_quantity: line.exl_quantity,
+            exl_quantity: trimQuantity(line.exl_quantity),
             exl_unit_price: line.exl_unit_price,
         })),
     };
@@ -380,7 +380,7 @@ export default function ExpenseForm({ options, detail }: ExpenseFormProps) {
         }
         if (failed > 0)
             toast.error(
-                `แนบไฟล์ไม่สำเร็จ ${failed} ไฟล์ — แนบใหม่ได้ที่หน้ารายการ (ใช้ PDF, JPG หรือ PNG ไม่เกิน 10 MB)`,
+                `แนบไฟล์ไม่สำเร็จ ${failed} ไฟล์ · แนบใหม่ได้ที่หน้ารายการ (ใช้ PDF, JPG หรือ PNG ไม่เกิน 10 MB)`,
             );
     }
 
@@ -390,7 +390,7 @@ export default function ExpenseForm({ options, detail }: ExpenseFormProps) {
         const checked = expenseBillDraftSchema.safeParse(toPayload(form, detail?.expense.ex_version ?? null));
         if (!checked.success) {
             setFieldErrors(toFormErrors(toFieldErrors(checked.error.issues)));
-            toast.error("ยังบันทึกไม่ได้ — แก้ช่องที่มีข้อความสีแดงก่อน");
+            toast.error("ยังบันทึกไม่ได้ · แก้ช่องที่มีข้อความสีแดงก่อน");
             return;
         }
         setFieldErrors({});
@@ -423,7 +423,7 @@ export default function ExpenseForm({ options, detail }: ExpenseFormProps) {
             <div className="grid min-w-0 grid-cols-1 gap-5">
                 {detail?.expense.ex_returned_reason && (
                     <StatusBanner tone="warn" title="รายการนี้ถูกตีกลับ">
-                        เหตุผล: {detail.expense.ex_returned_reason} — แก้แล้วส่งใหม่ได้ (เริ่มอนุมัติชั้น 1 ใหม่)
+                        เหตุผล: {detail.expense.ex_returned_reason} · แก้แล้วส่งใหม่ได้ (เริ่มอนุมัติชั้น 1 ใหม่)
                     </StatusBanner>
                 )}
 
@@ -441,7 +441,7 @@ export default function ExpenseForm({ options, detail }: ExpenseFormProps) {
                                 loadOptions={(search) => loadVendorOptions(search, vendorOption)}
                                 value={form.ex_vendor_id}
                                 onChange={(value) => changeVendor(value)}
-                                placeholder="— เลือกผู้ขาย —"
+                                placeholder="เลือกผู้ขาย"
                                 error={Boolean(fieldErrors.ex_vendor_id)}
                             />
                         </FormField>
@@ -661,7 +661,7 @@ export default function ExpenseForm({ options, detail }: ExpenseFormProps) {
                                                     Boolean(fieldErrors[`${prefix}.exl_category_id`]),
                                                 )}
                                             >
-                                                <option value="">— เลือกหมวด —</option>
+                                                <option value="">เลือกหมวด</option>
                                                 {activeCategories(line.exl_category_id).map((category) => (
                                                     <option key={category.ec_id} value={category.ec_id}>
                                                         {category.ec_name_th}
@@ -778,7 +778,7 @@ export default function ExpenseForm({ options, detail }: ExpenseFormProps) {
                                 className="sm:max-w-xs"
                                 hint={
                                     calculation.isVatDifferent
-                                        ? `ต่างจาก ${officialVatRate}% ของยอดก่อน VAT (${formatAmount(calculation.suggestedVat, decimals)}) เกิน 1 — ตรวจกับเอกสารอีกครั้ง`
+                                        ? `ต่างจาก ${officialVatRate}% ของยอดก่อน VAT (${formatAmount(calculation.suggestedVat, decimals)}) เกิน 1 · ตรวจกับเอกสารอีกครั้ง`
                                         : `${officialVatRate}% ของยอดก่อน VAT = ${formatAmount(calculation.suggestedVat, decimals)}`
                                 }
                             >
@@ -816,7 +816,7 @@ export default function ExpenseForm({ options, detail }: ExpenseFormProps) {
                                 isForeignVendor
                                     ? EXPENSE_MESSAGES.withholdingForeign
                                     : calculation.isBelowWithholdingMinimum
-                                      ? `ยอดก่อน VAT ต่ำกว่าเกณฑ์ ${formatAmount(selectedIncomeType?.current_rate?.wr_min_payment ?? "0")} บาท — ระบบเสนอไม่หัก`
+                                      ? `ยอดก่อน VAT ต่ำกว่าเกณฑ์ ${formatAmount(selectedIncomeType?.current_rate?.wr_min_payment ?? "0")} บาท · ระบบเสนอไม่หัก`
                                       : EXPENSE_MESSAGES.withholding
                             }
                         >
@@ -847,7 +847,7 @@ export default function ExpenseForm({ options, detail }: ExpenseFormProps) {
                 <SectionCard icon={Paperclip} title="ไฟล์แนบ" description={EXPENSE_MESSAGES.attachments}>
                     <div className="grid gap-3">
                         {existingCount > 0 && (
-                            <FieldHint>มีไฟล์แนบแล้ว {existingCount} ไฟล์ — ดู/ลบได้ที่หน้ารายการ</FieldHint>
+                            <FieldHint>มีไฟล์แนบแล้ว {existingCount} ไฟล์ · ดู/ลบได้ที่หน้ารายการ</FieldHint>
                         )}
                         {pendingFiles.length > 0 && (
                             <ul className="grid gap-2">

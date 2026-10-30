@@ -83,7 +83,7 @@ async function revokeSignature(conn, userId, revokedBy) {
         throw new AppError(
             404,
             "NO_ACTIVE_SIGNATURE",
-            "ผู้ใช้นี้ไม่มีลายเซ็นที่ใช้งานอยู่ อาจถูกยกเลิกไปแล้ว — โหลดหน้าใหม่",
+            "ผู้ใช้นี้ไม่มีลายเซ็นที่ใช้งานอยู่ อาจถูกยกเลิกไปแล้ว · โหลดหน้าใหม่",
         );
     }
 }
@@ -106,7 +106,7 @@ async function readSignatureFile(conn, signatureId) {
     try {
         return await fs.readFile(path.join(storageDir(), path.basename(signature.sig_file_path)));
     } catch {
-        throw new AppError(404, "SIGNATURE_FILE_MISSING", "ไม่พบไฟล์ลายเซ็นในเซิร์ฟเวอร์ — แจ้งผู้ดูแลระบบ");
+        throw new AppError(404, "SIGNATURE_FILE_MISSING", "ไม่พบไฟล์ลายเซ็นในเซิร์ฟเวอร์ · แจ้งผู้ดูแลระบบ");
     }
 }
 

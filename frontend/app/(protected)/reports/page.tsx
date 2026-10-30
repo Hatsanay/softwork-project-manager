@@ -221,7 +221,7 @@ function AccountingExportCard({ today }: { today: string }) {
         const blob = await apiFetchBlob(`/reports/accounting-export?month=${encodeURIComponent(exportMonth)}`);
         setIsDownloading(false);
         if (!blob) {
-            setDownloadError("ดาวน์โหลดไม่สำเร็จ — ตรวจเดือนที่เลือก แล้วลองใหม่ (ถ้ายังไม่ได้ ให้แจ้งผู้ดูแลระบบ)");
+            setDownloadError("ดาวน์โหลดไม่สำเร็จ · ตรวจเดือนที่เลือก แล้วลองใหม่ (ถ้ายังไม่ได้ ให้แจ้งผู้ดูแลระบบ)");
             return;
         }
         const url = URL.createObjectURL(blob);
@@ -263,7 +263,7 @@ function AccountingExportCard({ today }: { today: string }) {
             </div>
             {downloadError && <p className="text-xs text-red-600">{downloadError}</p>}
             <FieldHint>
-                ใบเสร็จย้อนวันที่ได้ 30 วัน และยกเลิกเอกสารทีหลังได้ — ตัวเลขของเดือนก่อนอาจเปลี่ยนได้จนถึงวันที่ 30
+                ใบเสร็จย้อนวันที่ได้ 30 วัน และยกเลิกเอกสารทีหลังได้ · ตัวเลขของเดือนก่อนอาจเปลี่ยนได้จนถึงวันที่ 30
                 ของเดือนถัดไป ถ้าแก้ย้อนหลังให้ส่งออกใหม่ · ไฟล์มีเลขผู้เสียภาษีของลูกค้า ระบบบันทึกทุกครั้งที่ดาวน์โหลด
             </FieldHint>
         </SectionCard>
@@ -335,7 +335,7 @@ export default function ReportsPage() {
         <div className="grid grid-cols-1 gap-6">
             <PageHeader
                 title="รายงานขาย"
-                description="ยอดขาย = ยอดก่อน VAT ของใบแจ้งหนี้ที่ออกในช่วง (ไม่นับใบที่ยกเลิก) · รับชำระ = ตามวันที่ในใบเสร็จ · ทุกยอดเป็นบาท — สกุลต่างประเทศคิดตามอัตราของเอกสาร"
+                description="ยอดขาย = ยอดก่อน VAT ของใบแจ้งหนี้ที่ออกในช่วง (ไม่นับใบที่ยกเลิก) · รับชำระ = ตามวันที่ในใบเสร็จ · ทุกยอดเป็นบาท · สกุลต่างประเทศคิดตามอัตราของเอกสาร"
             />
 
             <div className="grid gap-3">
@@ -409,7 +409,7 @@ export default function ReportsPage() {
                         value={formatAmount(summary.quotations.accepted_thb)}
                         detail={`${summary.quotations.accepted_count} ใบ · ปิดการขายได้ ${
                             summary.quotations.win_rate_percent === null
-                                ? "—"
+                                ? "-"
                                 : `${summary.quotations.win_rate_percent}%`
                         } (ปฏิเสธ ${summary.quotations.declined_count} · หมดอายุ ${summary.quotations.expired_count})`}
                     />

@@ -123,14 +123,14 @@ async function downloadWhtFile(req, res, next) {
     try {
         const { storedPath, fileName } = await receiptService.findWhtFile(pool, req.params.id);
         const fullPath = resolvePrivateFile(storedPath);
-        if (!fullPath) throw new AppError(404, "WHT_FILE_MISSING", "ไม่พบไฟล์ 50 ทวิ บนเซิร์ฟเวอร์ — แนบไฟล์ใหม่");
+        if (!fullPath) throw new AppError(404, "WHT_FILE_MISSING", "ไม่พบไฟล์ 50 ทวิ บนเซิร์ฟเวอร์ · แนบไฟล์ใหม่");
         res.setHeader("Content-Type", contentTypeOf(storedPath));
         res.setHeader("Cache-Control", "private, no-store");
         res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(fileName ?? "50-tawi")}`);
         res.sendFile(fullPath, (err) => {
             if (!err) return;
             if (err.code === "ENOENT") {
-                next(new AppError(404, "WHT_FILE_MISSING", "ไม่พบไฟล์ 50 ทวิ บนเซิร์ฟเวอร์ — แนบไฟล์ใหม่"));
+                next(new AppError(404, "WHT_FILE_MISSING", "ไม่พบไฟล์ 50 ทวิ บนเซิร์ฟเวอร์ · แนบไฟล์ใหม่"));
                 return;
             }
             next(err);

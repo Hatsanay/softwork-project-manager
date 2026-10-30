@@ -51,7 +51,7 @@ export default function EditExpensePage() {
             )}
             {isNotDraft && (
                 <StatusBanner tone="warn" title="รายการนี้แก้ไขไม่ได้">
-                    แก้ได้เฉพาะร่างที่คุณมีสิทธิ์บันทึก — กลับไปที่หน้ารายการเพื่อดูสถานะล่าสุด
+                    แก้ได้เฉพาะร่างที่คุณมีสิทธิ์บันทึก · กลับไปที่หน้ารายการเพื่อดูสถานะล่าสุด
                 </StatusBanner>
             )}
             {expenseId && !error && (!detail || !options) && <PageSkeleton />}

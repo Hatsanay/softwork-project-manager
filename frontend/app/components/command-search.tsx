@@ -129,7 +129,7 @@ export default function CommandSearch({ open, onClose }: { open: boolean; onClos
                 role="dialog"
                 aria-modal="true"
                 aria-label="ค้นหาโปรเจกต์และงาน"
-                className="w-full max-w-xl overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-float"
+                className="w-full max-w-2xl overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-float"
                 onClick={(event) => event.stopPropagation()}
                 onKeyDown={handleKeyDown}
             >

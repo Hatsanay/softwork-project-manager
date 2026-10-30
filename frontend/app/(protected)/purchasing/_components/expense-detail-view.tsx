@@ -33,7 +33,7 @@ import { PageSkeleton } from "@/components/ui/skeleton";
 import { buttonClass } from "@/components/ui/button";
 import formatDate, { formatDateOnly } from "@/app/function";
 import { apiFetch, apiFetchBlob, type ApiError } from "@/lib/api";
-import { formatAmount, parseHundredths } from "@/lib/shared/money.mjs";
+import { formatAmount, formatQuantity, parseHundredths } from "@/lib/shared/money.mjs";
 import { displayRate } from "../../sales/quotations/_format";
 import { whtFormLabel } from "../_messages";
 import {
@@ -198,7 +198,7 @@ export default function ExpenseDetailView({ kind }: { kind: ExpenseKind }) {
             <PageHeader
                 eyebrow={`${config.eyebrow} · ${expenseNumberLabel(expense)}`}
                 title={expense.ex_title}
-                description={`${kind === "claim" ? `ผู้เบิก ${expense.employee_name ?? "—"}` : (expense.vd_name ?? "—")} · สาขา ${expense.branch_code} ${expense.branch_name_th}`}
+                description={`${kind === "claim" ? `ผู้เบิก ${expense.employee_name ?? "-"}` : (expense.vd_name ?? "-")} · สาขา ${expense.branch_code} ${expense.branch_name_th}`}
                 actions={
                     <div className="flex flex-wrap items-center gap-1.5">
                         <StatusPill tone={status.tone}>{status.label}</StatusPill>
@@ -225,7 +225,7 @@ export default function ExpenseDetailView({ kind }: { kind: ExpenseKind }) {
                             </Link>
                         </span>
                     ))}{" "}
-                    — ตรวจว่าไม่ใช่บิลเดียวกัน (ใส่เลขที่เอกสารของผู้ขายเพื่อให้ระบบกันซ้ำได้)
+ตรวจว่าไม่ใช่บิลเดียวกัน (ใส่เลขที่เอกสารของผู้ขายเพื่อให้ระบบกันซ้ำได้)
                 </StatusBanner>
             )}
 
@@ -403,7 +403,7 @@ export default function ExpenseDetailView({ kind }: { kind: ExpenseKind }) {
                                     {displayRate(expense.ex_exchange_rate)} บาท/{code} (
                                     {expense.ex_rate_source === "bot"
                                         ? `ธปท. ${formatDateOnly(expense.ex_rate_date)}`
-                                        : `กรอกเอง — ${expense.ex_rate_override_reason ?? ""}`}
+                                        : `กรอกเอง · ${expense.ex_rate_override_reason ?? ""}`}
                                     )
                                 </dd>
                             </div>
@@ -428,7 +428,7 @@ export default function ExpenseDetailView({ kind }: { kind: ExpenseKind }) {
                                     <span className="text-gray-900">{formatAmount(line.exl_amount, decimals)}</span>
                                     {Number(line.exl_quantity) !== 1 && (
                                         <span className="text-xs text-gray-500">
-                                            {Number(line.exl_quantity)} × {formatAmount(line.exl_unit_price, decimals)}
+                                            {formatQuantity(line.exl_quantity)} × {formatAmount(line.exl_unit_price, decimals)}
                                         </span>
                                     )}
                                 </div>
@@ -455,7 +455,7 @@ export default function ExpenseDetailView({ kind }: { kind: ExpenseKind }) {
                         {checks.is_vat_different && (
                             <p className="text-xs text-amber-600">
                                 VAT ต่างจาก {Number(checks.official_vat_rate)}% ของยอดก่อน VAT (
-                                {formatAmount(checks.suggested_vat, decimals)}) เกิน 1 — ตรวจกับเอกสารผู้ขาย
+                                {formatAmount(checks.suggested_vat, decimals)}) เกิน 1 · ตรวจกับเอกสารผู้ขาย
                             </p>
                         )}
                         {hasWithholding && (
@@ -475,7 +475,7 @@ export default function ExpenseDetailView({ kind }: { kind: ExpenseKind }) {
                         )}
                         {!hasWithholding && checks.is_below_wht_minimum && (
                             <FieldHint>
-                                ยอดต่ำกว่าเกณฑ์หัก ณ ที่จ่าย {formatAmount(checks.wht_min_payment ?? "0")} บาท — ไม่หัก
+                                ยอดต่ำกว่าเกณฑ์หัก ณ ที่จ่าย {formatAmount(checks.wht_min_payment ?? "0")} บาท · ไม่หัก
                             </FieldHint>
                         )}
                         {expense.ex_currency !== "THB" && (
@@ -498,7 +498,7 @@ export default function ExpenseDetailView({ kind }: { kind: ExpenseKind }) {
                         </div>
                     )}
                     <p className="text-xs text-gray-500">
-                        บันทึกโดย {expense.ex_created_by_name ?? "—"} · {formatDate(expense.ex_created_at)}
+                        บันทึกโดย {expense.ex_created_by_name ?? "-"} · {formatDate(expense.ex_created_at)}
                     </p>
                 </section>
 
@@ -567,7 +567,7 @@ export default function ExpenseDetailView({ kind }: { kind: ExpenseKind }) {
                 loading={isWorking}
                 errorMessage={actionError}
                 onConfirm={() =>
-                    runAction(`${base}/copy`, {}, () => "สร้างร่างใหม่แล้ว — ใส่เลขเอกสารของบิลใหม่", {
+                    runAction(`${base}/copy`, {}, () => "สร้างร่างใหม่แล้ว · ใส่เลขเอกสารของบิลใหม่", {
                         navigateTo: (data) => `${config.pagePath}/edit?id=${data.ex_id}`,
                     })
                 }
@@ -659,7 +659,7 @@ function AttachmentsCard({ detail, onChanged, apiBase, hint }: AttachmentsCardPr
         const blob = await apiFetchBlob(`${apiBase}/${expense.ex_id}/attachments/${attachment.exf_id}`);
         if (!blob) {
             viewer?.close();
-            setFileError("เปิดไฟล์ไม่สำเร็จ — ไฟล์อาจหายจากเซิร์ฟเวอร์ ลองแนบใหม่");
+            setFileError("เปิดไฟล์ไม่สำเร็จ · ไฟล์อาจหายจากเซิร์ฟเวอร์ ลองแนบใหม่");
             return;
         }
         const url = URL.createObjectURL(blob);
@@ -771,7 +771,7 @@ function PaymentsCard({ detail, kind }: { detail: ExpenseDetail; kind: ExpenseKi
             <h2 className="text-base font-medium text-gray-900">{title}</h2>
             {payments.length === 0 ? (
                 <p className="text-gray-500">
-                    {kind === "claim" ? "ยังไม่ได้รับเงินคืน — รอฝ่ายบัญชีทำจ่าย" : "ยังไม่ได้จ่าย"} · ค้าง{" "}
+                    {kind === "claim" ? "ยังไม่ได้รับเงินคืน · รอฝ่ายบัญชีทำจ่าย" : "ยังไม่ได้จ่าย"} · ค้าง{" "}
                     {formatAmount(expense.outstanding_amount, currency.cur_decimals)} {currency.cur_code}
                 </p>
             ) : (
@@ -816,7 +816,7 @@ function ApprovalProgress({ detail, approvalMessage }: { detail: ExpenseDetail; 
             <section className={`grid gap-2 p-5 ${CARD_CLASS}`}>
                 <h2 className="text-base font-medium text-gray-900">การอนุมัติ</h2>
                 <p className="text-sm text-gray-600">
-                    ผ่านอัตโนมัติ — ยอดก่อน VAT ต่ำกว่าวงเงินที่ต้องอนุมัติ
+                    ผ่านอัตโนมัติ · ยอดก่อน VAT ต่ำกว่าวงเงินที่ต้องอนุมัติ
                     {expense.ex_approved_at ? ` · ${formatDate(expense.ex_approved_at)}` : ""}
                 </p>
             </section>
@@ -855,7 +855,7 @@ function ApprovalProgress({ detail, approvalMessage }: { detail: ExpenseDetail; 
                                             ? `อนุมัติโดย ${approved.expa_user_name} · ${formatDate(approved.expa_created_at)}`
                                             : isWaiting
                                               ? "รออนุมัติชั้นนี้"
-                                              : "—"}
+                                              : "-"}
                                     </span>
                                 </div>
                             </li>
@@ -894,7 +894,7 @@ function ClaimantCard({ detail }: { detail: ExpenseDetail }) {
     return (
         <section className={`grid gap-1 p-5 text-sm ${CARD_CLASS}`}>
             <h2 className="text-base font-medium text-gray-900">ผู้เบิก</h2>
-            <p className="text-gray-800">{expense.employee_name ?? "—"}</p>
+            <p className="text-gray-800">{expense.employee_name ?? "-"}</p>
             <p className="text-xs text-gray-500">{CLAIM_MESSAGES.payee}</p>
             {expense.ex_merchant_name && (
                 <p className="mt-2 text-xs text-gray-500">ร้านค้าตามใบเสร็จ: {expense.ex_merchant_name}</p>
@@ -951,13 +951,13 @@ function StatusGuide({ detail, config }: { detail: ExpenseDetail; config: (typeo
         case "draft":
             if (expense.ex_returned_reason) {
                 return (
-                    <StatusBanner tone="warn" title="ถูกตีกลับ — แก้แล้วส่งใหม่">
+                    <StatusBanner tone="warn" title="ถูกตีกลับ · แก้แล้วส่งใหม่">
                         เหตุผล: {expense.ex_returned_reason}
                     </StatusBanner>
                 );
             }
             return (
-                <StatusBanner tone="info" title="ร่าง — ยังไม่มีเลขที่">
+                <StatusBanner tone="info" title="ร่าง · ยังไม่มีเลขที่">
                     แก้ได้ทุกช่อง · {config.approval}
                 </StatusBanner>
             );
@@ -967,7 +967,7 @@ function StatusGuide({ detail, config }: { detail: ExpenseDetail; config: (typeo
                     <StatusBanner tone="wait" title={`รอคุณอนุมัติชั้น ${expense.ex_approval_current_level}`}>
                         กดอนุมัติแล้วจะผ่านชั้น {approval.levels.join(", ")}
                         {approval.isFinal
-                            ? ` ซึ่งเป็นชั้นสุดท้าย — ได้เลข ${config.numberPrefix} และเข้ารายการรอจ่าย`
+                            ? ` ซึ่งเป็นชั้นสุดท้าย · ได้เลข ${config.numberPrefix} และเข้ารายการรอจ่าย`
                             : ` · ${approval.stopReason ?? ""}`}
                     </StatusBanner>
                 );
@@ -997,7 +997,7 @@ function StatusGuide({ detail, config }: { detail: ExpenseDetail; config: (typeo
             return (
                 <StatusBanner
                     tone="done"
-                    title={`อนุมัติแล้ว — รอจ่าย ครบกำหนด ${formatDateOnly(expense.ex_due_date)}`}
+                    title={`อนุมัติแล้ว · รอจ่าย ครบกำหนด ${formatDateOnly(expense.ex_due_date)}`}
                 >
                     อยู่ในรายการรอจ่าย (เมนูทำจ่ายเปิดใช้ในรอบถัดไป) · แก้ไขไม่ได้แล้ว ถ้าผิดให้ยกเลิกแล้วบันทึกใหม่
                 </StatusBanner>

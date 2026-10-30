@@ -40,7 +40,7 @@ function cleanRate(value) {
 async function requestBotRates({ currency, startDate, endDate }) {
     const apiKey = process.env.BOT_API_KEY?.trim();
     if (!apiKey) {
-        throw new BotRateError("NO_API_KEY", "ยังไม่ได้ตั้งคีย์ API ของ ธปท. — กรอกอัตราเองได้");
+        throw new BotRateError("NO_API_KEY", "ยังไม่ได้ตั้งคีย์ API ของ ธปท. · กรอกอัตราเองได้");
     }
 
     const url = new URL(process.env.BOT_API_URL?.trim() || DEFAULT_BOT_API_URL);
@@ -56,21 +56,21 @@ async function requestBotRates({ currency, startDate, endDate }) {
         });
     } catch (err) {
         if (err?.name === "TimeoutError") {
-            throw new BotRateError("BOT_TIMEOUT", "ธปท. ตอบช้าเกิน 5 วินาที — ลองใหม่ภายหลัง หรือกรอกอัตราเอง");
+            throw new BotRateError("BOT_TIMEOUT", "ธปท. ตอบช้าเกิน 5 วินาที · ลองใหม่ภายหลัง หรือกรอกอัตราเอง");
         }
-        throw new BotRateError("BOT_UNREACHABLE", "เชื่อมต่อ ธปท. ไม่ได้ — ลองใหม่ภายหลัง หรือกรอกอัตราเอง");
+        throw new BotRateError("BOT_UNREACHABLE", "เชื่อมต่อ ธปท. ไม่ได้ · ลองใหม่ภายหลัง หรือกรอกอัตราเอง");
     }
 
     if (response.status === 401 || response.status === 403) {
         throw new BotRateError(
             "BOT_REJECTED",
-            "ธปท. ไม่รับคีย์ API (คีย์ผิดหรือหมดอายุ) — แจ้งผู้ดูแลระบบ ระหว่างนี้กรอกอัตราเองได้",
+            "ธปท. ไม่รับคีย์ API (คีย์ผิดหรือหมดอายุ) · แจ้งผู้ดูแลระบบ ระหว่างนี้กรอกอัตราเองได้",
         );
     }
     if (!response.ok) {
         throw new BotRateError(
             "BOT_UNREACHABLE",
-            `ธปท. ตอบกลับผิดปกติ (HTTP ${response.status}) — ลองใหม่ภายหลัง หรือกรอกอัตราเอง`,
+            `ธปท. ตอบกลับผิดปกติ (HTTP ${response.status}) · ลองใหม่ภายหลัง หรือกรอกอัตราเอง`,
         );
     }
 
@@ -84,7 +84,7 @@ async function requestBotRates({ currency, startDate, endDate }) {
     if (!Array.isArray(details)) {
         throw new BotRateError(
             "BOT_BAD_RESPONSE",
-            "ข้อมูลจาก ธปท. ไม่อยู่ในรูปแบบที่รู้จัก — แจ้งผู้ดูแลระบบ ระหว่างนี้กรอกอัตราเองได้",
+            "ข้อมูลจาก ธปท. ไม่อยู่ในรูปแบบที่รู้จัก · แจ้งผู้ดูแลระบบ ระหว่างนี้กรอกอัตราเองได้",
         );
     }
 

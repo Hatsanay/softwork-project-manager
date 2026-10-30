@@ -420,7 +420,7 @@ async function deleteEmployee(conn, employeeId) {
         throw new AppError(
             409,
             "EMPLOYEE_HAS_HISTORY",
-            `ลบพนักงานนี้ไม่ได้ เพราะมีลงเวลาแล้ว ${weekCount} สัปดาห์ — ใช้ "ตั้งพ้นสภาพ" แทน (ประวัติยังอยู่ครบ)`,
+            `ลบพนักงานนี้ไม่ได้ เพราะมีลงเวลาแล้ว ${weekCount} สัปดาห์ · ใช้ "ตั้งพ้นสภาพ" แทน (ประวัติยังอยู่ครบ)`,
         );
     }
     const [[{ payrollCount }]] = await conn.query(
@@ -431,7 +431,7 @@ async function deleteEmployee(conn, employeeId) {
         throw new AppError(
             409,
             "EMPLOYEE_HAS_HISTORY",
-            `ลบพนักงานนี้ไม่ได้ เพราะอยู่ในรอบเงินเดือนแล้ว ${payrollCount} รอบ — ใช้ "ตั้งพ้นสภาพ" แทน (ประวัติยังอยู่ครบ)`,
+            `ลบพนักงานนี้ไม่ได้ เพราะอยู่ในรอบเงินเดือนแล้ว ${payrollCount} รอบ · ใช้ "ตั้งพ้นสภาพ" แทน (ประวัติยังอยู่ครบ)`,
         );
     }
     const [[{ leaveCount }]] = await conn.query(
@@ -442,7 +442,7 @@ async function deleteEmployee(conn, employeeId) {
         throw new AppError(
             409,
             "EMPLOYEE_HAS_HISTORY",
-            `ลบพนักงานนี้ไม่ได้ เพราะมีคำขอลาแล้ว ${leaveCount} ใบ — ใช้ "ตั้งพ้นสภาพ" แทน (ประวัติยังอยู่ครบ)`,
+            `ลบพนักงานนี้ไม่ได้ เพราะมีคำขอลาแล้ว ${leaveCount} ใบ · ใช้ "ตั้งพ้นสภาพ" แทน (ประวัติยังอยู่ครบ)`,
         );
     }
     await conn.query("DELETE FROM tb_employees WHERE emp_id = ?", [employeeId]);
@@ -532,7 +532,7 @@ async function addCompensation(conn, employeeId, compensation, actor) {
     const effectiveFrom = compensation.ecm_effective_from;
     if (effectiveFrom <= employee.emp_hire_date) {
         throw validationError({
-            ecm_effective_from: "ต้องหลังวันเริ่มงาน — ถ้าเงินเดือนเริ่มงานผิด ให้กดแก้ที่แถวเงินเดือนเริ่มงาน",
+            ecm_effective_from: "ต้องหลังวันเริ่มงาน · ถ้าเงินเดือนเริ่มงานผิด ให้กดแก้ที่แถวเงินเดือนเริ่มงาน",
         });
     }
     if (employee.emp_termination_date && effectiveFrom > employee.emp_termination_date) {
@@ -587,7 +587,7 @@ async function deleteCompensation(conn, employeeId, effectiveFrom) {
         throw new AppError(
             409,
             "FIRST_COMPENSATION_LOCKED",
-            "ลบเงินเดือนเริ่มงานไม่ได้ (ต้องมีเงินเดือนตั้งแต่วันแรกเสมอ) — ถ้าตัวเลขผิด ให้กดแก้ที่แถวนั้นแทน",
+            "ลบเงินเดือนเริ่มงานไม่ได้ (ต้องมีเงินเดือนตั้งแต่วันแรกเสมอ) · ถ้าตัวเลขผิด ให้กดแก้ที่แถวนั้นแทน",
         );
     }
     const [result] = await conn.query(
@@ -755,7 +755,7 @@ async function moveFirstCompensation(conn, existing, newHireDate) {
     const [first, second] = rows;
     if (second && newHireDate >= second.ecm_effective_from) {
         throw validationError({
-            emp_hire_date: `วันเริ่มงานต้องก่อนอัตราเงินเดือนถัดไป (มีผล ${second.ecm_effective_from}) — ลบอัตรานั้นก่อนถ้าจะเลื่อน`,
+            emp_hire_date: `วันเริ่มงานต้องก่อนอัตราเงินเดือนถัดไป (มีผล ${second.ecm_effective_from}) · ลบอัตรานั้นก่อนถ้าจะเลื่อน`,
         });
     }
     if (!first) return;

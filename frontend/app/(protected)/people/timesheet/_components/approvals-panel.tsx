@@ -40,8 +40,8 @@ export default function ApprovalsPanel({
         }
         toast.success(
             data.is_fully_approved
-                ? `อนุมัติ ${data.approved_rows} แถว — สัปดาห์นี้อนุมัติครบแล้ว`
-                : `อนุมัติ ${data.approved_rows} แถว — รอผู้อนุมัติโปรเจกต์อื่น`,
+                ? `อนุมัติ ${data.approved_rows} แถว · สัปดาห์นี้อนุมัติครบแล้ว`
+                : `อนุมัติ ${data.approved_rows} แถว · รอผู้อนุมัติโปรเจกต์อื่น`,
         );
         await onChanged();
     }

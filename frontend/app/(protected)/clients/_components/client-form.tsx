@@ -336,7 +336,7 @@ export default function ClientForm({ client }: ClientFormProps) {
             <SectionCard
                 icon={Settings2}
                 title="ค่าเริ่มต้นของเอกสารขาย"
-                description="เติมให้อัตโนมัติตอนสร้างใบเสนอราคาให้ลูกค้านี้ — เปลี่ยนในแต่ละใบได้"
+                description="เติมให้อัตโนมัติตอนสร้างใบเสนอราคาให้ลูกค้านี้ · เปลี่ยนในแต่ละใบได้"
             >
                 <div className="grid gap-4 sm:grid-cols-2">
                     <FormField
@@ -417,7 +417,7 @@ export default function ClientForm({ client }: ClientFormProps) {
                 </div>
                 {form.client_vat_treatment === "zero" && isThai && (
                     <StatusBanner tone="warn" title="ลูกค้าในไทยแต่เลือก VAT 0%">
-                        VAT 0% ใช้กับการส่งออกบริการไปต่างประเทศเป็นหลัก ลูกค้าในไทยปกติใช้แบบปกติ —
+                        VAT 0% ใช้กับการส่งออกบริการไปต่างประเทศเป็นหลัก ลูกค้าในไทยปกติใช้แบบปกติ
                         ตรวจกับนักบัญชีก่อนบันทึก
                     </StatusBanner>
                 )}

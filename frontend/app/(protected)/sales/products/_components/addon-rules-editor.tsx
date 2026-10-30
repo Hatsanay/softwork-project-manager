@@ -34,9 +34,9 @@ export default function AddonRulesEditor({
         .map((product) => ({ value: product.product_id, label: product.product_name }));
 
     return (
-        <section className="grid gap-2 rounded-xl border border-gray-200 p-3" aria-labelledby="addon-rules-title">
+        <section className="grid gap-2" aria-labelledby="addon-rules-title">
             <h3 id="addon-rules-title" className="text-sm font-medium text-gray-900">
-                งานเพิ่มที่เกี่ยวกับชุดนี้ (หน้าร้าน)
+                งานเพิ่มที่เกี่ยวกับชุดนี้
             </h3>
             {rules.length > 0 && (
                 <ul className="grid gap-2">

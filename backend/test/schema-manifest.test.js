@@ -6,7 +6,7 @@ const { findMissingColumns } = require("../src/utils/schema-check");
 
 test("src/schema-manifest.json ตรงกับ deploy_schema.sql ล่าสุด", () => {
     const committed = fs.readFileSync(MANIFEST_PATH, "utf8").replace(/\r\n/g, "\n");
-    assert.equal(committed, buildManifestText(), "deploy_schema.sql เปลี่ยนแล้วแต่ยังไม่ได้สร้าง manifest ใหม่ — รัน `npm run schema:manifest`");
+    assert.equal(committed, buildManifestText(), "deploy_schema.sql เปลี่ยนแล้วแต่ยังไม่ได้สร้าง manifest ใหม่ · รัน `npm run schema:manifest`");
 });
 
 test("อ่านเฉพาะชื่อคอลัมน์ ข้ามบรรทัด KEY/CONSTRAINT", () => {

@@ -68,7 +68,7 @@ export default function SummaryPanel({ totals, vatRate, currency, language, appr
             {totals.belowList.lineCount > 0 && (
                 <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-600">
                     {totals.belowList.lineCount} รายการต่ำกว่าราคาตั้งต้น รวม −
-                    {formatAmount(totals.belowList.amount, decimals)} {code} — ผู้อนุมัติจะเห็น
+                    {formatAmount(totals.belowList.amount, decimals)} {code} · ผู้อนุมัติจะเห็น
                 </p>
             )}
 

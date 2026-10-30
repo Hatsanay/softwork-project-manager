@@ -187,7 +187,7 @@ async function deleteVendor(conn, vendorId) {
         throw new AppError(
             409,
             "VENDOR_IN_USE",
-            `ลบผู้ขายนี้ไม่ได้ เพราะมีค่าใช้จ่าย ${expenseCount} รายการ (รวมร่าง) — ถ้าไม่ใช้แล้วให้เปลี่ยนสถานะเป็น "ปิดใช้งาน" แทน`,
+            `ลบผู้ขายนี้ไม่ได้ เพราะมีค่าใช้จ่าย ${expenseCount} รายการ (รวมร่าง) · ถ้าไม่ใช้แล้วให้เปลี่ยนสถานะเป็น "ปิดใช้งาน" แทน`,
         );
     }
     await conn.query("DELETE FROM tb_vendors WHERE vd_id = ?", [vendorId]);

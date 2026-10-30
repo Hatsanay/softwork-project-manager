@@ -76,7 +76,7 @@ export default function CorrectionSheet({
                 noValidate
                 onSubmit={submit}
                 onClick={(event) => event.stopPropagation()}
-                className="grid max-h-[92dvh] w-full max-w-lg gap-4 overflow-y-auto rounded-t-2xl bg-white p-5 shadow-float sm:rounded-2xl"
+                className="grid max-h-[92dvh] w-full max-w-3xl gap-4 overflow-y-auto rounded-t-2xl bg-white p-5 sm:p-6 shadow-float sm:rounded-2xl"
             >
                 <div className="flex items-start justify-between gap-3">
                     <h2 id="correction-title" className="text-base font-medium text-gray-900">

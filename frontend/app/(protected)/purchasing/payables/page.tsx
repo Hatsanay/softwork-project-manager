@@ -68,7 +68,7 @@ export default function PayablesPage() {
                     href={`/purchasing/payables/payee?kind=${row.payee_kind}&id=${row.payee_id}`}
                     className="-my-2 grid min-w-0 gap-0.5 py-2 text-left"
                 >
-                    <span className="font-medium text-gray-800 hover:text-blue-600">{row.payee_name ?? "—"}</span>
+                    <span className="font-medium text-gray-800 hover:text-blue-600">{row.payee_name ?? "-"}</span>
                     <span className="text-xs text-gray-500">
                         {row.payee_kind === "employee" ? "พนักงาน (เบิกเงิน)" : "ผู้ขาย"} · {row.expense_count} รายการ
                         {row.oldest_days_overdue > 0 ? ` · เกินนานสุด ${row.oldest_days_overdue} วัน` : ""}
@@ -84,6 +84,7 @@ export default function PayablesPage() {
         })),
         {
             key: "total",
+            mobile: "trailing",
             header: "รวม (บาท)",
             className: "text-right",
             render: (_, row) => (

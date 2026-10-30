@@ -62,7 +62,7 @@ test("ลดบางส่วน: VAT ตามอัตราใบเดิ�
     assert.equal(result.refundRequired, 0n);
 });
 
-test("R-N4: ลด 3 ใบ × 3,333.33 แล้วใบสุดท้ายปิดใบ — ผลรวม VAT/บาท/หัก เท่ายอดใบเดิมพอดีทุกสตางค์", () => {
+test("R-N4: ลด 3 ใบ × 3,333.33 แล้วใบสุดท้ายปิดใบ · ผลรวม VAT/บาท/หัก เท่ายอดใบเดิมพอดีทุกสตางค์", () => {
     let credited = ZERO_CREDITED;
     for (const amount of [333_333n, 333_333n]) {
         const result = calculateCreditNote({

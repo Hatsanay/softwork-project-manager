@@ -9,7 +9,7 @@ test("สตริงสิทธิ์ที่ยาวเท่าจำน�
     assert.equal(isValidPermissionString("0".repeat(BIT_COUNT)), true);
 });
 
-test("สตริงสิทธิ์ที่สั้นกว่า (หน้าเว็บเวอร์ชันเก่า) ถูกปฏิเสธ — ไม่งั้นสิทธิ์ใหม่จะหายเงียบๆ", () => {
+test("สตริงสิทธิ์ที่สั้นกว่า (หน้าเว็บเวอร์ชันเก่า) ถูกปฏิเสธ · ไม่งั้นสิทธิ์ใหม่จะหายเงียบๆ", () => {
     assert.equal(isValidPermissionString("1".repeat(BIT_COUNT - 1)), false);
 });
 
@@ -20,7 +20,7 @@ test("สตริงสิทธิ์ที่ยาวเกิน หรื�
     assert.equal(isValidPermissionString(Number("1".repeat(BIT_COUNT))), false);
 });
 
-test("role เก่าที่สตริงสั้นกว่าถูกเติม 0 — ไม่ได้สิทธิ์ใหม่โดยอัตโนมัติ", () => {
+test("role เก่าที่สตริงสั้นกว่าถูกเติม 0 · ไม่ได้สิทธิ์ใหม่โดยอัตโนมัติ", () => {
     const normalized = normalizePermissionString("111");
     assert.equal(normalized.length, BIT_COUNT);
     assert.equal(normalized, "111" + "0".repeat(BIT_COUNT - 3));

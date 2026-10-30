@@ -89,6 +89,7 @@ export default function InvoicesPage() {
         },
         {
             key: "client_name",
+            mobile: "meta",
             header: "ลูกค้า",
             render: (_, row) => (
                 <div className="grid min-w-0 gap-0.5">
@@ -105,6 +106,7 @@ export default function InvoicesPage() {
         },
         {
             key: "inv_total",
+            mobile: "trailing",
             header: "ยอดรวม",
             className: "text-right tabular-nums",
             render: (_, row) => (
@@ -120,6 +122,7 @@ export default function InvoicesPage() {
         },
         {
             key: "inv_status",
+            mobile: "badge",
             header: "สถานะ",
             render: (_, row) => {
                 const due = dueLabel(row);
@@ -144,6 +147,7 @@ export default function InvoicesPage() {
         },
         {
             key: "inv_issue_date",
+            mobile: "meta",
             header: "วันที่ / ครบกำหนด",
             render: (_, row) =>
                 row.inv_issue_date ? (

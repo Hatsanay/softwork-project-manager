@@ -145,9 +145,10 @@ export default function ProjectsPage() {
 
     const columns: Column<Project>[] = [
         { key: "project_name", header: "ชื่อโปรเจกต์" },
-        { key: "client_name",  header: "ลูกค้า", render: (v) => (v as string) || "-" },
+        { key: "client_name", mobile: "meta", header: "ลูกค้า", render: (v) => (v as string) || "-" },
         {
             key: "project_status",
+            mobile: "badge",
             header: "สถานะ",
             render: (v) => (
                 <StatusPill tone={STATUS_TONE[v as Project["project_status"]] ?? "neutral"}>
@@ -157,12 +158,13 @@ export default function ProjectsPage() {
         },
         {
             key: "project_progress_percent",
+            mobile: "trailing",
             header: "ความคืบหน้า",
             className: "min-w-[140px]",
             render: (v) => <ProgressBar percent={Number(v)} />,
         },
-        { key: "member_count", header: "สมาชิก" },
-        { key: "project_due_date", header: "ครบกำหนด", render: (v) => formatDateOnly(v) },
+        { key: "member_count", mobile: "meta", mobileLabel: "สมาชิก", header: "สมาชิก" },
+        { key: "project_due_date", mobile: "meta", mobileLabel: "ครบ", header: "ครบกำหนด", render: (v) => formatDateOnly(v) },
     ];
 
     return (

@@ -35,7 +35,7 @@ import { PageSkeleton } from "@/components/ui/skeleton";
 import { buttonClass } from "@/components/ui/button";
 import formatDate, { formatDateOnly } from "@/app/function";
 import { apiFetch, type ApiError } from "@/lib/api";
-import { formatAmount, parseHundredths } from "@/lib/shared/money.mjs";
+import { formatAmount, formatQuantity, parseHundredths } from "@/lib/shared/money.mjs";
 import { amountInWords } from "@/lib/shared/amount-in-words.mjs";
 import { displayRate } from "../../quotations/_format";
 import { INVOICE_MESSAGES, PAYMENT_STATE_PILLS, STATUS_LABELS } from "../_messages";
@@ -469,7 +469,7 @@ export default function InvoiceViewPage() {
                                     {displayRate(invoice.inv_exchange_rate)} บาท/{code} (
                                     {invoice.inv_rate_source === "bot"
                                         ? `ธปท. ${formatDateOnly(invoice.inv_rate_date)}`
-                                        : `กรอกเอง — ${invoice.inv_rate_override_reason ?? ""}`}
+                                        : `กรอกเอง · ${invoice.inv_rate_override_reason ?? ""}`}
                                     )
                                 </dd>
                             </div>
@@ -504,7 +504,7 @@ export default function InvoiceViewPage() {
                         {hasCredits && (
                             // มีใบลดหนี้: ยอดหลังหัก ณ ที่จ่ายของใบเดิมใช้ไม่ได้แล้ว — ไม่พิมพ์ซ้ำที่นี่ (กติกาเงิน 3.8)
                             <FieldHint>
-                                ใบนี้มีใบลดหนี้ — ยอดหลังลดหนี้และยอดที่ลูกค้าต้องโอนดูในส่วน &quot;การชำระเงิน&quot;
+                                ใบนี้มีใบลดหนี้ · ยอดหลังลดหนี้และยอดที่ลูกค้าต้องโอนดูในส่วน &quot;การชำระเงิน&quot;
                             </FieldHint>
                         )}
                         {hasWithholding && !hasCredits && (
@@ -609,7 +609,7 @@ export default function InvoiceViewPage() {
                 open={confirmAction === "send"}
                 variant="info"
                 title="บันทึกว่าส่งให้ลูกค้าแล้ว?"
-                description="ใช้หลังจากส่งเอกสาร (พิมพ์/PDF) ให้ลูกค้าเอง — ระบบบันทึกวันเวลาที่ส่ง"
+                description="ใช้หลังจากส่งเอกสาร (พิมพ์/PDF) ให้ลูกค้าเอง · ระบบบันทึกวันเวลาที่ส่ง"
                 confirmLabel="บันทึก"
                 loading={isWorking}
                 errorMessage={actionError}
@@ -646,7 +646,7 @@ export default function InvoiceViewPage() {
                         runAction(
                             `${base}/${reasonAction}`,
                             { reason },
-                            reasonAction === "reissue" ? "ยกเลิกแล้ว — สร้างร่างใหม่ให้แล้ว" : "บันทึกแล้ว",
+                            reasonAction === "reissue" ? "ยกเลิกแล้ว · สร้างร่างใหม่ให้แล้ว" : "บันทึกแล้ว",
                             reasonAction === "reissue"
                                 ? { navigateTo: (data) => `/sales/invoices/view?id=${data.inv_id}` }
                                 : {},
@@ -681,7 +681,7 @@ function ItemsList({ detail }: { detail: InvoiceDetail }) {
                             <span className="whitespace-pre-line text-gray-800">{item.invi_description}</span>
                             <div className="flex items-end justify-between gap-3">
                                 <span className="text-xs text-gray-500 tabular-nums">
-                                    {formatAmount(item.invi_quantity ?? "0")} {item.invi_unit ?? ""} ×{" "}
+                                    {formatQuantity(item.invi_quantity ?? "0")} {item.invi_unit ?? ""} ×{" "}
                                     {formatAmount(item.invi_unit_price ?? "0", decimals)}
                                     {Number(item.invi_discount_amount) > 0 &&
                                         ` · ส่วนลด −${formatAmount(item.invi_discount_amount, decimals)}`}
@@ -718,7 +718,7 @@ function ItemsList({ detail }: { detail: InvoiceDetail }) {
                                 <tr key={item.invi_id} className="border-b border-gray-100 align-top">
                                     <td className="py-2 pr-2 whitespace-pre-line">{item.invi_description}</td>
                                     <td className="py-2 pr-2 text-right tabular-nums">
-                                        {formatAmount(item.invi_quantity ?? "0")} {item.invi_unit ?? ""}
+                                        {formatQuantity(item.invi_quantity ?? "0")} {item.invi_unit ?? ""}
                                     </td>
                                     <td className="py-2 pr-2 text-right tabular-nums">
                                         {formatAmount(item.invi_unit_price ?? "0", decimals)}
@@ -921,7 +921,7 @@ function InvoiceApprovalProgress({ detail }: { detail: InvoiceDetail }) {
                                             ? `อนุมัติโดย ${approved.inva_user_name} · ${formatDate(approved.inva_created_at)}`
                                             : isWaiting
                                               ? "รออนุมัติชั้นนี้"
-                                              : "—"}
+                                              : "-"}
                                     </span>
                                 </div>
                             </li>
@@ -1172,13 +1172,13 @@ function StatusGuide({ detail }: { detail: InvoiceDetail }) {
         case "draft":
             if (invoice.inv_returned_reason) {
                 return (
-                    <StatusBanner tone="warn" title="ถูกตีกลับ — แก้แล้วส่งขออนุมัติใหม่">
+                    <StatusBanner tone="warn" title="ถูกตีกลับ · แก้แล้วส่งขออนุมัติใหม่">
                         เหตุผล: {invoice.inv_returned_reason}
                     </StatusBanner>
                 );
             }
             return (
-                <StatusBanner tone="info" title="ร่าง — ยังไม่มีเลขที่">
+                <StatusBanner tone="info" title="ร่าง · ยังไม่มีเลขที่">
                     {invoice.inv_source === "quotation"
                         ? `${INVOICE_MESSAGES.dates(invoice.inv_credit_days)} · ไม่ต้องอนุมัติ (ยอดผ่านการอนุมัติในใบเสนอราคาแล้ว)`
                         : `แก้ได้ทุกช่อง · ${INVOICE_MESSAGES.manualApproval}`}
@@ -1190,7 +1190,7 @@ function StatusGuide({ detail }: { detail: InvoiceDetail }) {
                     <StatusBanner tone="wait" title={`รอคุณอนุมัติชั้น ${invoice.inv_approval_current_level}`}>
                         กดอนุมัติแล้วจะผ่านชั้น {approval.levels.join(", ")}
                         {approval.isFinal
-                            ? " ซึ่งเป็นชั้นสุดท้าย — ระบบออกใบให้ทันที"
+                            ? " ซึ่งเป็นชั้นสุดท้าย · ระบบออกใบให้ทันที"
                             : ` · ${approval.stopReason ?? ""}`}
                     </StatusBanner>
                 );
@@ -1204,7 +1204,7 @@ function StatusGuide({ detail }: { detail: InvoiceDetail }) {
         case "issued":
             if (invoice.payment_state === "refund_due") {
                 return (
-                    <StatusBanner tone="error" title="ลูกค้าจ่ายเกินหลังลดหนี้ — รอคืนเงิน">
+                    <StatusBanner tone="error" title="ลูกค้าจ่ายเกินหลังลดหนี้ · รอคืนเงิน">
                         {INVOICE_MESSAGES.refundDue(
                             `${formatAmount(detail.payment.refund_due, detail.currency.cur_decimals)} ${invoice.inv_currency}`,
                         )}
@@ -1234,7 +1234,7 @@ function StatusGuide({ detail }: { detail: InvoiceDetail }) {
                 );
             }
             return (
-                <StatusBanner tone="done" title={`ออกแล้ว — ครบกำหนด ${formatDateOnly(invoice.inv_due_date)}`}>
+                <StatusBanner tone="done" title={`ออกแล้ว · ครบกำหนด ${formatDateOnly(invoice.inv_due_date)}`}>
                     {invoice.inv_sent_at
                         ? `บันทึกว่าส่งลูกค้าแล้ว ${formatDate(invoice.inv_sent_at)}`
                         : 'กด "พิมพ์ / บันทึก PDF" ส่งให้ลูกค้า แล้วกด "บันทึกว่าส่งลูกค้าแล้ว"'}

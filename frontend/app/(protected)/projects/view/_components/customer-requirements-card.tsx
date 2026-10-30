@@ -10,6 +10,7 @@ import SectionCard from "@/components/ui/section-card";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import StatusBanner from "@/components/ui/guidance/status-banner";
 import { buttonClass } from "@/components/ui/button";
+import { formatQuantity } from "@/lib/shared/money.mjs";
 import { usePermission, BITS } from "@/app/components/permission-provider";
 import { apiFetch, apiFetchBlob } from "@/lib/api";
 import AnswersList from "@/app/order/_components/answers-list";
@@ -119,11 +120,11 @@ export default function CustomerRequirementsCard({ projectId }: { projectId: str
                                     {request.items.map((item, itemIndex) =>
                                         item.type === "heading" ? (
                                             <li key={itemIndex} className="pt-1 font-medium text-gray-900">
-                                                {item.name} × {Number(item.quantity)} ชุด
+                                                {item.name} × {formatQuantity(item.quantity)} ชุด
                                             </li>
                                         ) : (
                                             <li key={itemIndex} className={`wrap-break-word ${item.in_package ? "pl-3 text-gray-600" : "text-gray-800"}`}>
-                                                {item.name} × {Number(item.quantity)} {item.unit ?? ""}
+                                                {item.name} × {formatQuantity(item.quantity)} {item.unit ?? ""}
                                             </li>
                                         ),
                                     )}

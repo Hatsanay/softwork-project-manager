@@ -38,7 +38,7 @@ function notFound() {
 }
 
 function wrongStatus(message) {
-    return new AppError(409, "CREDIT_NOTE_WRONG_STATUS", `${message} — กรุณาโหลดหน้าใหม่เพื่อดูสถานะล่าสุด`);
+    return new AppError(409, "CREDIT_NOTE_WRONG_STATUS", `${message} · กรุณาโหลดหน้าใหม่เพื่อดูสถานะล่าสุด`);
 }
 
 function validationError(fields) {
@@ -56,7 +56,7 @@ function assertVersion(creditNote, expectedVersion) {
         throw new AppError(
             409,
             "CREDIT_NOTE_CHANGED",
-            "มีคนแก้หรือเปลี่ยนสถานะใบนี้ไปก่อนแล้ว — โหลดหน้าใหม่เพื่อดูข้อมูลล่าสุด (สิ่งที่คุณแก้ยังไม่ถูกบันทึก)",
+            "มีคนแก้หรือเปลี่ยนสถานะใบนี้ไปก่อนแล้ว · โหลดหน้าใหม่เพื่อดูข้อมูลล่าสุด (สิ่งที่คุณแก้ยังไม่ถูกบันทึก)",
         );
     }
 }
@@ -131,12 +131,12 @@ async function calculateFor(conn, invoice, lines) {
  * @returns {Promise<string | null>} เหตุผลที่ลดหนี้ไม่ได้ (null = ได้)
  */
 async function findCreditBlocker(conn, invoice) {
-    if (invoice.inv_status === "cancelled") return "ใบแจ้งหนี้นี้ถูกยกเลิกแล้ว — ลดหนี้ใบที่ยกเลิกไม่ได้";
+    if (invoice.inv_status === "cancelled") return "ใบแจ้งหนี้นี้ถูกยกเลิกแล้ว · ลดหนี้ใบที่ยกเลิกไม่ได้";
     if (invoice.inv_status !== "issued") return "ลดหนี้ได้เฉพาะใบแจ้งหนี้ที่ออกแล้ว";
     const billingNote = await invoiceService.findActiveBillingNote(conn, invoice.inv_id);
     if (billingNote) {
         return (
-            `ใบนี้อยู่ในใบวางบิล ${billingNote.bn_number ?? "(ร่าง)"} — ยกเลิกหรือลบใบวางบิลก่อน ` +
+            `ใบนี้อยู่ในใบวางบิล ${billingNote.bn_number ?? "(ร่าง)"} · ยกเลิกหรือลบใบวางบิลก่อน ` +
             "แล้วออกใบวางบิลใหม่ด้วยยอดหลังลดหนี้ (ลูกค้าจะได้ไม่ถือใบวางบิลยอดเก่า)"
         );
     }
@@ -275,7 +275,7 @@ async function updateDraft(conn, creditNoteId, input) {
 
 async function deleteDraft(conn, creditNoteId, expectedVersion) {
     const creditNote = await findForUpdate(conn, creditNoteId);
-    if (creditNote.cn_status !== "draft") throw wrongStatus('ลบได้เฉพาะร่าง — ใบที่ออกแล้วใช้ "ยกเลิก"');
+    if (creditNote.cn_status !== "draft") throw wrongStatus('ลบได้เฉพาะร่าง · ใบที่ออกแล้วใช้ "ยกเลิก"');
     assertVersion(creditNote, expectedVersion);
     await conn.query("DELETE FROM tb_credit_notes WHERE cn_id = ?", [creditNoteId]);
 }
@@ -306,7 +306,7 @@ async function submitForApproval(conn, creditNoteId, expectedVersion) {
         throw new AppError(
             409,
             "APPROVAL_RULES_MISSING",
-            "ยังไม่ได้ตั้งกติกาอนุมัติใบลดหนี้ — ให้ผู้ดูแลตั้งที่ ตั้งค่าระบบ › ข้อมูลบริษัท › การอนุมัติ › ใบลดหนี้",
+            "ยังไม่ได้ตั้งกติกาอนุมัติใบลดหนี้ · ให้ผู้ดูแลตั้งที่ ตั้งค่าระบบ › ข้อมูลบริษัท › การอนุมัติ › ใบลดหนี้",
         );
     }
 
@@ -361,7 +361,7 @@ async function finalizeIssue(conn, creditNote, actor) {
         throw new AppError(
             409,
             "CREDIT_NOTE_EXCEEDS_INVOICE",
-            `${Object.values(calculation.errors)[0]} — ยอดของใบเดิมเปลี่ยนตั้งแต่ส่งขออนุมัติ ตีกลับให้ผู้สร้างแก้ยอดใหม่`,
+            `${Object.values(calculation.errors)[0]} · ยอดของใบเดิมเปลี่ยนตั้งแต่ส่งขออนุมัติ ตีกลับให้ผู้สร้างแก้ยอดใหม่`,
         );
     }
     const isSameTotal = toDecimalText(calculation.total) === toDecimalText(parseHundredths(creditNote.cn_total, "ยอด"));
@@ -369,7 +369,7 @@ async function finalizeIssue(conn, creditNote, actor) {
         throw new AppError(
             409,
             "CREDIT_NOTE_TOTAL_CHANGED",
-            "ยอดรวมลดหนี้เปลี่ยนจากตอนส่งขออนุมัติ (มีใบลดหนี้อื่นของใบเดิมออกไปก่อน) — ตีกลับให้ผู้สร้างบันทึกใหม่เพื่อดูยอดล่าสุด",
+            "ยอดรวมลดหนี้เปลี่ยนจากตอนส่งขออนุมัติ (มีใบลดหนี้อื่นของใบเดิมออกไปก่อน) · ตีกลับให้ผู้สร้างบันทึกใหม่เพื่อดูยอดล่าสุด",
         );
     }
 
@@ -507,7 +507,7 @@ async function cancel(conn, creditNoteId, reason, expectedVersion, actor) {
     const creditNote = await findForUpdate(conn, creditNoteId);
     if (creditNote.cn_status === "draft") throw wrongStatus('ร่างใช้ "ลบ" แทนการยกเลิก');
     if (creditNote.cn_status === "pending_approval") {
-        throw wrongStatus("ใบที่รออนุมัติยกเลิกไม่ได้ — ให้ผู้อนุมัติตีกลับ แล้วลบร่าง");
+        throw wrongStatus("ใบที่รออนุมัติยกเลิกไม่ได้ · ให้ผู้อนุมัติตีกลับ แล้วลบร่าง");
     }
     if (creditNote.cn_status !== "issued") throw wrongStatus("ใบนี้ถูกยกเลิกไปแล้ว");
     assertVersion(creditNote, expectedVersion);
@@ -515,7 +515,7 @@ async function cancel(conn, creditNoteId, reason, expectedVersion, actor) {
         throw new AppError(
             409,
             "CREDIT_NOTE_REFUNDED",
-            "ใบนี้บันทึกคืนเงินลูกค้าแล้ว — ยกเลิกการคืนเงินก่อน (ถ้าโอนไปจริงแล้ว ต้องตกลงกับลูกค้าให้โอนกลับก่อน) แล้วค่อยยกเลิกใบนี้",
+            "ใบนี้บันทึกคืนเงินลูกค้าแล้ว · ยกเลิกการคืนเงินก่อน (ถ้าโอนไปจริงแล้ว ต้องตกลงกับลูกค้าให้โอนกลับก่อน) แล้วค่อยยกเลิกใบนี้",
         );
     }
 
@@ -564,7 +564,7 @@ async function recordRefund(conn, creditNoteId, input, actor) {
     if (!account) fields.cn_refund_bank_account_id = "ไม่พบบัญชีนี้";
     else if (account.ba_status !== "active") fields.cn_refund_bank_account_id = "บัญชีนี้ถูกปิดใช้งานแล้ว";
     else if (account.ba_currency !== creditNote.cn_currency)
-        fields.cn_refund_bank_account_id = `บัญชีนี้เป็นสกุล ${account.ba_currency} — เลือกบัญชีสกุล ${creditNote.cn_currency}`;
+        fields.cn_refund_bank_account_id = `บัญชีนี้เป็นสกุล ${account.ba_currency} · เลือกบัญชีสกุล ${creditNote.cn_currency}`;
     if (Object.keys(fields).length > 0) throw validationError(fields);
 
     await updateColumns(
@@ -799,7 +799,7 @@ function buildActions(creditNote, actor, approval) {
 
     let cancelBlockedReason = null;
     if (status === "issued" && isRefunded) {
-        cancelBlockedReason = "ใบนี้บันทึกคืนเงินลูกค้าแล้ว — ยกเลิกการคืนเงินก่อน แล้วค่อยยกเลิกใบนี้";
+        cancelBlockedReason = "ใบนี้บันทึกคืนเงินลูกค้าแล้ว · ยกเลิกการคืนเงินก่อน แล้วค่อยยกเลิกใบนี้";
     }
     return {
         can_edit: canCreate && status === "draft",

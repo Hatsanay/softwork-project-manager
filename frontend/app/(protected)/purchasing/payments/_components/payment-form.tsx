@@ -205,7 +205,7 @@ export default function PaymentForm({ options, payees, initialPayee, initialExpe
         const liveErrors = calculation.errors;
         if (!checked.success || Object.keys(liveErrors).length > 0) {
             setFieldErrors({ ...(checked.success ? {} : toFieldErrors(checked.error.issues)), ...liveErrors });
-            toast.error("ยังทำจ่ายไม่ได้ — แก้ช่องที่มีข้อความสีแดงก่อน");
+            toast.error("ยังทำจ่ายไม่ได้ · แก้ช่องที่มีข้อความสีแดงก่อน");
             return;
         }
         setFieldErrors({});
@@ -262,7 +262,7 @@ export default function PaymentForm({ options, payees, initialPayee, initialExpe
                             }}
                             className={inputClass()}
                         >
-                            <option value="">— เลือกผู้รับเงิน —</option>
+                            <option value="">เลือกผู้รับเงิน</option>
                             {vendorPayees.length > 0 && (
                                 <optgroup label="ผู้ขาย">
                                     {vendorPayees.map((item) => (
@@ -290,7 +290,7 @@ export default function PaymentForm({ options, payees, initialPayee, initialExpe
                         <p className="text-sm text-gray-600">
                             {payee.payee_kind === "vendor"
                                 ? whtFormLabel(payable?.wht_form ?? payee.wht_form)
-                                : "พนักงาน — ไม่หัก ณ ที่จ่าย"}
+                                : "พนักงาน · ไม่หัก ณ ที่จ่าย"}
                         </p>
                     )}
                 </SectionCard>
@@ -415,7 +415,7 @@ export default function PaymentForm({ options, payees, initialPayee, initialExpe
                                             onChange={(event) => setBankAccountId(event.target.value)}
                                             className={inputClass(Boolean(fieldErrors.pv_bank_account_id))}
                                         >
-                                            <option value="">— เลือกบัญชี —</option>
+                                            <option value="">เลือกบัญชี</option>
                                             {accounts.map((account) => (
                                                 <option key={account.ba_id} value={account.ba_id}>
                                                     {account.ba_bank_name} {account.ba_account_no} (
@@ -546,7 +546,7 @@ export default function PaymentForm({ options, payees, initialPayee, initialExpe
                                 <FieldHint>
                                     {payeeKind === "employee" || !payable?.wht_form
                                         ? PAYMENT_MESSAGES.noWithholding
-                                        : "รายการที่เลือกไม่ได้ระบุประเภทเงินได้ — ไม่หัก"}
+                                        : "รายการที่เลือกไม่ได้ระบุประเภทเงินได้ · ไม่หัก"}
                                 </FieldHint>
                             ) : (
                                 <ul className="grid gap-3">
@@ -572,7 +572,7 @@ export default function PaymentForm({ options, payees, initialPayee, initialExpe
                                                     {group.isBelowMinimum && (
                                                         <span className="text-xs text-amber-600">
                                                             ฐานต่ำกว่าเกณฑ์ {formatAmount(group.minPayment ?? "0")}{" "}
-                                                            บาทต่อครั้ง — ระบบเสนอไม่หัก
+                                                            บาทต่อครั้ง · ระบบเสนอไม่หัก
                                                         </span>
                                                     )}
                                                 </div>
@@ -656,8 +656,8 @@ export default function PaymentForm({ options, payees, initialPayee, initialExpe
                     consequences={[
                         `จ่ายสุทธิ ${formatAmount(calculation.netPaid, decimals)} ${currencyCode} · ${METHOD_LABELS[method]} · วันที่ ${formatDateOnly(paymentDate)}`,
                         calculation.withholdingTotal > 0n
-                            ? `หัก ณ ที่จ่าย ${formatAmount(calculation.withholdingTotal, decimals)} — ออก 50 ทวิ ให้ผู้รับ`
-                            : "ไม่หัก ณ ที่จ่าย — ไม่ออก 50 ทวิ",
+                            ? `หัก ณ ที่จ่าย ${formatAmount(calculation.withholdingTotal, decimals)} · ออก 50 ทวิ ให้ผู้รับ`
+                            : "ไม่หัก ณ ที่จ่าย · ไม่ออก 50 ทวิ",
                         `ตัดยอดค้างจ่าย ${chosenRows.length} รายการ`,
                     ]}
                     confirmLabel="ยืนยันทำจ่าย"
@@ -668,7 +668,7 @@ export default function PaymentForm({ options, payees, initialPayee, initialExpe
             )}
             {!payee && selectedPayeeKey && !isLoadingPayable && (
                 <StatusBanner tone="warn" title="ไม่พบผู้รับรายนี้ในรายการรอจ่าย">
-                    อาจจ่ายครบไปแล้ว — เลือกผู้รับใหม่
+                    อาจจ่ายครบไปแล้ว · เลือกผู้รับใหม่
                 </StatusBanner>
             )}
         </div>

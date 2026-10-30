@@ -20,10 +20,11 @@ const {
     MAX_TOTAL_FILE_BYTES,
 } = require("../shared/requirement-answers.mjs");
 const { cleanUploadedFileName, detectFileType, isViewableFile, savePrivateFile } = require("../utils/private-file");
-const { findVatRateOn } = require("./company.service");
+const { findCompany, findVatRateOn } = require("./company.service");
 const requirementService = require("./requirement.service");
 const { acceptQuotation } = require("./quotation-accept.service");
 const { openStateOf } = require("./order-link.service");
+const { readSignatureFile } = require("./signature.service");
 
 const COMPANY_ROW_ID = 1;
 // ลิงก์หนึ่งรับคำขอได้ไม่เกินเท่านี้ต่อชั่วโมง (กันสแปมลิงก์สาธารณะ)
@@ -769,7 +770,8 @@ async function internalCatalog(conn) {
 }
 
 /** หน้าสถานะของลูกค้า (หลังส่ง) */
-async function requestStatus(conn, accessToken) {
+/** คำขอจากลิงก์หน้าสถานะ (token 32 ตัว) · ไม่พบ = 404 เดียวกันทุกกรณี (ไม่บอกว่าผิดรูปแบบหรือไม่มีในระบบ) */
+async function findRequestByToken(conn, accessToken) {
     const value = String(accessToken ?? "").trim().toLowerCase();
     if (!/^[0-9a-f]{32}$/.test(value)) throw new AppError(404, "SERVICE_REQUEST_NOT_FOUND", "ไม่พบคำขอนี้");
     const [[request]] = await conn.query(
@@ -781,6 +783,11 @@ async function requestStatus(conn, accessToken) {
         [value],
     );
     if (!request) throw new AppError(404, "SERVICE_REQUEST_NOT_FOUND", "ไม่พบคำขอนี้");
+    return request;
+}
+
+async function requestStatus(conn, accessToken) {
+    const request = await findRequestByToken(conn, accessToken);
     const [items] = await conn.query(
         `SELECT svi_type AS type, svi_package_id AS package_id, svi_name AS name, svi_unit AS unit, svi_unit_price AS unit_price, svi_quantity AS quantity,
                 svi_percent AS percent, svi_is_preset AS is_preset
@@ -813,4 +820,147 @@ async function requestStatus(conn, accessToken) {
     };
 }
 
-module.exports = { shop, submit, requestStatus, acceptByCustomer, loadCatalog, findLinkByCode, findAnswers, latestQuotation, internalCatalog };
+// ─── ใบเสนอราคาแบบเอกสาร A4 ให้ลูกค้าเปิด/บันทึก PDF (2026-10-30 · docs/plans/2026-10-30-quote-pdf-mobile-refactor.md ส่วน A) ───
+
+// เปิดได้เฉพาะขั้นที่ลูกค้าเห็นใบในหน้าสถานะอยู่แล้ว
+const DOCUMENT_STAGES = new Set(["quotation", "accepted"]);
+const DOCUMENT_UNAVAILABLE_MESSAGES = {
+    preparing: "ทีมงานกำลังเตรียมใบเสนอราคา เปิดได้เมื่อทีมส่งใบให้",
+    expired: "ใบเสนอราคานี้หมดอายุแล้ว ติดต่อทีมงานเพื่อขอใบใหม่",
+    fastwork_confirmed: "งานนี้ชำระและยืนยันบน Fastwork ดูเอกสารได้บน Fastwork",
+};
+
+/** รูปลายเซ็นเป็น data URL (ฝังในคำตอบ ไม่ต้องเปิดเส้นทางรูปลายเซ็นสาธารณะ) · ไม่มี/ไฟล์หาย = null (เว้นช่องให้เซ็นมือ) */
+async function signatureDataUrl(conn, signatureId) {
+    if (!signatureId) return null;
+    try {
+        const image = await readSignatureFile(conn, signatureId);
+        return `data:image/png;base64,${image.toString("base64")}`;
+    } catch {
+        return null;
+    }
+}
+
+const parseSnapshot = (value) => (typeof value === "string" ? JSON.parse(value) : value);
+
+/**
+ * หัวบริษัทที่พิมพ์บนใบ · snapshot เก็บทั้งแถวตั้งค่าบริษัท (มีค่าภายใน เช่น อัตราค่าธรรมเนียม กติกาอนุมัติ) จึงเลือกเฉพาะที่พิมพ์
+ * ไม่มี snapshot (ใบเก่าก่อนมี snapshot) = ใช้ข้อมูลปัจจุบัน แบบเดียวกับหน้าพิมพ์ภายใน
+ */
+async function printedCompany(conn, snapshot, branchId) {
+    let source = snapshot;
+    if (!source) {
+        const [[branch]] = await conn.query(
+            "SELECT branch_code, branch_name_th, branch_name_en, branch_address_th, branch_address_en, branch_phone FROM tb_branches WHERE branch_id = ?",
+            [branchId],
+        );
+        source = { ...(await findCompany(conn)), branch: branch ?? null };
+    }
+    const branch = source.branch;
+    return {
+        cs_name_th: source.cs_name_th,
+        cs_name_en: source.cs_name_en ?? null,
+        cs_tax_id: source.cs_tax_id ?? null,
+        cs_address_th: source.cs_address_th ?? null,
+        cs_address_en: source.cs_address_en ?? null,
+        cs_phone: source.cs_phone ?? null,
+        cs_email: source.cs_email ?? null,
+        cs_website: source.cs_website ?? null,
+        cs_logo_url: source.cs_logo_url ?? null,
+        branch: branch
+            ? {
+                  branch_code: branch.branch_code,
+                  branch_name_th: branch.branch_name_th,
+                  branch_name_en: branch.branch_name_en ?? null,
+                  branch_address_th: branch.branch_address_th ?? null,
+                  branch_address_en: branch.branch_address_en ?? null,
+                  branch_phone: branch.branch_phone ?? null,
+              }
+            : null,
+    };
+}
+
+/** ลูกค้าที่พิมพ์บนใบ (ข้อมูลของลูกค้าเอง ไม่ส่งรหัสภายใน) · ไม่มี snapshot = ข้อมูลปัจจุบัน */
+async function printedClient(conn, snapshot, clientId) {
+    let source = snapshot;
+    if (!source) {
+        const [[client]] = await conn.query(
+            `SELECT client_name, client_company, client_contact_name, client_email, client_phone, client_type, client_tax_id, client_branch_code, client_address
+             FROM tb_clients WHERE client_id = ?`,
+            [clientId],
+        );
+        source = client ?? {};
+    }
+    return {
+        client_name: source.client_name ?? "",
+        client_company: source.client_company ?? null,
+        client_contact_name: source.client_contact_name ?? null,
+        client_email: source.client_email ?? null,
+        client_phone: source.client_phone ?? null,
+        client_type: source.client_type ?? null,
+        client_tax_id: source.client_tax_id ?? null,
+        client_branch_code: source.client_branch_code ?? null,
+        client_address: source.client_address ?? null,
+    };
+}
+
+/**
+ * ข้อมูลพิมพ์ใบเสนอราคา (ฉบับล่าสุด) สำหรับหน้าเอกสารของลูกค้า · เลือกฟิลด์ทีละตัว ส่งเฉพาะที่พิมพ์บนใบ
+ * ไม่ส่ง: บันทึกภายใน ประวัติอนุมัติ ผู้สร้าง รหัสภายใน (ใบ ลูกค้า โปรเจกต์)
+ * ใบที่ลูกค้าเห็นผ่านการอนุมัติแล้วเสมอ จึงใช้ข้อมูลบริษัท/ลูกค้า ณ วันอนุมัติ (snapshot)
+ */
+async function quotationDocument(conn, accessToken) {
+    const request = await findRequestByToken(conn, accessToken);
+    const progress = await progressOf(conn, request);
+    if (!DOCUMENT_STAGES.has(progress.stage)) {
+        throw new AppError(409, "QUOTATION_DOCUMENT_UNAVAILABLE", DOCUMENT_UNAVAILABLE_MESSAGES[progress.stage] ?? "ยังไม่มีใบเสนอราคาให้เปิด");
+    }
+    const latest = await latestQuotation(conn, request.svr_quotation_id);
+    const [[quotation]] = await conn.query(
+        `SELECT qt_number, qt_revision, qt_status, qt_title, qt_language, qt_currency, qt_payment_mode, qt_terms,
+                DATE_FORMAT(qt_issue_date, '%Y-%m-%d') AS qt_issue_date, DATE_FORMAT(qt_valid_until, '%Y-%m-%d') AS qt_valid_until,
+                qt_subtotal, qt_discount_amount, qt_after_discount, qt_vat_treatment, qt_vat_rate, qt_vat_amount, qt_total,
+                qt_created_by_name, qt_created_by_title, qt_creator_signature_id,
+                qt_approved_by_name, qt_approved_by_title, qt_approver_signature_id,
+                qt_company_snapshot, qt_client_snapshot, qt_client_id, qt_branch_id
+         FROM tb_quotations WHERE qt_id = ?`,
+        [latest.qt_id],
+    );
+    const [items] = await conn.query(
+        `SELECT qti_id, qti_type, qti_description, qti_quantity, qti_unit, qti_unit_price, qti_discount_amount, qti_amount
+         FROM tb_quotation_items WHERE qti_quotation_id = ? ORDER BY qti_order, qti_id`,
+        [latest.qt_id],
+    );
+    const [milestones] = await conn.query(
+        `SELECT qtm_id, qtm_name, qtm_percent, qtm_amount, qtm_condition
+         FROM tb_quotation_milestones WHERE qtm_quotation_id = ? ORDER BY qtm_order`,
+        [latest.qt_id],
+    );
+    const [[currency]] = await conn.query(
+        "SELECT cur_code, cur_decimals, cur_unit_th, cur_subunit_th, cur_unit_en, cur_subunit_en FROM tb_currencies WHERE cur_code = ?",
+        [quotation.qt_currency],
+    );
+    const {
+        qt_company_snapshot: companySnapshot,
+        qt_client_snapshot: clientSnapshot,
+        qt_client_id: clientId,
+        qt_branch_id: branchId,
+        qt_creator_signature_id: creatorSignatureId,
+        qt_approver_signature_id: approverSignatureId,
+        ...printed
+    } = quotation;
+    return {
+        quotation: printed,
+        currency,
+        items,
+        milestones,
+        company: await printedCompany(conn, parseSnapshot(companySnapshot), branchId),
+        client: await printedClient(conn, parseSnapshot(clientSnapshot), clientId),
+        signatures: {
+            creator: await signatureDataUrl(conn, creatorSignatureId),
+            approver: await signatureDataUrl(conn, approverSignatureId),
+        },
+    };
+}
+
+module.exports = { shop, submit, requestStatus, quotationDocument, acceptByCustomer, loadCatalog, findLinkByCode, findAnswers, latestQuotation, internalCatalog };

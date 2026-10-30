@@ -84,6 +84,7 @@ export default function UsersPage() {
         { key: "user_email", header: "อีเมล", render: (v) => (v as string) || <span className="text-gray-400">รอยืนยัน</span> },
         {
             key: "role_name",
+            mobile: "meta",
             header: "สิทธิ์",
             render: (v) => (
                 <span className="inline-flex h-6 items-center rounded-lg bg-gray-100 px-2.5 text-xs text-gray-600">
@@ -93,6 +94,7 @@ export default function UsersPage() {
         },
         {
             key: "user_status",
+            mobile: "badge",
             header: "สถานะ",
             // ปิดเพราะพ้นสภาพ (ตั้งที่หน้าพนักงาน) แยกจากปิดใช้งานด้วยมือ (user_status)
             render: (v, row) =>

@@ -86,7 +86,7 @@ export default function CreateRolePage() {
                         loadOptions={loadDepartmentOptions}
                         value={department}
                         onChange={setDepartment}
-                        placeholder="— เลือกแผนก (ไม่บังคับ) —"
+                        placeholder="เลือกแผนก (ไม่บังคับ)"
                         disabled={isPending}
                     />
                 </div>

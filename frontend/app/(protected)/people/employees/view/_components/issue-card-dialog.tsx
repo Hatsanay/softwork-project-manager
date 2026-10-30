@@ -57,7 +57,7 @@ export default function IssueCardDialog({ employee, onClose }: { employee: Emplo
                 aria-labelledby="issue-card-title"
                 onSubmit={save}
                 noValidate
-                className="grid max-h-[90dvh] w-full max-w-md gap-4 overflow-y-auto rounded-t-2xl bg-white p-5 shadow-float sm:rounded-2xl sm:p-6"
+                className="grid max-h-[90dvh] w-full max-w-2xl gap-4 overflow-y-auto rounded-t-2xl bg-white p-5 shadow-float sm:rounded-2xl sm:p-6"
             >
                 <div className="grid gap-1">
                     <h2 id="issue-card-title" className="text-base font-medium text-gray-900">

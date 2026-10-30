@@ -42,15 +42,16 @@ export default function ProjectPositionSettingsPage() {
     const hasBit = usePermission();
 
     const columns: Column<ProjectPosition>[] = [
-        { key: "position_id",   header: "รหัสตำแหน่ง", className: "w-16" },
-        { key: "position_name", header: "ชื่อตำแหน่ง" },
+        { key: "position_id", mobile: "meta", mobileLabel: "รหัส", header: "รหัสตำแหน่ง", className: "w-16" },
+        { key: "position_name", mobile: "title", header: "ชื่อตำแหน่ง" },
         {
             key: "position_status",
+            mobile: "badge",
             header: "สถานะ",
             render: (v) => <ActiveStatusPill isActive={v === "active"} />,
         },
-        { key: "position_created_at", header: "สร้างเมื่อ", render: (v) => formatDate(v) },
-        { key: "position_updated_at", header: "อัปเดตเมื่อ", render: (v) => formatDate(v) },
+        { key: "position_created_at", mobile: "hidden", header: "สร้างเมื่อ", render: (v) => formatDate(v) },
+        { key: "position_updated_at", mobile: "meta", mobileLabel: "อัปเดต", header: "อัปเดตเมื่อ", render: (v) => formatDate(v) },
     ];
 
     const [isPending, startTransition] = useTransition();

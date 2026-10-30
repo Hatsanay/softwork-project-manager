@@ -198,7 +198,7 @@ async function downloadAttachment(req, res, next) {
             requestId(req),
             Number(req.params.fileId),
         );
-        const missing = () => new AppError(404, "LEAVE_FILE_MISSING", "ไม่พบไฟล์บนเซิร์ฟเวอร์ — แนบไฟล์ใหม่");
+        const missing = () => new AppError(404, "LEAVE_FILE_MISSING", "ไม่พบไฟล์บนเซิร์ฟเวอร์ · แนบไฟล์ใหม่");
         const fullPath = resolvePrivateFile(storedPath);
         if (!fullPath) throw missing();
         res.setHeader("Content-Type", contentTypeOf(storedPath));

@@ -90,12 +90,12 @@ export default function AcceptDialog({
                 role="dialog"
                 aria-modal="true"
                 aria-label="ลูกค้าตอบรับ"
-                className="grid max-h-[90dvh] w-full max-w-lg gap-4 overflow-y-auto rounded-t-2xl bg-white p-5 shadow-float sm:rounded-2xl sm:p-6"
+                className="grid max-h-[90dvh] w-full max-w-3xl gap-4 overflow-y-auto rounded-t-2xl bg-white p-5 shadow-float sm:rounded-2xl sm:p-6"
             >
                 <div className="grid gap-1">
                     <h2 className="text-base font-medium text-gray-900">บันทึกว่าลูกค้าตอบรับ?</h2>
                     <p className="text-sm text-gray-500">
-                        ตอบรับแล้วใบนี้ล็อกถาวร — งานเพิ่ม/ลดภายหลังให้ใช้ &quot;คัดลอกเป็นใบใหม่&quot;
+                        ตอบรับแล้วใบนี้ล็อกถาวร · งานเพิ่ม/ลดภายหลังให้ใช้ &quot;คัดลอกเป็นใบใหม่&quot;
                     </p>
                 </div>
 
@@ -135,7 +135,7 @@ export default function AcceptDialog({
                         {choiceLabel(
                             "none",
                             "ไม่ผูกโปรเจกต์",
-                            "บันทึกแค่ว่าลูกค้าตอบรับ — ผูกโปรเจกต์ภายหลังไม่ได้จากหน้านี้",
+                            "บันทึกแค่ว่าลูกค้าตอบรับ · ผูกโปรเจกต์ภายหลังไม่ได้จากหน้านี้",
                         )}
                     </div>
                 )}

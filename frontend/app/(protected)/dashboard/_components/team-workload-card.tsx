@@ -179,7 +179,7 @@ function MemberTasksDialog({ member, onClose }: { member: TeamWorkloadEntry; onC
                 aria-modal="true"
                 aria-label={`งานของ ${member.user_fullname}`}
                 onClick={(event) => event.stopPropagation()}
-                className="grid max-h-[85dvh] w-full max-w-lg content-start gap-4 overflow-y-auto rounded-t-2xl bg-white p-5 shadow-float sm:rounded-2xl sm:p-6"
+                className="grid max-h-[85dvh] w-full max-w-3xl content-start gap-4 overflow-y-auto rounded-t-2xl bg-white p-5 shadow-float sm:rounded-2xl sm:p-6"
             >
                 <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">

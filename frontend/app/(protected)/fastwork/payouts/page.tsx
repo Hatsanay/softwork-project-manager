@@ -178,7 +178,7 @@ function PayoutsContent() {
                                 <div className="grid min-w-0 gap-1">
                                     <div className="flex flex-wrap items-center gap-2">
                                         <StatusPill tone={status.tone}>{status.label}</StatusPill>
-                                        <Link href={`/projects/view?id=${payout.fwp_project_id}`} className="font-medium wrap-break-word text-gray-900 hover:text-blue-600">
+                                        <Link href={`/projects/view?id=${payout.fwp_project_id}`} className="-my-2 inline-flex min-h-10 min-w-10 items-center font-medium wrap-break-word text-gray-900 hover:text-blue-600">
                                             {payout.project_name}
                                         </Link>
                                     </div>

@@ -96,7 +96,7 @@ export default function LeaveApprovalsPanel({ onChanged }: { onChanged: () => vo
             <p className="text-sm text-gray-500">
                 {view === "pending"
                     ? LEAVE_MESSAGES.approvalsDescription
-                    : "ลาที่อนุมัติแล้ว (จบไปไม่เกิน 60 วัน) — ยกเลิกได้เมื่อพนักงานกลับมาทำงานก่อนหรือลาผิด (ต้องมีเหตุผล)"}
+                    : "ลาที่อนุมัติแล้ว (จบไปไม่เกิน 60 วัน) · ยกเลิกได้เมื่อพนักงานกลับมาทำงานก่อนหรือลาผิด (ต้องมีเหตุผล)"}
             </p>
             {loadError && (
                 <StatusBanner tone="error" title="โหลดคำขอลาไม่สำเร็จ">
@@ -130,7 +130,7 @@ export default function LeaveApprovalsPanel({ onChanged }: { onChanged: () => vo
                         request.remaining_after_approve !== null && (
                             <p className={`text-sm ${request.is_over_quota ? "text-red-600" : "text-gray-600"}`}>
                                 {request.is_over_quota
-                                    ? `เกินโควตา — อนุมัติแล้วจะติดลบ ${Math.abs(Number(request.remaining_after_approve))} วัน (โควตา ${Number(request.quota)} วัน/ปี)`
+                                    ? `เกินโควตา · อนุมัติแล้วจะติดลบ ${Math.abs(Number(request.remaining_after_approve))} วัน (โควตา ${Number(request.quota)} วัน/ปี)`
                                     : `อนุมัติแล้วเหลือ ${Number(request.remaining_after_approve)} วัน`}
                             </p>
                         )

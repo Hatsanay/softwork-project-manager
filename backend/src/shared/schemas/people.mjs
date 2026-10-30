@@ -49,7 +49,7 @@ const employeeFields = z.object({
     emp_national_id: optionalText("เลขประจำตัวประชาชน", 20)
         .transform((value) => (value === null ? null : normalizeThaiTaxId(value)))
         .refine((value) => value === null || isValidThaiTaxId(value), {
-            message: "เลขประจำตัวประชาชนไม่ถูกต้อง — ต้องเป็นตัวเลข 13 หลัก ตรวจว่าพิมพ์ครบและไม่สลับหลัก",
+            message: "เลขประจำตัวประชาชนไม่ถูกต้อง · ต้องเป็นตัวเลข 13 หลัก ตรวจว่าพิมพ์ครบและไม่สลับหลัก",
         }),
     emp_birth_date: optionalDate("วันเกิด"),
     emp_address: optionalText("ที่อยู่", 1000),

@@ -10,7 +10,8 @@ import type { Branch } from "../_types";
 import { useRecordEditor } from "@/lib/use-record-editor";
 import { InfoPill, RecordList, RecordRow, StatusPill } from "@/components/ui/record-list";
 import SaveErrorBanner from "@/components/ui/save-error-banner";
-import SectionCard, { PRIMARY_BUTTON, SECONDARY_BUTTON } from "@/components/ui/section-card";
+import SectionCard, { PRIMARY_BUTTON } from "@/components/ui/section-card";
+import EditorDrawer, { confirmDiscard, DrawerButtons } from "@/components/ui/editor-drawer";
 
 const EMPTY_FORM = {
     branch_code: "",
@@ -78,8 +79,7 @@ export default function BranchesTab({ branches, canEdit, onSaved }: BranchesTabP
             title={COMPANY_MESSAGES.tabs.branches}
             description={messages.description}
             actions={
-                canEdit &&
-                !editor.isOpen && (
+                canEdit && (
                     <button type="button" className={PRIMARY_BUTTON} onClick={editor.openCreate}>
                         <Plus size={16} />
                         เพิ่มสาขา
@@ -88,10 +88,21 @@ export default function BranchesTab({ branches, canEdit, onSaved }: BranchesTabP
             }
         >
             {editor.isOpen && (
-                <form onSubmit={handleSubmit} className="grid gap-4 rounded-lg bg-gray-50 p-4" noValidate>
-                    <p className="font-medium text-gray-800">
-                        {editingBranch ? `แก้ไขสาขา ${editingBranch.branch_code}` : "เพิ่มสาขา"}
-                    </p>
+                <EditorDrawer
+                    title={editingBranch ? `แก้ไขสาขา ${editingBranch.branch_code}` : "เพิ่มสาขา"}
+                    subtitle="สาขาพิมพ์บนหัวเอกสารภาษี"
+                    isDirty={editor.isDirty}
+                    onClose={editor.close}
+                    onSubmit={handleSubmit}
+                    footer={
+                        <DrawerButtons
+                            isSaving={editor.isSaving}
+                            submitLabel="บันทึกสาขา"
+                            onCancel={() => confirmDiscard(editor.isDirty) && editor.close()}
+                        />
+                    }
+                >
+                    <div className="grid gap-4 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5">
                     <div className="grid gap-4 sm:grid-cols-2">
                         <FormField
                             label="รหัสสาขา"
@@ -164,16 +175,9 @@ export default function BranchesTab({ branches, canEdit, onSaved }: BranchesTabP
                             {messages.inactiveNote(editingBranch?.user_count ?? 0)}
                         </StatusBanner>
                     )}
-                    <SaveErrorBanner error={editor.saveError} />
-                    <div className="flex flex-wrap justify-end gap-2">
-                        <button type="button" className={SECONDARY_BUTTON} onClick={editor.close}>
-                            ยกเลิก
-                        </button>
-                        <button type="submit" className={PRIMARY_BUTTON} disabled={editor.isSaving}>
-                            {editor.isSaving ? "กำลังบันทึก..." : "บันทึกสาขา"}
-                        </button>
                     </div>
-                </form>
+                    <SaveErrorBanner error={editor.saveError} />
+                </EditorDrawer>
             )}
 
             <RecordList>

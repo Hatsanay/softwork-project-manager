@@ -240,7 +240,7 @@ test("รับบางส่วน + รับเต็มหลายใบ�
     const secondInvoice = expectStatus(await as(people.cashier, "GET", `/V1/invoices/${second}`), 200);
     assert.equal(secondInvoice.invoice.payment_state, "paid");
     assert.equal(secondInvoice.actions.can_receive, false, "ชำระครบแล้ว");
-    assert.equal(secondInvoice.payment.qr_payload, null, "ชำระครบแล้วไม่มี QR — กันลูกค้าโอนซ้ำ");
+    assert.equal(secondInvoice.payment.qr_payload, null, "ชำระครบแล้วไม่มี QR · กันลูกค้าโอนซ้ำ");
     const paidTab = expectStatus(await as(people.cashier, "GET", "/V1/invoices?tab=paid&limit=200"), 200);
     assert.ok(paidTab.data.some((row) => row.inv_id === second));
     assert.ok(!paidTab.data.some((row) => row.inv_id === first));

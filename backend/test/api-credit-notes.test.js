@@ -294,7 +294,7 @@ test("R-N5: ใบที่อยู่ในใบวางบิลที่�
     assert.equal(detail.actions.can_credit, false);
 });
 
-test("R-N1: อนุมัติใบลดหนี้สองใบของใบเดียวพร้อมกันจนเกินยอด — ผ่านใบเดียว อีกใบได้ 409", async () => {
+test("R-N1: อนุมัติใบลดหนี้สองใบของใบเดียวพร้อมกันจนเกินยอด · ผ่านใบเดียว อีกใบได้ 409", async () => {
     const invoiceId = await issuedInvoice("1000");
     const ids = [];
     for (let index = 0; index < 2; index += 1) {

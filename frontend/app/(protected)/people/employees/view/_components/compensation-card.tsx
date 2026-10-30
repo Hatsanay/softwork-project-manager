@@ -68,7 +68,7 @@ export default function CompensationCard({
                     {employee.employment_status === "upcoming" ? "เงินเดือนเริ่มงาน" : "เงินเดือนปัจจุบัน"}
                 </span>
                 <span className="text-2xl font-medium text-gray-900 tabular-nums">
-                    {current ? formatAmount(current.ecm_base_salary) : "—"}
+                    {current ? formatAmount(current.ecm_base_salary) : "-"}
                     <span className="ml-1 text-sm font-normal text-gray-500">บาท/เดือน</span>
                 </span>
             </div>

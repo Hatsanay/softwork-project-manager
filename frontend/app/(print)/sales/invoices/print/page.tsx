@@ -10,7 +10,7 @@ import SignatureImage from "@/components/signature/signature-image";
 import PromptPayQr from "@/components/ui/promptpay-qr";
 import { buttonClass } from "@/components/ui/button";
 import { apiFetch, uploadedFileUrl } from "@/lib/api";
-import { formatAmount, parseHundredths } from "@/lib/shared/money.mjs";
+import { formatAmount, formatQuantity, parseHundredths } from "@/lib/shared/money.mjs";
 import { amountInWords } from "@/lib/shared/amount-in-words.mjs";
 import type { ClientSnapshot, CompanySnapshot } from "@/app/(protected)/sales/quotations/_types";
 import type { InvoiceDetail } from "@/app/(protected)/sales/invoices/_types";
@@ -318,7 +318,7 @@ export default function InvoicePrintPage() {
                                         <td className="py-1 pl-1 tabular-nums">{row.number}</td>
                                         <td className="py-1 pr-2 whitespace-pre-line">{row.item.invi_description}</td>
                                         <td className="py-1 text-right tabular-nums">
-                                            {formatAmount(row.item.invi_quantity ?? "0")} {row.item.invi_unit ?? ""}
+                                            {formatQuantity(row.item.invi_quantity ?? "0")} {row.item.invi_unit ?? ""}
                                         </td>
                                         <td className="py-1 text-right tabular-nums">
                                             {formatAmount(row.item.invi_unit_price ?? "0", decimals)}

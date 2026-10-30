@@ -283,7 +283,7 @@ export default function ReceiptForm({ options, initialInvoiceId, billingNoteId, 
             errors.rc_receipt_date = `ย้อนหลังได้ไม่เกิน ${MAX_RECEIPT_BACKDATE_DAYS} วัน`;
         if (Object.keys(errors).length > 0) {
             setFieldErrors(errors);
-            toast.error("ยังบันทึกไม่ได้ — แก้ช่องที่มีข้อความสีแดงก่อน");
+            toast.error("ยังบันทึกไม่ได้ · แก้ช่องที่มีข้อความสีแดงก่อน");
             return;
         }
         setFieldErrors({});
@@ -332,7 +332,7 @@ export default function ReceiptForm({ options, initialInvoiceId, billingNoteId, 
                             }}
                             className={inputClass(Boolean(errorOf("rc_client_id")))}
                         >
-                            <option value="">— เลือกลูกค้า —</option>
+                            <option value="">เลือกลูกค้า</option>
                             {clients.map((client) => (
                                 <option key={client.clientId} value={client.clientId}>
                                     {client.name} (ค้าง {client.invoiceCount} ใบ)
@@ -349,7 +349,7 @@ export default function ReceiptForm({ options, initialInvoiceId, billingNoteId, 
                                 onChange={(value) => applyClient(receivable.data, clientId, value, [])}
                                 options={selectedClient.currencies.map((code) => ({ value: code, label: code }))}
                             />
-                            <FieldHint>ลูกค้ารายนี้มีใบแจ้งหนี้หลายสกุล — ใบเสร็จหนึ่งใบรับได้สกุลเดียว</FieldHint>
+                            <FieldHint>ลูกค้ารายนี้มีใบแจ้งหนี้หลายสกุล · ใบเสร็จหนึ่งใบรับได้สกุลเดียว</FieldHint>
                         </div>
                     )}
 
@@ -484,7 +484,7 @@ export default function ReceiptForm({ options, initialInvoiceId, billingNoteId, 
                                 onChange={(event) => setBankAccountId(event.target.value)}
                                 className={inputClass(Boolean(errorOf("rc_bank_account_id")))}
                             >
-                                <option value="">{method === "transfer" ? "— เลือกบัญชี —" : "— ยังไม่ระบุ —"}</option>
+                                <option value="">{method === "transfer" ? "เลือกบัญชี" : "ยังไม่ระบุ"}</option>
                                 {activeAccounts.map((account) => (
                                     <option key={account.ba_id} value={account.ba_id}>
                                         {account.ba_bank_name} · {account.ba_account_no} ({account.ba_currency})
@@ -559,7 +559,7 @@ export default function ReceiptForm({ options, initialInvoiceId, billingNoteId, 
             <SectionCard icon={Receipt} title="หัก ณ ที่จ่าย และค่าธรรมเนียม">
                 <div className="grid gap-4 sm:grid-cols-2">
                     <FormField
-                        label={`หัก ณ ที่จ่าย (${currencyCode || "—"})`}
+                        label={`หัก ณ ที่จ่าย (${currencyCode || "-"})`}
                         htmlFor="rc_wht_amount"
                         hint={RECEIPT_MESSAGES.withholding}
                         error={errorOf("rc_wht_amount")}
@@ -585,7 +585,7 @@ export default function ReceiptForm({ options, initialInvoiceId, billingNoteId, 
                         )}
                     </FormField>
                     <FormField
-                        label={`ค่าธรรมเนียม (${currencyCode || "—"})`}
+                        label={`ค่าธรรมเนียม (${currencyCode || "-"})`}
                         htmlFor="rc_fee_amount"
                         hint={RECEIPT_MESSAGES.fee}
                         error={errorOf("rc_fee_amount")}
@@ -660,7 +660,7 @@ export default function ReceiptForm({ options, initialInvoiceId, billingNoteId, 
                             onChange={(event) => setBranchId(event.target.value)}
                             className={inputClass(Boolean(errorOf("rc_branch_id")))}
                         >
-                            <option value="">— เลือกสาขา —</option>
+                            <option value="">เลือกสาขา</option>
                             {activeBranches.map((branch) => (
                                 <option key={branch.branch_id} value={branch.branch_id}>
                                     {branch.branch_code} · {branch.branch_name_th}
@@ -741,7 +741,7 @@ export default function ReceiptForm({ options, initialInvoiceId, billingNoteId, 
                 consequences={[
                     `ตัดหนี้ ${selectedInvoices.length} ใบ รวม ${formatAmount(calculation.allocatedTotal, decimals)} ${currencyCode}`,
                     `หัก ณ ที่จ่าย ${formatAmount(withholding ?? 0n, decimals)} · ค่าธรรมเนียม ${formatAmount(fee ?? 0n, decimals)}`,
-                    `เงินเข้าจริง ${receivedLabel}${isForeign && receivedThb ? ` (= ${formatAmount(receivedThb)} บาท)` : ""} — ตรงกับสเตทเมนต์แล้ว`,
+                    `เงินเข้าจริง ${receivedLabel}${isForeign && receivedThb ? ` (= ${formatAmount(receivedThb)} บาท)` : ""} · ตรงกับสเตทเมนต์แล้ว`,
                     "ได้เลขที่ใบเสร็จทันที ออกแล้วแก้ตัวเลขไม่ได้ (ผิดให้ยกเลิกแล้วบันทึกใหม่)",
                 ]}
                 confirmLabel="ออกใบเสร็จ"

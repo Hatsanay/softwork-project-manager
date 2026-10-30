@@ -222,11 +222,11 @@ async function addAttendanceReadiness(conn, run, items, { monthStart, monthEnd, 
 async function buildReadiness(conn, run, items) {
     const problems = [];
     const warnings = [];
-    if (items.length === 0) problems.push('ยังไม่มีพนักงานในรอบนี้ — กด "คิดใหม่" หลังเพิ่มพนักงาน');
+    if (items.length === 0) problems.push('ยังไม่มีพนักงานในรอบนี้ · กด "คิดใหม่" หลังเพิ่มพนักงาน');
     const negative = items.filter((item) => money(item.pri_net) < 0n);
     if (negative.length > 0) {
         problems.push(
-            `ยอดสุทธิติดลบ ${negative.length} คน (${negative.map((item) => item.pri_emp_code).join(", ")}) — ลดรายการหักก่อน`,
+            `ยอดสุทธิติดลบ ${negative.length} คน (${negative.map((item) => item.pri_emp_code).join(", ")}) · ลดรายการหักก่อน`,
         );
     }
     const monthStart = `${run.pr_period}-01`;
@@ -238,7 +238,7 @@ async function buildReadiness(conn, run, items) {
     );
     if (Number(pendingLeaves) > 0) {
         problems.push(
-            `มีคำขอลารออนุมัติ ${pendingLeaves} ใบในเดือนนี้ — อนุมัติหรือไม่อนุมัติก่อน (ลาไม่รับค่าจ้างมีผลกับเงินเดือน)`,
+            `มีคำขอลารออนุมัติ ${pendingLeaves} ใบในเดือนนี้ · อนุมัติหรือไม่อนุมัติก่อน (ลาไม่รับค่าจ้างมีผลกับเงินเดือน)`,
         );
     }
     await addAttendanceReadiness(conn, run, items, { monthStart, monthEnd, problems, warnings });
@@ -253,7 +253,7 @@ async function buildReadiness(conn, run, items) {
         : [[{ pendingWeeks: 0 }]];
     if (Number(pendingWeeks) > 0) {
         warnings.push(
-            `ลงเวลา ${pendingWeeks} สัปดาห์ในเดือนนี้ยังไม่อนุมัติ — ชั่วโมงเหล่านี้จะไม่ถูกนับเป็นค่าแรงโปรเจกต์ และแก้ไม่ได้หลังอนุมัติรอบ`,
+            `ลงเวลา ${pendingWeeks} สัปดาห์ในเดือนนี้ยังไม่อนุมัติ · ชั่วโมงเหล่านี้จะไม่ถูกนับเป็นค่าแรงโปรเจกต์ และแก้ไม่ได้หลังอนุมัติรอบ`,
         );
     }
     const missingBank = items.filter((item) => !item.pri_bank_account_no);
@@ -265,21 +265,21 @@ async function buildReadiness(conn, run, items) {
     const missingId = items.filter((item) => !item.pri_national_id);
     if (missingId.length > 0) {
         warnings.push(
-            `ไม่มีเลขประจำตัวประชาชน ${missingId.length} คน — ต้องใช้ในแบบ ภ.ง.ด.1 / สปส.1-10 (${missingId.map((item) => item.pri_emp_code).join(", ")})`,
+            `ไม่มีเลขประจำตัวประชาชน ${missingId.length} คน · ต้องใช้ในแบบ ภ.ง.ด.1 / สปส.1-10 (${missingId.map((item) => item.pri_emp_code).join(", ")})`,
         );
     }
     const missingPrior = await findMissingPriorIncome(conn, run, items);
     if (missingPrior.length > 0) {
         warnings.push(
-            `รอบแรกของปีในระบบ — ยังไม่ได้กรอก "ยอดยกมาของปี" (เงินได้/ภาษี/ประกันสังคมก่อนเดือนนี้) ที่หน้าพนักงาน ภาษีทั้งปีจะคิดต่ำไป: ${missingPrior.join(", ")}`,
+            `รอบแรกของปีในระบบ · ยังไม่ได้กรอก "ยอดยกมาของปี" (เงินได้/ภาษี/ประกันสังคมก่อนเดือนนี้) ที่หน้าพนักงาน ภาษีทั้งปีจะคิดต่ำไป: ${missingPrior.join(", ")}`,
         );
     }
     const context = await loadPeriodContext(conn, run.pr_period);
-    if (!context.ssoRate) warnings.push("ยังไม่มีอัตราประกันสังคมที่มีผลในเดือนนี้ — ประกันสังคมเป็น 0 ทุกคน");
-    if (!context.taxYearRow) warnings.push("ยังไม่ได้ตั้งปีภาษี — ภาษีเป็น 0 ทุกคน");
+    if (!context.ssoRate) warnings.push("ยังไม่มีอัตราประกันสังคมที่มีผลในเดือนนี้ · ประกันสังคมเป็น 0 ทุกคน");
+    if (!context.taxYearRow) warnings.push("ยังไม่ได้ตั้งปีภาษี · ภาษีเป็น 0 ทุกคน");
     else if (context.taxYearRow.ity_tax_year !== context.taxYear) {
         warnings.push(
-            `ยังไม่ได้ตั้งปีภาษี ${context.taxYear + 543} — ใช้ค่าลดหย่อน/ขั้นภาษีของปี ${context.taxYearRow.ity_tax_year + 543} แทน`,
+            `ยังไม่ได้ตั้งปีภาษี ${context.taxYear + 543} · ใช้ค่าลดหย่อน/ขั้นภาษีของปี ${context.taxYearRow.ity_tax_year + 543} แทน`,
         );
     }
     return { problems, warnings };
@@ -336,7 +336,7 @@ async function createRun(conn, user, payload) {
         throw new AppError(
             409,
             "PAYROLL_EXISTS",
-            `มีรอบเงินเดือนเดือน ${period} แล้ว — เปิดรอบเดิม หรือยกเลิกรอบเดิมก่อน`,
+            `มีรอบเงินเดือนเดือน ${period} แล้ว · เปิดรอบเดิม หรือยกเลิกรอบเดิมก่อน`,
         );
     }
     const unfinished = runs.find((run) => run.pr_period < period && !CLOSED_STATUSES.includes(run.pr_status));
@@ -344,7 +344,7 @@ async function createRun(conn, user, payload) {
         throw new AppError(
             409,
             "PAYROLL_PREVIOUS_OPEN",
-            `รอบเดือน ${unfinished.pr_period} ยังไม่อนุมัติ — อนุมัติก่อนจึงสร้างรอบถัดไปได้ (ภาษีสะสมต้องต่อเนื่อง)`,
+            `รอบเดือน ${unfinished.pr_period} ยังไม่อนุมัติ · อนุมัติก่อนจึงสร้างรอบถัดไปได้ (ภาษีสะสมต้องต่อเนื่อง)`,
         );
     }
     const hasEarlier = runs.some((run) => run.pr_period < period);
@@ -356,7 +356,7 @@ async function createRun(conn, user, payload) {
         throw new AppError(
             409,
             "PAYROLL_LATER_EXISTS",
-            "มีรอบของเดือนหลังจากนี้แล้ว — สร้างรอบย้อนหลังไม่ได้ (ปรับในรอบถัดไปแทน)",
+            "มีรอบของเดือนหลังจากนี้แล้ว · สร้างรอบย้อนหลังไม่ได้ (ปรับในรอบถัดไปแทน)",
         );
     }
 
@@ -384,7 +384,7 @@ async function updateRun(conn, runId, version, payload) {
 async function recalculate(conn, runId, version) {
     const run = await findRun(conn, runId, { forUpdate: true });
     assertVersion(run, version);
-    if (run.pr_status !== "draft") throw wrongStatus("คิดใหม่ได้เฉพาะรอบที่เป็นร่าง — ตีกลับเป็นร่างก่อน");
+    if (run.pr_status !== "draft") throw wrongStatus("คิดใหม่ได้เฉพาะรอบที่เป็นร่าง · ตีกลับเป็นร่างก่อน");
     await recalculateAll(conn, runId);
     return { pr_id: runId };
 }
@@ -519,7 +519,7 @@ async function recalculateItem(conn, run, item) {
     const employees = await findEligibleEmployees(conn, context);
     const employee = employees.find((candidate) => candidate.emp_id === item.pri_employee_id);
     if (!employee) {
-        throw wrongStatus('พนักงานคนนี้ไม่อยู่ในเดือนนี้แล้ว (วันเริ่ม/วันออกเปลี่ยน) — กด "คิดใหม่" ทั้งรอบ');
+        throw wrongStatus('พนักงานคนนี้ไม่อยู่ในเดือนนี้แล้ว (วันเริ่ม/วันออกเปลี่ยน) · กด "คิดใหม่" ทั้งรอบ');
     }
     await saveEmployeeItem(conn, run.pr_id, employee, context, item.pri_id);
     await updateTotals(conn, run.pr_id, context);
@@ -579,7 +579,7 @@ async function submit(conn, runId, version) {
         throw new AppError(
             409,
             "APPROVAL_RULES_MISSING",
-            "ยังไม่ได้ตั้งกติกาอนุมัติรอบเงินเดือน — ให้ผู้ดูแลตั้งที่ ตั้งค่าระบบ › ข้อมูลบริษัท › การอนุมัติ › รอบเงินเดือน",
+            "ยังไม่ได้ตั้งกติกาอนุมัติรอบเงินเดือน · ให้ผู้ดูแลตั้งที่ ตั้งค่าระบบ › ข้อมูลบริษัท › การอนุมัติ › รอบเงินเดือน",
         );
     }
     const plan = buildApprovalPlan(rules.levels, run.pr_total_net);
@@ -625,7 +625,7 @@ function evaluateFor(run, approvals, user, items, allowSelfApproval) {
     return {
         ...evaluation,
         canApprove: false,
-        reason: "คุณมีชื่อในรอบเงินเดือนนี้ จึงอนุมัติไม่ได้ (หลักควบคุมภายใน) — ต้องให้ผู้อนุมัติคนอื่น",
+        reason: "คุณมีชื่อในรอบเงินเดือนนี้ จึงอนุมัติไม่ได้ (หลักควบคุมภายใน) · ต้องให้ผู้อนุมัติคนอื่น",
     };
 }
 
@@ -800,14 +800,14 @@ async function markPaid(conn, user, runId, version, payload) {
 async function cancelRun(conn, user, runId, version, reason) {
     const run = await findRun(conn, runId, { forUpdate: true });
     assertVersion(run, version);
-    if (run.pr_status === "paid") throw wrongStatus("รอบที่จ่ายแล้วยกเลิกไม่ได้ — ปรับยอดในรอบถัดไป");
+    if (run.pr_status === "paid") throw wrongStatus("รอบที่จ่ายแล้วยกเลิกไม่ได้ · ปรับยอดในรอบถัดไป");
     if (run.pr_status === "cancelled") throw wrongStatus("รอบนี้ยกเลิกไปแล้ว");
     if (run.pr_status === "approved") {
         const [[later]] = await conn.query(
             "SELECT pr_number FROM tb_payroll_runs WHERE pr_period > ? AND pr_status <> 'cancelled' LIMIT 1",
             [run.pr_period],
         );
-        if (later) throw wrongStatus(`มีรอบ ${later.pr_number} แล้ว — ยกเลิกรอบนั้นก่อน (ภาษีสะสมต่อเนื่อง)`);
+        if (later) throw wrongStatus(`มีรอบ ${later.pr_number} แล้ว · ยกเลิกรอบนั้นก่อน (ภาษีสะสมต่อเนื่อง)`);
         await conn.query("DELETE FROM tb_labor_cost_allocations WHERE lca_run_id = ?", [runId]);
     }
     await conn.query(

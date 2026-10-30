@@ -67,15 +67,15 @@ function DetailModal({ id, onClose }: { id: number; onClose: () => void }) {
                                 ["เวลา", formatLogTime(row.aud_created_at)],
                                 ["เหตุการณ์", <span key="e" className="flex items-center gap-2"><EventBadge event={row.aud_event} /> {row.aud_action}</span>],
                                 ["ผู้กระทำ", row.aud_user_fullname ? `${row.aud_user_fullname} (@${row.aud_user_username ?? "-"})` : row.aud_user_id ?? "ไม่ได้เข้าสู่ระบบ"],
-                                ["สิทธิ์ ณ ตอนนั้น", row.aud_role_name ?? "—"],
-                                ["ข้อมูลที่เกี่ยวข้อง", row.aud_entity_type ? `${ENTITY_LABEL[row.aud_entity_type] ?? row.aud_entity_type} ${row.aud_entity_id ?? ""}` : "—"],
-                                ["โปรเจกต์", row.aud_project_id ?? "—"],
+                                ["สิทธิ์ ณ ตอนนั้น", row.aud_role_name ?? "-"],
+                                ["ข้อมูลที่เกี่ยวข้อง", row.aud_entity_type ? `${ENTITY_LABEL[row.aud_entity_type] ?? row.aud_entity_type} ${row.aud_entity_id ?? ""}` : "-"],
+                                ["โปรเจกต์", row.aud_project_id ?? "-"],
                                 ["ผลลัพธ์", <span key="r" className={row.aud_success ? "text-green-600" : "text-red-600"}>{row.aud_success ? "สำเร็จ" : "ไม่สำเร็จ"} (HTTP {row.aud_status})</span>],
-                                ["ข้อความผิดพลาด", row.aud_error ?? "—"],
+                                ["ข้อความผิดพลาด", row.aud_error ?? "-"],
                                 ["คำขอ", <code key="p" className="break-all text-xs">{row.aud_method} {row.aud_path}</code>],
-                                ["Request ID", <code key="i" className="break-all text-xs">{row.aud_request_id ?? "—"}</code>],
-                                ["IP", row.aud_ip ?? "—"],
-                                ["เวลาที่ใช้", row.aud_duration_ms != null ? `${row.aud_duration_ms} ms` : "—"],
+                                ["Request ID", <code key="i" className="break-all text-xs">{row.aud_request_id ?? "-"}</code>],
+                                ["IP", row.aud_ip ?? "-"],
+                                ["เวลาที่ใช้", row.aud_duration_ms != null ? `${row.aud_duration_ms} ms` : "-"],
                             ].map(([k, v]) => (
                                 <div key={String(k)}>
                                     <dt className="text-xs text-gray-400">{k}</dt>
@@ -84,7 +84,7 @@ function DetailModal({ id, onClose }: { id: number; onClose: () => void }) {
                             ))}
                             <div className="sm:col-span-2">
                                 <dt className="text-xs text-gray-400">อุปกรณ์ / เบราว์เซอร์</dt>
-                                <dd className="mt-0.5 break-all text-xs text-gray-600">{row.aud_user_agent ?? "—"}</dd>
+                                <dd className="mt-0.5 break-all text-xs text-gray-600">{row.aud_user_agent ?? "-"}</dd>
                             </div>
                         </dl>
 
@@ -159,15 +159,15 @@ export default function AuditLogTab() {
     const reset = <T,>(setter: (v: T) => void) => (v: T) => { setter(v); setPage(1); };
 
     const columns: Column<AuditRow>[] = [
-        { key: "aud_created_at", header: "เวลา", className: "whitespace-nowrap", render: (v) => formatLogTime(v) },
+        { key: "aud_created_at", mobile: "meta", header: "เวลา", className: "whitespace-nowrap", render: (v) => formatLogTime(v) },
         {
-            key: "aud_user_fullname", header: "ผู้กระทำ",
+            key: "aud_user_fullname", mobile: "meta", header: "ผู้กระทำ",
             render: (_, r) => r.aud_user_fullname
                 ? <div><div className="text-gray-800">{r.aud_user_fullname}</div><div className="text-xs text-gray-400">@{r.aud_user_username}</div></div>
                 : <span className="text-gray-400">{r.aud_event === "view" && r.aud_path.startsWith("/share/") ? "ลูกค้า (ลิงก์)" : "ไม่ได้เข้าสู่ระบบ"}</span>,
         },
         {
-            key: "aud_action", header: "การกระทำ",
+            key: "aud_action", mobile: "title", header: "การกระทำ",
             render: (_, r) => (
                 <div className="flex flex-col gap-1">
                     <span className="flex items-center gap-2"><EventBadge event={r.aud_event} /> <span className="text-gray-800">{r.aud_action}</span></span>
@@ -178,7 +178,7 @@ export default function AuditLogTab() {
             ),
         },
         {
-            key: "aud_success", header: "ผลลัพธ์",
+            key: "aud_success", mobile: "badge", header: "ผลลัพธ์",
             // เหตุผลที่ไม่สำเร็จแสดงบนหน้าเลย (ระบบไม่ใช้ tooltip) — ข้อความยาวตัดที่ 2 บรรทัด ดูเต็มได้ในรายละเอียด
             render: (_, r) => r.aud_success
                 ? <StatusPill tone="success">สำเร็จ</StatusPill>
@@ -189,7 +189,7 @@ export default function AuditLogTab() {
                     </div>
                 ),
         },
-        { key: "aud_ip", header: "IP", render: (v) => (v as string) || "-" },
+        { key: "aud_ip", mobile: "hidden", header: "IP", render: (v) => (v as string) || "-" },
     ];
 
     return (

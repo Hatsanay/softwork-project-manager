@@ -150,7 +150,7 @@ export default function VendorForm({ vendor }: { vendor?: Vendor }) {
         const checked = vendorSchema.safeParse(toPayload(form));
         if (!checked.success) {
             setFieldErrors(toFieldErrors(checked.error.issues));
-            toast.error("ยังบันทึกไม่ได้ — แก้ช่องที่มีข้อความสีแดงก่อน");
+            toast.error("ยังบันทึกไม่ได้ · แก้ช่องที่มีข้อความสีแดงก่อน");
             return;
         }
         setFieldErrors({});
@@ -345,7 +345,7 @@ export default function VendorForm({ vendor }: { vendor?: Vendor }) {
             <SectionCard
                 icon={Settings2}
                 title="ค่าเริ่มต้นตอนบันทึกค่าใช้จ่าย"
-                description="เติมให้อัตโนมัติ — เปลี่ยนในแต่ละใบได้"
+                description="เติมให้อัตโนมัติ · เปลี่ยนในแต่ละใบได้"
             >
                 <div className="grid gap-4 sm:grid-cols-2">
                     <FormField label="สกุลเงิน" htmlFor="vd_currency" error={fieldErrors.vd_currency}>
@@ -385,7 +385,7 @@ export default function VendorForm({ vendor }: { vendor?: Vendor }) {
                             onChange={(event) => updateField("vd_default_income_type", event.target.value)}
                             className={inputClass(Boolean(fieldErrors.vd_default_income_type))}
                         >
-                            <option value="">— ตามหมวดค่าใช้จ่าย —</option>
+                            <option value="">ตามหมวดค่าใช้จ่าย</option>
                             {incomeTypeChoices.map((type) => (
                                 <option key={type.wit_code} value={type.wit_code}>
                                     {type.wit_name_th}
@@ -406,7 +406,7 @@ export default function VendorForm({ vendor }: { vendor?: Vendor }) {
                             onChange={(event) => updateField("vd_default_category_id", event.target.value)}
                             className={inputClass(Boolean(fieldErrors.vd_default_category_id))}
                         >
-                            <option value="">— ไม่ระบุ —</option>
+                            <option value="">ไม่ระบุ</option>
                             {categoryChoices.map((category) => (
                                 <option key={category.ec_id} value={String(category.ec_id)}>
                                     {category.ec_name_th}

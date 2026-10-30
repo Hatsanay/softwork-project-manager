@@ -49,7 +49,7 @@ export const INVOICE_PRINT_LABELS = {
         netPayable: "Net amount payable",
         creditNote: "Credit note",
         afterCredit: "Total after credit notes",
-        refundDue: "Overpaid — refund due",
+        refundDue: "Overpaid · refund due",
         receivedBy: "Received",
         outstanding: "Outstanding",
         ofOutstanding: "of outstanding (estimated)",

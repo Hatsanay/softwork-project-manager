@@ -53,7 +53,7 @@ function CertificateCopy({
                 <p className="font-medium">ผู้ถูกหักภาษี ณ ที่จ่าย</p>
                 <p className="flex flex-wrap justify-between gap-x-4">
                     <span>ชื่อ {certificate.full_name}</span>
-                    <span>เลขประจำตัวผู้เสียภาษีอากร {certificate.national_id ?? "—"}</span>
+                    <span>เลขประจำตัวผู้เสียภาษีอากร {certificate.national_id ?? "-"}</span>
                 </p>
                 <p>ที่อยู่ {certificate.address ?? ""}</p>
                 <p className="mt-1 flex flex-wrap gap-x-5 gap-y-1">
@@ -177,7 +177,7 @@ function CertificatesContent() {
     if (loadError) return <p className="p-8 text-sm text-red-600">{loadError}</p>;
     if (!data) return <p className="p-8 text-sm text-gray-500">กำลังเตรียมหน้าพิมพ์...</p>;
     if (data.certificates.length === 0) {
-        return <p className="p-8 text-sm text-gray-600">ยังไม่มีเงินได้ที่จ่ายแล้วในปีนี้ — ยังออก 50 ทวิ ไม่ได้</p>;
+        return <p className="p-8 text-sm text-gray-600">ยังไม่มีเงินได้ที่จ่ายแล้วในปีนี้ · ยังออก 50 ทวิ ไม่ได้</p>;
     }
 
     const warnings = [

@@ -9,7 +9,7 @@ import StatusBanner from "@/components/ui/guidance/status-banner";
 import { buttonClass } from "@/components/ui/button";
 import { inputClass } from "@/components/ui/form-field";
 import { apiFetch } from "@/lib/api";
-import { convertFromBaht, formatAmount, formatHundredths, parseHundredths } from "@/lib/shared/money.mjs";
+import { convertFromBaht, formatAmount, formatHundredths, parseHundredths, trimQuantity } from "@/lib/shared/money.mjs";
 import { QUOTATION_MESSAGES } from "../_messages";
 import { emptyItem, type ItemForm } from "../_form-state";
 
@@ -140,7 +140,7 @@ export default function ItemPicker({
         setNotice(
             price
                 ? `เพิ่ม "${product.product_name}" แล้ว`
-                : `เพิ่ม "${product.product_name}" แล้ว — ยังไม่มีอัตราแลกเปลี่ยน กรอกราคาเอง`,
+                : `เพิ่ม "${product.product_name}" แล้ว · ยังไม่มีอัตราแลกเปลี่ยน กรอกราคาเอง`,
         );
     }
 
@@ -164,7 +164,7 @@ export default function ItemPicker({
                 qti_product_id: packageItem.pki_product_id,
                 qti_package_id: data.pkg_id,
                 qti_description: packageItem.pki_description,
-                qti_quantity: packageItem.pki_quantity ?? (packageItem.pki_type === "item" ? "1" : ""),
+                qti_quantity: packageItem.pki_quantity ? trimQuantity(packageItem.pki_quantity) : packageItem.pki_type === "item" ? "1" : "",
                 qti_unit: packageItem.pki_unit ?? "",
                 qti_unit_price: price ?? "",
                 qti_list_price: packageItem.pki_product_id ? (price ?? "") : "",
@@ -183,7 +183,7 @@ export default function ItemPicker({
                 role="dialog"
                 aria-label="เลือกรายการสินค้า"
                 onClick={(event) => event.stopPropagation()}
-                className="mt-auto flex max-h-[90dvh] w-full flex-col gap-3 rounded-t-2xl bg-white p-4 shadow-float sm:mt-0 sm:max-h-none sm:h-full sm:max-w-md sm:rounded-none sm:rounded-l-2xl"
+                className="mt-auto flex max-h-[90dvh] w-full flex-col gap-3 rounded-t-2xl bg-white p-4 shadow-float sm:mt-0 sm:max-h-none sm:h-full sm:max-w-2xl sm:rounded-none sm:rounded-l-2xl"
             >
                 <div className="flex items-start justify-between gap-2">
                     <div>
@@ -240,7 +240,7 @@ export default function ItemPicker({
                                             </span>
                                         </span>
                                         <span className="flex shrink-0 items-center gap-2 text-sm tabular-nums text-gray-700">
-                                            {price ? `${formatAmount(price, currencyDecimals)} ${currencyCode}` : "—"}
+                                            {price ? `${formatAmount(price, currencyDecimals)} ${currencyCode}` : "-"}
                                             <Plus size={16} className="text-blue-600" />
                                         </span>
                                     </button>

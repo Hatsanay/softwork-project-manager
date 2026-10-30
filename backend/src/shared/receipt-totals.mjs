@@ -130,7 +130,7 @@ export function calculateReceipt({
         if (allocation.amount <= 0n) {
             errors[field] = "ยอดรับต้องมากกว่า 0";
         } else if (allocation.amount > outstanding) {
-            errors[field] = "ยอดรับมากกว่ายอดค้างของใบนี้ — รับเกินยอดค้างไม่ได้";
+            errors[field] = "ยอดรับมากกว่ายอดค้างของใบนี้ · รับเกินยอดค้างไม่ได้";
         } else if (!isWholeCurrencyUnit(allocation.amount, currencyDecimals)) {
             errors[field] = unitMessage;
         }
@@ -161,7 +161,7 @@ export function calculateReceipt({
 
     const received = allocatedTotal - withholding - fee;
     if (allocatedTotal > 0n && received <= 0n && !errors.rc_wht_amount && !errors.rc_fee_amount) {
-        errors.rc_received_amount = "เงินเข้าจริงต้องมากกว่า 0 — หัก ณ ที่จ่ายรวมค่าธรรมเนียมต้องน้อยกว่ายอดรับ";
+        errors.rc_received_amount = "เงินเข้าจริงต้องมากกว่า 0 · หัก ณ ที่จ่ายรวมค่าธรรมเนียมต้องน้อยกว่ายอดรับ";
     }
 
     let receivedThbValue = received;

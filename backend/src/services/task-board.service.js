@@ -18,7 +18,7 @@ function orderChanged() {
     return new AppError(
         409,
         "ORDER_CHANGED",
-        "รายการในคอลัมน์เปลี่ยนไปแล้ว (มีคนย้าย/เพิ่มงาน) — โหลดบอร์ดใหม่ให้แล้ว ลองเรียงอีกครั้ง",
+        "รายการในคอลัมน์เปลี่ยนไปแล้ว (มีคนย้าย/เพิ่มงาน) · โหลดบอร์ดใหม่ให้แล้ว ลองเรียงอีกครั้ง",
     );
 }
 
@@ -57,7 +57,7 @@ async function createLabel(conn, projectId, label, actor) {
         throw new AppError(
             409,
             "TOO_MANY_LABELS",
-            `โปรเจกต์หนึ่งมีป้ายได้ไม่เกิน ${MAX_LABELS_PER_PROJECT} ป้าย — ลบป้ายที่ไม่ใช้ก่อน`,
+            `โปรเจกต์หนึ่งมีป้ายได้ไม่เกิน ${MAX_LABELS_PER_PROJECT} ป้าย · ลบป้ายที่ไม่ใช้ก่อน`,
         );
     }
     await assertLabelNameFree(conn, projectId, label.pl_name, null);
@@ -206,7 +206,7 @@ async function addChecklistItem(conn, taskId, text, actor) {
         throw new AppError(
             409,
             "TOO_MANY_CHECKLIST_ITEMS",
-            `checklist มีได้ไม่เกิน ${MAX_CHECKLIST_ITEMS_PER_TASK} ข้อต่องาน — ถ้างานใหญ่ให้แบ่งเป็น subtask`,
+            `checklist มีได้ไม่เกิน ${MAX_CHECKLIST_ITEMS_PER_TASK} ข้อต่องาน · ถ้างานใหญ่ให้แบ่งเป็น subtask`,
         );
     }
     const [result] = await conn.query(

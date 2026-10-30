@@ -206,7 +206,7 @@ export default function TaskBoardView(props: TaskBoardViewProps) {
                 title="ย้ายไป 'เสร็จ' ทั้งที่ subtask ยังไม่ครบ?"
                 description={
                     pendingDoneTask
-                        ? `subtask ยังไม่เสร็จ ${(pendingDoneTask.subtask_total ?? 0) - (pendingDoneTask.subtask_done ?? 0)} จาก ${pendingDoneTask.subtask_total ?? 0} — ระบบไม่บังคับ แต่ความคืบหน้าของงานนี้จะยังไม่ครบ`
+                        ? `subtask ยังไม่เสร็จ ${(pendingDoneTask.subtask_total ?? 0) - (pendingDoneTask.subtask_done ?? 0)} จาก ${pendingDoneTask.subtask_total ?? 0} · ระบบไม่บังคับ แต่ความคืบหน้าของงานนี้จะยังไม่ครบ`
                         : undefined
                 }
                 confirmLabel={`ย้ายไป ${STATUS_LABELS.done}`}

@@ -40,7 +40,7 @@ function notFound() {
 }
 
 function wrongStatus(message) {
-    return new AppError(409, "INVOICE_WRONG_STATUS", `${message} — กรุณาโหลดหน้าใหม่เพื่อดูสถานะล่าสุด`);
+    return new AppError(409, "INVOICE_WRONG_STATUS", `${message} · กรุณาโหลดหน้าใหม่เพื่อดูสถานะล่าสุด`);
 }
 
 /**
@@ -54,7 +54,7 @@ function assertVersion(invoice, expectedVersion) {
         throw new AppError(
             409,
             "INVOICE_CHANGED",
-            "มีคนแก้หรือเปลี่ยนสถานะใบนี้ไปก่อนแล้ว — โหลดหน้าใหม่เพื่อดูข้อมูลล่าสุด (สิ่งที่คุณแก้ยังไม่ถูกบันทึก)",
+            "มีคนแก้หรือเปลี่ยนสถานะใบนี้ไปก่อนแล้ว · โหลดหน้าใหม่เพื่อดูข้อมูลล่าสุด (สิ่งที่คุณแก้ยังไม่ถูกบันทึก)",
         );
     }
 }
@@ -101,7 +101,7 @@ async function checkBranchAndBank(conn, values, existing, currencyCode) {
         ]);
         if (!account) fields.inv_bank_account_id = "ไม่พบบัญชีนี้";
         else if (account.ba_currency !== currencyCode)
-            fields.inv_bank_account_id = `บัญชีนี้รับเงินสกุล ${account.ba_currency} — เลือกบัญชีที่รับ ${currencyCode}`;
+            fields.inv_bank_account_id = `บัญชีนี้รับเงินสกุล ${account.ba_currency} · เลือกบัญชีที่รับ ${currencyCode}`;
         else if (account.ba_status !== "active" && isChanged("inv_bank_account_id"))
             fields.inv_bank_account_id = "บัญชีนี้ถูกปิดใช้งานแล้ว";
     }
@@ -159,7 +159,7 @@ async function lockBillableQuotation(conn, quotationId) {
         throw new AppError(
             409,
             "QUOTATION_NOT_ACCEPTED",
-            "ออกใบแจ้งหนี้ได้เฉพาะใบเสนอราคาที่ลูกค้าตอบรับแล้ว — บันทึกว่าลูกค้าตอบรับที่หน้าใบเสนอราคาก่อน",
+            "ออกใบแจ้งหนี้ได้เฉพาะใบเสนอราคาที่ลูกค้าตอบรับแล้ว · บันทึกว่าลูกค้าตอบรับที่หน้าใบเสนอราคาก่อน",
         );
     }
     if (await quotationService.fastworkSourceOf(conn, quotation)) throw fastworkInvoiceBlocked();
@@ -173,7 +173,7 @@ async function assertMilestonesAvailable(conn, quotationId, milestoneIds, exclud
     const milestones = await findMilestones(conn, quotationId);
     const knownIds = new Set(milestones.map((milestone) => Number(milestone.qtm_id)));
     if (milestoneIds.some((id) => !knownIds.has(Number(id)))) {
-        throw validationError({ milestone_ids: "งวดที่เลือกไม่อยู่ในใบเสนอราคานี้ — โหลดหน้าใหม่แล้วเลือกอีกครั้ง" });
+        throw validationError({ milestone_ids: "งวดที่เลือกไม่อยู่ในใบเสนอราคานี้ · โหลดหน้าใหม่แล้วเลือกอีกครั้ง" });
     }
     const billed = await findBilledMilestones(conn, quotationId, excludeInvoiceId);
     const conflicts = milestones.filter(
@@ -189,7 +189,7 @@ async function assertMilestonesAvailable(conn, quotationId, milestoneIds, exclud
         throw new AppError(
             409,
             "MILESTONE_ALREADY_BILLED",
-            `${detail} — งวดหนึ่งเรียกเก็บได้ใบเดียว ถ้าต้องออกใหม่ให้ยกเลิกหรือลบใบเดิมก่อน`,
+            `${detail} · งวดหนึ่งเรียกเก็บได้ใบเดียว ถ้าต้องออกใหม่ให้ยกเลิกหรือลบใบเดิมก่อน`,
         );
     }
     return milestones;
@@ -496,7 +496,7 @@ async function createFromQuotation(conn, input, actor, options = {}) {
         throw new AppError(
             409,
             "QUOTATION_MILESTONES_INVALID",
-            "ใบเสนอราคาแบบเก็บครั้งเดียวต้องมีงวดเดียว — แจ้งผู้ดูแลระบบ",
+            "ใบเสนอราคาแบบเก็บครั้งเดียวต้องมีงวดเดียว · แจ้งผู้ดูแลระบบ",
         );
     }
 
@@ -581,7 +581,7 @@ async function assertManualReferences(conn, draft, existing) {
         const existingIds = new Set(rows.map((row) => row.product_id));
         draft.items.forEach((item, index) => {
             if (item.invi_product_id && !existingIds.has(item.invi_product_id)) {
-                fields[`items.${index}.invi_product_id`] = "สินค้านี้ถูกลบไปแล้ว — ลบแถวนี้หรือเลือกใหม่";
+                fields[`items.${index}.invi_product_id`] = "สินค้านี้ถูกลบไปแล้ว · ลบแถวนี้หรือเลือกใหม่";
             }
         });
     }
@@ -596,7 +596,7 @@ async function resolveManualRate(conn, draft) {
     const botRate = await quotationService.findCachedBotRate(conn, draft.inv_currency, draft.inv_rate_date);
     if (draft.inv_rate_source === "bot" && !quotationService.sameDecimal(botRate, draft.inv_exchange_rate)) {
         throw validationError({
-            inv_exchange_rate: "อัตราไม่ตรงกับของ ธปท. — กดดึงอัตราใหม่ หรือเลือกกรอกเองพร้อมเหตุผล",
+            inv_exchange_rate: "อัตราไม่ตรงกับของ ธปท. · กดดึงอัตราใหม่ หรือเลือกกรอกเองพร้อมเหตุผล",
         });
     }
     return botRate;
@@ -682,7 +682,7 @@ async function findDebitReference(conn, referenceId, { forUpdate = false } = {})
         throw new AppError(
             409,
             "DEBIT_REFERENCE_INVALID",
-            "ใบเพิ่มหนี้ต้องอ้างใบแจ้งหนี้เดิม (ไม่ใช่ใบเพิ่มหนี้) — เปิดใบแจ้งหนี้เดิมแล้วออกใบเพิ่มหนี้จากใบนั้น",
+            "ใบเพิ่มหนี้ต้องอ้างใบแจ้งหนี้เดิม (ไม่ใช่ใบเพิ่มหนี้) · เปิดใบแจ้งหนี้เดิมแล้วออกใบเพิ่มหนี้จากใบนั้น",
         );
     }
     if (reference.inv_status !== "issued") {
@@ -861,7 +861,7 @@ async function updateDraft(conn, invoiceId, draft) {
 async function deleteDraft(conn, invoiceId, expectedVersion) {
     const existing = await findForUpdate(conn, invoiceId);
     if (existing.inv_status !== "draft") {
-        throw wrongStatus('ลบได้เฉพาะร่าง — ใบที่ออกแล้วให้ใช้ "ยกเลิก" แทน');
+        throw wrongStatus('ลบได้เฉพาะร่าง · ใบที่ออกแล้วให้ใช้ "ยกเลิก" แทน');
     }
     assertVersion(existing, expectedVersion);
     await conn.query("DELETE FROM tb_invoices WHERE inv_id = ?", [invoiceId]);
@@ -1351,23 +1351,23 @@ function buildActions(invoice, actor, approval, billingNote, creditNotes = [], d
 
     let cancelBlockedReason = null;
     if (status === "issued" && billingNote) {
-        cancelBlockedReason = `ใบนี้อยู่ในใบวางบิล ${billingNote.bn_number ?? "(ร่าง)"} — ยกเลิกหรือลบใบวางบิลก่อน แล้วค่อยยกเลิกใบนี้`;
+        cancelBlockedReason = `ใบนี้อยู่ในใบวางบิล ${billingNote.bn_number ?? "(ร่าง)"} · ยกเลิกหรือลบใบวางบิลก่อน แล้วค่อยยกเลิกใบนี้`;
     } else if (status === "issued" && hasPayment) {
-        cancelBlockedReason = "ใบนี้รับชำระเงินแล้ว — ยกเลิกใบเสร็จก่อน แล้วค่อยยกเลิกใบนี้";
+        cancelBlockedReason = "ใบนี้รับชำระเงินแล้ว · ยกเลิกใบเสร็จก่อน แล้วค่อยยกเลิกใบนี้";
     } else if (status === "issued" && activeCreditNote) {
-        cancelBlockedReason = `ใบนี้มีใบลดหนี้ ${activeCreditNote.cn_number ?? "(ร่าง/รออนุมัติ)"} — ยกเลิกหรือลบใบลดหนี้ก่อน แล้วค่อยยกเลิกใบนี้`;
+        cancelBlockedReason = `ใบนี้มีใบลดหนี้ ${activeCreditNote.cn_number ?? "(ร่าง/รออนุมัติ)"} · ยกเลิกหรือลบใบลดหนี้ก่อน แล้วค่อยยกเลิกใบนี้`;
     } else if (status === "issued" && activeDebitNote) {
-        cancelBlockedReason = `ใบนี้มีใบเพิ่มหนี้ ${activeDebitNote.inv_number ?? "(ร่าง/รออนุมัติ)"} — ยกเลิกหรือลบใบเพิ่มหนี้ก่อน แล้วค่อยยกเลิกใบนี้`;
+        cancelBlockedReason = `ใบนี้มีใบเพิ่มหนี้ ${activeDebitNote.inv_number ?? "(ร่าง/รออนุมัติ)"} · ยกเลิกหรือลบใบเพิ่มหนี้ก่อน แล้วค่อยยกเลิกใบนี้`;
     }
     // ใบเพิ่มหนี้ (ขั้น N-2): ออกจากใบแจ้งหนี้ที่ออกแล้วเท่านั้น (ใบเพิ่มหนี้อ้างใบเพิ่มหนี้ไม่ได้)
     let debitBlockedReason = null;
     if (status === "issued" && invoice.inv_doc_type === "debit_note") {
-        debitBlockedReason = `ใบนี้เป็นใบเพิ่มหนี้ — ถ้าต้องเรียกเก็บเพิ่มอีก ให้ออกใบเพิ่มหนี้จากใบแจ้งหนี้เดิม ${invoice.reference_number ?? ""}`.trim();
+        debitBlockedReason = `ใบนี้เป็นใบเพิ่มหนี้ · ถ้าต้องเรียกเก็บเพิ่มอีก ให้ออกใบเพิ่มหนี้จากใบแจ้งหนี้เดิม ${invoice.reference_number ?? ""}`.trim();
     }
     // ใบลดหนี้ (ขั้น N-1): ใบที่ออกแล้ว ยังมียอดเหลือให้ลด และไม่อยู่ในใบวางบิลที่ยังไม่ยกเลิก (R-N5)
     let creditBlockedReason = null;
     if (status === "issued" && billingNote) {
-        creditBlockedReason = `ใบนี้อยู่ในใบวางบิล ${billingNote.bn_number ?? "(ร่าง)"} — ยกเลิกหรือลบใบวางบิลก่อน แล้วออกใบวางบิลใหม่ด้วยยอดหลังลดหนี้`;
+        creditBlockedReason = `ใบนี้อยู่ในใบวางบิล ${billingNote.bn_number ?? "(ร่าง)"} · ยกเลิกหรือลบใบวางบิลก่อน แล้วออกใบวางบิลใหม่ด้วยยอดหลังลดหนี้`;
     } else if (status === "issued" && balance.effectiveTotal <= 0n) {
         creditBlockedReason = "ใบนี้ลดหนี้ครบยอดแล้ว";
     }

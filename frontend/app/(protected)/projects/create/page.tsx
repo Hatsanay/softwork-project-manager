@@ -109,10 +109,10 @@ export default function CreateProjectPage() {
                         loadOptions={loadClientOptions}
                         value={form.client_id}
                         onChange={(v) => setField("client_id", v)}
-                        placeholder="— เลือกลูกค้า (ไม่บังคับ) —"
+                        placeholder="เลือกลูกค้า (ไม่บังคับ)"
                         disabled={isPending}
                     />
-                    <FieldHint>แสดงเฉพาะลูกค้าที่เปิดใช้งาน — ลูกค้าที่ปิดใช้งานแล้วเปิดใหม่ได้ที่หน้าลูกค้า</FieldHint>
+                    <FieldHint>แสดงเฉพาะลูกค้าที่เปิดใช้งาน · ลูกค้าที่ปิดใช้งานแล้วเปิดใหม่ได้ที่หน้าลูกค้า</FieldHint>
                 </div>
 
                 <div className="flex flex-col gap-1 col-span-full">
@@ -150,8 +150,8 @@ export default function CreateProjectPage() {
                         onChange={(e) => setField("project_type", e.target.value)}
                         className={inputClass(false)}
                     >
-                        <option value="waterfall">Waterfall — มอบหมายงานโดยผู้มีสิทธิ์เท่านั้น</option>
-                        <option value="agile">Agile — สมาชิกกดรับ task/subtask ที่ยังไม่มีคนรับผิดชอบได้เอง</option>
+                        <option value="waterfall">Waterfall · มอบหมายงานโดยผู้มีสิทธิ์เท่านั้น</option>
+                        <option value="agile">Agile · สมาชิกกดรับ task/subtask ที่ยังไม่มีคนรับผิดชอบได้เอง</option>
                     </select>
                 </div>
 

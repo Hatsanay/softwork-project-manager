@@ -44,7 +44,7 @@ function requireEmployee(employee) {
     throw new AppError(
         409,
         "NOT_AN_EMPLOYEE",
-        "บัญชีของคุณยังไม่ได้ผูกกับพนักงาน — ติดต่อฝ่ายบุคคลให้ผูกบัญชีในหน้าพนักงานก่อนขอลา",
+        "บัญชีของคุณยังไม่ได้ผูกกับพนักงาน · ติดต่อฝ่ายบุคคลให้ผูกบัญชีในหน้าพนักงานก่อนขอลา",
     );
 }
 
@@ -412,7 +412,7 @@ async function checkRequest(conn, employee, request) {
     const { dates, dayCount } = await leaveDaysOf(conn, request, employee.emp_id);
     if (dayCount === 0n) {
         throw new AppError(400, "VALIDATION", "ช่วงที่เลือกไม่มีวันทำงาน (เป็นวันหยุดทั้งหมด)", {
-            lr_end_date: "ช่วงนี้ไม่มีวันทำงาน — ไม่ต้องขอลา",
+            lr_end_date: "ช่วงนี้ไม่มีวันทำงาน · ไม่ต้องขอลา",
         });
     }
     return { type, dates, dayCount };
@@ -450,7 +450,7 @@ async function createDraft(conn, user, request) {
  */
 async function updateDraft(conn, user, requestId, version, request) {
     const { row, employee } = await lockOwn(conn, user, requestId, version);
-    if (row.lr_status !== "draft") throw wrongStatus("แก้ได้เฉพาะร่าง — ดึงกลับจากรออนุมัติก่อนแล้วจึงแก้");
+    if (row.lr_status !== "draft") throw wrongStatus("แก้ได้เฉพาะร่าง · ดึงกลับจากรออนุมัติก่อนแล้วจึงแก้");
     const { dayCount } = await checkRequest(conn, employee, request);
     await conn.query(
         `UPDATE tb_leave_requests
@@ -476,7 +476,7 @@ async function updateDraft(conn, user, requestId, version, request) {
  */
 async function deleteDraft(conn, user, requestId, version) {
     const { row } = await lockOwn(conn, user, requestId, version);
-    if (row.lr_status !== "draft") throw wrongStatus("ลบได้เฉพาะร่าง — ที่ส่งแล้วให้ใช้ยกเลิก (เก็บประวัติไว้)");
+    if (row.lr_status !== "draft") throw wrongStatus("ลบได้เฉพาะร่าง · ที่ส่งแล้วให้ใช้ยกเลิก (เก็บประวัติไว้)");
     const [files] = await conn.query("SELECT lra_file_path FROM tb_leave_attachments WHERE lra_request_id = ?", [
         requestId,
     ]);
@@ -534,7 +534,7 @@ async function withdraw(conn, user, requestId, version) {
 async function cancelOwn(conn, user, requestId, version, reason) {
     const { row } = await lockOwn(conn, user, requestId, version);
     if (row.lr_status === "approved" && row.lr_start_date <= todayBangkok()) {
-        throw wrongStatus("ลาที่ถึงวันแล้วยกเลิกเองไม่ได้ — แจ้งผู้อนุมัติให้ยกเลิกให้");
+        throw wrongStatus("ลาที่ถึงวันแล้วยกเลิกเองไม่ได้ · แจ้งผู้อนุมัติให้ยกเลิกให้");
     }
     if (!["draft", "pending", "approved"].includes(row.lr_status)) throw wrongStatus("คำขอนี้ปิดไปแล้ว");
     await markCancelled(conn, requestId, user, reason);
@@ -548,7 +548,7 @@ async function approve(conn, user, requestId, version) {
     const { row } = await lockForApprover(conn, user, requestId, version);
     if (row.lr_status !== "pending") throw wrongStatus("คำขอนี้ไม่ได้รออนุมัติแล้ว กรุณาโหลดหน้าใหม่");
     const { dates, dayCount } = await leaveDaysOf(conn, row, row.lr_employee_id);
-    if (dayCount === 0n) throw wrongStatus("ช่วงลาไม่มีวันทำงานแล้ว (วันหยุดถูกเพิ่ม) — ให้พนักงานยกเลิกคำขอนี้");
+    if (dayCount === 0n) throw wrongStatus("ช่วงลาไม่มีวันทำงานแล้ว (วันหยุดถูกเพิ่ม) · ให้พนักงานยกเลิกคำขอนี้");
     await assertNoOverlap(conn, row);
     await assertNoTimesheetHours(conn, row, dates);
     await conn.query(
@@ -634,7 +634,7 @@ async function lockForApprover(conn, user, requestId, version) {
         throw new AppError(
             403,
             "SELF_APPROVAL_NOT_ALLOWED",
-            "อนุมัติหรือตัดสินคำขอลาของตัวเองไม่ได้ — ให้ผู้อนุมัติคนอื่นทำ",
+            "อนุมัติหรือตัดสินคำขอลาของตัวเองไม่ได้ · ให้ผู้อนุมัติคนอื่นทำ",
         );
     }
     const row = await lockRequest(conn, requestId);
@@ -663,7 +663,7 @@ async function assertNoOverlap(conn, request) {
         throw new AppError(
             409,
             "LEAVE_OVERLAP",
-            `ทับกับลาที่${clash.lr_status === "approved" ? "อนุมัติแล้ว" : "รออนุมัติ"} (${clash.lr_start_date} ถึง ${clash.lr_end_date}) — แก้ช่วงวันหรือยกเลิกใบเดิมก่อน`,
+            `ทับกับลาที่${clash.lr_status === "approved" ? "อนุมัติแล้ว" : "รออนุมัติ"} (${clash.lr_start_date} ถึง ${clash.lr_end_date}) · แก้ช่วงวันหรือยกเลิกใบเดิมก่อน`,
         );
     }
 }
@@ -684,7 +684,7 @@ async function assertNoTimesheetHours(conn, request, dates) {
     throw new AppError(
         409,
         "LEAVE_HAS_TIMESHEET",
-        `มีชั่วโมงลงเวลาในวันที่ ${rows.map((row) => row.tse_date).join(", ")} — ลบชั่วโมงวันนั้นในหน้าลงเวลาก่อน หรือลาครึ่งวันแทน`,
+        `มีชั่วโมงลงเวลาในวันที่ ${rows.map((row) => row.tse_date).join(", ")} · ลบชั่วโมงวันนั้นในหน้าลงเวลาก่อน หรือลาครึ่งวันแทน`,
     );
 }
 
@@ -724,7 +724,7 @@ async function removeAttachment(conn, user, requestId, attachmentId) {
         [requestId],
     );
     if (!owner || owner.emp_user_id !== user.user_id) throw notFound();
-    if (owner.lr_status !== "draft") throw wrongStatus("ลบไฟล์ได้เฉพาะตอนเป็นร่าง — ดึงกลับก่อนแล้วจึงลบ");
+    if (owner.lr_status !== "draft") throw wrongStatus("ลบไฟล์ได้เฉพาะตอนเป็นร่าง · ดึงกลับก่อนแล้วจึงลบ");
     const [[file]] = await conn.query(
         "SELECT lra_file_path FROM tb_leave_attachments WHERE lra_id = ? AND lra_request_id = ?",
         [attachmentId, requestId],

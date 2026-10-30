@@ -10,7 +10,8 @@ import FormField, { inputClass } from "@/components/ui/form-field";
 import Switch from "@/components/ui/switch";
 import { RecordList, RecordRow, StatusPill } from "@/components/ui/record-list";
 import SaveErrorBanner from "@/components/ui/save-error-banner";
-import SectionCard, { PRIMARY_BUTTON, SECONDARY_BUTTON } from "@/components/ui/section-card";
+import SectionCard, { PRIMARY_BUTTON } from "@/components/ui/section-card";
+import EditorDrawer, { confirmDiscard, DrawerButtons } from "@/components/ui/editor-drawer";
 import { apiFetch } from "@/lib/api";
 import { toNumberOrNaN, useRecordEditor } from "@/lib/use-record-editor";
 import { productCategorySchema } from "@/lib/shared/schemas/product.mjs";
@@ -87,8 +88,7 @@ export default function CategoriesTab({ categories, canEdit, onSaved }: Categori
             title={PRODUCT_MESSAGES.tabs.categories}
             description={messages.description}
             actions={
-                canEdit &&
-                !editor.isOpen && (
+                canEdit && (
                     <button type="button" className={PRIMARY_BUTTON} onClick={editor.openCreate}>
                         <Plus size={16} />
                         เพิ่มหมวด
@@ -97,10 +97,21 @@ export default function CategoriesTab({ categories, canEdit, onSaved }: Categori
             }
         >
             {editor.isOpen && (
-                <form onSubmit={handleSubmit} className="grid gap-4 rounded-lg bg-gray-50 p-4" noValidate>
-                    <p className="font-medium text-gray-800">
-                        {editingCategory ? `แก้ไขหมวด ${editingCategory.pc_name}` : "เพิ่มหมวด"}
-                    </p>
+                <EditorDrawer
+                    title={editingCategory ? `แก้ไขหมวด ${editingCategory.pc_name}` : "เพิ่มหมวด"}
+                    subtitle="ใช้จัดกลุ่มสินค้าและชุดรายการ"
+                    isDirty={editor.isDirty}
+                    onClose={editor.close}
+                    onSubmit={handleSubmit}
+                    footer={
+                        <DrawerButtons
+                            isSaving={editor.isSaving}
+                            submitLabel="บันทึกหมวด"
+                            onCancel={() => confirmDiscard(editor.isDirty) && editor.close()}
+                        />
+                    }
+                >
+                    <div className="grid gap-4 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5">
                     <div className="grid gap-4 sm:grid-cols-3">
                         <FormField label="ชื่อหมวด" htmlFor="pc_name" required error={fieldErrors.pc_name}>
                             <input
@@ -151,20 +162,13 @@ export default function CategoriesTab({ categories, canEdit, onSaved }: Categori
                         checked={form.pc_is_single_choice}
                         onChange={(checked) => editor.updateField("pc_is_single_choice", checked)}
                     />
-                    <SaveErrorBanner error={editor.saveError} />
-                    <div className="flex flex-wrap justify-end gap-2">
-                        <button type="button" className={SECONDARY_BUTTON} onClick={editor.close}>
-                            ยกเลิก
-                        </button>
-                        <button type="submit" className={PRIMARY_BUTTON} disabled={editor.isSaving}>
-                            {editor.isSaving ? "กำลังบันทึก..." : "บันทึกหมวด"}
-                        </button>
                     </div>
-                </form>
+                    <SaveErrorBanner error={editor.saveError} />
+                </EditorDrawer>
             )}
 
             {categories.length === 0 ? (
-                <EmptyState title="ยังไม่มีหมวด" description="หมวดไม่บังคับ — สินค้าไม่มีหมวดก็ใช้ได้ตามปกติ" />
+                <EmptyState title="ยังไม่มีหมวด" description="หมวดไม่บังคับ สินค้าไม่มีหมวดก็ใช้ได้ตามปกติ" />
             ) : (
                 <RecordList>
                     {categories.map((category) => (

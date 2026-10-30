@@ -30,7 +30,7 @@ export default function CategorySelect({
             aria-describedby={`${id}-hint`}
             className={inputClass(hasError)}
         >
-            <option value="">— ไม่มีหมวด —</option>
+            <option value="">ไม่มีหมวด</option>
             {choices.map((category) => (
                 <option key={category.pc_id} value={category.pc_id}>
                     {category.pc_name}

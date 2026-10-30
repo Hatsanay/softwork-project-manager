@@ -63,7 +63,7 @@ async function requireAuth(req, res, next) {
         if (needsOnboarding(user) && !isOnboardingRoute(req)) {
             return res.status(403).json({
                 code: "ONBOARDING_REQUIRED",
-                message: "ต้องตั้งรหัสผ่านใหม่และยืนยันอีเมลให้ครบก่อนใช้งานระบบ — เข้าสู่ระบบผ่านหน้าเว็บแล้วทำตามขั้นตอน",
+                message: "ต้องตั้งรหัสผ่านใหม่และยืนยันอีเมลให้ครบก่อนใช้งานระบบ · เข้าสู่ระบบผ่านหน้าเว็บแล้วทำตามขั้นตอน",
             });
         }
 

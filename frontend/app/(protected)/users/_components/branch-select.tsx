@@ -24,7 +24,7 @@ type BranchSelectProps = {
     error?: string;
 };
 
-const HINT = "ใช้เป็นสาขาเริ่มต้นของเอกสารที่ผู้ใช้นี้สร้าง (แก้ในเอกสารได้) — ไม่จำกัดการมองเห็นข้อมูล";
+const HINT = "ใช้เป็นสาขาเริ่มต้นของเอกสารที่ผู้ใช้นี้สร้าง (แก้ในเอกสารได้) · ไม่จำกัดการมองเห็นข้อมูล";
 
 export default function BranchSelect({
     value,
@@ -64,7 +64,7 @@ export default function BranchSelect({
                 aria-describedby="user_branch_id-hint"
                 className={inputClass(Boolean(error))}
             >
-                <option value="">— ไม่ระบุ (ใช้สำนักงานใหญ่) —</option>
+                <option value="">ไม่ระบุ (ใช้สำนักงานใหญ่)</option>
                 {choices.map((branch) => (
                     <option key={branch.branch_id} value={branch.branch_id}>
                         {branch.branch_code} · {branch.branch_name_th}
@@ -74,7 +74,7 @@ export default function BranchSelect({
             </select>
             <FieldHint id="user_branch_id-hint" error={error}>
                 {isSelectedInactive
-                    ? "สาขานี้ถูกปิดใช้งานแล้ว — คงไว้ได้ แต่ถ้าเปลี่ยนจะเลือกได้เฉพาะสาขาที่เปิดใช้งาน"
+                    ? "สาขานี้ถูกปิดใช้งานแล้ว · คงไว้ได้ แต่ถ้าเปลี่ยนจะเลือกได้เฉพาะสาขาที่เปิดใช้งาน"
                     : HINT}
             </FieldHint>
         </div>

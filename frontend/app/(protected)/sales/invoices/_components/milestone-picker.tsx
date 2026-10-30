@@ -74,14 +74,14 @@ export default function MilestonePicker({ quotationId }: { quotationId: string }
             setSaveError(error);
             return;
         }
-        toast.success("สร้างร่างใบแจ้งหนี้แล้ว — ตรวจแล้วกดออกใบแจ้งหนี้");
+        toast.success("สร้างร่างใบแจ้งหนี้แล้ว · ตรวจแล้วกดออกใบแจ้งหนี้");
         router.push(`/sales/invoices/view?id=${data.inv_id}`);
     }
 
     if (!billable.can_bill) {
         return (
             <StatusBanner tone="warn" title="ใบเสนอราคานี้ยังออกใบแจ้งหนี้ไม่ได้">
-                ออกได้เฉพาะใบเสนอราคาที่ลูกค้าตอบรับแล้ว — บันทึกว่าลูกค้าตอบรับที่{" "}
+                ออกได้เฉพาะใบเสนอราคาที่ลูกค้าตอบรับแล้ว · บันทึกว่าลูกค้าตอบรับที่{" "}
                 <Link href={`/sales/quotations/view?id=${quotationId}`} className="py-2 text-blue-600 hover:underline">
                     หน้าใบเสนอราคา
                 </Link>{" "}
@@ -144,7 +144,7 @@ export default function MilestonePicker({ quotationId }: { quotationId: string }
                                             <span className="text-xs text-gray-500">
                                                 {milestone.billed_invoice.inv_number
                                                     ? `อยู่ใน ${milestone.billed_invoice.inv_number} (${STATUS_LABELS[milestone.billed_invoice.inv_status].label})`
-                                                    : `อยู่ใน${invoiceReferenceLabel(milestone.billed_invoice)} (${STATUS_LABELS[milestone.billed_invoice.inv_status].label}) — ลบร่างนั้นก่อนถ้าจะเลือกงวดนี้`}
+                                                    : `อยู่ใน${invoiceReferenceLabel(milestone.billed_invoice)} (${STATUS_LABELS[milestone.billed_invoice.inv_status].label}) · ลบร่างนั้นก่อนถ้าจะเลือกงวดนี้`}
                                             </span>
                                         )}
                                     </span>
@@ -170,7 +170,7 @@ export default function MilestonePicker({ quotationId }: { quotationId: string }
 
             {openMilestones.length === 0 ? (
                 <StatusBanner tone="done" title="ออกบิลครบทุกงวดแล้ว">
-                    ทุกงวดของใบเสนอราคานี้อยู่ในใบแจ้งหนี้แล้ว — เปิดดูได้จากลิงก์ในแต่ละงวด
+                    ทุกงวดของใบเสนอราคานี้อยู่ในใบแจ้งหนี้แล้ว · เปิดดูได้จากลิงก์ในแต่ละงวด
                 </StatusBanner>
             ) : (
                 <>

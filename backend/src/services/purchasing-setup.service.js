@@ -195,7 +195,7 @@ async function addRate(conn, rate, userId) {
     if (rate.wr_effective_from <= todayBangkok()) {
         throw validationError(
             { wr_effective_from: "วันที่มีผลต้องเป็นวันพรุ่งนี้เป็นต้นไป" },
-            "อัตราที่มีผลแล้วแก้ย้อนหลังไม่ได้ — เอกสารที่ทำไปแล้วใช้อัตราเดิม",
+            "อัตราที่มีผลแล้วแก้ย้อนหลังไม่ได้ · เอกสารที่ทำไปแล้วใช้อัตราเดิม",
         );
     }
     const [[type]] = await conn.query("SELECT wit_code FROM tb_wht_income_types WHERE wit_code = ?", [
@@ -234,7 +234,7 @@ async function deleteRate(conn, incomeType, effectiveFrom) {
         throw new AppError(
             409,
             "WHT_RATE_LOCKED",
-            "อัตรานี้มีผลแล้ว ลบไม่ได้ — ถ้าจะเปลี่ยนให้เพิ่มอัตราใหม่ที่มีผลวันถัดไป",
+            "อัตรานี้มีผลแล้ว ลบไม่ได้ · ถ้าจะเปลี่ยนให้เพิ่มอัตราใหม่ที่มีผลวันถัดไป",
         );
     }
     await conn.query("DELETE FROM tb_wht_rates WHERE wr_income_type = ? AND wr_effective_from = ?", [

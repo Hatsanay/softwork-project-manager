@@ -52,7 +52,7 @@ async function findCurrency(conn, currencyCode) {
         throw new AppError(
             404,
             "CURRENCY_NOT_FOUND",
-            `ไม่พบสกุลเงิน ${currencyCode} — เพิ่มได้ที่ ตั้งค่าระบบ › ข้อมูลบริษัท › สกุลเงิน`,
+            `ไม่พบสกุลเงิน ${currencyCode} · เพิ่มได้ที่ ตั้งค่าระบบ › ข้อมูลบริษัท › สกุลเงิน`,
         );
     }
     return currency;
@@ -144,7 +144,7 @@ async function findDocumentRate(conn, { currencyCode, requestedDate }) {
     if (!cached) {
         const error = fetchError ?? {
             code: "NO_RATE_FOUND",
-            message: `ไม่พบอัตรา ${currencyCode} ของ ธปท. ในช่วง ${LOOKBACK_DAYS} วันก่อนวันที่นี้ — กรอกอัตราเองได้`,
+            message: `ไม่พบอัตรา ${currencyCode} ของ ธปท. ในช่วง ${LOOKBACK_DAYS} วันก่อนวันที่นี้ · กรอกอัตราเองได้`,
         };
         return { ...base, available: false, rate: null, rate_date: null, source: null, error };
     }

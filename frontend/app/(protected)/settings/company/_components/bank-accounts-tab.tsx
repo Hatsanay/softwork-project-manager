@@ -1,6 +1,6 @@
 "use client";
 
-// แท็บบัญชีธนาคาร — บัญชีหลักมีได้ 1 บัญชีต่อสกุลเงิน (backend ปลดบัญชีหลักเดิมให้)
+// แท็บบัญชีธนาคาร · บัญชีหลักมีได้ 1 บัญชีต่อสกุลเงิน (backend ปลดบัญชีหลักเดิมให้) · เพิ่ม/แก้ในแผงด้านขวา (2026-10-30)
 import { Landmark, Plus } from "lucide-react";
 import EmptyState from "@/components/ui/empty-state";
 import FormField, { inputClass } from "@/components/ui/form-field";
@@ -12,7 +12,8 @@ import type { BankAccount, Currency } from "../_types";
 import { useRecordEditor } from "@/lib/use-record-editor";
 import { InfoPill, RecordList, RecordRow, StatusPill } from "@/components/ui/record-list";
 import SaveErrorBanner from "@/components/ui/save-error-banner";
-import SectionCard, { PRIMARY_BUTTON, SECONDARY_BUTTON } from "@/components/ui/section-card";
+import SectionCard, { PRIMARY_BUTTON } from "@/components/ui/section-card";
+import EditorDrawer, { confirmDiscard, DrawerButtons } from "@/components/ui/editor-drawer";
 
 const EMPTY_FORM = {
     ba_bank_name: "",
@@ -88,8 +89,7 @@ export default function BankAccountsTab({ bankAccounts, currencies, canEdit, onS
             title={COMPANY_MESSAGES.tabs.bankAccounts}
             description={messages.description}
             actions={
-                canEdit &&
-                !editor.isOpen && (
+                canEdit && (
                     <button type="button" className={PRIMARY_BUTTON} onClick={editor.openCreate}>
                         <Plus size={16} />
                         เพิ่มบัญชี
@@ -98,11 +98,21 @@ export default function BankAccountsTab({ bankAccounts, currencies, canEdit, onS
             }
         >
             {editor.isOpen && (
-                <form onSubmit={handleSubmit} className="grid gap-4 rounded-lg bg-gray-50 p-4" noValidate>
-                    <p className="font-medium text-gray-800">
-                        {editingAccount ? "แก้ไขบัญชีธนาคาร" : "เพิ่มบัญชีธนาคาร"}
-                    </p>
-                    <div className="grid gap-4 sm:grid-cols-2">
+                <EditorDrawer
+                    title={editingAccount ? `แก้ไขบัญชี ${editingAccount.ba_bank_name} ${editingAccount.ba_account_no}` : "เพิ่มบัญชีธนาคาร"}
+                    subtitle="บัญชีที่พิมพ์บนเอกสารขายให้ลูกค้าโอนเข้า"
+                    isDirty={editor.isDirty}
+                    onClose={editor.close}
+                    onSubmit={handleSubmit}
+                    footer={
+                        <DrawerButtons
+                            isSaving={editor.isSaving}
+                            submitLabel="บันทึกบัญชี"
+                            onCancel={() => confirmDiscard(editor.isDirty) && editor.close()}
+                        />
+                    }
+                >
+                    <div className="grid gap-4 rounded-2xl border border-gray-200 bg-white p-4 sm:grid-cols-2 sm:p-5">
                         <FormField label="ธนาคาร" htmlFor="ba_bank_name" required error={fieldErrors.ba_bank_name}>
                             {textInput("ba_bank_name")}
                         </FormField>
@@ -167,7 +177,7 @@ export default function BankAccountsTab({ bankAccounts, currencies, canEdit, onS
                             </select>
                         </FormField>
                     </div>
-                    <div className="grid gap-1.5">
+                    <div className="grid gap-1.5 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5">
                         <Switch
                             id="ba_is_default"
                             label="เป็นบัญชีหลักของสกุลเงินนี้"
@@ -182,15 +192,7 @@ export default function BankAccountsTab({ bankAccounts, currencies, canEdit, onS
                         />
                     </div>
                     <SaveErrorBanner error={editor.saveError} />
-                    <div className="flex flex-wrap justify-end gap-2">
-                        <button type="button" className={SECONDARY_BUTTON} onClick={editor.close}>
-                            ยกเลิก
-                        </button>
-                        <button type="submit" className={PRIMARY_BUTTON} disabled={editor.isSaving}>
-                            {editor.isSaving ? "กำลังบันทึก..." : "บันทึกบัญชี"}
-                        </button>
-                    </div>
-                </form>
+                </EditorDrawer>
             )}
 
             {bankAccounts.length === 0 ? (

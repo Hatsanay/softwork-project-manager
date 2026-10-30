@@ -74,7 +74,7 @@ export default function RecurringItemsCard({
                 />
             )}
             {employee.recurring_items.length === 0 && !isAdding && (
-                <p className="text-sm text-gray-500">ยังไม่มีรายการประจำ — เงินเดือนฐานอย่างเดียว</p>
+                <p className="text-sm text-gray-500">ยังไม่มีรายการประจำ · เงินเดือนฐานอย่างเดียว</p>
             )}
             <ul className="grid divide-y divide-gray-100 text-sm">
                 {employee.recurring_items.map((item) => (

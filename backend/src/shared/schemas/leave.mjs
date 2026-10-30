@@ -32,7 +32,7 @@ export const leaveRequestSchema = z
             context.addIssue({
                 code: "custom",
                 path: ["lr_end_date"],
-                message: "ลาคร่อมปีไม่ได้ (โควตานับรายปี) — แยกเป็น 2 ใบ ใบละปี",
+                message: "ลาคร่อมปีไม่ได้ (โควตานับรายปี) · แยกเป็น 2 ใบ ใบละปี",
             });
         }
         if (daysBetween(request.lr_start_date, request.lr_end_date) >= MAX_LEAVE_SPAN_DAYS) {

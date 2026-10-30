@@ -11,7 +11,7 @@ let compression = null;
 try {
     compression = require("compression");
 } catch {
-    console.warn("[app] ไม่พบแพ็กเกจ compression (ยังไม่ได้ npm install?) — ข้ามการบีบอัด response");
+    console.warn("[app] ไม่พบแพ็กเกจ compression (ยังไม่ได้ npm install?) · ข้ามการบีบอัด response");
 }
 
 const app = express();

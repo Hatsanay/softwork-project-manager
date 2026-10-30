@@ -41,12 +41,14 @@ export default function DepartmentSettingsPage() {
     const columns: Column<Department>[] = [
         {
             key: "dep_code",
+            mobile: "meta",
             header: "รหัสแผนก",
             render: (value) => <span className="tracking-wider tabular-nums">{value}</span>,
         },
-        { key: "dep_name", header: "ชื่อแผนก" },
+        { key: "dep_name", mobile: "title", header: "ชื่อแผนก" },
         {
             key: "branch_name_th",
+            mobile: "meta",
             header: "สาขา",
             render: (value, row) => (
                 <span>
@@ -56,11 +58,13 @@ export default function DepartmentSettingsPage() {
         },
         {
             key: "employee_count",
+            mobile: "meta",
             header: "พนักงาน",
             render: (value) => <span className="tabular-nums">{value} คน</span>,
         },
         {
             key: "dep_status",
+            mobile: "badge",
             header: "สถานะ",
             render: (value) => <ActiveStatusPill isActive={value === "active"} />,
         },

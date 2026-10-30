@@ -2,7 +2,7 @@
 // ชุด = กล่องเดียว: ชื่อชุด + ราคาชุดครั้งเดียว · รายการข้างในเป็นเช็กลิสต์ ✓ (แถวราคา 0 = รวมในชุด ไม่แสดง 0.00)
 // ชุดที่มีหลายแถวมีราคา: แสดงยอดของแถวนั้นด้วย · รายการเดี่ยว (ไม่อยู่ในชุด): ราคา × จำนวน และยอด
 import { Check, Package } from "lucide-react";
-import { formatAmount, formatHundredths, parseHundredths } from "@/lib/shared/money.mjs";
+import { formatAmount, formatHundredths, formatQuantity, parseHundredths } from "@/lib/shared/money.mjs";
 
 export type GroupRow = {
     type: "item" | "note";
@@ -65,7 +65,7 @@ function PackageGroup({ group }: { group: ItemGroup }) {
                                 {/* จำนวน 1 ไม่ต้องบอก (เช่น "ดูแลบั๊ก 30 วัน") */}
                                 {row.quantity && Number(row.quantity) !== 1 && (
                                     <span className="text-gray-500 tabular-nums">
-                                        {" "}· {Number(row.quantity)} {row.unit ?? ""}
+                                        {" "}· {formatQuantity(row.quantity)} {row.unit ?? ""}
                                     </span>
                                 )}
                             </span>
@@ -91,7 +91,7 @@ function StandaloneRows({ rows }: { rows: GroupRow[] }) {
                         <span className="min-w-0 whitespace-pre-line wrap-break-word">
                             {row.name}
                             <span className="block text-xs text-gray-500 tabular-nums">
-                                {row.priceNote ?? `${formatAmount(row.unitPrice ?? "0")} × ${Number(row.quantity ?? 0)} ${row.unit ?? ""}`}
+                                {row.priceNote ?? `${formatAmount(row.unitPrice ?? "0")} × ${formatQuantity(row.quantity ?? 0)} ${row.unit ?? ""}`}
                             </span>
                         </span>
                         <span className="shrink-0 tabular-nums">{formatAmount(row.amount)}</span>
@@ -134,7 +134,7 @@ export function quotationGroups(
             unitPrice: item.unit_price,
             amount: item.amount ?? "0",
             priceNote: hasDiscount
-                ? `${formatAmount(item.unit_price ?? "0")} × ${Number(item.quantity ?? 0)} ${item.unit ?? ""} · ส่วนลด ${formatAmount(item.discount ?? "0")}`
+                ? `${formatAmount(item.unit_price ?? "0")} × ${formatQuantity(item.quantity ?? 0)} ${item.unit ?? ""} · ส่วนลด ${formatAmount(item.discount ?? "0")}`
                 : null,
         });
     }

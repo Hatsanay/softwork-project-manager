@@ -183,10 +183,10 @@ test("สร้างรอบ มี.ค.: เฉพาะคนที่เป
 
     const leaver = itemOf(run, employees.leaver);
     assert.equal(leaver.pri_salary_amount, "10000.00", "31,000 × 10/31");
-    assert.equal(leaver.pri_annual_income_estimate, "10000.00", "เดือนสุดท้าย — ไม่ประมาณการต่อ");
+    assert.equal(leaver.pri_annual_income_estimate, "10000.00", "เดือนสุดท้าย · ไม่ประมาณการต่อ");
     assert.ok(run.readiness.warnings.some((warning) => warning.includes("เลขประจำตัวประชาชน")));
     const priorWarning = run.readiness.warnings.find((warning) => warning.includes("ยอดยกมาของปี"));
-    assert.ok(priorWarning, "รอบแรกของปี (มี.ค.) ไม่มียอดยกมา — ต้องเตือน");
+    assert.ok(priorWarning, "รอบแรกของปี (มี.ค.) ไม่มียอดยกมา · ต้องเตือน");
     assert.ok(
         priorWarning.includes(codes["PR-A"]) && !priorWarning.includes(codes["PR-B"]),
         "PR-B เริ่มงาน มี.ค. ไม่ต้องมียอดยกมา",
@@ -417,7 +417,7 @@ test("แบบยื่น (4-5): ภ.ง.ด.1 / สปส.1-10 นับเ�
     assert.equal(sso.total_remit, "4350.00", "พนักงาน + บริษัท");
 
     const april = expectStatus(await as(people.hr, "GET", `/V1/payroll/reports/pnd1?month=${APRIL}`), 200);
-    assert.ok(april.notice, "เมษายนยังไม่มีรอบที่จ่าย — มีข้อความบอก");
+    assert.ok(april.notice, "เมษายนยังไม่มีรอบที่จ่าย · มีข้อความบอก");
     assert.equal(april.rows.length, 0);
     expectStatus(await as(people.dev, "GET", `/V1/payroll/reports/pnd1?month=${MARCH}`), 403);
 

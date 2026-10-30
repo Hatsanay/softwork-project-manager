@@ -33,7 +33,7 @@ export default function DashboardCard({
     children,
 }: DashboardCardProps) {
     return (
-        <section className={`grid content-start gap-4 p-5 sm:p-6 ${CARD_CLASS} ${className}`}>
+        <section className={`grid min-w-0 grid-cols-1 content-start gap-4 p-5 sm:p-6 ${CARD_CLASS} ${className}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="flex min-w-0 items-start gap-3">
                     <span
@@ -55,7 +55,7 @@ export default function DashboardCard({
 
 /** รายการแบบแถว — ทั้งแถวเป็นปุ่ม (มือถือกดง่าย) */
 export function ListRows({ children }: { children: React.ReactNode }) {
-    return <ul className="-mx-2 grid gap-0.5">{children}</ul>;
+    return <ul className="-mx-2 grid grid-cols-1 gap-0.5">{children}</ul>;
 }
 
 export function ListRowButton({
@@ -67,12 +67,13 @@ export function ListRowButton({
     highlight?: boolean;
     children: React.ReactNode;
 }) {
+    // min-w-0 ทุกชั้น: ข้อความที่ตัดเป็น "..." (truncate) ในแถวจะหดตามการ์ดได้ ไม่ดันแถวให้กว้างเท่าข้อความเต็ม
     return (
-        <li>
+        <li className="min-w-0">
             <button
                 type="button"
                 onClick={onClick}
-                className={`flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-500/20 ${
+                className={`flex w-full min-w-0 items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-500/20 ${
                     highlight ? "bg-red-50/70 hover:bg-red-50" : "hover:bg-gray-50"
                 }`}
             >

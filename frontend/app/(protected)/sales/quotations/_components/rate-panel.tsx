@@ -57,7 +57,7 @@ export default function RatePanel({
         const { data, error } = await apiFetch<RateResult>(`/exchange-rates?currency=${currency}`);
         setIsFetching(false);
         if (error || !data?.available || !data.rate) {
-            setFetchMessage(data?.error?.message ?? error?.message ?? "ดึงอัตราไม่สำเร็จ — กรอกอัตราเองพร้อมเหตุผล");
+            setFetchMessage(data?.error?.message ?? error?.message ?? "ดึงอัตราไม่สำเร็จ · กรอกอัตราเองพร้อมเหตุผล");
             onRateChange({ qt_exchange_rate: rate, qt_rate_source: "manual", qt_rate_date: null, qt_rate_bot: null });
             return;
         }
@@ -155,7 +155,7 @@ export default function RatePanel({
 
             {source === null && (
                 <p className="text-sm text-gray-500">
-                    กด &quot;ดึงอัตรา ธปท.&quot; เพื่อเริ่ม — ไม่มีอัตรา ธปท. ก็กรอกเองได้
+                    กด &quot;ดึงอัตรา ธปท.&quot; เพื่อเริ่ม · ไม่มีอัตรา ธปท. ก็กรอกเองได้
                 </p>
             )}
             {fetchMessage && (

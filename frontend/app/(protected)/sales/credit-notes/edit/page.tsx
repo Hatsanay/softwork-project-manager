@@ -59,7 +59,7 @@ export default function EditCreditNotePage() {
             )}
             {detail && !isDraft && (
                 <StatusBanner tone="info" title="ใบนี้ไม่ได้เป็นร่างแล้ว แก้ไขไม่ได้">
-                    ใบที่รออนุมัติให้ผู้อนุมัติตีกลับก่อน · ใบที่ออกแล้วแก้ไม่ได้ — ยกเลิกแล้วออกใบลดหนี้ใหม่
+                    ใบที่รออนุมัติให้ผู้อนุมัติตีกลับก่อน · ใบที่ออกแล้วแก้ไม่ได้ · ยกเลิกแล้วออกใบลดหนี้ใหม่
                 </StatusBanner>
             )}
             {creditNoteId && !loadError && (!detail || !invoiceDetail) && <PageSkeleton />}

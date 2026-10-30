@@ -438,7 +438,7 @@ test("ยกเลิก: ร่างใช้ลบ · อยู่ในใ�
     detail = await invoiceDetail(created.inv_id);
     assert.equal(detail.invoice.inv_status, "cancelled");
     assert.equal(detail.invoice.inv_cancel_reason, "ลูกค้าขอเปลี่ยนชื่อเรื่อง");
-    assert.equal(detail.payment.qr_payload, null, "ใบที่ยกเลิกไม่มี QR — กันลูกค้าโอนเข้าใบที่ไม่ใช้แล้ว");
+    assert.equal(detail.payment.qr_payload, null, "ใบที่ยกเลิกไม่มี QR · กันลูกค้าโอนเข้าใบที่ไม่ใช้แล้ว");
     assert.equal(detail.reissued_to.inv_id, reissued.inv_id);
 
     const replacement = await invoiceDetail(reissued.inv_id);

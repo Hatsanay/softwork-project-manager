@@ -273,7 +273,7 @@ export default function EditUserPage() {
                         <p className="font-medium">คุณจัดการผู้ใช้นี้ไม่ได้</p>
                         <p>
                             ผู้ใช้นี้มีสิทธิ์บางข้อที่คุณไม่มี จึงแก้ไขข้อมูลหรือเปลี่ยนรหัสผ่านไม่ได้
-                            — กันการเข้าถึงบัญชีที่มีสิทธิ์สูงกว่า ให้ผู้ที่มีสิทธิ์สูงกว่าเป็นคนจัดการ
+กันการเข้าถึงบัญชีที่มีสิทธิ์สูงกว่า ให้ผู้ที่มีสิทธิ์สูงกว่าเป็นคนจัดการ
                         </p>
                     </div>
                 )}
@@ -302,7 +302,7 @@ export default function EditUserPage() {
                     <div className="col-span-full">
                         <StatusBanner tone="info" title="บัญชีนี้ยังไม่ได้เป็นพนักงาน">
                             ถ้าเป็นพนักงานบริษัท เพิ่มเข้าทะเบียนได้เลย ระบบเติมชื่อ เบอร์ และอีเมลจากบัญชีนี้ให้ ·{" "}
-                            <Link href={`/people/employees/new?user=${id}`} className="text-blue-600 underline">
+                            <Link href={`/people/employees/new?user=${id}`} className="-my-2 inline-flex min-h-10 items-center font-medium text-blue-600 underline">
                                 เพิ่มเป็นพนักงาน
                             </Link>
                         </StatusBanner>
@@ -372,7 +372,7 @@ export default function EditUserPage() {
                         loadOptions={(search) => loadRolesOptions(search, currentRoleId ?? "")}
                         value={form.user_role_id}
                         onChange={(v) => setField("user_role_id", v)}
-                        placeholder="— เลือกสิทธิ์ —"
+                        placeholder="เลือกสิทธิ์"
                         disabled={isPending || isSelf || !canManage}
                         error={!!errors.user_role_id}
                     />
@@ -438,7 +438,7 @@ export default function EditUserPage() {
                 open={!!tempPassword}
                 variant="info"
                 title="เปลี่ยนรหัสผ่านสำเร็จ"
-                description={tempPassword ? `${credentialLines(tempPassword).join("  /  ")} — กรุณาคัดลอกไปให้ผู้ใช้ก่อนปิดหน้าต่างนี้` : ""}
+                description={tempPassword ? `${credentialLines(tempPassword).join("  /  ")} · กรุณาคัดลอกไปให้ผู้ใช้ก่อนปิดหน้าต่างนี้` : ""}
                 confirmLabel="คัดลอกข้อมูลเข้าสู่ระบบ"
                 cancelLabel="ปิด"
                 onConfirm={copyTempPassword}

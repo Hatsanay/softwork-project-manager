@@ -48,7 +48,7 @@ export default function ItemQuestionsPanel({
 
     return (
         <section
-            className="grid gap-2 rounded-xl border border-gray-200 bg-white p-3"
+            className="grid gap-3 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5"
             aria-label="คำถามที่ลูกค้าจะเห็น"
         >
             <h3 className="flex items-center gap-2 text-sm font-medium text-gray-900">

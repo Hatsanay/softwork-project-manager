@@ -30,6 +30,8 @@ export function useRecordEditor<Form extends object>(emptyForm: Form, onSaved: (
     const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
     const [saveError, setSaveError] = useState<ApiError | null>(null);
     const [isSaving, setIsSaving] = useState(false);
+    // ค่าตอนเปิดฟอร์ม · ต่างจากตอนนี้ = มีการแก้ค้าง (แผงแก้ไขถามก่อนปิด 2026-10-30)
+    const [openedFormJson, setOpenedFormJson] = useState("");
 
     function resetMessages() {
         setFieldErrors({});
@@ -40,6 +42,7 @@ export function useRecordEditor<Form extends object>(emptyForm: Form, onSaved: (
         resetMessages();
         setEditingId(null);
         setForm(emptyForm);
+        setOpenedFormJson(JSON.stringify(emptyForm));
         setIsOpen(true);
     }
 
@@ -47,6 +50,7 @@ export function useRecordEditor<Form extends object>(emptyForm: Form, onSaved: (
         resetMessages();
         setEditingId(recordId);
         setForm(recordForm);
+        setOpenedFormJson(JSON.stringify(recordForm));
         setIsOpen(true);
     }
 
@@ -86,6 +90,7 @@ export function useRecordEditor<Form extends object>(emptyForm: Form, onSaved: (
 
     return {
         isOpen,
+        isDirty: isOpen && JSON.stringify(form) !== openedFormJson,
         editingId,
         form,
         fieldErrors,

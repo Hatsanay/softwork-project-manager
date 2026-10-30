@@ -110,8 +110,8 @@ export function ProjectHeader({
                         <StatusPill tone={status.tone}>{status.label}</StatusPill>
                         <StatusPill tone="neutral">
                             {project.project_type === "agile"
-                                ? "Agile — สมาชิกกดรับงานเองได้"
-                                : "Waterfall — PM มอบหมายงาน"}
+                                ? "Agile · สมาชิกกดรับงานเองได้"
+                                : "Waterfall · PM มอบหมายงาน"}
                         </StatusPill>
                         {isOverdue && <StatusPill tone="danger">เลยกำหนดส่ง</StatusPill>}
                     </div>
@@ -236,7 +236,7 @@ export function ShareLinkCard({
             </div>
             {!isEnabled && (
                 <p className="text-xs text-amber-600">
-                    ปิดอยู่ — ลูกค้าที่เปิดลิงก์จะเห็นว่าลิงก์ถูกปิด จนกว่าจะเปิดใช้งานอีกครั้ง
+                    ปิดอยู่ · ลูกค้าที่เปิดลิงก์จะเห็นว่าลิงก์ถูกปิด จนกว่าจะเปิดใช้งานอีกครั้ง
                 </p>
             )}
         </SectionCard>
@@ -287,7 +287,7 @@ export function AgileOverviewCard({ tasks, tab, onTabChange, onOpenTask }: Agile
         <SectionCard
             icon={Zap}
             title="ภาพรวม Agile"
-            description={`งานทั้งหมด ${tasks.length} รายการ (Task ${topLevel.length} · Subtask ${subtasks.length}) — สมาชิกกดรับงานที่ยังไม่มีคนรับได้เอง`}
+            description={`งานทั้งหมด ${tasks.length} รายการ (Task ${topLevel.length} · Subtask ${subtasks.length}) · สมาชิกกดรับงานที่ยังไม่มีคนรับได้เอง`}
             actions={
                 <Segmented
                     label="ชนิดงาน"
@@ -445,7 +445,7 @@ export function TasksSectionCard({
         <SectionCard
             icon={ListChecks}
             title="งาน (Task)"
-            description="แสดงเฉพาะงานหลัก — กดชื่องานเพื่อดู subtask ปัญหา แชท และประวัติ · ป้ายแดง = ปัญหาของงานนั้น ป้ายฟ้า = ปัญหาใน subtask"
+            description="แสดงเฉพาะงานหลัก · กดชื่องานเพื่อดู subtask ปัญหา แชท และประวัติ · ป้ายแดง = ปัญหาของงานนั้น ป้ายฟ้า = ปัญหาใน subtask"
             actions={
                 canAddTask && (
                     <button type="button" onClick={onAddTask} className={buttonClass("primary", "md")}>

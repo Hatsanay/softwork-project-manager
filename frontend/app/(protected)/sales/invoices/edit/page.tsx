@@ -47,7 +47,7 @@ export default function EditInvoicePage() {
                 }
                 description={
                     detail && !isManual
-                        ? `ออกจากใบเสนอราคา ${detail.invoice.qt_number ?? ""} — ยอดล็อกตามใบเสนอราคา`
+                        ? `ออกจากใบเสนอราคา ${detail.invoice.qt_number ?? ""} · ยอดล็อกตามใบเสนอราคา`
                         : undefined
                 }
             />
@@ -63,7 +63,7 @@ export default function EditInvoicePage() {
             )}
             {detail && !isDraft && (
                 <StatusBanner tone="info" title="ใบนี้ไม่ได้เป็นร่างแล้ว แก้ไขไม่ได้">
-                    ใบที่ออกแล้วแก้ไม่ได้ — ใช้ &quot;ยกเลิกแล้วออกใหม่แทน&quot; จากหน้าเอกสาร
+                    ใบที่ออกแล้วแก้ไม่ได้ · ใช้ &quot;ยกเลิกแล้วออกใหม่แทน&quot; จากหน้าเอกสาร
                 </StatusBanner>
             )}
             {invoiceId && !error && (!detail || !options) && <PageSkeleton />}

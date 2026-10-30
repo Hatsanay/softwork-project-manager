@@ -123,12 +123,12 @@ export default function CreditNoteForm({ invoiceDetail, detail }: CreditNoteForm
         });
         if (!checked.success) {
             setFieldErrors(toFieldErrors(checked.error.issues));
-            toast.error("ยังบันทึกไม่ได้ — แก้ช่องที่มีข้อความสีแดงก่อน");
+            toast.error("ยังบันทึกไม่ได้ · แก้ช่องที่มีข้อความสีแดงก่อน");
             return;
         }
         if (Object.keys(preview.errors).length > 0) {
             setFieldErrors(preview.errors);
-            toast.error("ยังบันทึกไม่ได้ — แก้ช่องที่มีข้อความสีแดงก่อน");
+            toast.error("ยังบันทึกไม่ได้ · แก้ช่องที่มีข้อความสีแดงก่อน");
             return;
         }
         setFieldErrors({});
@@ -143,7 +143,7 @@ export default function CreditNoteForm({ invoiceDetail, detail }: CreditNoteForm
             setSaveError(error);
             return;
         }
-        toast.success(creditNote ? "บันทึกร่างแล้ว" : "สร้างร่างใบลดหนี้แล้ว — ตรวจแล้วกดส่งขออนุมัติ");
+        toast.success(creditNote ? "บันทึกร่างแล้ว" : "สร้างร่างใบลดหนี้แล้ว · ตรวจแล้วกดส่งขออนุมัติ");
         router.push(`/sales/credit-notes/view?id=${data.cn_id}`);
     }
 
@@ -220,7 +220,7 @@ export default function CreditNoteForm({ invoiceDetail, detail }: CreditNoteForm
                     </div>
                     <FieldHint error={fieldErrors.lines}>
                         ลดได้สูงสุด {formatAmount(remainingBase, decimals)} {code}
-                        {hasVat ? " (ก่อน VAT)" : ""} — ยอดใบ {formatAmount(invoice.inv_after_discount, decimals)} −
+                        {hasVat ? " (ก่อน VAT)" : ""} · ยอดใบ {formatAmount(invoice.inv_after_discount, decimals)} −
                         ลดหนี้แล้ว {formatAmount(invoice.inv_credited_base, decimals)}
                     </FieldHint>
 

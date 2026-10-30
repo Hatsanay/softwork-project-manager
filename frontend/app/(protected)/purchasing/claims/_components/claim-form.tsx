@@ -226,7 +226,7 @@ export default function ClaimForm({ options, detail }: { options: ExpenseOptions
             if (error) failed += 1;
         }
         if (failed > 0)
-            toast.error(`แนบรูปไม่สำเร็จ ${failed} ไฟล์ — แนบใหม่ได้ที่หน้าใบเบิก (JPG, PNG หรือ PDF ไม่เกิน 10 MB)`);
+            toast.error(`แนบรูปไม่สำเร็จ ${failed} ไฟล์ · แนบใหม่ได้ที่หน้าใบเบิก (JPG, PNG หรือ PDF ไม่เกิน 10 MB)`);
     }
 
     async function handleSave(event: React.FormEvent) {
@@ -235,7 +235,7 @@ export default function ClaimForm({ options, detail }: { options: ExpenseOptions
         const checked = expenseClaimDraftSchema.safeParse(toPayload(form, detail?.expense.ex_version ?? null));
         if (!checked.success) {
             setFieldErrors(toFieldErrors(checked.error.issues));
-            toast.error("ยังบันทึกไม่ได้ — แก้ช่องที่มีข้อความสีแดงก่อน");
+            toast.error("ยังบันทึกไม่ได้ · แก้ช่องที่มีข้อความสีแดงก่อน");
             return;
         }
         setFieldErrors({});
@@ -256,7 +256,7 @@ export default function ClaimForm({ options, detail }: { options: ExpenseOptions
         await uploadPending(claimId);
         setIsSaving(false);
         setIsDirty(false);
-        toast.success("บันทึกร่างแล้ว — ตรวจแล้วกดส่งเบิก");
+        toast.success("บันทึกร่างแล้ว · ตรวจแล้วกดส่งเบิก");
         router.push(`/purchasing/claims/view?id=${claimId}`);
     }
 
@@ -265,14 +265,14 @@ export default function ClaimForm({ options, detail }: { options: ExpenseOptions
             <div className="grid min-w-0 grid-cols-1 gap-5">
                 {detail?.expense.ex_returned_reason && (
                     <StatusBanner tone="warn" title="ใบเบิกนี้ถูกตีกลับ">
-                        เหตุผล: {detail.expense.ex_returned_reason} — แก้แล้วส่งใหม่ได้
+                        เหตุผล: {detail.expense.ex_returned_reason} · แก้แล้วส่งใหม่ได้
                     </StatusBanner>
                 )}
 
                 <SectionCard icon={Camera} title="รูปใบเสร็จ" description={CLAIM_MESSAGES.receiptFirst}>
                     <div className="grid gap-3">
                         {existingCount > 0 && (
-                            <FieldHint>มีรูปแนบแล้ว {existingCount} ไฟล์ — ดู/ลบได้ที่หน้าใบเบิก</FieldHint>
+                            <FieldHint>มีรูปแนบแล้ว {existingCount} ไฟล์ · ดู/ลบได้ที่หน้าใบเบิก</FieldHint>
                         )}
                         {pendingFiles.length > 0 && (
                             <ul className="grid gap-2">
@@ -479,7 +479,7 @@ export default function ClaimForm({ options, detail }: { options: ExpenseOptions
                                                     Boolean(fieldErrors[`${prefix}.exl_category_id`]),
                                                 )}
                                             >
-                                                <option value="">— เลือกหมวด —</option>
+                                                <option value="">เลือกหมวด</option>
                                                 {categories
                                                     .filter(
                                                         (category) =>

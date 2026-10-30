@@ -133,14 +133,14 @@ async function submitForApproval(conn, quotationId, expectedVersion, actor) {
         draft.qt_client_id,
     ]);
     if (client?.client_status !== "active")
-        problems.push("ลูกค้าถูกปิดใช้งาน — เปลี่ยนลูกค้า หรือเปิดใช้งานลูกค้าก่อน");
+        problems.push("ลูกค้าถูกปิดใช้งาน · เปลี่ยนลูกค้า หรือเปิดใช้งานลูกค้าก่อน");
     const [[branch]] = await conn.query("SELECT branch_status FROM tb_branches WHERE branch_id = ?", [
         draft.qt_branch_id,
     ]);
-    if (branch?.branch_status !== "active") problems.push("สาขาถูกปิดใช้งาน — เลือกสาขาอื่น");
+    if (branch?.branch_status !== "active") problems.push("สาขาถูกปิดใช้งาน · เลือกสาขาอื่น");
     const currency = await quotationService.findCurrency(conn, draft.qt_currency);
     if (currency?.cur_status !== "active")
-        problems.push(`สกุลเงิน ${draft.qt_currency} ถูกปิดใช้งาน — เปลี่ยนสกุลเงิน`);
+        problems.push(`สกุลเงิน ${draft.qt_currency} ถูกปิดใช้งาน · เปลี่ยนสกุลเงิน`);
     if (draft.qt_currency !== BASE_CURRENCY && !draft.qt_rate_source) problems.push("ยังไม่มีอัตราแลกเปลี่ยน");
     if (!draft.items.some((item) => item.qti_type === "item")) problems.push("ยังไม่มีแถวรายการที่มีราคา");
     if (draft.qt_payment_mode === "milestones" && draft.milestones.length === 0)
@@ -193,7 +193,7 @@ async function submitForApproval(conn, quotationId, expectedVersion, actor) {
         throw new AppError(
             409,
             "APPROVAL_RULES_MISSING",
-            "ยังไม่ได้ตั้งกติกาอนุมัติ — ให้ผู้ดูแลตั้งที่ ตั้งค่าระบบ › ข้อมูลบริษัท › การอนุมัติ",
+            "ยังไม่ได้ตั้งกติกาอนุมัติ · ให้ผู้ดูแลตั้งที่ ตั้งค่าระบบ › ข้อมูลบริษัท › การอนุมัติ",
         );
     }
 
@@ -303,7 +303,7 @@ async function approve(conn, quotationId, expectedVersion, actor) {
             throw new AppError(
                 409,
                 "VAT_CHANGED",
-                `อัตรา VAT เปลี่ยนจาก ${quotation.qt_vat_rate}% เป็น ${vatRateToday}% ตั้งแต่ส่งขออนุมัติ — ยอดในใบนี้ไม่ถูกต้องแล้ว กรุณาตีกลับให้ผู้สร้างบันทึกใหม่เพื่อคำนวณยอดใหม่`,
+                `อัตรา VAT เปลี่ยนจาก ${quotation.qt_vat_rate}% เป็น ${vatRateToday}% ตั้งแต่ส่งขออนุมัติ · ยอดในใบนี้ไม่ถูกต้องแล้ว กรุณาตีกลับให้ผู้สร้างบันทึกใหม่เพื่อคำนวณยอดใหม่`,
             );
         }
     }
@@ -452,7 +452,7 @@ async function prepareFreshRate(pool, sourceId) {
         rate: source.qt_exchange_rate,
         source: "manual",
         date: null,
-        reason: `ใช้อัตราเดิมจากใบต้นทาง เพราะดึงอัตรา ธปท. ใหม่ไม่ได้ (${result.error?.message ?? "ไม่มีข้อมูล"}) — ตรวจก่อนส่งขออนุมัติ`,
+        reason: `ใช้อัตราเดิมจากใบต้นทาง เพราะดึงอัตรา ธปท. ใหม่ไม่ได้ (${result.error?.message ?? "ไม่มีข้อมูล"}) · ตรวจก่อนส่งขออนุมัติ`,
     };
 }
 
@@ -528,7 +528,7 @@ function withRate(draft, freshRate) {
 async function revise(conn, quotationId, freshRate, actor) {
     const source = await lockWithDates(conn, quotationId);
     if (source.qt_status === "accepted") {
-        throw quotationService.wrongStatus('ใบที่ลูกค้าตอบรับแล้วออก revision ไม่ได้ — ใช้ "คัดลอกเป็นใบใหม่"');
+        throw quotationService.wrongStatus('ใบที่ลูกค้าตอบรับแล้วออก revision ไม่ได้ · ใช้ "คัดลอกเป็นใบใหม่"');
     }
     if (!quotationService.REVISABLE_STATUSES.includes(source.qt_status)) {
         throw quotationService.wrongStatus("ออก revision ได้เฉพาะใบที่อนุมัติ ส่งลูกค้า หมดอายุ หรือถูกปฏิเสธ");
@@ -542,7 +542,7 @@ async function revise(conn, quotationId, freshRate, actor) {
         throw new AppError(
             409,
             "REVISION_ALREADY_OPEN",
-            "มี revision ที่ยังเป็นร่างหรือรออนุมัติอยู่แล้ว — เปิดแก้ฉบับนั้นต่อ",
+            "มี revision ที่ยังเป็นร่างหรือรออนุมัติอยู่แล้ว · เปิดแก้ฉบับนั้นต่อ",
         );
     }
 

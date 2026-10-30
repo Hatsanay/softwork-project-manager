@@ -291,7 +291,7 @@ export function ActiveProjectsCard({
                             onClick={() => onNavigate(projectLink(project.project_id))}
                         >
                             <span className="grid min-w-0 flex-1 gap-1.5">
-                                <span className="flex items-center justify-between gap-3">
+                                <span className="flex min-w-0 items-center justify-between gap-3">
                                     <span className="truncate text-sm text-gray-800">{project.project_name}</span>
                                     <StatusPill tone={PROJECT_STATUS[project.project_status].tone}>
                                         {PROJECT_STATUS[project.project_status].label}

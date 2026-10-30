@@ -45,12 +45,12 @@ export default function RoleSettingsPage() {
     const hasBit = usePermission();
 
     const columns: Column<Role>[] = [
-        { key: "role_id",       header: "รหัสสิทธิ์",        className: "w-16" },
-        { key: "role_name",     header: "ชื่อสิทธิ์" },
-        { key: "role_department_name", header: "แผนก", render: (v) => (v as string) || "-" },
-        { key: "by_fullname",   header: "สร้างโดย" },
-        { key: "role_granted_at", header: "สร้างเมื่อ", render: (v) => formatDate(v) },
-        { key: "role_update_at",  header: "อัปเดตเมื่อ",  render: (v) => formatDate(v) },
+        { key: "role_id", mobile: "meta", mobileLabel: "รหัส", header: "รหัสสิทธิ์",        className: "w-16" },
+        { key: "role_name", mobile: "title", header: "ชื่อสิทธิ์" },
+        { key: "role_department_name", mobile: "meta", header: "แผนก", render: (v) => (v as string) || "-" },
+        { key: "by_fullname", mobile: "hidden", header: "สร้างโดย" },
+        { key: "role_granted_at", mobile: "hidden", header: "สร้างเมื่อ", render: (v) => formatDate(v) },
+        { key: "role_update_at", mobile: "meta", mobileLabel: "อัปเดต", header: "อัปเดตเมื่อ",  render: (v) => formatDate(v) },
     ];
     const [isPending, startTransition] = useTransition();
     const [roles, setRoles]   = useState<Role[]>([]);

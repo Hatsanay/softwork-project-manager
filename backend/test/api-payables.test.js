@@ -202,7 +202,7 @@ test("ต้นทุนโปรเจกต์: บรรทัดที่อ
     );
 
     const finance = expectStatus(await api.callApi("GET", `/V1/projects/${PROJECT_ID}/finance`), 200);
-    assert.equal(finance.profit.cost_thb, "2140.00", "บริษัทยังไม่จด VAT — VAT เป็นต้นทุน");
+    assert.equal(finance.profit.cost_thb, "2140.00", "บริษัทยังไม่จด VAT · VAT เป็นต้นทุน");
     assert.equal(finance.profit.pending_cost_thb, "999.00");
     assert.equal(finance.profit.billed_before_vat_thb, "0.00");
     assert.equal(finance.profit.gross_profit_thb, "-2140.00");

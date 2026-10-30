@@ -341,7 +341,7 @@ async function sendTaskAssignedEmail({ to, ...data }) {
     try {
         const t = getTransporter();
         if (!t) {
-            console.warn("[mailer] SMTP ยังไม่ได้ตั้งค่า (.env) — ข้ามการส่งอีเมลแจ้งมอบหมายงาน");
+            console.warn("[mailer] SMTP ยังไม่ได้ตั้งค่า (.env) · ข้ามการส่งอีเมลแจ้งมอบหมายงาน");
             return;
         }
         const { html, text } = buildTaskAssignedEmail(data);
@@ -361,7 +361,7 @@ async function sendProjectMemberAddedEmail({ to, ...data }) {
     try {
         const t = getTransporter();
         if (!t) {
-            console.warn("[mailer] SMTP ยังไม่ได้ตั้งค่า (.env) — ข้ามการส่งอีเมลแจ้งเพิ่มสมาชิกโปรเจกต์");
+            console.warn("[mailer] SMTP ยังไม่ได้ตั้งค่า (.env) · ข้ามการส่งอีเมลแจ้งเพิ่มสมาชิกโปรเจกต์");
             return;
         }
         const { html, text } = buildProjectMemberAddedEmail(data);
@@ -513,7 +513,7 @@ async function sendServiceRequestEmail({ to, ...data }) {
     try {
         const t = getTransporter();
         if (!t) {
-            console.warn("[mailer] SMTP ยังไม่ได้ตั้งค่า (.env) — ข้ามการส่งอีเมลแจ้งคำขอบริการใหม่");
+            console.warn("[mailer] SMTP ยังไม่ได้ตั้งค่า (.env) · ข้ามการส่งอีเมลแจ้งคำขอบริการใหม่");
             return;
         }
         const { html, text } = buildServiceRequestEmail(data);

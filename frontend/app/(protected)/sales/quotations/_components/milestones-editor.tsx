@@ -85,7 +85,7 @@ export default function MilestonesEditor({
                             </div>
                         </label>
                         <p className="py-2.5 text-right text-sm tabular-nums text-gray-800">
-                            {amount !== null && amount !== undefined ? formatAmount(amount, currencyDecimals) : "—"}
+                            {amount !== null && amount !== undefined ? formatAmount(amount, currencyDecimals) : "-"}
                         </p>
                         <button
                             type="button"

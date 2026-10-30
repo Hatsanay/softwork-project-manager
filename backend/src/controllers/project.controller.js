@@ -140,7 +140,7 @@ async function remove(req, res, next) {
         if (quotationCount > 0) {
             return res.status(409).json({
                 code: "PROJECT_HAS_QUOTATIONS",
-                message: `ลบโปรเจกต์นี้ไม่ได้ เพราะผูกกับใบเสนอราคา ${quotationCount} ใบ — ถ้าไม่ทำต่อแล้วให้ใช้ "ยกเลิกโปรเจกต์" แทน (กู้คืนได้ ประวัติยังอยู่)`,
+                message: `ลบโปรเจกต์นี้ไม่ได้ เพราะผูกกับใบเสนอราคา ${quotationCount} ใบ · ถ้าไม่ทำต่อแล้วให้ใช้ "ยกเลิกโปรเจกต์" แทน (กู้คืนได้ ประวัติยังอยู่)`,
             });
         }
         // ค่าใช้จ่ายที่ผูกโปรเจกต์ (ต้นทุนโปรเจกต์ — เฟส 2 P4) ก็ลบไม่ได้เหมือนกัน
@@ -151,7 +151,7 @@ async function remove(req, res, next) {
         if (expenseCount > 0) {
             return res.status(409).json({
                 code: "PROJECT_HAS_EXPENSES",
-                message: `ลบโปรเจกต์นี้ไม่ได้ เพราะมีค่าใช้จ่าย ${expenseCount} รายการผูกอยู่ (เป็นต้นทุนโปรเจกต์) — ถ้าไม่ทำต่อแล้วให้ใช้ "ยกเลิกโปรเจกต์" แทน`,
+                message: `ลบโปรเจกต์นี้ไม่ได้ เพราะมีค่าใช้จ่าย ${expenseCount} รายการผูกอยู่ (เป็นต้นทุนโปรเจกต์) · ถ้าไม่ทำต่อแล้วให้ใช้ "ยกเลิกโปรเจกต์" แทน`,
             });
         }
         // เงินจาก Fastwork ที่บันทึกไว้ (รายได้ · 2026-10-24 P-1) ก็ลบไม่ได้ — รวมรายการที่ยกเลิกแล้ว (เป็นประวัติการเงิน)
@@ -173,7 +173,7 @@ async function remove(req, res, next) {
         if (timesheetCount > 0) {
             return res.status(409).json({
                 code: "PROJECT_HAS_TIMESHEETS",
-                message: `ลบโปรเจกต์นี้ไม่ได้ เพราะมีชั่วโมงทำงานลงไว้ ${timesheetCount} แถว (เป็นต้นทุนค่าแรง) — ถ้าไม่ทำต่อแล้วให้ใช้ "ยกเลิกโปรเจกต์" แทน`,
+                message: `ลบโปรเจกต์นี้ไม่ได้ เพราะมีชั่วโมงทำงานลงไว้ ${timesheetCount} แถว (เป็นต้นทุนค่าแรง) · ถ้าไม่ทำต่อแล้วให้ใช้ "ยกเลิกโปรเจกต์" แทน`,
             });
         }
         await pool.query("DELETE FROM tb_projects WHERE project_id = ?", [req.params.id]);

@@ -41,7 +41,7 @@ function notFound() {
 }
 
 function wrongStatus(message) {
-    return new AppError(409, "QUOTATION_WRONG_STATUS", `${message} — กรุณาโหลดหน้าใหม่เพื่อดูสถานะล่าสุด`);
+    return new AppError(409, "QUOTATION_WRONG_STATUS", `${message} · กรุณาโหลดหน้าใหม่เพื่อดูสถานะล่าสุด`);
 }
 
 /**
@@ -55,7 +55,7 @@ function assertVersion(quotation, expectedVersion) {
         throw new AppError(
             409,
             "QUOTATION_CHANGED",
-            "มีคนแก้หรือเปลี่ยนสถานะใบนี้ไปก่อนแล้ว — โหลดหน้าใหม่เพื่อดูข้อมูลล่าสุด (สิ่งที่คุณแก้ยังไม่ถูกบันทึก)",
+            "มีคนแก้หรือเปลี่ยนสถานะใบนี้ไปก่อนแล้ว · โหลดหน้าใหม่เพื่อดูข้อมูลล่าสุด (สิ่งที่คุณแก้ยังไม่ถูกบันทึก)",
         );
     }
 }
@@ -118,7 +118,7 @@ async function resolveRate(conn, draft) {
     const botRate = await findCachedBotRate(conn, draft.qt_currency, draft.qt_rate_date);
     if (draft.qt_rate_source === "bot" && !sameDecimal(botRate, draft.qt_exchange_rate)) {
         throw new AppError(400, "VALIDATION", "อัตรานี้ไม่ตรงกับอัตรา ธปท. ที่ระบบดึงไว้", {
-            qt_exchange_rate: "อัตราไม่ตรงกับของ ธปท. — กดดึงอัตราใหม่ หรือเลือกกรอกเองพร้อมเหตุผล",
+            qt_exchange_rate: "อัตราไม่ตรงกับของ ธปท. · กดดึงอัตราใหม่ หรือเลือกกรอกเองพร้อมเหตุผล",
         });
     }
     return botRate;
@@ -139,7 +139,7 @@ async function assertReferences(conn, draft, existing) {
     else if (client.client_status !== "active" && isChanged("qt_client_id"))
         fields.qt_client_id = "ลูกค้านี้ถูกปิดใช้งานแล้ว";
     if (existing && existing.qt_revision > 0 && isChanged("qt_client_id")) {
-        fields.qt_client_id = 'revision ต้องเป็นลูกค้าเดิม — ถ้าจะเสนอลูกค้ารายอื่นให้ใช้ "คัดลอกเป็นใบใหม่"';
+        fields.qt_client_id = 'revision ต้องเป็นลูกค้าเดิม · ถ้าจะเสนอลูกค้ารายอื่นให้ใช้ "คัดลอกเป็นใบใหม่"';
     }
 
     const [[branch]] = await conn.query("SELECT branch_status FROM tb_branches WHERE branch_id = ?", [
@@ -165,7 +165,7 @@ async function assertReferences(conn, draft, existing) {
         const existingIds = new Set(rows.map((row) => row.product_id));
         draft.items.forEach((item, index) => {
             if (item.qti_product_id && !existingIds.has(item.qti_product_id)) {
-                fields[`items.${index}.qti_product_id`] = "สินค้านี้ถูกลบไปแล้ว — ลบแถวนี้หรือเลือกใหม่";
+                fields[`items.${index}.qti_product_id`] = "สินค้านี้ถูกลบไปแล้ว · ลบแถวนี้หรือเลือกใหม่";
             }
         });
     }
@@ -376,7 +376,7 @@ async function updateDraft(conn, quotationId, draft) {
 async function deleteDraft(conn, quotationId, expectedVersion) {
     const existing = await findForUpdate(conn, quotationId);
     if (existing.qt_status !== EDITABLE_STATUS) {
-        throw wrongStatus('ลบได้เฉพาะร่าง — ใบที่ส่งขออนุมัติแล้วให้ใช้ "ยกเลิก" แทน');
+        throw wrongStatus('ลบได้เฉพาะร่าง · ใบที่ส่งขออนุมัติแล้วให้ใช้ "ยกเลิก" แทน');
     }
     assertVersion(existing, expectedVersion);
     await conn.query("DELETE FROM tb_quotations WHERE qt_id = ?", [quotationId]);
@@ -639,8 +639,8 @@ async function buildActions(conn, quotation, chain, actor, approval, fastworkSou
 
     let reviseBlockedReason = null;
     if (status === "accepted")
-        reviseBlockedReason = 'ใบที่ลูกค้าตอบรับแล้วออก revision ไม่ได้ — ใช้ "คัดลอกเป็นใบใหม่" สำหรับงานเพิ่ม';
-    else if (hasOpenRevision) reviseBlockedReason = "มี revision ที่ยังเป็นร่างหรือรออนุมัติอยู่แล้ว — แก้ฉบับนั้นต่อ";
+        reviseBlockedReason = 'ใบที่ลูกค้าตอบรับแล้วออก revision ไม่ได้ · ใช้ "คัดลอกเป็นใบใหม่" สำหรับงานเพิ่ม';
+    else if (hasOpenRevision) reviseBlockedReason = "มี revision ที่ยังเป็นร่างหรือรออนุมัติอยู่แล้ว · แก้ฉบับนั้นต่อ";
 
     return {
         can_edit: canCreate && status === "draft",

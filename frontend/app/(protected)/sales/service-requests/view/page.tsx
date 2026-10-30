@@ -20,7 +20,7 @@ import { PageSkeleton } from "@/components/ui/skeleton";
 import { buttonClass } from "@/components/ui/button";
 import { usePermission, BITS } from "@/app/components/permission-provider";
 import { apiFetch, apiFetchBlob, type ApiError } from "@/lib/api";
-import { formatAmount } from "@/lib/shared/money.mjs";
+import { formatAmount, formatQuantity } from "@/lib/shared/money.mjs";
 import { lineAmount } from "@/lib/shared/order-cart-math.mjs";
 import AnswersList from "@/app/order/_components/answers-list";
 import type { RequestAnswer } from "@/app/order/_types";
@@ -303,7 +303,7 @@ function ServiceRequestView() {
                                     if (item.svi_type === "heading") {
                                         return (
                                             <li key={item.svi_id} className="pt-1 font-medium text-gray-900">
-                                                {item.svi_name} × {Number(item.svi_quantity)} ชุด
+                                                {item.svi_name} × {formatQuantity(item.svi_quantity)} ชุด
                                             </li>
                                         );
                                     }
@@ -316,9 +316,9 @@ function ServiceRequestView() {
                                             <span className="min-w-0 wrap-break-word">
                                                 {item.svi_name}
                                                 <span className="block text-xs text-gray-500 tabular-nums no-underline">
-                                                    {item.svi_percent ? `+${Number(item.svi_percent)}% ของยอด` : `${formatAmount(unitPrice)} × ${Number(quantity)} ${item.svi_unit ?? ""}`}
+                                                    {item.svi_percent ? `+${Number(item.svi_percent)}% ของยอด` : `${formatAmount(unitPrice)} × ${formatQuantity(quantity)} ${item.svi_unit ?? ""}`}
                                                     {item.svi_is_preset && " · ทีมงานเลือกให้"}
-                                                    {isChanged && ` · ลูกค้าเลือก ${formatAmount(item.svi_unit_price ?? "0")} × ${Number(item.svi_quantity)}`}
+                                                    {isChanged && ` · ลูกค้าเลือก ${formatAmount(item.svi_unit_price ?? "0")} × ${formatQuantity(item.svi_quantity)}`}
                                                     {item.svi_added_by_staff && " · เพิ่มโดยทีมงาน"}
                                                     {item.svi_is_removed && " · เอาออกแล้ว"}
                                                 </span>

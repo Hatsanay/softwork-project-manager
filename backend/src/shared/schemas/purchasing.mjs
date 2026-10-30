@@ -90,14 +90,14 @@ export const vendorSchema = z
                 code: "custom",
                 path: ["vd_tax_id"],
                 message:
-                    "เลขประจำตัวผู้เสียภาษีไม่ถูกต้อง — ผู้ขายในไทยต้องเป็นตัวเลข 13 หลัก ตรวจว่าพิมพ์ครบและไม่สลับหลัก",
+                    "เลขประจำตัวผู้เสียภาษีไม่ถูกต้อง · ผู้ขายในไทยต้องเป็นตัวเลข 13 หลัก ตรวจว่าพิมพ์ครบและไม่สลับหลัก",
             });
         }
         if (isThai && vendor.vd_type === "juristic" && vendor.vd_tax_id && !vendor.vd_branch_code) {
             context.addIssue({
                 code: "custom",
                 path: ["vd_branch_code"],
-                message: "นิติบุคคลที่มีเลขผู้เสียภาษีต้องระบุสาขา (สำนักงานใหญ่ = 00000) — ใช้พิมพ์บน 50 ทวิ",
+                message: "นิติบุคคลที่มีเลขผู้เสียภาษีต้องระบุสาขา (สำนักงานใหญ่ = 00000) · ใช้พิมพ์บน 50 ทวิ",
             });
         }
         if (vendor.vd_bank_account_no && !vendor.vd_bank_name) {

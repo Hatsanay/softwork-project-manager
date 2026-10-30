@@ -276,6 +276,8 @@ const PUBLIC_ROUTES = new Set([
     "GET /V1/order/:code",
     "POST /V1/order/:code/requests",
     "POST /V1/order/requests/:token/accept",
+    // ใบเสนอราคา A4 ให้ลูกค้าเปิด/บันทึก PDF (2026-10-30)
+    "GET /V1/order/requests/:token/quotation-document",
 ]);
 
 function listRoutes() {

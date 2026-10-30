@@ -549,7 +549,7 @@ function payrollSummaryRows(payroll) {
     return [
         ["รอบเงินเดือน", `${payroll.pr_number} (${payroll.pr_status === "paid" ? "จ่ายแล้ว" : "อนุมัติแล้ว ยังไม่จ่าย"})`],
         ["เงินเดือนและค่าจ้างรวม (บาท)", amount(payroll.pr_total_gross)],
-        ["ประกันสังคมส่วนบริษัท — ค่าใช้จ่าย (บาท)", amount(payroll.pr_total_sso_employer)],
+        ["ประกันสังคมส่วนบริษัท · ค่าใช้จ่าย (บาท)", amount(payroll.pr_total_sso_employer)],
         ["ประกันสังคมค้างนำส่ง (พนักงาน + บริษัท) (บาท)", Math.round((amount(payroll.pr_total_sso_employee) + amount(payroll.pr_total_sso_employer)) * 100) / 100],
         ["ภาษีเงินเดือนค้างนำส่ง ภ.ง.ด.1 (บาท)", amount(payroll.pr_total_tax)],
         ["รายหักอื่นจากเงินเดือน (บาท)", amount(payroll.pr_total_deductions)],
@@ -602,37 +602,37 @@ async function buildAccountingExport(conn, monthText, actor) {
         ["ส่งออกเมื่อ (เวลาไทย)", generatedAt],
         ["ผู้ส่งออก", user?.full_name ?? ""],
         [],
-        ["ใบแจ้งหนี้ที่ออก (ไม่นับที่ยกเลิก) — จำนวน", activeInvoices.length],
-        ["ในจำนวนนี้เป็นใบเพิ่มหนี้ — จำนวน", activeDebitNotes.length],
+        ["ใบแจ้งหนี้ที่ออก (ไม่นับที่ยกเลิก) · จำนวน", activeInvoices.length],
+        ["ในจำนวนนี้เป็นใบเพิ่มหนี้ · จำนวน", activeDebitNotes.length],
         ["ยอดก่อน VAT รวม (บาท)", sum(activeInvoices, "before_vat_thb")],
         ["VAT รวม (บาท)", sum(activeInvoices, "vat_thb")],
         ["ยอดรวม (บาท)", sum(activeInvoices, "total_thb")],
-        ["ใบลดหนี้ที่ออก (ไม่นับที่ยกเลิก) — จำนวน", activeCreditNotes.length],
+        ["ใบลดหนี้ที่ออก (ไม่นับที่ยกเลิก) · จำนวน", activeCreditNotes.length],
         ["ลดหนี้ก่อน VAT รวม (บาท)", sum(activeCreditNotes, "before_vat_thb")],
         ["ลดหนี้รวม (บาท)", sum(activeCreditNotes, "total_thb")],
-        ["คืนเงินลูกค้าตามใบลดหนี้ (ยอดโอนคืน ในสกุลของใบ) — จำนวน", refundedCreditNotes.length],
-        ["ใบเสร็จ (ไม่นับที่ยกเลิก) — จำนวน", issuedReceipts.length],
+        ["คืนเงินลูกค้าตามใบลดหนี้ (ยอดโอนคืน ในสกุลของใบ) · จำนวน", refundedCreditNotes.length],
+        ["ใบเสร็จ (ไม่นับที่ยกเลิก) · จำนวน", issuedReceipts.length],
         ["เงินเข้าจริง (บาท)", sum(issuedReceipts, "received_thb")],
         ["ส่วนต่างอัตราแลกเปลี่ยน (บาท)", sum(issuedReceipts, "fx_diff_thb")],
         ["ลูกหนี้คงค้าง ณ สิ้นเดือน (บาท)", sum(aging, "outstanding_thb")],
-        ["เอกสารที่ยกเลิกในเดือน — จำนวน", cancellations.length],
+        ["เอกสารที่ยกเลิกในเดือน · จำนวน", cancellations.length],
         [],
-        ["เงินจาก Fastwork ที่เข้าในเดือน — จำนวน", receivedFastwork.length],
+        ["เงินจาก Fastwork ที่เข้าในเดือน · จำนวน", receivedFastwork.length],
         ["ราคางวดรวม (บาท · รายได้)", sum(receivedFastwork, "gross")],
         ["ค่าธรรมเนียม Fastwork รวม VAT (บาท)", Math.round((sum(receivedFastwork, "fee") + sum(receivedFastwork, "fee_vat")) * 100) / 100],
         ["หัก ณ ที่จ่ายโดย Fastwork (บาท)", sum(receivedFastwork, "wht")],
         ["เงินเข้าบัญชีจาก Fastwork (บาท)", sum(receivedFastwork, "net")],
         [],
-        ["ค่าใช้จ่าย/ใบเบิกที่อนุมัติ (ตามวันที่ค่าใช้จ่าย) — จำนวน", approvedExpenses.length],
+        ["ค่าใช้จ่าย/ใบเบิกที่อนุมัติ (ตามวันที่ค่าใช้จ่าย) · จำนวน", approvedExpenses.length],
         ["ค่าใช้จ่ายรวม (บาท รวม VAT)", sum(approvedExpenses, "total_thb")],
-        ["ใบสำคัญจ่าย (ไม่นับที่ยกเลิก) — จำนวน", issuedPayments.length],
+        ["ใบสำคัญจ่าย (ไม่นับที่ยกเลิก) · จำนวน", issuedPayments.length],
         ["เงินออกจริง (บาท ไม่รวมค่าธรรมเนียม)", sum(issuedPayments, "paid_thb")],
         ["ภาษีหัก ณ ที่จ่ายที่บริษัทต้องนำส่ง (บาท)", sum(certificateLines, "tax")],
         [],
         ...payrollSummaryRows(payroll),
         [],
         [
-            "หมายเหตุ: ใบเสร็จย้อนวันที่ได้ 30 วัน และยกเลิกเอกสารทีหลังได้ — ตัวเลขของเดือนนี้อาจเปลี่ยน ส่งออกใหม่ถ้ามีการแก้ย้อนหลัง",
+            "หมายเหตุ: ใบเสร็จย้อนวันที่ได้ 30 วัน และยกเลิกเอกสารทีหลังได้ · ตัวเลขของเดือนนี้อาจเปลี่ยน ส่งออกใหม่ถ้ามีการแก้ย้อนหลัง",
         ],
         ["ยอดสกุลต่างประเทศเป็นบาทตามอัตรา ณ วันออกใบแจ้งหนี้ · ใบเสร็จมีอัตราจริงและส่วนต่างให้แยกในชีตใบเสร็จ"],
     ];
@@ -641,7 +641,7 @@ async function buildAccountingExport(conn, monthText, actor) {
     summary.getRow(1).font = { bold: true, size: 13 };
     // แถวที่เป็นจำนวนใบ (ป้ายลงท้าย "— จำนวน") แสดงเป็นจำนวนเต็ม
     summaryRows.forEach((row, index) => {
-        if (String(row[0] ?? "").endsWith("— จำนวน")) summary.getRow(index + 1).getCell(2).numFmt = "0";
+        if (String(row[0] ?? "").endsWith("จำนวน")) summary.getRow(index + 1).getCell(2).numFmt = "0";
     });
 
     addTableSheet(

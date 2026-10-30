@@ -80,6 +80,7 @@ export default function ReceiptsPage() {
         },
         {
             key: "rc_receipt_date",
+            mobile: "meta",
             header: "วันที่ / วิธีรับ",
             render: (_, row) => (
                 <div className="grid gap-0.5 text-sm">
@@ -92,6 +93,7 @@ export default function ReceiptsPage() {
         },
         {
             key: "rc_received_amount",
+            mobile: "trailing",
             header: "เงินเข้าจริง",
             className: "text-right tabular-nums",
             render: (_, row) => (
@@ -107,6 +109,7 @@ export default function ReceiptsPage() {
         },
         {
             key: "rc_status",
+            mobile: "badge",
             header: "สถานะ",
             render: (_, row) => {
                 const needsCertificate =

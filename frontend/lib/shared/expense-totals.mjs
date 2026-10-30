@@ -57,7 +57,7 @@ export function calculateExpense({
         vat = parseHundredths(vatAmount || 0, "VAT");
         if (vat < 0n) errors.ex_vat_amount = "VAT ติดลบไม่ได้";
         else if (roundToCurrency(vat, currencyDecimals) !== vat)
-            errors.ex_vat_amount = `สกุลนี้มีทศนิยม ${currencyDecimals} ตำแหน่ง — ใส่ VAT ให้ตรงหน่วย`;
+            errors.ex_vat_amount = `สกุลนี้มีทศนิยม ${currencyDecimals} ตำแหน่ง · ใส่ VAT ให้ตรงหน่วย`;
     } catch (err) {
         errors.ex_vat_amount = err.message;
     }

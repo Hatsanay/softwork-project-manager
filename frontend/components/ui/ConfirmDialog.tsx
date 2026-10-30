@@ -83,7 +83,7 @@ export default function ConfirmDialog({
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby={titleId}
-                className="grid w-full gap-5 rounded-t-3xl bg-white p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] shadow-float sm:max-w-md sm:rounded-3xl sm:pb-6"
+                className="grid w-full gap-5 rounded-t-3xl bg-white p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] shadow-float sm:max-w-xl sm:rounded-3xl sm:pb-6"
                 onClick={(event) => event.stopPropagation()}
             >
                 <span className={`flex h-12 w-12 items-center justify-center rounded-2xl ${iconBox}`}>

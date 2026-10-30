@@ -66,7 +66,7 @@ async function prepareSignatureImage(buffer) {
     }
 
     if (inkPixels < MINIMUM_INK_PIXELS) {
-        throw invalidImage("ไม่พบลายเซ็นในรูป — ใช้รูปลายเซ็นหมึกเข้มบนกระดาษขาว หรือเซ็นบนจอใหม่");
+        throw invalidImage("ไม่พบลายเซ็นในรูป · ใช้รูปลายเซ็นหมึกเข้มบนกระดาษขาว หรือเซ็นบนจอใหม่");
     }
 
     // trim ต้องอ่านจาก PNG ที่มีอยู่จริง (ทำต่อจาก raw ในคำสั่งเดียวไม่ได้กับบางเวอร์ชันของ sharp)

@@ -33,7 +33,7 @@ function notFound() {
 }
 
 function wrongStatus(message) {
-    return new AppError(409, "BILLING_NOTE_WRONG_STATUS", `${message} — กรุณาโหลดหน้าใหม่เพื่อดูสถานะล่าสุด`);
+    return new AppError(409, "BILLING_NOTE_WRONG_STATUS", `${message} · กรุณาโหลดหน้าใหม่เพื่อดูสถานะล่าสุด`);
 }
 
 function validationError(fields) {
@@ -51,7 +51,7 @@ function assertVersion(note, expectedVersion) {
         throw new AppError(
             409,
             "BILLING_NOTE_CHANGED",
-            "มีคนแก้หรือเปลี่ยนสถานะใบนี้ไปก่อนแล้ว — โหลดหน้าใหม่เพื่อดูข้อมูลล่าสุด (สิ่งที่คุณแก้ยังไม่ถูกบันทึก)",
+            "มีคนแก้หรือเปลี่ยนสถานะใบนี้ไปก่อนแล้ว · โหลดหน้าใหม่เพื่อดูข้อมูลล่าสุด (สิ่งที่คุณแก้ยังไม่ถูกบันทึก)",
         );
     }
 }
@@ -96,7 +96,7 @@ async function lockBillableInvoices(conn, invoiceIds, clientId, excludeBillingNo
     );
     const byId = new Map(rows.map((row) => [row.inv_id, row]));
     if (invoiceIds.some((id) => !byId.has(id))) {
-        throw validationError({ invoice_ids: "ไม่พบใบแจ้งหนี้บางใบ อาจถูกลบไปแล้ว — โหลดหน้าใหม่แล้วเลือกอีกครั้ง" });
+        throw validationError({ invoice_ids: "ไม่พบใบแจ้งหนี้บางใบ อาจถูกลบไปแล้ว · โหลดหน้าใหม่แล้วเลือกอีกครั้ง" });
     }
     const invoices = invoiceIds.map((id) => byId.get(id));
 
@@ -125,7 +125,7 @@ async function lockBillableInvoices(conn, invoiceIds, clientId, excludeBillingNo
         throw new AppError(
             409,
             "BILLING_NOTE_INVOICE_UNAVAILABLE",
-            `${problems.join(" · ")} — ใบวางบิลรวมได้เฉพาะใบแจ้งหนี้ที่ออกแล้ว ยังค้างชำระ ของลูกค้ารายเดียว สกุลเงินเดียว ` +
+            `${problems.join(" · ")} · ใบวางบิลรวมได้เฉพาะใบแจ้งหนี้ที่ออกแล้ว ยังค้างชำระ ของลูกค้ารายเดียว สกุลเงินเดียว ` +
                 "และยังไม่อยู่ในใบวางบิลอื่น",
             { invoice_ids: problems.join("\n") },
         );
@@ -251,7 +251,7 @@ async function updateDraft(conn, billingNoteId, draft) {
 /** ลบร่างจริง (รายการใบแจ้งหนี้ตามไปด้วย) — ใบแจ้งหนี้กลับมาเลือกใหม่ได้ */
 async function deleteDraft(conn, billingNoteId, expectedVersion) {
     const existing = await findForUpdate(conn, billingNoteId);
-    if (existing.bn_status !== "draft") throw wrongStatus('ลบได้เฉพาะร่าง — ใบที่ออกแล้วให้ใช้ "ยกเลิก" แทน');
+    if (existing.bn_status !== "draft") throw wrongStatus('ลบได้เฉพาะร่าง · ใบที่ออกแล้วให้ใช้ "ยกเลิก" แทน');
     assertVersion(existing, expectedVersion);
     await conn.query("DELETE FROM tb_billing_notes WHERE bn_id = ?", [billingNoteId]);
 }
@@ -272,7 +272,7 @@ async function issue(conn, billingNoteId, expectedVersion, actor) {
         [billingNoteId],
     );
     if (links.length === 0)
-        throw validationError({ invoice_ids: "ยังไม่ได้เลือกใบแจ้งหนี้ — แก้ร่างแล้วเลือกอย่างน้อย 1 ใบ" });
+        throw validationError({ invoice_ids: "ยังไม่ได้เลือกใบแจ้งหนี้ · แก้ร่างแล้วเลือกอย่างน้อย 1 ใบ" });
     const invoices = await lockBillableInvoices(
         conn,
         links.map((link) => link.bni_invoice_id),
@@ -287,9 +287,9 @@ async function issue(conn, billingNoteId, expectedVersion, actor) {
          FROM tb_branches WHERE branch_id = ?`,
         [note.bn_branch_id],
     );
-    if (branch?.branch_status !== "active") problems.push("สาขาถูกปิดใช้งาน — เลือกสาขาอื่นในร่าง");
+    if (branch?.branch_status !== "active") problems.push("สาขาถูกปิดใช้งาน · เลือกสาขาอื่นในร่าง");
     if (note.bn_payment_date && note.bn_payment_date < today) {
-        problems.push(`วันนัดชำระ (${note.bn_payment_date}) ผ่านมาแล้ว — แก้ร่างให้เป็นวันนี้หรือหลังจากนี้`);
+        problems.push(`วันนัดชำระ (${note.bn_payment_date}) ผ่านมาแล้ว · แก้ร่างให้เป็นวันนี้หรือหลังจากนี้`);
     }
     if (problems.length > 0) {
         throw new AppError(400, "BILLING_NOTE_NOT_READY", `ยังออกใบวางบิลไม่ได้: ${problems.join(" · ")}`, {
@@ -537,12 +537,12 @@ async function findOtherActiveNotes(conn, invoiceRows, billingNoteId) {
 }
 
 function describeInvoiceProblem(invoice, note, otherNote) {
-    if (invoice.inv_status === "cancelled") return "ใบนี้ถูกยกเลิกแล้ว — เอาออกจากร่าง";
-    if (invoice.inv_status !== "issued") return "ใบนี้ยังไม่ได้ออก — เอาออกจากร่าง";
-    if (outstandingOf(invoice) <= 0n) return "รับชำระครบแล้ว — เอาออกจากร่าง";
-    if (invoice.inv_client_id !== note.bn_client_id) return "เป็นของลูกค้ารายอื่น — เอาออกจากร่าง";
-    if (invoice.inv_currency !== note.bn_currency) return `เป็นสกุล ${invoice.inv_currency} — เอาออกจากร่าง`;
-    if (otherNote) return `อยู่ในใบวางบิล ${otherNote.bn_number ?? "ร่างอีกใบ"} แล้ว — เอาออกจากร่าง`;
+    if (invoice.inv_status === "cancelled") return "ใบนี้ถูกยกเลิกแล้ว · เอาออกจากร่าง";
+    if (invoice.inv_status !== "issued") return "ใบนี้ยังไม่ได้ออก · เอาออกจากร่าง";
+    if (outstandingOf(invoice) <= 0n) return "รับชำระครบแล้ว · เอาออกจากร่าง";
+    if (invoice.inv_client_id !== note.bn_client_id) return "เป็นของลูกค้ารายอื่น · เอาออกจากร่าง";
+    if (invoice.inv_currency !== note.bn_currency) return `เป็นสกุล ${invoice.inv_currency} · เอาออกจากร่าง`;
+    if (otherNote) return `อยู่ในใบวางบิล ${otherNote.bn_number ?? "ร่างอีกใบ"} แล้ว · เอาออกจากร่าง`;
     return null;
 }
 

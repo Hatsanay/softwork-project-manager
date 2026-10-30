@@ -75,11 +75,13 @@ export default function BillingNotesPage() {
         },
         {
             key: "invoice_count",
+            mobile: "meta",
             header: "ใบแจ้งหนี้",
             render: (_, row) => <span>{row.invoice_count} ใบ</span>,
         },
         {
             key: "bn_total",
+            mobile: "trailing",
             header: "ยอดรวม",
             className: "text-right tabular-nums",
             render: (_, row) => (
@@ -90,6 +92,7 @@ export default function BillingNotesPage() {
         },
         {
             key: "bn_status",
+            mobile: "badge",
             header: "สถานะ",
             render: (_, row) => (
                 <StatusPill tone={STATUS_LABELS[row.bn_status].tone}>{STATUS_LABELS[row.bn_status].label}</StatusPill>
@@ -97,6 +100,7 @@ export default function BillingNotesPage() {
         },
         {
             key: "bn_payment_date",
+            mobile: "meta",
             header: "วันที่ / นัดชำระ",
             render: (_, row) => (
                 <div className="grid gap-0.5 text-sm">

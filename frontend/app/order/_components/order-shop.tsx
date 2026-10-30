@@ -39,7 +39,7 @@ import StatusBanner from "@/components/ui/guidance/status-banner";
 import { buttonClass } from "@/components/ui/button";
 import { uploadedFileUrl } from "@/lib/api";
 import { toFieldErrors, type FieldErrors } from "@/lib/form-errors";
-import { formatAmount, formatHundredths } from "@/lib/shared/money.mjs";
+import { formatAmount, formatHundredths, formatQuantity } from "@/lib/shared/money.mjs";
 import { cartTotals, fixedSubtotal, lineAmount, multiplyQuantity, percentAmount } from "@/lib/shared/order-cart-math.mjs";
 import { MAX_SET_COUNT, orderContactSchema } from "@/lib/shared/schemas/order-link.mjs";
 import { answerError, questionnaireSummary, visibleQuestionnaire } from "@/lib/shared/requirement-answers.mjs";
@@ -1034,7 +1034,7 @@ function PackageCard({ productPackage, quantity, onChange }: { productPackage: C
                                 {/* จำนวน 1 ไม่ต้องบอก (เช่น "ดูแลฟรี 30 วัน") */}
                                 {Number(item.quantity) !== 1 && (
                                     <span className="text-gray-500 tabular-nums">
-                                        {" "}· {Number(item.quantity)} {item.unit ?? ""}
+                                        {" "}· {formatQuantity(item.quantity)} {item.unit ?? ""}
                                     </span>
                                 )}
                             </span>

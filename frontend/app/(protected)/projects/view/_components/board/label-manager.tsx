@@ -167,7 +167,7 @@ export default function LabelManager({
                 title={`ลบป้าย "${deleteTarget?.pl_name ?? ""}"?`}
                 description={
                     deleteTarget && deleteTarget.task_count > 0
-                        ? `ป้ายนี้ติดอยู่ ${deleteTarget.task_count} งาน — ลบแล้วทุกงานจะหลุดป้ายนี้`
+                        ? `ป้ายนี้ติดอยู่ ${deleteTarget.task_count} งาน · ลบแล้วทุกงานจะหลุดป้ายนี้`
                         : "ป้ายนี้ยังไม่ได้ติดกับงานใด"
                 }
                 confirmLabel="ลบป้าย"

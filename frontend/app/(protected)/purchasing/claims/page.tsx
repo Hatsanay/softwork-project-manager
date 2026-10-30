@@ -32,7 +32,7 @@ const TABS: { value: TabKey; label: string }[] = [
 ];
 
 const EMPTY_MESSAGES: Partial<Record<TabKey, string>> = {
-    all: 'ยังไม่มีใบเบิก — กด "เบิกเงิน" แล้วถ่ายรูปใบเสร็จได้เลย',
+    all: 'ยังไม่มีใบเบิก · กด "เบิกเงิน" แล้วถ่ายรูปใบเสร็จได้เลย',
     waiting_me: "ไม่มีใบเบิกที่รอคุณอนุมัติ",
     unpaid: "ไม่มีใบเบิกที่รอรับเงินคืน",
 };
@@ -93,12 +93,13 @@ export default function ClaimsPage() {
         },
         {
             key: "employee_name",
+            mobile: "meta",
             header: scope === "all" ? "ผู้เบิก / ร้านค้า" : "ร้านค้า",
             render: (_, row) => (
                 <div className="grid min-w-0 gap-0.5">
-                    {scope === "all" && <span>{row.employee_name ?? "—"}</span>}
+                    {scope === "all" && <span>{row.employee_name ?? "-"}</span>}
                     <span className={`flex items-center gap-1 ${scope === "all" ? "text-xs text-gray-500" : ""}`}>
-                        {row.ex_merchant_name ?? "—"}
+                        {row.ex_merchant_name ?? "-"}
                         {row.attachment_count > 0 && (
                             <span className="inline-flex items-center gap-0.5 text-xs text-gray-500">
                                 · <Paperclip size={12} aria-hidden />
@@ -111,12 +112,14 @@ export default function ClaimsPage() {
         },
         {
             key: "ex_total",
+            mobile: "trailing",
             header: "ยอดเบิก",
             className: "text-right tabular-nums",
             render: (_, row) => `${formatAmount(row.ex_total)} บาท`,
         },
         {
             key: "ex_status",
+            mobile: "badge",
             header: "สถานะ",
             render: (_, row) => (
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -134,6 +137,7 @@ export default function ClaimsPage() {
         },
         {
             key: "ex_expense_date",
+            mobile: "meta",
             header: "วันที่จ่าย",
             render: (_, row) => formatDateOnly(row.ex_expense_date),
         },

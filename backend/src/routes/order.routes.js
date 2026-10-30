@@ -58,6 +58,7 @@ function registerOrderRoutes(router) {
 
     // ─── ลูกค้า (ไม่ต้อง login) · requests/:token ต้องมาก่อน :code ───
     router.get("/V1/order/requests/:token", orderController.publicStatus);
+    router.get("/V1/order/requests/:token/quotation-document", orderController.publicQuotationDocument);
     router.post("/V1/order/requests/:token/accept", orderController.publicAccept);
     router.get("/V1/order/:code", orderController.publicShop);
     router.post("/V1/order/:code/requests", uploadOrderFiles.any(), orderController.publicSubmit);

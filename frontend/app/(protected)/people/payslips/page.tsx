@@ -61,7 +61,7 @@ export default function MyPayslipsPage() {
             {!slips && !loadError && <PageSkeleton />}
             {slips && slips.length === 0 && (
                 <p className="rounded-2xl border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
-                    ยังไม่มีสลิป — สลิปขึ้นหลังฝ่ายบุคคลบันทึกจ่ายเงินเดือนของเดือนนั้น
+                    ยังไม่มีสลิป · สลิปขึ้นหลังฝ่ายบุคคลบันทึกจ่ายเงินเดือนของเดือนนั้น
                 </p>
             )}
             {slips && slips.length > 0 && (

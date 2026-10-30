@@ -264,7 +264,7 @@ export default function EmployeeForm({ employee, initialUserId }: { employee?: E
         const checked = schema.safeParse(form);
         if (!checked.success) {
             setFieldErrors(toFieldErrors(checked.error.issues));
-            toast.error("ยังบันทึกไม่ได้ — แก้ช่องที่มีข้อความสีแดงก่อน");
+            toast.error("ยังบันทึกไม่ได้ · แก้ช่องที่มีข้อความสีแดงก่อน");
             return;
         }
         setFieldErrors({});
@@ -353,7 +353,7 @@ export default function EmployeeForm({ employee, initialUserId }: { employee?: E
                             onChange={(event) => updateField("emp_title", event.target.value)}
                             className={inputClass(Boolean(fieldErrors.emp_title))}
                         >
-                            <option value="">— ไม่ระบุ —</option>
+                            <option value="">ไม่ระบุ</option>
                             {titleChoices.map((title) => (
                                 <option key={title} value={title}>
                                     {title}

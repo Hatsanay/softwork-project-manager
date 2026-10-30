@@ -39,7 +39,7 @@ export default function LeaveRequestCard({
         const blob = await apiFetchBlob(`/leave/requests/${request.lr_id}/attachments/${fileId}`);
         if (!blob) {
             viewer?.close();
-            setFileError("เปิดไฟล์ไม่สำเร็จ — ไฟล์อาจหายจากเซิร์ฟเวอร์");
+            setFileError("เปิดไฟล์ไม่สำเร็จ · ไฟล์อาจหายจากเซิร์ฟเวอร์");
             return;
         }
         const url = URL.createObjectURL(blob);

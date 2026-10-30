@@ -221,6 +221,7 @@ module.exports = {
         return { svr_id: result.svr_id, access_token: result.access_token };
     }, 201),
     publicStatus: publicHandle((req) => orderPublicService.requestStatus(pool, req.params.token)),
+    publicQuotationDocument: publicHandle((req) => orderPublicService.quotationDocument(pool, req.params.token)),
     publicAccept: publicHandle(async (req) => {
         const input = validate(orderAcceptSchema, req.body);
         await withTransaction((conn) => orderPublicService.acceptByCustomer(conn, req.params.token, input));

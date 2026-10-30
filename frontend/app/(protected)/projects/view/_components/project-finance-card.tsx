@@ -233,7 +233,7 @@ function PercentBar({ label, percent, tone }: { label: string; percent: number |
         <div className="grid gap-1">
             <div className="flex justify-between text-xs text-gray-600">
                 <span>{label}</span>
-                <span className="tabular-nums">{percent === null ? "—" : `${percent}%`}</span>
+                <span className="tabular-nums">{percent === null ? "-" : `${percent}%`}</span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-gray-100">
                 <div className={`h-full rounded-full ${tone}`} style={{ width: `${Math.min(percent ?? 0, 100)}%` }} />
@@ -283,7 +283,7 @@ export default function ProjectFinanceCard({ projectId }: { projectId: string })
             )}
             {finance && finance.channel !== "fastwork" && finance.quotations.length === 0 && finance.invoices.length === 0 && (
                 <p className="text-sm text-gray-500">
-                    โปรเจกต์นี้ยังไม่มีใบเสนอราคาที่ลูกค้าตอบรับหรือใบแจ้งหนี้ —
+                    โปรเจกต์นี้ยังไม่มีใบเสนอราคาที่ลูกค้าตอบรับหรือใบแจ้งหนี้
                     ผูกได้ตอนบันทึกว่าลูกค้าตอบรับใบเสนอราคา
                 </p>
             )}
@@ -351,12 +351,12 @@ export default function ProjectFinanceCard({ projectId }: { projectId: string })
                             </div>
                             {quotation.items_without_tasks > 0 && (
                                 <FieldHint>
-                                    {quotation.items_without_tasks} รายการไม่มีงานผูกไว้ — ไม่นับในความคืบหน้า
+                                    {quotation.items_without_tasks} รายการไม่มีงานผูกไว้ · ไม่นับในความคืบหน้า
                                 </FieldHint>
                             )}
                             {quotation.is_work_ahead_of_billing && quotation.next_milestone && (
                                 <StatusBanner tone="warn" title="งานเดินหน้ากว่าการเก็บเงิน">
-                                    งานเสร็จนำหน้าการออกบิลเกิน {finance.progress_ahead_threshold} จุด —
+                                    งานเสร็จนำหน้าการออกบิลเกิน {finance.progress_ahead_threshold} จุด
                                     ตรวจว่าถึงงวดที่ {quotation.next_milestone.qtm_order} (
                                     {quotation.next_milestone.qtm_name}) หรือยัง
                                 </StatusBanner>

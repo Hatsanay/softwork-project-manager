@@ -386,7 +386,7 @@ async function updateStatus(req, res, next) {
                 [req.params.id]
             );
             if (expectedStatus !== undefined && current.task_status !== expectedStatus) {
-                throw new AppError(409, "TASK_STATUS_CHANGED", "งานนี้ถูกย้ายไปสถานะอื่นโดยคนอื่นแล้ว — โหลดบอร์ดใหม่ให้แล้ว");
+                throw new AppError(409, "TASK_STATUS_CHANGED", "งานนี้ถูกย้ายไปสถานะอื่นโดยคนอื่นแล้ว · โหลดบอร์ดใหม่ให้แล้ว");
             }
             if (current.task_status !== task_status) {
                 const completedAt = task_status === "done" ? new Date() : null;

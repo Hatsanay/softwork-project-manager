@@ -114,7 +114,7 @@ export default function HolidaysSection({ today, canEdit }: { today: string; can
             )}
             {loadError && <p className="text-sm text-red-600">{loadError}</p>}
             {holidays && holidays.length === 0 && (
-                <p className="text-sm text-gray-500">ยังไม่มีวันหยุดของปีนี้ — ทุกวันทำงานตามสัปดาห์นับเป็นวันทำงาน</p>
+                <p className="text-sm text-gray-500">ยังไม่มีวันหยุดของปีนี้ · ทุกวันทำงานตามสัปดาห์นับเป็นวันทำงาน</p>
             )}
             <ul className="grid gap-2 text-sm sm:grid-cols-2">
                 {holidays?.map((holiday) => (

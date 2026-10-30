@@ -58,6 +58,7 @@ export default function ClientsPage() {
         },
         {
             key: "client_tax_id",
+            mobile: "meta",
             header: "ประเภท / เลขผู้เสียภาษี",
             render: (_, row) => (
                 <div className="grid gap-0.5">
@@ -70,6 +71,7 @@ export default function ClientsPage() {
         },
         {
             key: "client_contact_name",
+            mobile: "meta",
             header: "ติดต่อ",
             render: (_, row) => (
                 <div className="grid gap-0.5 text-sm">

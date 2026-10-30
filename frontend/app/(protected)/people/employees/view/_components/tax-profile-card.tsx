@@ -130,7 +130,7 @@ export default function TaxProfileCard({ employeeId, currentYear }: { employeeId
         >
             {form && (
                 <form onSubmit={save} noValidate className="grid gap-4">
-                    {!isSaved && <FieldHint>ยังไม่ได้กรอกของปีนี้ — คิดภาษีด้วยลดหย่อนส่วนตัวอย่างเดียว</FieldHint>}
+                    {!isSaved && <FieldHint>ยังไม่ได้กรอกของปีนี้ · คิดภาษีด้วยลดหย่อนส่วนตัวอย่างเดียว</FieldHint>}
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{ALLOWANCE_FIELDS.map(field)}</div>
                     <p className="text-sm font-medium text-gray-900">ยอดยกมาของปี</p>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">{PRIOR_FIELDS.map(field)}</div>

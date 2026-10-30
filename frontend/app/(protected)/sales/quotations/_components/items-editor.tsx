@@ -214,7 +214,7 @@ export default function ItemsEditor({
                             {line && line.belowListBy > 0n && (
                                 <p className="text-xs text-amber-600 @2xl:ml-18">
                                     {QUOTATION_MESSAGES.belowList(formatAmount(line.belowListBy, currencyDecimals))}{" "}
-                                    (ราคาตั้งต้น {formatAmount(item.qti_list_price || "0", currencyDecimals)}) —
+                                    (ราคาตั้งต้น {formatAmount(item.qti_list_price || "0", currencyDecimals)})
                                     ผู้อนุมัติจะเห็น
                                 </p>
                             )}
@@ -228,7 +228,7 @@ export default function ItemsEditor({
                 })}
             </ol>
             {items.length === 0 && (
-                <FieldHint>ยังไม่มีรายการ — เพิ่มจากรายการสินค้า หรือพิมพ์เองด้วยปุ่มด้านล่าง</FieldHint>
+                <FieldHint>ยังไม่มีรายการ · เพิ่มจากรายการสินค้า หรือพิมพ์เองด้วยปุ่มด้านล่าง</FieldHint>
             )}
 
             <div className="flex flex-wrap gap-2">

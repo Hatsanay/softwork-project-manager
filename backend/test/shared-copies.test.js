@@ -15,6 +15,6 @@ test("สำเนาตรงกับต้นฉบับทุกไบต�
         if (!fs.existsSync(copyPath)) continue; // เทสต์ข้างบนรายงานไฟล์ที่ขาดแล้ว
         const source = fs.readFileSync(path.join(SOURCE_FOLDER, relativePath), "utf8");
         const copy = fs.readFileSync(copyPath, "utf8");
-        assert.equal(copy, source, `${relativePath} ไม่ตรงกับต้นฉบับ — รัน npm run sync-shared`);
+        assert.equal(copy, source, `${relativePath} ไม่ตรงกับต้นฉบับ · รัน npm run sync-shared`);
     }
 });

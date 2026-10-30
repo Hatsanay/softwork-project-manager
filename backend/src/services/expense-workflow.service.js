@@ -118,7 +118,7 @@ async function submit(conn, expenseId, expectedVersion, actor, kind) {
         throw new AppError(
             409,
             "APPROVAL_RULES_MISSING",
-            `ยังไม่ได้ตั้งกติกาอนุมัติ${expense.ex_kind === "claim" ? "ใบเบิกเงิน" : "ค่าใช้จ่าย"} — ให้ผู้ดูแลตั้งที่ ตั้งค่าระบบ › ข้อมูลบริษัท › การอนุมัติ`,
+            `ยังไม่ได้ตั้งกติกาอนุมัติ${expense.ex_kind === "claim" ? "ใบเบิกเงิน" : "ค่าใช้จ่าย"} · ให้ผู้ดูแลตั้งที่ ตั้งค่าระบบ › ข้อมูลบริษัท › การอนุมัติ`,
         );
     }
     const plan = buildApprovalPlan(rules.levels, expense.ex_subtotal_thb);
@@ -260,7 +260,7 @@ async function cancel(conn, expenseId, reason, expectedVersion, actor, kind) {
     expenseService.assertCanSee(expense, actor, kind);
     if (expense.ex_status === "draft") throw expenseService.wrongStatus('ร่างใช้ "ลบ" แทนการยกเลิก');
     if (expense.ex_status === "pending_approval") {
-        throw expenseService.wrongStatus("รายการที่รออนุมัติยกเลิกไม่ได้ — ให้ผู้อนุมัติตีกลับ แล้วลบร่าง");
+        throw expenseService.wrongStatus("รายการที่รออนุมัติยกเลิกไม่ได้ · ให้ผู้อนุมัติตีกลับ แล้วลบร่าง");
     }
     if (expense.ex_status !== "approved") throw expenseService.wrongStatus("รายการนี้ถูกยกเลิกไปแล้ว");
     expenseService.assertVersion(expense, expectedVersion);
@@ -278,7 +278,7 @@ async function cancel(conn, expenseId, reason, expectedVersion, actor, kind) {
         throw new AppError(
             409,
             "EXPENSE_HAS_PAYMENT",
-            "รายการนี้จ่ายเงินแล้ว — ยกเลิกใบสำคัญจ่ายก่อน แล้วค่อยยกเลิกรายการนี้",
+            "รายการนี้จ่ายเงินแล้ว · ยกเลิกใบสำคัญจ่ายก่อน แล้วค่อยยกเลิกรายการนี้",
         );
     }
 

@@ -68,7 +68,7 @@ export default function LogoUploader({ logoUrl, canEdit, onSaved }: LogoUploader
                 </div>
                 <div className="grid min-w-48 flex-1 gap-1">
                     <p className="text-sm text-gray-800">
-                        {logoUrl ? "โลโก้ปัจจุบัน" : "ยังไม่มีโลโก้ — เอกสารจะแสดงแค่ชื่อบริษัท"}
+                        {logoUrl ? "โลโก้ปัจจุบัน" : "ยังไม่มีโลโก้ · เอกสารจะแสดงแค่ชื่อบริษัท"}
                     </p>
                     <FieldHint error={saveError?.fields.logo}>{COMPANY_MESSAGES.info.logo}</FieldHint>
                 </div>

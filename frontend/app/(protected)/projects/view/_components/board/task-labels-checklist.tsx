@@ -195,8 +195,8 @@ export default function TaskLabelsChecklist({
                             <p className="text-xs text-gray-500">
                                 โปรเจกต์นี้ยังไม่มีป้าย
                                 {canManageLabels
-                                    ? " — เพิ่มป้ายด้านล่าง"
-                                    : " — ให้ผู้มีสิทธิ์แก้ข้อมูลโปรเจกต์สร้างป้ายก่อน"}
+                                    ? " · เพิ่มป้ายด้านล่าง"
+                                    : " · ให้ผู้มีสิทธิ์แก้ข้อมูลโปรเจกต์สร้างป้ายก่อน"}
                             </p>
                         )}
                         {projectLabels && projectLabels.length > 0 && (
@@ -261,7 +261,7 @@ export default function TaskLabelsChecklist({
                     </h3>
                 </div>
                 <FieldHint>
-                    ไว้จดสิ่งที่ต้องทำย่อยๆ ไม่มีผู้รับผิดชอบ/สถานะ และไม่นับในความคืบหน้าโปรเจกต์ —
+                    ไว้จดสิ่งที่ต้องทำย่อยๆ ไม่มีผู้รับผิดชอบ/สถานะ และไม่นับในความคืบหน้าโปรเจกต์ · 
                     งานที่ต้องติดตามจริงให้สร้างเป็น subtask
                 </FieldHint>
                 <ul className="grid gap-1">
@@ -384,7 +384,7 @@ export default function TaskLabelsChecklist({
                     </form>
                 )}
                 {!canEdit && !canTick && checklist.length > 0 && (
-                    <FieldHint>ดูได้อย่างเดียว — แก้/ติ๊กได้เฉพาะผู้รับผิดชอบงานนี้ หรือผู้มีสิทธิ์ในตำแหน่ง</FieldHint>
+                    <FieldHint>ดูได้อย่างเดียว · แก้/ติ๊กได้เฉพาะผู้รับผิดชอบงานนี้ หรือผู้มีสิทธิ์ในตำแหน่ง</FieldHint>
                 )}
                 <FieldHint error={error} />
             </section>

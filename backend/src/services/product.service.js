@@ -18,9 +18,10 @@ const PRODUCT_COLUMNS = `
 /**
  * ค้นหาจากชื่อ รหัส หรือรายละเอียด · สูงสุด 200 แถวต่อครั้ง (ช่องค้นหาในใบเสนอราคาเรียกทุกครั้งที่พิมพ์)
  * @param {import("mysql2/promise").Pool} conn
- * @param {{ limit?: number, offset?: number, search?: string, categoryId?: string, status?: string }} options
+ * @param {{ limit?: number, offset?: number, search?: string, categoryId?: string, status?: string, isPublic?: string }} options
+ *   isPublic: "yes" = เฉพาะที่แสดงบนหน้าร้าน · "no" = เฉพาะที่ไม่แสดง · อื่นๆ = ทั้งหมด
  */
-async function listProducts(conn, { limit = 20, offset = 0, search = "", categoryId, status }) {
+async function listProducts(conn, { limit = 20, offset = 0, search = "", categoryId, status, isPublic }) {
     const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), MAX_LIST_LIMIT);
     const safeOffset = Math.max(Number(offset) || 0, 0);
     const like = `%${search}%`;
@@ -37,6 +38,8 @@ async function listProducts(conn, { limit = 20, offset = 0, search = "", categor
         conditions.push("p.product_status = ?");
         params.push(status);
     }
+    if (isPublic === "yes") conditions.push("p.product_is_public = 1");
+    if (isPublic === "no") conditions.push("p.product_is_public = 0");
     const where = conditions.join(" AND ");
 
     const [rows] = await conn.query(
@@ -184,7 +187,7 @@ async function deleteProduct(conn, productId) {
         throw new AppError(
             409,
             "PRODUCT_IN_USE",
-            `ลบสินค้านี้ไม่ได้ เพราะใช้อยู่ใน${usages.join(" และ ")} — ถ้าไม่ขายแล้วให้แก้ไขแล้วเปลี่ยนเป็นปิดใช้งาน (เลือกในใบใหม่ไม่ได้ แต่เอกสารเก่ายังแสดงได้)`,
+            `ลบสินค้านี้ไม่ได้ เพราะใช้อยู่ใน${usages.join(" และ ")} · ถ้าไม่ขายแล้วให้แก้ไขแล้วเปลี่ยนเป็นปิดใช้งาน (เลือกในใบใหม่ไม่ได้ แต่เอกสารเก่ายังแสดงได้)`,
         );
     }
 

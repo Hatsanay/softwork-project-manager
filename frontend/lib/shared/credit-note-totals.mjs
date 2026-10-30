@@ -96,9 +96,9 @@ export function calculateCreditNote({ invoice, credited, paid, refunded, lineAmo
 
     const base = lineAmounts.reduce((sum, amount) => sum + amount, 0n);
     if (remainingBase <= 0n) {
-        errors.lines = "ใบนี้ลดหนี้ครบยอดแล้ว — ลดเพิ่มไม่ได้";
+        errors.lines = "ใบนี้ลดหนี้ครบยอดแล้ว · ลดเพิ่มไม่ได้";
     } else if (base > remainingBase) {
-        errors.lines = "ยอดที่ลดรวมมากกว่ายอดก่อน VAT ที่ยังเหลือของใบนี้ — ลดเกินยอดใบไม่ได้";
+        errors.lines = "ยอดที่ลดรวมมากกว่ายอดก่อน VAT ที่ยังเหลือของใบนี้ · ลดเกินยอดใบไม่ได้";
     }
 
     const closesInvoice = base === remainingBase && remainingBase > 0n;

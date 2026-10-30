@@ -49,7 +49,7 @@ function notFound() {
 }
 
 function wrongStatus(message) {
-    return new AppError(409, "EXPENSE_WRONG_STATUS", `${message} — กรุณาโหลดหน้าใหม่เพื่อดูสถานะล่าสุด`);
+    return new AppError(409, "EXPENSE_WRONG_STATUS", `${message} · กรุณาโหลดหน้าใหม่เพื่อดูสถานะล่าสุด`);
 }
 
 function validationError(fields) {
@@ -67,7 +67,7 @@ function assertVersion(expense, expectedVersion) {
         throw new AppError(
             409,
             "EXPENSE_CHANGED",
-            "มีคนแก้หรือเปลี่ยนสถานะรายการนี้ไปก่อนแล้ว — โหลดหน้าใหม่เพื่อดูข้อมูลล่าสุด (สิ่งที่คุณแก้ยังไม่ถูกบันทึก)",
+            "มีคนแก้หรือเปลี่ยนสถานะรายการนี้ไปก่อนแล้ว · โหลดหน้าใหม่เพื่อดูข้อมูลล่าสุด (สิ่งที่คุณแก้ยังไม่ถูกบันทึก)",
         );
     }
 }
@@ -132,10 +132,10 @@ function checkDateRange(dateText, label, today) {
     if (!dateText) return null;
     const daysAgo = daysBetween(dateText, today);
     if (daysAgo > MAX_EXPENSE_BACKDATE_DAYS) {
-        return `${label}ย้อนหลังได้ไม่เกิน ${MAX_EXPENSE_BACKDATE_DAYS} วัน — ตรวจปีที่พิมพ์ (ใช้ ค.ศ.)`;
+        return `${label}ย้อนหลังได้ไม่เกิน ${MAX_EXPENSE_BACKDATE_DAYS} วัน · ตรวจปีที่พิมพ์ (ใช้ ค.ศ.)`;
     }
     if (-daysAgo > MAX_EXPENSE_FUTURE_DAYS) {
-        return `${label}ล่วงหน้าได้ไม่เกิน ${MAX_EXPENSE_FUTURE_DAYS} วัน — ตรวจปีที่พิมพ์ (ใช้ ค.ศ.)`;
+        return `${label}ล่วงหน้าได้ไม่เกิน ${MAX_EXPENSE_FUTURE_DAYS} วัน · ตรวจปีที่พิมพ์ (ใช้ ค.ศ.)`;
     }
     return null;
 }
@@ -196,7 +196,7 @@ async function checkLines(conn, lines, existingLines, fields) {
 
     lines.forEach((line, index) => {
         const category = categoryById.get(line.exl_category_id);
-        if (!category) fields[`lines.${index}.exl_category_id`] = "ไม่พบหมวดนี้ — เลือกใหม่";
+        if (!category) fields[`lines.${index}.exl_category_id`] = "ไม่พบหมวดนี้ · เลือกใหม่";
         else if (category.ec_status !== "active" && !previousCategoryIds.has(line.exl_category_id))
             fields[`lines.${index}.exl_category_id`] = "หมวดนี้ถูกปิดใช้งานแล้ว";
         if (line.exl_project_id && !existingProjectIds.has(line.exl_project_id))
@@ -226,7 +226,7 @@ async function resolveWithholding(conn, draft, vendor, existing, fields) {
     }
     const rate = await purchasingSetupService.whtRateOn(conn, draft.ex_wht_income_type, draft.ex_expense_date);
     if (!rate) {
-        fields.ex_wht_income_type = "ประเภทเงินได้นี้ยังไม่มีอัตราที่มีผล ณ วันที่ค่าใช้จ่าย — ตั้งที่ ตั้งค่าจัดซื้อ";
+        fields.ex_wht_income_type = "ประเภทเงินได้นี้ยังไม่มีอัตราที่มีผล ณ วันที่ค่าใช้จ่าย · ตั้งที่ ตั้งค่าจัดซื้อ";
         return none;
     }
     return { incomeType: draft.ex_wht_income_type, rate: rate.rate, minPayment: rate.minPayment };
@@ -237,7 +237,7 @@ async function checkRate(conn, draft, fields) {
     if (draft.ex_currency === BASE_CURRENCY) return;
     const botRate = await quotationService.findCachedBotRate(conn, draft.ex_currency, draft.ex_rate_date);
     if (draft.ex_rate_source === "bot" && !quotationService.sameDecimal(botRate, draft.ex_exchange_rate)) {
-        fields.ex_exchange_rate = "อัตราไม่ตรงกับของ ธปท. — กดดึงอัตราใหม่ หรือเลือกกรอกเองพร้อมเหตุผล";
+        fields.ex_exchange_rate = "อัตราไม่ตรงกับของ ธปท. · กดดึงอัตราใหม่ หรือเลือกกรอกเองพร้อมเหตุผล";
     }
 }
 
@@ -281,7 +281,7 @@ async function prepareBillDraft(conn, draft, existing) {
     if (vendor && draft.ex_vendor_doc_no) {
         const duplicate = await findDuplicateBill(conn, vendor.vd_id, draft.ex_vendor_doc_no, existing?.ex_id);
         if (duplicate) {
-            fields.ex_vendor_doc_no = `เลขเอกสาร ${draft.ex_vendor_doc_no} ของผู้ขายนี้${describeDuplicate(duplicate)} — บิลใบเดียวบันทึกได้ครั้งเดียว (กันจ่ายซ้ำ)`;
+            fields.ex_vendor_doc_no = `เลขเอกสาร ${draft.ex_vendor_doc_no} ของผู้ขายนี้${describeDuplicate(duplicate)} · บิลใบเดียวบันทึกได้ครั้งเดียว (กันจ่ายซ้ำ)`;
         }
     }
     if (Object.keys(fields).length > 0) throw validationError(fields);
@@ -395,7 +395,7 @@ async function prepareClaimDraft(conn, draft, existing, employeeId) {
         existing?.ex_id,
     );
     if (duplicate) {
-        fields.ex_vendor_doc_no = `ใบเสร็จเลข ${draft.ex_vendor_doc_no} วันเดียวกันนี้${describeDuplicate(duplicate)} — ใบเสร็จใบเดียวเบิกได้ครั้งเดียว`;
+        fields.ex_vendor_doc_no = `ใบเสร็จเลข ${draft.ex_vendor_doc_no} วันเดียวกันนี้${describeDuplicate(duplicate)} · ใบเสร็จใบเดียวเบิกได้ครั้งเดียว`;
     }
     if (Object.keys(fields).length > 0) throw validationError(fields);
 
@@ -576,7 +576,7 @@ async function deleteDraft(conn, expenseId, expectedVersion, actor, kind) {
     const existing = await findForUpdate(conn, expenseId);
     assertCanWork(existing, actor, kind);
     if (existing.ex_status !== "draft") {
-        throw wrongStatus('ลบได้เฉพาะร่าง — รายการที่อนุมัติแล้วให้ใช้ "ยกเลิก" แทน');
+        throw wrongStatus('ลบได้เฉพาะร่าง · รายการที่อนุมัติแล้วให้ใช้ "ยกเลิก" แทน');
     }
     assertVersion(existing, expectedVersion);
     const [files] = await conn.query("SELECT exf_file_path FROM tb_expense_attachments WHERE exf_expense_id = ?", [
@@ -604,7 +604,7 @@ async function addAttachment(conn, expenseId, file, actor, kind) {
         throw new AppError(
             409,
             "EXPENSE_ATTACHMENT_LIMIT",
-            `แนบได้ไม่เกิน ${MAX_EXPENSE_ATTACHMENTS} ไฟล์ต่อรายการ — รวมหลายหน้าเป็น PDF ไฟล์เดียวแทน`,
+            `แนบได้ไม่เกิน ${MAX_EXPENSE_ATTACHMENTS} ไฟล์ต่อรายการ · รวมหลายหน้าเป็น PDF ไฟล์เดียวแทน`,
         );
     }
     const [result] = await conn.query(
@@ -623,7 +623,7 @@ async function removeAttachment(conn, expenseId, attachmentId, actor, kind) {
     const expense = await findForUpdate(conn, expenseId);
     assertCanWork(expense, actor, kind);
     if (expense.ex_status !== "draft") {
-        throw wrongStatus("ลบไฟล์แนบได้เฉพาะตอนเป็นร่าง — ส่งแล้วไฟล์เป็นหลักฐานของรายการ (แนบไฟล์ที่ถูกต้องเพิ่มได้)");
+        throw wrongStatus("ลบไฟล์แนบได้เฉพาะตอนเป็นร่าง · ส่งแล้วไฟล์เป็นหลักฐานของรายการ (แนบไฟล์ที่ถูกต้องเพิ่มได้)");
     }
     const [[file]] = await conn.query(
         "SELECT exf_file_path FROM tb_expense_attachments WHERE exf_id = ? AND exf_expense_id = ?",
@@ -973,7 +973,7 @@ function buildActions(expense, actor, approval, attachmentCount) {
     const hasCancelPermission = canApprove || (canCreate && expense.ex_auto_approved === 1);
     const cancelBlockedReason =
         status === "approved" && hasPayment
-            ? "รายการนี้จ่ายเงินแล้ว — ยกเลิกใบสำคัญจ่ายก่อน แล้วค่อยยกเลิกรายการนี้"
+            ? "รายการนี้จ่ายเงินแล้ว · ยกเลิกใบสำคัญจ่ายก่อน แล้วค่อยยกเลิกรายการนี้"
             : null;
 
     return {

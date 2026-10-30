@@ -161,7 +161,7 @@ function simulateYear(monthlySalaries) {
     return { withheld, total: withheldBefore, actualTax: incomeTaxOf(actualNet, BRACKETS_2026) };
 }
 
-test("ภาษีทั้งปี 12 เดือน: เงินเดือนคงที่ · ขึ้นเงินเดือนกลางปี · เข้างานกลางปี — ยอดหักรวมเท่าภาษีจริงทั้งปีพอดี (R-H5)", () => {
+test("ภาษีทั้งปี 12 เดือน: เงินเดือนคงที่ · ขึ้นเงินเดือนกลางปี · เข้างานกลางปี · ยอดหักรวมเท่าภาษีจริงทั้งปีพอดี (R-H5)", () => {
     const flat = simulateYear(Array(12).fill(baht(50000)));
     assert.equal(flat.total, baht(20450));
     assert.equal(flat.total, flat.actualTax);

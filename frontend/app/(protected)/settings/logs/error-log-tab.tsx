@@ -38,9 +38,9 @@ export default function ErrorLogTab() {
     }, [page, pageSize, search]);
 
     const columns: Column<ErrorRow>[] = [
-        { key: "err_last_seen", header: "เกิดล่าสุด", className: "whitespace-nowrap", render: (v) => formatLogTime(v) },
+        { key: "err_last_seen", mobile: "meta", header: "เกิดล่าสุด", className: "whitespace-nowrap", render: (v) => formatLogTime(v) },
         {
-            key: "err_message", header: "ข้อผิดพลาด",
+            key: "err_message", mobile: "title", header: "ข้อผิดพลาด",
             render: (_, r) => (
                 <div className="max-w-xl">
                     <button type="button" onClick={() => setOpenId(openId === r.err_id ? null : r.err_id)} className="text-left text-red-600 hover:underline">
@@ -49,15 +49,15 @@ export default function ErrorLogTab() {
                     <div className="text-xs text-gray-400">{r.err_method} {r.err_path}</div>
                     {openId === r.err_id && (
                         <div className="mt-2 space-y-1">
-                            <div className="text-xs text-gray-500">พบครั้งแรก {formatLogTime(r.err_first_seen)} · Request ID ล่าสุด <code>{r.err_last_request_id ?? "—"}</code></div>
+                            <div className="text-xs text-gray-500">พบครั้งแรก {formatLogTime(r.err_first_seen)} · Request ID ล่าสุด <code>{r.err_last_request_id ?? "-"}</code></div>
                             <pre className="max-h-64 overflow-auto rounded bg-gray-50 p-2 text-[11px] leading-relaxed text-gray-700">{r.err_stack ?? "ไม่มี stack"}</pre>
                         </div>
                     )}
                 </div>
             ),
         },
-        { key: "err_count", header: "จำนวนครั้ง", render: (v) => <span className="font-semibold">{Number(v).toLocaleString("th-TH")}</span> },
-        { key: "err_status", header: "HTTP" },
+        { key: "err_count", mobile: "meta", mobileLabel: "เกิด", header: "จำนวนครั้ง", render: (v) => <span className="font-semibold">{Number(v).toLocaleString("th-TH")}</span> },
+        { key: "err_status", mobile: "meta", mobileLabel: "HTTP", header: "HTTP" },
     ];
 
     return (

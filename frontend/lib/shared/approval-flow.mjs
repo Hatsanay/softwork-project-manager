@@ -75,7 +75,7 @@ export function evaluateApproval({
     if (startIndex === -1) return blocked("ใบนี้ไม่ได้รออนุมัติ");
     if (!actor.can_approve) return blocked(`คุณไม่มีสิทธิ์อนุมัติ${documentName}`);
     if (actor.user_id === creatorId && !allowSelfApproval) {
-        return blocked("คุณอนุมัติใบนี้ไม่ได้ เพราะคุณเป็นผู้สร้าง (หลักควบคุมภายใน) — ต้องให้ผู้อนุมัติคนอื่น");
+        return blocked("คุณอนุมัติใบนี้ไม่ได้ เพราะคุณเป็นผู้สร้าง (หลักควบคุมภายใน) · ต้องให้ผู้อนุมัติคนอื่น");
     }
 
     const approverIds = new Set(approvalsThisRound.map((approval) => approval.user_id));
@@ -87,7 +87,7 @@ export function evaluateApproval({
     }
     if (firstLevel.require_distinct && approverIds.has(actor.user_id)) {
         return blocked(
-            `ชั้น ${firstLevel.level} กำหนดให้เป็นคนละคนกับผู้อนุมัติชั้นก่อนหน้า — ต้องให้ ${roleNames(firstLevel)} คนอื่นอนุมัติ`,
+            `ชั้น ${firstLevel.level} กำหนดให้เป็นคนละคนกับผู้อนุมัติชั้นก่อนหน้า · ต้องให้ ${roleNames(firstLevel)} คนอื่นอนุมัติ`,
         );
     }
 

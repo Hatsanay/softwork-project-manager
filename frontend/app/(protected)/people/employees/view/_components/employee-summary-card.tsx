@@ -37,7 +37,7 @@ export default function EmployeeSummaryCard({ employee, onChanged }: { employee:
             <LoginAccessBanner employee={employee} onChanged={onChanged} />
             {missingForPayroll.length > 0 && employee.employment_status !== "terminated" && (
                 <StatusBanner tone="info" title="ข้อมูลยังไม่ครบสำหรับรอบเงินเดือน">
-                    ยังขาด: {missingForPayroll.join(" · ")} — ใช้บน ภ.ง.ด.1 / 50 ทวิ และการโอนเงินเดือน
+                    ยังขาด: {missingForPayroll.join(" · ")} · ใช้บน ภ.ง.ด.1 / 50 ทวิ และการโอนเงินเดือน
                 </StatusBanner>
             )}
             <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">

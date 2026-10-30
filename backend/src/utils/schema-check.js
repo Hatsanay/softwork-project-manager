@@ -35,7 +35,7 @@ async function checkDatabaseSchema() {
         const shown = missing.slice(0, MAX_ITEMS_IN_LOG).join(", ");
         const more = missing.length > MAX_ITEMS_IN_LOG ? ` และอีก ${missing.length - MAX_ITEMS_IN_LOG} รายการ` : "";
         console.error(
-            `[schema] ฐานข้อมูลยังไม่อัปเดตให้ตรงกับโค้ดเวอร์ชันนี้ — ขาด ${missing.length} รายการ: ${shown}${more}\n` +
+            `[schema] ฐานข้อมูลยังไม่อัปเดตให้ตรงกับโค้ดเวอร์ชันนี้ · ขาด ${missing.length} รายการ: ${shown}${more}\n` +
             "[schema] รัน database/query/deploy_schema.sql บนฐานข้อมูลนี้ แล้ว restart backend"
         );
     } else {

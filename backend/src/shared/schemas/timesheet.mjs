@@ -78,7 +78,7 @@ export const timesheetWeekSchema = z
                 context.addIssue({
                     code: "custom",
                     path: ["entries", index, "tse_hours"],
-                    message: "ซ้ำกับแถวอื่นในวันเดียวกัน (โปรเจกต์/งานเดียวกัน) — รวมเป็นแถวเดียว",
+                    message: "ซ้ำกับแถวอื่นในวันเดียวกัน (โปรเจกต์/งานเดียวกัน) · รวมเป็นแถวเดียว",
                 });
             }
             seen.add(key);

@@ -51,7 +51,7 @@ export default function EditClaimPage() {
             )}
             {isNotEditable && (
                 <StatusBanner tone="warn" title="ใบเบิกนี้แก้ไขไม่ได้">
-                    แก้ได้เฉพาะร่างของคุณเอง — กลับไปที่หน้าใบเบิกเพื่อดูสถานะล่าสุด
+                    แก้ได้เฉพาะร่างของคุณเอง · กลับไปที่หน้าใบเบิกเพื่อดูสถานะล่าสุด
                 </StatusBanner>
             )}
             {claimId && !error && (!detail || !options) && <PageSkeleton />}

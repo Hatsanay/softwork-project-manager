@@ -67,7 +67,7 @@ export default function PaymentsPage() {
                 >
                     <span className="text-xs text-gray-500 tabular-nums">{row.pv_number}</span>
                     <span className="font-medium text-gray-800 hover:text-blue-600">
-                        {row.payee_name ?? "—"}
+                        {row.payee_name ?? "-"}
                         {row.pv_payee_kind === "employee" ? " (เบิกเงิน)" : ""}
                     </span>
                 </button>
@@ -75,6 +75,7 @@ export default function PaymentsPage() {
         },
         {
             key: "pv_net_paid",
+            mobile: "trailing",
             header: "จ่ายสุทธิ",
             className: "text-right tabular-nums",
             render: (_, row) => (
@@ -90,6 +91,7 @@ export default function PaymentsPage() {
         },
         {
             key: "pv_status",
+            mobile: "badge",
             header: "สถานะ",
             render: (_, row) => (
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -102,6 +104,7 @@ export default function PaymentsPage() {
         },
         {
             key: "pv_payment_date",
+            mobile: "meta",
             header: "วันที่จ่าย / วิธี",
             render: (_, row) => (
                 <div className="grid gap-0.5 text-sm">

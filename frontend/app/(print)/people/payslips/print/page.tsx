@@ -107,7 +107,7 @@ function PayslipContent() {
                 @media print { .no-print { display: none !important; } body { background: white; } }
             `}</style>
             <div className="no-print mx-auto mb-4 flex max-w-[210mm] flex-wrap items-center justify-between gap-2 px-4">
-                <p className="text-sm text-gray-600">สลิปนี้เป็นข้อมูลส่วนบุคคล — เก็บเป็นความลับ</p>
+                <p className="text-sm text-gray-600">สลิปนี้เป็นข้อมูลส่วนบุคคล · เก็บเป็นความลับ</p>
                 <button type="button" className={buttonClass("primary", "md")} onClick={() => window.print()}>
                     <Printer size={16} />
                     พิมพ์ / บันทึก PDF
@@ -150,7 +150,7 @@ function PayslipContent() {
                     <p>ประกันสังคมสะสม {formatAmount(ytdSso)}</p>
                 </section>
                 {run.pr_status !== "paid" && (
-                    <p className="text-red-600">ตัวอย่าง — รอบนี้ยังไม่ได้บันทึกจ่าย ตัวเลขอาจเปลี่ยน</p>
+                    <p className="text-red-600">ตัวอย่าง · รอบนี้ยังไม่ได้บันทึกจ่าย ตัวเลขอาจเปลี่ยน</p>
                 )}
             </article>
         </div>

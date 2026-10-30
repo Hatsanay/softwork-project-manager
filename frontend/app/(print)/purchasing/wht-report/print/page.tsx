@@ -65,7 +65,7 @@ export default function WithholdingReportPrintPage() {
                 <header className="flex items-start justify-between gap-6 border-b border-gray-300 pb-3">
                     <div>
                         <p className="text-[13pt] font-medium">
-                            ใบแนบ {WHT_FORM_SHORT[report.form]} — รายการภาษีหัก ณ ที่จ่าย เดือน
+                            ใบแนบ {WHT_FORM_SHORT[report.form]} · รายการภาษีหัก ณ ที่จ่าย เดือน
                             {monthLabel(report.month)}
                         </p>
                         <p>

@@ -285,7 +285,7 @@ export default function FastworkPage() {
                                     <div className="grid min-w-0 gap-0.5">
                                         <Link
                                             href={`/projects/view?id=${row.project_id}`}
-                                            className="font-medium wrap-break-word text-gray-900 hover:text-blue-600"
+                                            className="-my-2 inline-flex min-h-10 min-w-10 items-center font-medium wrap-break-word text-gray-900 hover:text-blue-600"
                                         >
                                             {row.project_name}
                                         </Link>

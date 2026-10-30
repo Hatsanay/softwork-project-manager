@@ -191,7 +191,7 @@ test("จ่ายเต็ม: ได้เลข PV + 50 ทวิ (ภ.ง.�
 test("จ่ายบางส่วนสองครั้ง: ฐานครั้งสุดท้ายรับเศษ · ฐานต่ำกว่าเกณฑ์ไม่หัก (ไม่ออก 50 ทวิ) · แก้ยอดหักได้", async () => {
     const expenseId = await approvedBill({ price: "3333.33", vat: "233.33" });
     const first = expectStatus(await as(people.payer, "POST", "/V1/payments", payment(expenseId, "1000")), 201);
-    assert.equal(first.wt_number, null, "ฐาน 934.58 ต่ำกว่าเกณฑ์ 1,000 — ไม่หัก ไม่ออก 50 ทวิ");
+    assert.equal(first.wt_number, null, "ฐาน 934.58 ต่ำกว่าเกณฑ์ 1,000 · ไม่หัก ไม่ออก 50 ทวิ");
     const firstDetail = expectStatus(await as(people.payer, "GET", `/V1/payments/${first.pv_id}`), 200);
     assert.equal(firstDetail.allocations[0].pva_base_amount, "934.58");
 

@@ -21,7 +21,7 @@ export default function SearchableSelect({
     loadOptions,
     value,
     onChange,
-    placeholder = "— เลือก —",
+    placeholder = "เลือก",
     className = "",
     disabled = false,
     error = false,

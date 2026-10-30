@@ -36,7 +36,7 @@ function requireEmployee(employee) {
     throw new AppError(
         409,
         "NOT_AN_EMPLOYEE",
-        "บัญชีของคุณยังไม่ได้ผูกกับพนักงาน — ติดต่อฝ่ายบุคคลให้ผูกบัญชีในหน้าพนักงานก่อนลงเวลา",
+        "บัญชีของคุณยังไม่ได้ผูกกับพนักงาน · ติดต่อฝ่ายบุคคลให้ผูกบัญชีในหน้าพนักงานก่อนลงเวลา",
     );
 }
 
@@ -220,7 +220,7 @@ async function submitMyWeek(conn, userId, weekStart, version) {
     await assertTimesheetEnabled(conn);
     const employee = requireEmployee(await findLinkedEmployee(conn, userId, { forUpdate: true }));
     const week = await findWeek(conn, employee.emp_id, weekStart, { forUpdate: true });
-    if (!week) throw new AppError(409, "TIMESHEET_EMPTY", "ยังไม่ได้ลงเวลาในสัปดาห์นี้ — บันทึกก่อนแล้วค่อยส่ง");
+    if (!week) throw new AppError(409, "TIMESHEET_EMPTY", "ยังไม่ได้ลงเวลาในสัปดาห์นี้ · บันทึกก่อนแล้วค่อยส่ง");
     assertEditable(week, version);
     await assertPeriodsOpen(conn, weekDates(weekStart), "ลงเวลา");
     const [[{ entryCount }]] = await conn.query(
@@ -228,7 +228,7 @@ async function submitMyWeek(conn, userId, weekStart, version) {
         [week.tsw_id],
     );
     if (Number(entryCount) === 0) {
-        throw new AppError(409, "TIMESHEET_EMPTY", "ยังไม่มีชั่วโมงในสัปดาห์นี้ — ลงเวลาอย่างน้อย 1 แถวก่อนส่ง");
+        throw new AppError(409, "TIMESHEET_EMPTY", "ยังไม่มีชั่วโมงในสัปดาห์นี้ · ลงเวลาอย่างน้อย 1 แถวก่อนส่ง");
     }
     await conn.query(
         "UPDATE tb_timesheet_entries SET tse_approved_by = NULL, tse_approved_at = NULL WHERE tse_week_id = ?",
@@ -251,8 +251,8 @@ function assertEditable(week, version) {
             409,
             "TIMESHEET_NOT_EDITABLE",
             week.tsw_status === "approved"
-                ? "สัปดาห์นี้อนุมัติแล้ว แก้ไม่ได้ — ถ้าผิดให้แจ้งฝ่ายบุคคล"
-                : "สัปดาห์นี้ส่งแล้ว รอผู้อนุมัติ — แก้ได้เมื่อถูกตีกลับ",
+                ? "สัปดาห์นี้อนุมัติแล้ว แก้ไม่ได้ · ถ้าผิดให้แจ้งฝ่ายบุคคล"
+                : "สัปดาห์นี้ส่งแล้ว รอผู้อนุมัติ · แก้ได้เมื่อถูกตีกลับ",
         );
     }
 }
@@ -525,7 +525,7 @@ function assertNotOwnWeek(week, scope) {
         throw new AppError(
             403,
             "SELF_APPROVAL_NOT_ALLOWED",
-            "อนุมัติหรือตีกลับลงเวลาของตัวเองไม่ได้ — ให้ผู้อนุมัติคนอื่นทำ",
+            "อนุมัติหรือตีกลับลงเวลาของตัวเองไม่ได้ · ให้ผู้อนุมัติคนอื่นทำ",
         );
     }
 }

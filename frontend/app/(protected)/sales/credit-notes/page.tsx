@@ -77,6 +77,7 @@ export default function CreditNotesPage() {
         },
         {
             key: "cn_total",
+            mobile: "trailing",
             header: "รวมลดหนี้",
             className: "text-right tabular-nums",
             render: (_, row) => (
@@ -87,6 +88,7 @@ export default function CreditNotesPage() {
         },
         {
             key: "cn_status",
+            mobile: "badge",
             header: "สถานะ",
             render: (_, row) => (
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -104,6 +106,7 @@ export default function CreditNotesPage() {
         },
         {
             key: "cn_issue_date",
+            mobile: "meta",
             header: "วันที่",
             render: (_, row) => (
                 <span>{row.cn_issue_date ? formatDateOnly(row.cn_issue_date) : "ได้ตอนอนุมัติครบ"}</span>

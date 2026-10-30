@@ -80,18 +80,18 @@ async function findIssueProblems(conn, invoice) {
     const [[client]] = await conn.query("SELECT client_status FROM tb_clients WHERE client_id = ?", [
         invoice.inv_client_id,
     ]);
-    if (client?.client_status !== "active") problems.push("ลูกค้าถูกปิดใช้งาน — เปิดใช้งานลูกค้าก่อน");
+    if (client?.client_status !== "active") problems.push("ลูกค้าถูกปิดใช้งาน · เปิดใช้งานลูกค้าก่อน");
     const [[branch]] = await conn.query("SELECT branch_status FROM tb_branches WHERE branch_id = ?", [
         invoice.inv_branch_id,
     ]);
-    if (branch?.branch_status !== "active") problems.push("สาขาถูกปิดใช้งาน — เลือกสาขาอื่นในร่าง");
+    if (branch?.branch_status !== "active") problems.push("สาขาถูกปิดใช้งาน · เลือกสาขาอื่นในร่าง");
     const currency = await quotationService.findCurrency(conn, invoice.inv_currency);
     if (currency?.cur_status !== "active") problems.push(`สกุลเงิน ${invoice.inv_currency} ถูกปิดใช้งาน`);
     if (invoice.inv_bank_account_id) {
         const [[account]] = await conn.query("SELECT ba_status FROM tb_bank_accounts WHERE ba_id = ?", [
             invoice.inv_bank_account_id,
         ]);
-        if (account?.ba_status !== "active") problems.push("บัญชีรับเงินที่เลือกถูกปิดใช้งาน — เลือกบัญชีอื่นในร่าง");
+        if (account?.ba_status !== "active") problems.push("บัญชีรับเงินที่เลือกถูกปิดใช้งาน · เลือกบัญชีอื่นในร่าง");
     }
     return problems;
 }
@@ -192,7 +192,7 @@ async function issue(conn, invoiceId, { inv_version: expectedVersion, confirm_va
     if (invoice.inv_status !== "draft") throw invoiceService.wrongStatus("ออกได้เฉพาะใบที่เป็นร่าง");
     invoiceService.assertVersion(invoice, expectedVersion);
     if (invoice.inv_source !== "quotation") {
-        throw invoiceService.wrongStatus('ใบที่สร้างเองต้อง "ส่งขออนุมัติ" — อนุมัติครบแล้วระบบออกให้อัตโนมัติ');
+        throw invoiceService.wrongStatus('ใบที่สร้างเองต้อง "ส่งขออนุมัติ"อนุมัติครบแล้วระบบออกให้อัตโนมัติ');
     }
 
     const quotation = await invoiceService.lockBillableQuotation(conn, invoice.inv_quotation_id);
@@ -218,7 +218,7 @@ async function issue(conn, invoiceId, { inv_version: expectedVersion, confirm_va
         throw new AppError(
             409,
             "INVOICE_VAT_CHANGED",
-            `ใบเสนอราคาคิด VAT ${quotation.qt_vat_rate}% แต่วันนี้ต้องคิด ${vatRate}% — ยอดจะเป็น ${formatAmount(calculation.total, decimals)} ` +
+            `ใบเสนอราคาคิด VAT ${quotation.qt_vat_rate}% แต่วันนี้ต้องคิด ${vatRate}% · ยอดจะเป็น ${formatAmount(calculation.total, decimals)} ` +
                 `${invoice.inv_currency} ไม่ใช่ ${formatAmount(calculation.agreedTotal, decimals)} ตามที่ลูกค้าตกลง ` +
                 "ตรวจกับลูกค้าและนักบัญชีก่อน แล้วกดยืนยันออกด้วยยอดใหม่",
             { vat_rate_quotation: quotation.qt_vat_rate, vat_rate_today: vatRate },
@@ -235,7 +235,7 @@ async function issue(conn, invoiceId, { inv_version: expectedVersion, confirm_va
     );
     const billedTotal = parseHundredths(billed.total, "ยอดที่ออกบิลแล้ว") + calculation.agreedTotal;
     if (billedTotal > parseHundredths(quotation.qt_total, "ยอดใบเสนอราคา")) {
-        throw new AppError(409, "INVOICE_EXCEEDS_QUOTATION", "ยอดที่ออกบิลรวมจะเกินยอดใบเสนอราคา — ตรวจใบแจ้งหนี้อื่นของใบเสนอราคานี้");
+        throw new AppError(409, "INVOICE_EXCEEDS_QUOTATION", "ยอดที่ออกบิลรวมจะเกินยอดใบเสนอราคา · ตรวจใบแจ้งหนี้อื่นของใบเสนอราคานี้");
     }
 
     await conn.query(
@@ -260,7 +260,7 @@ async function submitForApproval(conn, invoiceId, expectedVersion) {
     if (invoice.inv_status !== "draft") throw invoiceService.wrongStatus("ส่งขออนุมัติได้เฉพาะร่าง");
     invoiceService.assertVersion(invoice, expectedVersion);
     if (invoice.inv_source !== "manual") {
-        throw invoiceService.wrongStatus("ใบที่ออกจากงวดของใบเสนอราคาไม่ต้องอนุมัติ — กดออกใบแจ้งหนี้ได้เลย");
+        throw invoiceService.wrongStatus("ใบที่ออกจากงวดของใบเสนอราคาไม่ต้องอนุมัติ · กดออกใบแจ้งหนี้ได้เลย");
     }
 
     const problems = await findIssueProblems(conn, invoice);
@@ -297,7 +297,7 @@ async function submitForApproval(conn, invoiceId, expectedVersion) {
         throw new AppError(
             409,
             "APPROVAL_RULES_MISSING",
-            "ยังไม่ได้ตั้งกติกาอนุมัติใบแจ้งหนี้ — ให้ผู้ดูแลตั้งที่ ตั้งค่าระบบ › ข้อมูลบริษัท › การอนุมัติ › ใบแจ้งหนี้ที่สร้างเอง",
+            "ยังไม่ได้ตั้งกติกาอนุมัติใบแจ้งหนี้ · ให้ผู้ดูแลตั้งที่ ตั้งค่าระบบ › ข้อมูลบริษัท › การอนุมัติ › ใบแจ้งหนี้ที่สร้างเอง",
         );
     }
 
@@ -350,7 +350,7 @@ async function approve(conn, invoiceId, expectedVersion, freshRate, actor) {
             throw new AppError(
                 409,
                 "VAT_CHANGED",
-                `อัตรา VAT เปลี่ยนจาก ${invoice.inv_vat_rate}% เป็น ${vatRateToday}% ตั้งแต่ส่งขออนุมัติ — กรุณาตีกลับให้ผู้สร้างบันทึกใหม่เพื่อคำนวณยอดใหม่`,
+                `อัตรา VAT เปลี่ยนจาก ${invoice.inv_vat_rate}% เป็น ${vatRateToday}% ตั้งแต่ส่งขออนุมัติ · กรุณาตีกลับให้ผู้สร้างบันทึกใหม่เพื่อคำนวณยอดใหม่`,
             );
         }
         const problems = await findIssueProblems(conn, invoice);
@@ -444,7 +444,7 @@ async function cancel(conn, invoiceId, reason, expectedVersion, actor) {
     const invoice = await invoiceService.findForUpdate(conn, invoiceId);
     if (invoice.inv_status === "draft") throw invoiceService.wrongStatus('ร่างใช้ "ลบ" แทนการยกเลิก');
     if (invoice.inv_status === "pending_approval") {
-        throw invoiceService.wrongStatus("ใบที่รออนุมัติยกเลิกไม่ได้ — ให้ผู้อนุมัติตีกลับ แล้วลบร่าง");
+        throw invoiceService.wrongStatus("ใบที่รออนุมัติยกเลิกไม่ได้ · ให้ผู้อนุมัติตีกลับ แล้วลบร่าง");
     }
     if (invoice.inv_status !== "issued") throw invoiceService.wrongStatus("ใบนี้ถูกยกเลิกไปแล้ว");
     invoiceService.assertVersion(invoice, expectedVersion);
@@ -454,11 +454,11 @@ async function cancel(conn, invoiceId, reason, expectedVersion, actor) {
         throw new AppError(
             409,
             "INVOICE_IN_BILLING_NOTE",
-            `ใบนี้อยู่ในใบวางบิล ${billingNote.bn_number ?? "(ร่าง)"} — ยกเลิกหรือลบใบวางบิลก่อน แล้วค่อยยกเลิกใบนี้`,
+            `ใบนี้อยู่ในใบวางบิล ${billingNote.bn_number ?? "(ร่าง)"} · ยกเลิกหรือลบใบวางบิลก่อน แล้วค่อยยกเลิกใบนี้`,
         );
     }
     if (parseHundredths(invoice.inv_paid_amount, "ยอดรับแล้ว") > 0n) {
-        throw new AppError(409, "INVOICE_HAS_PAYMENT", "ใบนี้รับชำระเงินแล้ว — ยกเลิกใบเสร็จก่อน แล้วค่อยยกเลิกใบนี้");
+        throw new AppError(409, "INVOICE_HAS_PAYMENT", "ใบนี้รับชำระเงินแล้ว · ยกเลิกใบเสร็จก่อน แล้วค่อยยกเลิกใบนี้");
     }
     // ขั้น N-1: ใบลดหนี้ที่ยังไม่ยกเลิก (รวมร่าง/รออนุมัติ) ผูกกับใบนี้อยู่ → ยกเลิกใบเดิมไม่ได้ (R-N6)
     const activeCreditNote = (await invoiceService.listCreditNotesOf(conn, invoiceId)).find(
@@ -468,7 +468,7 @@ async function cancel(conn, invoiceId, reason, expectedVersion, actor) {
         throw new AppError(
             409,
             "INVOICE_HAS_CREDIT_NOTE",
-            `ใบนี้มีใบลดหนี้ ${activeCreditNote.cn_number ?? "(ร่าง/รออนุมัติ)"} — ยกเลิกหรือลบใบลดหนี้ก่อน แล้วค่อยยกเลิกใบนี้`,
+            `ใบนี้มีใบลดหนี้ ${activeCreditNote.cn_number ?? "(ร่าง/รออนุมัติ)"} · ยกเลิกหรือลบใบลดหนี้ก่อน แล้วค่อยยกเลิกใบนี้`,
         );
     }
     // ขั้น N-2: ใบเพิ่มหนี้ที่ยังไม่ยกเลิก (รวมร่าง/รออนุมัติ) อ้างใบนี้อยู่ → ยกเลิกใบเดิมไม่ได้ (R-N6)
@@ -479,7 +479,7 @@ async function cancel(conn, invoiceId, reason, expectedVersion, actor) {
         throw new AppError(
             409,
             "INVOICE_HAS_DEBIT_NOTE",
-            `ใบนี้มีใบเพิ่มหนี้ ${activeDebitNote.inv_number ?? "(ร่าง/รออนุมัติ)"} — ยกเลิกหรือลบใบเพิ่มหนี้ก่อน แล้วค่อยยกเลิกใบนี้`,
+            `ใบนี้มีใบเพิ่มหนี้ ${activeDebitNote.inv_number ?? "(ร่าง/รออนุมัติ)"} · ยกเลิกหรือลบใบเพิ่มหนี้ก่อน แล้วค่อยยกเลิกใบนี้`,
         );
     }
 

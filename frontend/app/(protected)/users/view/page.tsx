@@ -20,7 +20,7 @@ function Field({ label, value }: { label: string; value?: string | null }) {
     return (
         <div className="flex flex-col gap-1">
             <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">{label}</span>
-            <span className="text-sm text-gray-800">{value || "—"}</span>
+            <span className="text-sm text-gray-800">{value || "-"}</span>
         </div>
     );
 }

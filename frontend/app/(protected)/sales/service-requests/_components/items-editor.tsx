@@ -11,7 +11,7 @@ import StatusBanner from "@/components/ui/guidance/status-banner";
 import SearchableSelect, { type SelectOption } from "@/components/ui/SearchableSelect";
 import { buttonClass } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
-import { formatAmount } from "@/lib/shared/money.mjs";
+import { formatAmount, trimQuantity } from "@/lib/shared/money.mjs";
 import { cartTotals, fixedSubtotal, lineAmount, percentAmount } from "@/lib/shared/order-cart-math.mjs";
 import { serviceRequestItemsSchema } from "@/lib/shared/schemas/service-request.mjs";
 import type { ServiceRequestItem } from "../../order-links/_types";
@@ -65,7 +65,7 @@ export default function ItemsEditor({
                 name: row.svi_name,
                 unit: row.svi_unit ?? "",
                 unit_price: row.svi_adjusted_unit_price ?? row.svi_unit_price ?? "0",
-                quantity: row.svi_adjusted_quantity ?? row.svi_quantity ?? "1",
+                quantity: trimQuantity(row.svi_adjusted_quantity ?? row.svi_quantity ?? "1"),
                 is_removed: row.svi_is_removed,
                 packageName: row.svi_package_id ? packageNames.get(row.svi_package_id) ?? null : null,
                 percent: row.svi_percent,

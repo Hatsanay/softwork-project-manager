@@ -82,6 +82,7 @@ export default function ReceivablesPage() {
         })),
         {
             key: "total",
+            mobile: "trailing",
             header: "รวม (บาท)",
             className: "text-right",
             render: (_, row) => (

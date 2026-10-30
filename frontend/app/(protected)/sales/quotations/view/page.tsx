@@ -30,7 +30,7 @@ import { PageSkeleton } from "@/components/ui/skeleton";
 import { buttonClass } from "@/components/ui/button";
 import { formatDateOnly } from "@/app/function";
 import { apiFetch, type ApiError } from "@/lib/api";
-import { formatAmount } from "@/lib/shared/money.mjs";
+import { formatAmount, formatQuantity } from "@/lib/shared/money.mjs";
 import { amountInWords } from "@/lib/shared/amount-in-words.mjs";
 import ApprovalProgress from "../_components/approval-progress";
 import QuotationBillingCard from "../../invoices/_components/quotation-billing-card";
@@ -52,9 +52,9 @@ const REASON_DIALOGS: Record<ReasonAction, { title: string; description: string;
         },
         decline: {
             title: "บันทึกว่าลูกค้าปฏิเสธ?",
-            description: 'ใบจะเป็นสถานะ "ลูกค้าปฏิเสธ" — ยังออก revision เสนอราคาใหม่ได้',
+            description: 'ใบจะเป็นสถานะ "ลูกค้าปฏิเสธ"ยังออก revision เสนอราคาใหม่ได้',
             confirmLabel: "บันทึกว่าปฏิเสธ",
-            hint: "เช่น ราคาสูงกว่าที่อื่น · เลื่อนโครงการ — ใช้ดูสถิติการปิดการขายภายหลัง",
+            hint: "เช่น ราคาสูงกว่าที่อื่น · เลื่อนโครงการ · ใช้ดูสถิติการปิดการขายภายหลัง",
         },
         cancel: {
             title: "ยกเลิกใบเสนอราคานี้?",
@@ -443,7 +443,7 @@ export default function QuotationViewPage() {
                                     {displayRate(quotation.qt_exchange_rate)} บาท/{code} ·{" "}
                                     {quotation.qt_rate_source === "bot"
                                         ? `ธปท. วันที่ ${formatDateOnly(quotation.qt_rate_date)}`
-                                        : `กรอกเอง — ${quotation.qt_rate_override_reason ?? ""}${quotation.qt_rate_bot ? ` (ธปท. ${displayRate(quotation.qt_rate_bot)})` : ""}`}
+                                        : `กรอกเอง · ${quotation.qt_rate_override_reason ?? ""}${quotation.qt_rate_bot ? ` (ธปท. ${displayRate(quotation.qt_rate_bot)})` : ""}`}
                                 </dd>
                             </div>
                         )}
@@ -457,7 +457,7 @@ export default function QuotationViewPage() {
                                     <span className="whitespace-pre-line text-gray-800">{item.qti_description}</span>
                                     <div className="flex items-end justify-between gap-3">
                                         <span className="text-xs text-gray-500 tabular-nums">
-                                            {formatAmount(item.qti_quantity ?? "0")} {item.qti_unit ?? ""} ×{" "}
+                                            {formatQuantity(item.qti_quantity ?? "0")} {item.qti_unit ?? ""} ×{" "}
                                             {formatAmount(item.qti_unit_price ?? "0", decimals)}
                                             {Number(item.qti_discount_amount) > 0 &&
                                                 ` · ส่วนลด −${formatAmount(item.qti_discount_amount, decimals)}`}
@@ -495,7 +495,7 @@ export default function QuotationViewPage() {
                                         <tr key={item.qti_id} className="border-b border-gray-100 align-top">
                                             <td className="py-2 pr-2 whitespace-pre-line">{item.qti_description}</td>
                                             <td className="py-2 pr-2 text-right tabular-nums">
-                                                {formatAmount(item.qti_quantity ?? "0")} {item.qti_unit ?? ""}
+                                                {formatQuantity(item.qti_quantity ?? "0")} {item.qti_unit ?? ""}
                                             </td>
                                             <td className="py-2 pr-2 text-right tabular-nums">
                                                 {formatAmount(item.qti_unit_price ?? "0", decimals)}
@@ -567,7 +567,7 @@ export default function QuotationViewPage() {
                                     <span>
                                         งวดที่ {index + 1} {milestone.qtm_name}
                                         {milestone.qtm_percent ? ` (${milestone.qtm_percent}%)` : ""}
-                                        {milestone.qtm_condition ? ` — ${milestone.qtm_condition}` : ""}
+                                        {milestone.qtm_condition ? `${milestone.qtm_condition}` : ""}
                                     </span>
                                     <span className="tabular-nums">{formatAmount(milestone.qtm_amount, decimals)}</span>
                                 </div>
@@ -671,7 +671,7 @@ export default function QuotationViewPage() {
                 open={confirmAction === "send"}
                 variant="info"
                 title="บันทึกว่าส่งให้ลูกค้าแล้ว?"
-                description="ใช้หลังจากส่งเอกสาร (พิมพ์/PDF) ให้ลูกค้าเอง — ระบบบันทึกวันเวลาที่ส่ง"
+                description="ใช้หลังจากส่งเอกสาร (พิมพ์/PDF) ให้ลูกค้าเอง · ระบบบันทึกวันเวลาที่ส่ง"
                 confirmLabel="บันทึก"
                 loading={isWorking}
                 errorMessage={actionError}
@@ -682,7 +682,7 @@ export default function QuotationViewPage() {
                 open={confirmAction === "revise"}
                 variant="info"
                 title="ออก revision ใหม่?"
-                description={`ได้ร่าง ${quotation.qt_number ?? ""} Rev.ใหม่ คัดลอกรายการและงวดมาให้ แก้แล้วส่งขออนุมัติ — อนุมัติแล้วฉบับนี้จะเป็น "มีฉบับใหม่แทน"`}
+                description={`ได้ร่าง ${quotation.qt_number ?? ""} Rev.ใหม่ คัดลอกรายการและงวดมาให้ แก้แล้วส่งขออนุมัติ · อนุมัติแล้วฉบับนี้จะเป็น "มีฉบับใหม่แทน"`}
                 consequences={["อัตราแลกเปลี่ยนดึงใหม่ของวันนี้", "ยืนราคาถึงนับใหม่จากวันที่อนุมัติ revision"]}
                 confirmLabel="ออก revision"
                 loading={isWorking}
@@ -698,7 +698,7 @@ export default function QuotationViewPage() {
                 open={confirmAction === "copy"}
                 variant="info"
                 title="คัดลอกเป็นใบใหม่?"
-                description="ได้ร่างใหม่ (ยังไม่มีเลขที่) คัดลอกรายการและงวดมาให้ — ใช้กับงานเพิ่มหลังตอบรับ หรือเสนอลูกค้ารายอื่น"
+                description="ได้ร่างใหม่ (ยังไม่มีเลขที่) คัดลอกรายการและงวดมาให้ · ใช้กับงานเพิ่มหลังตอบรับ หรือเสนอลูกค้ารายอื่น"
                 confirmLabel="คัดลอก"
                 loading={isWorking}
                 errorMessage={actionError}
@@ -775,7 +775,7 @@ function StatusGuide({ detail }: { detail: QuotationDetail }) {
                 <StatusBanner
                     tone={quotation.qt_returned_reason ? "warn" : "info"}
                     title={
-                        quotation.qt_returned_reason ? "ถูกตีกลับ — แก้แล้วส่งขออนุมัติใหม่" : "ร่าง — ยังไม่มีเลขที่"
+                        quotation.qt_returned_reason ? "ถูกตีกลับ · แก้แล้วส่งขออนุมัติใหม่" : "ร่าง · ยังไม่มีเลขที่"
                     }
                 >
                     {quotation.qt_returned_reason
@@ -807,14 +807,14 @@ function StatusGuide({ detail }: { detail: QuotationDetail }) {
             );
         case "sent":
             return (
-                <StatusBanner tone="info" title="ส่งลูกค้าแล้ว — รอลูกค้าตอบ">
+                <StatusBanner tone="info" title="ส่งลูกค้าแล้ว · รอลูกค้าตอบ">
                     ยืนราคาถึง {formatDateOnly(quotation.qt_valid_until)} · เลยวันแล้วระบบเปลี่ยนเป็นหมดอายุให้เอง ·
                     ลูกค้าขอแก้ = ออก revision
                 </StatusBanner>
             );
         case "accepted":
             return (
-                <StatusBanner tone="done" title="ลูกค้าตอบรับแล้ว — ใบนี้ล็อกถาวร">
+                <StatusBanner tone="done" title="ลูกค้าตอบรับแล้ว · ใบนี้ล็อกถาวร">
                     {quotation.qt_project_id ? (
                         <>
                             ผูกกับโปรเจกต์{" "}

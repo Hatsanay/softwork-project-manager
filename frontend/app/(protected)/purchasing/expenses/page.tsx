@@ -84,10 +84,11 @@ export default function ExpensesPage() {
         },
         {
             key: "vd_name",
+            mobile: "meta",
             header: "ผู้ขาย",
             render: (_, row) => (
                 <div className="grid min-w-0 gap-0.5">
-                    <span>{row.vd_name ?? "—"}</span>
+                    <span>{row.vd_name ?? "-"}</span>
                     <span className="flex items-center gap-1 text-xs text-gray-500">
                         {row.ex_vendor_doc_no ? `เอกสาร ${row.ex_vendor_doc_no}` : "ไม่มีเลขเอกสาร"}
                         {row.attachment_count > 0 && (
@@ -103,6 +104,7 @@ export default function ExpensesPage() {
         },
         {
             key: "ex_total",
+            mobile: "trailing",
             header: "ยอดรวม",
             className: "text-right tabular-nums",
             render: (_, row) => (
@@ -118,6 +120,7 @@ export default function ExpensesPage() {
         },
         {
             key: "ex_status",
+            mobile: "badge",
             header: "สถานะ",
             render: (_, row) => {
                 const due = expenseDueLabel(row);
@@ -142,6 +145,7 @@ export default function ExpensesPage() {
         },
         {
             key: "ex_expense_date",
+            mobile: "meta",
             header: "วันที่ / ครบกำหนด",
             render: (_, row) => (
                 <div className="grid gap-0.5 text-sm">

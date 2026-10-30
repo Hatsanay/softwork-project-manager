@@ -591,7 +591,7 @@ function CategoryForm({
                     onChange={(event) => update("ec_default_income_type", event.target.value)}
                     className={inputClass(Boolean(errors.ec_default_income_type))}
                 >
-                    <option value="">— ไม่หัก —</option>
+                    <option value="">ไม่หัก</option>
                     {incomeTypes
                         .filter(
                             (type) =>

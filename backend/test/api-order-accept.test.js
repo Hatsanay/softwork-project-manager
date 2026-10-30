@@ -162,3 +162,63 @@ test("เปิดโปรเจกต์ทันที (ไม่ออกใ
     const fastwork = expectStatus(await anonymous("POST", `/V1/order/${ids.fastworkLink.ol_short_code}/requests`, { submit_key: crypto.randomUUID(), items, seen_total: "20000.00" }), 201);
     expectStatus(await anonymous("POST", `/V1/order/requests/${fastwork.access_token}/accept`, { name: "buyer_x", agree: true }), 409);
 });
+
+test("เอกสาร A4 ให้ลูกค้าเปิด/บันทึก PDF: เฉพาะขั้นที่เห็นใบ · ไม่มีข้อมูลภายใน · ฉบับล่าสุด · ยอมรับแล้วยังเปิดได้", async () => {
+    const documentOf = (token) => anonymous("GET", `/V1/order/requests/${token}/quotation-document`);
+    const request = await confirmedRequest(true);
+    await api.pool.query("UPDATE tb_quotations SET qt_internal_note = 'ลับ ต้นทุนจริง 9,000' WHERE qt_id = ?", [request.qt_id]);
+
+    expectStatus(await documentOf("0".repeat(32)), 404, "ลิงก์ผิด");
+    const draft = expectStatus(await documentOf(request.access_token), 409, "ใบยังเป็นร่าง");
+    assert.equal(draft.code, "QUOTATION_DOCUMENT_UNAVAILABLE");
+
+    await sendQuotation(request.qt_id);
+    // snapshot บริษัทเก็บทั้งแถวตั้งค่า (มีค่าภายใน) · เอกสารต้องเลือกเฉพาะที่พิมพ์
+    await api.pool.query(
+        "UPDATE tb_quotations SET qt_company_snapshot = ?, qt_client_snapshot = ? WHERE qt_id = ?",
+        [
+            JSON.stringify({ cs_name_th: "ซอฟต์เวิร์ค", cs_tax_id: "0105500000001", cs_allow_self_approval: 1, cs_fastwork_fee_rate: "17.00", branch: { branch_id: "BRA1", branch_code: "00000", branch_name_th: "สำนักงานใหญ่" } }),
+            JSON.stringify({ client_id: ids.client, client_name: "ร้านครัวอันดามัน", client_phone: "0815553344" }),
+            request.qt_id,
+        ],
+    );
+    let document = expectStatus(await documentOf(request.access_token), 200);
+    assert.equal(document.quotation.qt_total, "23000.00");
+    assert.equal(document.quotation.qt_status, "sent");
+    assert.deepEqual(document.items.map((row) => [row.qti_type, row.qti_description]), [
+        ["item", "เว็บไซต์ร้าน"],
+        ["heading", "แพ็กออกแบบ"],
+        ["item", "ออกแบบหน้าจอ"],
+    ]);
+    assert.equal(document.currency.cur_code, "THB");
+    assert.equal(document.company.cs_name_th, "ซอฟต์เวิร์ค");
+    assert.equal(document.company.branch.branch_code, "00000");
+    assert.equal(document.client.client_name, "ร้านครัวอันดามัน");
+    assert.deepEqual(Object.keys(document.signatures).sort(), ["approver", "creator"]);
+    const text = JSON.stringify(document);
+    for (const secret of ["ลับ ต้นทุนจริง", "cs_allow_self_approval", "cs_fastwork_fee_rate", "BRA1", request.qt_id, ids.client, "qt_internal_note", "qt_client_id"]) {
+        assert.ok(!text.includes(secret), `ไม่ส่ง ${secret}`);
+    }
+
+    // ทีมออก revision = ปิดชั่วคราว · ส่งฉบับใหม่แล้วเห็นฉบับใหม่
+    const revision = expectStatus(await api.callApi("POST", `/V1/quotations/${request.qt_id}/revise`, { body: {} }), 201);
+    expectStatus(await documentOf(request.access_token), 409, "ทีมกำลังปรับปรุงใบ");
+    await sendQuotation(revision.qt_id);
+    document = expectStatus(await documentOf(request.access_token), 200);
+    assert.equal(document.quotation.qt_revision, 1);
+
+    expectStatus(await anonymous("POST", `/V1/order/requests/${request.access_token}/accept`, { name: "วิไล ใจดี", agree: true }), 200);
+    document = expectStatus(await documentOf(request.access_token), 200, "ยอมรับแล้วยังเปิดได้");
+    assert.equal(document.quotation.qt_status, "accepted");
+
+    // ใบหมดอายุ และงาน Fastwork เปิดไม่ได้
+    const expiring = await confirmedRequest(true);
+    await sendQuotation(expiring.qt_id);
+    await api.pool.query("UPDATE tb_quotations SET qt_valid_until = '2020-01-01' WHERE qt_id = ?", [expiring.qt_id]);
+    expectStatus(await documentOf(expiring.access_token), 409, "หมดอายุ");
+    const fastwork = expectStatus(
+        await anonymous("POST", `/V1/order/${ids.fastworkLink.ol_short_code}/requests`, { submit_key: crypto.randomUUID(), items: [{ kind: "product", id: ids.website, quantity: 1 }], seen_total: "20000.00" }),
+        201,
+    );
+    expectStatus(await documentOf(fastwork.access_token), 409, "Fastwork");
+});

@@ -2,7 +2,7 @@ require("dotenv").config();
 
 // ไม่มี JWT_SECRET = ออก/ตรวจ token ไม่ได้ทั้งระบบ ให้หยุดตั้งแต่ตอนเริ่ม ดีกว่าไปพังตอนมีคน login
 if (!process.env.JWT_SECRET) {
-    console.error("ไม่ได้ตั้งค่า JWT_SECRET ใน .env — หยุดการทำงาน");
+    console.error("ไม่ได้ตั้งค่า JWT_SECRET ใน .env · หยุดการทำงาน");
     process.exit(1);
 }
 if (process.env.JWT_SECRET === "change_me" || process.env.JWT_SECRET.length < 32) {
@@ -36,7 +36,7 @@ async function logTimeSettings() {
 
     const differenceSeconds = Math.abs(Date.parse(codeBangkokNow) - Date.parse(database.databaseNow)) / 1000;
     if (differenceSeconds > MAX_CLOCK_DIFFERENCE_SECONDS) {
-        console.warn(`[time] เวลาไทยของโค้ดกับ NOW() ของฐานข้อมูลต่างกัน ${Math.round(differenceSeconds)} วินาที — ตรวจการตั้งค่า timezone`);
+        console.warn(`[time] เวลาไทยของโค้ดกับ NOW() ของฐานข้อมูลต่างกัน ${Math.round(differenceSeconds)} วินาที · ตรวจการตั้งค่า timezone`);
     }
 }
 

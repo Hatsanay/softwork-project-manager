@@ -70,7 +70,7 @@ test("รูปแบบ 18 ตัว เรียงต่อเนื่อง
     assert.equal((await issueInTransaction("QT", "2026-12-31")).length, 18);
 });
 
-test("บันทึกเอกสารไม่สำเร็จ (rollback) เลขไม่ถูกใช้ — ใบถัดไปไม่ข้ามเลข", async () => {
+test("บันทึกเอกสารไม่สำเร็จ (rollback) เลขไม่ถูกใช้ · ใบถัดไปไม่ข้ามเลข", async () => {
     assert.equal(await issueInTransaction("BN", "2026-12-31"), "BN-20261231-000001");
     await issueInTransaction("BN", "2026-12-31", false);
     assert.equal(await issueInTransaction("BN", "2026-12-31"), "BN-20261231-000002");

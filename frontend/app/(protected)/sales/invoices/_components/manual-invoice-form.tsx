@@ -16,7 +16,7 @@ import SaveErrorBanner from "@/components/ui/save-error-banner";
 import { buttonClass } from "@/components/ui/button";
 import { apiFetch, type ApiError } from "@/lib/api";
 import { toFieldErrors, type FieldErrors } from "@/lib/form-errors";
-import { formatAmount } from "@/lib/shared/money.mjs";
+import { formatAmount, trimQuantity } from "@/lib/shared/money.mjs";
 import { calculateQuotation } from "@/lib/shared/quotation-totals.mjs";
 import { calculateWithholding } from "@/lib/shared/invoice-totals.mjs";
 import {
@@ -181,7 +181,7 @@ function stateFromDetail(detail: InvoiceDetail): FormState {
             qti_product_id: item.invi_product_id,
             qti_package_id: null,
             qti_description: item.invi_description,
-            qti_quantity: item.invi_quantity ?? "",
+            qti_quantity: trimQuantity(item.invi_quantity),
             qti_unit: item.invi_unit ?? "",
             qti_unit_price: item.invi_unit_price ?? "",
             qti_list_price: item.invi_list_price ?? "",
@@ -432,7 +432,7 @@ export default function ManualInvoiceForm({ options, detail, debitReference }: M
         if (!checked.success || Object.keys(liveErrors).length > 0) {
             const schemaErrors = checked.success ? {} : toFormErrors(toFieldErrors(checked.error.issues));
             setFieldErrors({ ...schemaErrors, ...liveErrors });
-            toast.error("ยังบันทึกไม่ได้ — แก้ช่องที่มีข้อความสีแดงก่อน");
+            toast.error("ยังบันทึกไม่ได้ · แก้ช่องที่มีข้อความสีแดงก่อน");
             return;
         }
         setFieldErrors({});
@@ -464,7 +464,7 @@ export default function ManualInvoiceForm({ options, detail, debitReference }: M
             <div className="grid min-w-0 grid-cols-1 gap-5">
                 {detail?.invoice.inv_returned_reason && (
                     <StatusBanner tone="warn" title="ใบนี้ถูกตีกลับ">
-                        เหตุผล: {detail.invoice.inv_returned_reason} — แก้แล้วส่งขออนุมัติใหม่ได้ (เริ่มชั้น 1 ใหม่)
+                        เหตุผล: {detail.invoice.inv_returned_reason} · แก้แล้วส่งขออนุมัติใหม่ได้ (เริ่มชั้น 1 ใหม่)
                     </StatusBanner>
                 )}
 
@@ -516,7 +516,7 @@ export default function ManualInvoiceForm({ options, detail, debitReference }: M
                                     onChange={(event) => update({ inv_adjust_reason_code: event.target.value })}
                                     className={inputClass(Boolean(fieldErrors.inv_adjust_reason_code))}
                                 >
-                                    <option value="">— เลือกเหตุผล —</option>
+                                    <option value="">เลือกเหตุผล</option>
                                     {Object.entries(DEBIT_NOTE_REASONS).map(([code, label]) => (
                                         <option key={code} value={code}>
                                             {label}
@@ -570,7 +570,7 @@ export default function ManualInvoiceForm({ options, detail, debitReference }: M
                                         loadOptions={(search) => loadClientOptions(search, clientOption)}
                                         value={form.inv_client_id}
                                         onChange={(value) => changeClient(value)}
-                                        placeholder="— เลือกลูกค้า —"
+                                        placeholder="เลือกลูกค้า"
                                         error={Boolean(fieldErrors.inv_client_id)}
                                     />
                                 </FormField>
@@ -631,7 +631,7 @@ export default function ManualInvoiceForm({ options, detail, debitReference }: M
                                     htmlFor="inv_vat_treatment"
                                     hint={
                                         !isVatRegistered
-                                            ? "บริษัทยังไม่จด VAT — ใบนี้ไม่คิด VAT"
+                                            ? "บริษัทยังไม่จด VAT · ใบนี้ไม่คิด VAT"
                                             : form.inv_vat_treatment === "zero"
                                               ? QUOTATION_MESSAGES.vatZero
                                               : `VAT ${vatRate}% ตามวันที่ส่งขออนุมัติ`
@@ -661,7 +661,7 @@ export default function ManualInvoiceForm({ options, detail, debitReference }: M
                                     htmlFor="inv_currency"
                                     error={fieldErrors.inv_currency}
                                     className="sm:max-w-xs"
-                                    hint="ราคาสินค้าเก็บเป็นบาท — ใส่ใบสกุลอื่นระบบแปลงตามอัตราในใบ"
+                                    hint="ราคาสินค้าเก็บเป็นบาท · ใส่ใบสกุลอื่นระบบแปลงตามอัตราในใบ"
                                 >
                                     <select
                                         id="inv_currency"

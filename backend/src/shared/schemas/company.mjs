@@ -29,7 +29,7 @@ export const companySchema = z.object({
     cs_tax_id: optionalText("เลขประจำตัวผู้เสียภาษี", 20)
         .transform((value) => (value === null ? null : normalizeThaiTaxId(value)))
         .refine((value) => value === null || isValidThaiTaxId(value), {
-            message: "เลขประจำตัวผู้เสียภาษีไม่ถูกต้อง — ต้องเป็นตัวเลข 13 หลัก ตรวจว่าพิมพ์ครบและไม่สลับหลัก",
+            message: "เลขประจำตัวผู้เสียภาษีไม่ถูกต้อง · ต้องเป็นตัวเลข 13 หลัก ตรวจว่าพิมพ์ครบและไม่สลับหลัก",
         }),
     cs_address_th: optionalText("ที่อยู่ (ภาษาไทย)", 1000),
     cs_address_en: optionalText("ที่อยู่ (ภาษาอังกฤษ)", 1000),

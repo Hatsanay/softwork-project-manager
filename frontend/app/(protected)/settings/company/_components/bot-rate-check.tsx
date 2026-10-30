@@ -65,7 +65,7 @@ export default function BotRateCheck({ currencies }: { currencies: Currency[] })
             {status.bot_configured ? (
                 <p className="text-sm text-gray-600">
                     อัตราแลกเปลี่ยนดึงจากธนาคารแห่งประเทศไทย (อัตราซื้อถัวเฉลี่ยเงินโอน) ของวันทำการล่าสุด ณ
-                    วันที่เอกสาร — วันหยุดใช้อัตราวันทำการก่อนหน้า (ย้อนได้ไม่เกิน {status.lookback_days} วัน) ·
+                    วันที่เอกสาร · วันหยุดใช้อัตราวันทำการก่อนหน้า (ย้อนได้ไม่เกิน {status.lookback_days} วัน) ·
                     ผู้สร้างแก้อัตราในเอกสารได้พร้อมเหตุผล
                 </p>
             ) : (

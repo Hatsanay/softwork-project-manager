@@ -11,6 +11,8 @@ const {
     calculateDocumentTotals,
     splitIntoMilestones,
     convertToBaht,
+    trimQuantity,
+    formatQuantity,
 } = require("../src/shared/money.mjs");
 
 // ─── แปลงข้อความ ↔ ร้อยส่วน ───────────────────────────────────────────────────────────────
@@ -55,7 +57,7 @@ test("หารปัดครึ่งขึ้น", () => {
     assert.equal(divideRoundHalfUp(-5n, 10n), -1n);
 });
 
-test("ปัดตามทศนิยมของสกุลเงิน — เยน (0 ตำแหน่ง) ปัดเป็นเต็มหน่วย", () => {
+test("ปัดตามทศนิยมของสกุลเงิน · เยน (0 ตำแหน่ง) ปัดเป็นเต็มหน่วย", () => {
     assert.equal(roundToCurrency(123456n, 2), 123456n);
     assert.equal(roundToCurrency(150049n, 0), 150000n);
     assert.equal(roundToCurrency(150050n, 0), 150100n);
@@ -304,4 +306,21 @@ test("อัตรา ธปท. ที่ประกาศต่อหลา�
         assert.throws(() => ratePerUnit(bad, 1), MoneyInputError, JSON.stringify(bad));
     }
     assert.throws(() => ratePerUnit("1", 0), MoneyInputError);
+});
+
+// ─── จำนวน (ไม่ใช่เงิน) ─────────────────────────────────────────────────────────────────────
+
+test("จำนวน: ตัดศูนย์ท้ายทศนิยม · จำนวนเต็มไม่มีทศนิยม · คั่นหลักพันเฉพาะตอนแสดง", () => {
+    assert.equal(trimQuantity("8.00"), "8");
+    assert.equal(trimQuantity("1.50"), "1.5");
+    assert.equal(trimQuantity("0.25"), "0.25");
+    assert.equal(trimQuantity("1200.00"), "1200");
+    assert.equal(trimQuantity(3), "3");
+    assert.equal(trimQuantity("-0.00"), "0");
+    // ไม่ใช่ตัวเลข: คืนตามเดิมให้ชุดตรวจบอกผิด
+    assert.equal(trimQuantity("abc"), "abc");
+    assert.equal(trimQuantity(null), "");
+    assert.equal(formatQuantity("1200.00"), "1,200");
+    assert.equal(formatQuantity("1234567.50"), "1,234,567.5");
+    assert.equal(formatQuantity("12.00"), "12");
 });

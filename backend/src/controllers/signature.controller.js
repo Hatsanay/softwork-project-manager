@@ -12,7 +12,7 @@ const SIGNATURE_METHODS = new Set(["upload", "draw"]);
 
 async function assertPasswordMatches(userId, password) {
     const wrongPassword = new AppError(400, "VALIDATION", "รหัสผ่านไม่ถูกต้อง", {
-        password: "รหัสผ่านไม่ถูกต้อง — ใช้รหัสผ่านเดียวกับที่ใช้เข้าระบบ",
+        password: "รหัสผ่านไม่ถูกต้อง · ใช้รหัสผ่านเดียวกับที่ใช้เข้าระบบ",
     });
     if (!password) {
         throw new AppError(400, "VALIDATION", "กรุณายืนยันรหัสผ่านก่อนบันทึกลายเซ็น", {

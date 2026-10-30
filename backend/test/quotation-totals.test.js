@@ -93,7 +93,7 @@ test("ต่ำกว่าราคาตั้งต้น: เทียบย
     assert.deepEqual(result.belowList, { lineCount: 2, amount: 1500000n });
 });
 
-test("ข้อมูลผิดไม่โยน error — บอกเป็นรายช่องรูปเดียวกับ API", () => {
+test("ข้อมูลผิดไม่โยน error · บอกเป็นรายช่องรูปเดียวกับ API", () => {
     const result = calculateQuotation(
         quotation({
             items: [

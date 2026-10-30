@@ -224,7 +224,7 @@ export default function QuotationForm({ options, detail }: QuotationFormProps) {
         const liveErrors = calculation.errors;
         if (!checked.success || Object.keys(liveErrors).length > 0) {
             setFieldErrors({ ...(checked.success ? {} : toFieldErrors(checked.error.issues)), ...liveErrors });
-            toast.error("ยังบันทึกไม่ได้ — แก้ช่องที่มีข้อความสีแดงก่อน");
+            toast.error("ยังบันทึกไม่ได้ · แก้ช่องที่มีข้อความสีแดงก่อน");
             return;
         }
         setFieldErrors({});
@@ -256,7 +256,7 @@ export default function QuotationForm({ options, detail }: QuotationFormProps) {
             <div className="grid min-w-0 grid-cols-1 gap-5">
                 {detail?.quotation.qt_returned_reason && (
                     <StatusBanner tone="warn" title="ใบนี้ถูกตีกลับ">
-                        เหตุผล: {detail.quotation.qt_returned_reason} — แก้แล้วส่งขออนุมัติใหม่ได้ (เริ่มชั้น 1 ใหม่)
+                        เหตุผล: {detail.quotation.qt_returned_reason} · แก้แล้วส่งขออนุมัติใหม่ได้ (เริ่มชั้น 1 ใหม่)
                     </StatusBanner>
                 )}
 
@@ -270,7 +270,7 @@ export default function QuotationForm({ options, detail }: QuotationFormProps) {
                             className="sm:col-span-2"
                             hint={
                                 isRevision
-                                    ? 'revision ต้องเป็นลูกค้าเดิม — เสนอลูกค้ารายอื่นให้ใช้ "คัดลอกเป็นใบใหม่"'
+                                    ? 'revision ต้องเป็นลูกค้าเดิม · เสนอลูกค้ารายอื่นให้ใช้ "คัดลอกเป็นใบใหม่"'
                                     : "แสดงเฉพาะลูกค้าที่เปิดใช้งาน · เลือกแล้วระบบเติมสกุลเงิน ภาษา และการคิด VAT ตามข้อมูลลูกค้า"
                             }
                         >
@@ -278,7 +278,7 @@ export default function QuotationForm({ options, detail }: QuotationFormProps) {
                                 loadOptions={(search) => loadClientOptions(search, clientOption)}
                                 value={form.qt_client_id}
                                 onChange={(value) => changeClient(value)}
-                                placeholder="— เลือกลูกค้า —"
+                                placeholder="เลือกลูกค้า"
                                 disabled={isRevision}
                                 error={Boolean(fieldErrors.qt_client_id)}
                             />
@@ -289,7 +289,7 @@ export default function QuotationForm({ options, detail }: QuotationFormProps) {
                             required
                             error={fieldErrors.qt_title}
                             className="sm:col-span-2"
-                            hint="เช่น พัฒนาเว็บไซต์บริษัท — ใช้เป็นชื่อโปรเจกต์เมื่อลูกค้าตอบรับ"
+                            hint="เช่น พัฒนาเว็บไซต์บริษัท · ใช้เป็นชื่อโปรเจกต์เมื่อลูกค้าตอบรับ"
                         >
                             <input
                                 id="qt_title"
@@ -382,7 +382,7 @@ export default function QuotationForm({ options, detail }: QuotationFormProps) {
                             htmlFor="qt_currency"
                             error={fieldErrors.qt_currency}
                             className="sm:max-w-xs"
-                            hint="ราคาสินค้าเก็บเป็นบาท — ใส่ใบสกุลอื่นระบบแปลงตามอัตราในใบ"
+                            hint="ราคาสินค้าเก็บเป็นบาท · ใส่ใบสกุลอื่นระบบแปลงตามอัตราในใบ"
                         >
                             <select
                                 id="qt_currency"
