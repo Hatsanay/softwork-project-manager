@@ -308,9 +308,9 @@ const PRODUCTS = [
     { key: "testing", code: "SV-QA", name: "ทดสอบระบบและแก้ไขข้อผิดพลาด", unit: "Man-day", price: "3500", category: 0 },
     { key: "uxui", code: "DS-UI", name: "ออกแบบ UX/UI", unit: "หน้าจอ", price: "2500", category: 1, isPublic: true },
     { key: "deploy", code: "OP-DEP", name: "ติดตั้งระบบบนเซิร์ฟเวอร์และตั้งค่าความปลอดภัย", unit: "งาน", price: "8000", category: 2 },
-    { key: "maintenance", code: "OP-MA", name: "บริการดูแลระบบรายเดือน", unit: "เดือน", price: "6000", category: 2, isPublic: true },
-    { key: "hosting", code: "OP-HOST", name: "Cloud Hosting รายปี", unit: "ปี", price: "18000", category: 2, isPublic: true },
-    { key: "domain", code: "OP-DOM", name: "จดโดเมน .com รายปี", unit: "ปี", price: "650", category: 2, isPublic: true },
+    { key: "maintenance", code: "OP-MA", name: "บริการดูแลระบบรายเดือน", unit: "เดือน", price: "6000", category: 2, isPublic: true, renewalMonths: 1 },
+    { key: "hosting", code: "OP-HOST", name: "Cloud Hosting รายปี", unit: "ปี", price: "18000", category: 2, isPublic: true, renewalMonths: 12 },
+    { key: "domain", code: "OP-DOM", name: "จดโดเมน .com รายปี", unit: "ปี", renewalMonths: 12, price: "650", category: 2, isPublic: true },
     { key: "training", code: "TR-USE", name: "ฝึกอบรมการใช้งานระบบ", unit: "ครั้ง", price: "7500", category: 3, isPublic: true },
 ];
 

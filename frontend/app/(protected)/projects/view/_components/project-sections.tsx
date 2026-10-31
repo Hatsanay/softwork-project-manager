@@ -443,6 +443,7 @@ export function TasksSectionCard({
 }) {
     return (
         <SectionCard
+            id="project-tasks"
             icon={ListChecks}
             title="งาน (Task)"
             description="แสดงเฉพาะงานหลัก · กดชื่องานเพื่อดู subtask ปัญหา แชท และประวัติ · ป้ายแดง = ปัญหาของงานนั้น ป้ายฟ้า = ปัญหาใน subtask"

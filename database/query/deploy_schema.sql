@@ -640,6 +640,7 @@ CREATE TABLE IF NOT EXISTS `tb_products` (
   `product_price_mode` enum('fixed','percent') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'fixed' COMMENT 'percent = คิดเป็น % ของยอดรายการอื่นก่อน VAT เช่น งานด่วน +30%',
   `product_percent` decimal(5,2) DEFAULT NULL COMMENT 'percent: อัตรา % (ไม่ใช้ product_price)',
   `product_image_url` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'รูปบนหน้าร้าน (/uploads/catalog/...)',
+  `product_renewal_months` tinyint unsigned DEFAULT NULL COMMENT 'บริการรายรอบ: ต่ออายุทุกกี่เดือน (1/3/6/12/24 ตรวจใน zod) · ว่าง = ไม่ใช่รายรอบ (2026-10-31)',
   `product_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `product_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`product_id`),
@@ -658,11 +659,14 @@ CREATE TABLE IF NOT EXISTS `tb_product_packages` (
   `pkg_status` enum('active','inactive') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
   `pkg_is_public` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'แสดงบนหน้าร้านของลิงก์เลือกบริการ (2026-10-25)',
   `pkg_image_url` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'รูปบนหน้าร้าน (/uploads/catalog/...)',
+  `pkg_renewal_product_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'แพ็กนี้รวมรอบแรกของบริการรายรอบนี้แล้ว · รับงานแพ็กนี้ = ตั้งต่ออายุหลังครบรอบแรก (2026-10-31)',
   `pkg_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `pkg_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`pkg_id`),
   KEY `fk_pkg_category` (`pkg_category_id`),
-  CONSTRAINT `fk_pkg_category` FOREIGN KEY (`pkg_category_id`) REFERENCES `tb_product_categories` (`pc_id`) ON DELETE SET NULL
+  KEY `fk_pkg_renewal_product` (`pkg_renewal_product_id`),
+  CONSTRAINT `fk_pkg_category` FOREIGN KEY (`pkg_category_id`) REFERENCES `tb_product_categories` (`pc_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_pkg_renewal_product` FOREIGN KEY (`pkg_renewal_product_id`) REFERENCES `tb_products` (`product_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- แถวในชุดรายการ — แถวที่อ้างสินค้าใช้ราคาปัจจุบันของสินค้าตอนกดเพิ่ม · แถวที่ไม่อ้างใช้ pki_unit_price
@@ -2848,6 +2852,66 @@ CREATE TABLE IF NOT EXISTS `tb_service_request_files` (
   CONSTRAINT `fk_svf_answer` FOREIGN KEY (`svf_answer_id`) REFERENCES `tb_service_request_answers` (`sva_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ════ บริการรายรอบ (2026-10-31) — ต่ออายุโฮสติ้ง/โดเมน/ดูแลรายเดือน · แบบ: docs/plans/2026-10-31-recurring-services.md ════
+-- รายการต่ออายุ: วันครบรอบถัดไป = วันเริ่มของรอบที่ยังไม่ออก · ราคาต่อรอบเก็บแยกจากสินค้า (ลูกค้าแต่ละรายตกลงราคาต่างกันได้)
+-- rnw_anchor_day = วันที่ของเดือนที่ครบ (31 ม.ค. → 28 ก.พ. → 31 มี.ค. ไม่เลื่อนเป็น 28 ไปตลอด · shared/renewal-math.mjs)
+CREATE TABLE IF NOT EXISTS `tb_renewals` (
+  `rnw_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rnw_client_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rnw_project_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'โปรเจกต์ต้นทาง (ถ้ามี)',
+  `rnw_product_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rnw_label` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ชื่อที่จำง่าย เช่น shopabc.com',
+  `rnw_price` decimal(15,2) NOT NULL COMMENT 'ราคาต่อรอบ ก่อน VAT (บาท)',
+  `rnw_cycle_months` tinyint unsigned NOT NULL COMMENT 'รอบ (เดือน)',
+  `rnw_anchor_day` tinyint unsigned NOT NULL COMMENT 'วันที่ของเดือนที่ครบ 1-31',
+  `rnw_next_due_date` date NOT NULL COMMENT 'วันครบรอบถัดไป (วันเริ่มของรอบที่ยังไม่ออก)',
+  `rnw_channel` enum('direct','fastwork') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'direct',
+  `rnw_status` enum('active','paused','cancelled') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `rnw_paused_on` date DEFAULT NULL COMMENT 'วันที่พัก (ใช้เติมวันครบใหม่ตอนเปิดต่อ)',
+  `rnw_end_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เหตุผลพัก/ยกเลิก',
+  `rnw_source` enum('quotation','fastwork','manual') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'manual',
+  `rnw_source_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ใบเสนอราคา/โปรเจกต์ที่สร้างรายการนี้',
+  `rnw_notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT 'บันทึกภายใน',
+  `rnw_version` int unsigned NOT NULL DEFAULT '0',
+  `rnw_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `rnw_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `rnw_updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`rnw_id`),
+  KEY `idx_rnw_status_due` (`rnw_status`,`rnw_next_due_date`),
+  KEY `idx_rnw_client` (`rnw_client_id`),
+  KEY `fk_rnw_project` (`rnw_project_id`),
+  KEY `fk_rnw_product` (`rnw_product_id`),
+  KEY `fk_rnw_created_by` (`rnw_created_by`),
+  CONSTRAINT `fk_rnw_client` FOREIGN KEY (`rnw_client_id`) REFERENCES `tb_clients` (`client_id`),
+  CONSTRAINT `fk_rnw_created_by` FOREIGN KEY (`rnw_created_by`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_rnw_product` FOREIGN KEY (`rnw_product_id`) REFERENCES `tb_products` (`product_id`),
+  CONSTRAINT `fk_rnw_project` FOREIGN KEY (`rnw_project_id`) REFERENCES `tb_projects` (`project_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ประวัติรอบที่ออกใบ/รับงานแล้ว · void = ใบถูกยกเลิก/ลบร่าง หรืองานต่ออายุถูกยกเลิก (แถวยังอยู่เป็นประวัติ)
+-- ลบร่างใบแจ้งหนี้ = รอบ void ก่อน แล้ว rnc_invoice_id เป็นว่าง (ON DELETE SET NULL)
+CREATE TABLE IF NOT EXISTS `tb_renewal_cycles` (
+  `rnc_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `rnc_renewal_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rnc_period_start` date NOT NULL,
+  `rnc_period_end` date NOT NULL COMMENT 'วันก่อนรอบถัดไปเริ่ม',
+  `rnc_invoice_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ลูกค้าตรง: ใบแจ้งหนี้ที่เก็บรอบนี้',
+  `rnc_project_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Fastwork: งานต่ออายุที่รับ',
+  `rnc_amount` decimal(15,2) NOT NULL COMMENT 'ราคารอบนี้ ณ ตอนออก',
+  `rnc_status` enum('billed','void') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'billed',
+  `rnc_created_by` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `rnc_created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`rnc_id`),
+  KEY `idx_rnc_renewal` (`rnc_renewal_id`,`rnc_period_start`),
+  KEY `fk_rnc_invoice` (`rnc_invoice_id`),
+  KEY `fk_rnc_project` (`rnc_project_id`),
+  KEY `fk_rnc_created_by` (`rnc_created_by`),
+  CONSTRAINT `fk_rnc_created_by` FOREIGN KEY (`rnc_created_by`) REFERENCES `tb_users` (`user_id`),
+  CONSTRAINT `fk_rnc_invoice` FOREIGN KEY (`rnc_invoice_id`) REFERENCES `tb_invoices` (`inv_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_rnc_project` FOREIGN KEY (`rnc_project_id`) REFERENCES `tb_projects` (`project_id`),
+  CONSTRAINT `fk_rnc_renewal` FOREIGN KEY (`rnc_renewal_id`) REFERENCES `tb_renewals` (`rnw_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ─── ส่วนที่ 2: เติมคอลัมน์ที่ยังขาด (สำหรับฐานข้อมูลที่สร้างจากโครงสร้างเวอร์ชันเก่า) ──────────────
 -- แต่ละบรรทัด: ถ้าคอลัมน์ยังไม่มี → ADD COLUMN, มีแล้ว → ไม่ทำอะไร
 
@@ -3137,6 +3201,9 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA 
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_products' AND COLUMN_NAME = 'product_image_url') = 0, 'ALTER TABLE `tb_products` ADD COLUMN `product_image_url` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''รูปบนหน้าร้าน (/uploads/catalog/...)'' AFTER `product_is_public`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_product_packages' AND COLUMN_NAME = 'pkg_is_public') = 0, 'ALTER TABLE `tb_product_packages` ADD COLUMN `pkg_is_public` tinyint(1) NOT NULL DEFAULT ''0'' COMMENT ''แสดงบนหน้าร้านของลิงก์เลือกบริการ (2026-10-25)'' AFTER `pkg_status`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_product_packages' AND COLUMN_NAME = 'pkg_image_url') = 0, 'ALTER TABLE `tb_product_packages` ADD COLUMN `pkg_image_url` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''รูปบนหน้าร้าน (/uploads/catalog/...)'' AFTER `pkg_is_public`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+-- บริการรายรอบ (2026-10-31)
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_products' AND COLUMN_NAME = 'product_renewal_months') = 0, 'ALTER TABLE `tb_products` ADD COLUMN `product_renewal_months` tinyint unsigned DEFAULT NULL COMMENT ''บริการรายรอบ: ต่ออายุทุกกี่เดือน (1/3/6/12/24 ตรวจใน zod) · ว่าง = ไม่ใช่รายรอบ (2026-10-31)'' AFTER `product_image_url`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_product_packages' AND COLUMN_NAME = 'pkg_renewal_product_id') = 0, 'ALTER TABLE `tb_product_packages` ADD COLUMN `pkg_renewal_product_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''แพ็กนี้รวมรอบแรกของบริการรายรอบนี้แล้ว · รับงานแพ็กนี้ = ตั้งต่ออายุหลังครบรอบแรก (2026-10-31)'' AFTER `pkg_image_url`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_company_settings' AND COLUMN_NAME = 'cs_service_request_assignee_id') = 0, 'ALTER TABLE `tb_company_settings` ADD COLUMN `cs_service_request_assignee_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT ''ผู้รับคำขอบริการเริ่มต้น (ลิงก์ที่ไม่ได้เลือกคนเอง)'' AFTER `cs_capital_target_date`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 -- 2026-10-25 S-3 ผู้รับผิดชอบปรับรายการในคำขอ
 SET @q = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_service_request_items' AND COLUMN_NAME = 'svi_adjusted_quantity') = 0, 'ALTER TABLE `tb_service_request_items` ADD COLUMN `svi_adjusted_quantity` decimal(12,2) DEFAULT NULL COMMENT ''จำนวนที่ผู้รับผิดชอบปรับ (ว่าง = ตามที่ลูกค้าเลือก)'' AFTER `svi_quantity`', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
@@ -4639,6 +4706,9 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHE
 -- tb_requirement_questions (ข้อลูก 2026-10-26)
 SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_requirement_questions' AND INDEX_NAME = 'fk_rqq_parent') = 0, 'ALTER TABLE `tb_requirement_questions` ADD KEY `fk_rqq_parent` (`rqq_parent_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- บริการรายรอบ (2026-10-31)
+SET @q = IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_product_packages' AND INDEX_NAME = 'fk_pkg_renewal_product') = 0, 'ALTER TABLE `tb_product_packages` ADD KEY `fk_pkg_renewal_product` (`pkg_renewal_product_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
 -- ─── ส่วนที่ 4: เติม foreign key ที่ยังขาด (รวม FK ย้อนกลับ tb_roles -> tb_users ที่สร้างพร้อมตารางไม่ได้) ──
 -- สกุลเงินเริ่มต้น THB + USD (2026-10-13) — ต้องมีก่อนเพิ่ม FK สกุลเงินของลูกค้า (ลูกค้าเดิมทุกรายได้ค่าเริ่มต้น THB)
 -- ใส่เฉพาะตอนตารางยังว่าง · ข้อมูลเริ่มต้นอื่นอยู่ส่วนที่ 5
@@ -4947,6 +5017,9 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CON
 -- tb_requirement_questions: ข้อลูกอ้างข้อแม่ · ลบข้อแม่ที่ยังมีข้อลูกไม่ได้ (backend บอกให้แก้ข้อลูกก่อน)
 SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_requirement_questions' AND CONSTRAINT_NAME = 'fk_rqq_parent' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_requirement_questions` ADD CONSTRAINT `fk_rqq_parent` FOREIGN KEY (`rqq_parent_id`) REFERENCES `tb_requirement_questions` (`rqq_id`) ON DELETE RESTRICT', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- บริการรายรอบ (2026-10-31)
+SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_product_packages' AND CONSTRAINT_NAME = 'fk_pkg_renewal_product' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_product_packages` ADD CONSTRAINT `fk_pkg_renewal_product` FOREIGN KEY (`pkg_renewal_product_id`) REFERENCES `tb_products` (`product_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
+
 -- ─── ส่วนที่ 5: ข้อมูลเริ่มต้น (ใส่เฉพาะตอนตารางยังว่างเท่านั้น) ─────────────────────────────────
 -- ตั้งใจเช็ค "ตารางว่าง" ไม่ใช่ "ไม่มีแถวนี้" — ถ้าแอดมินลบ/เปลี่ยนบัญชีเริ่มต้นไปแล้วบน production
 -- ห้ามสร้างบัญชีที่รู้รหัสผ่านกลับขึ้นมาใหม่เองตอน deploy
@@ -5250,8 +5323,8 @@ FROM (
     UNION ALL SELECT 'tb_exchange_rates' AS table_name, 'er_buying_sight,er_buying_transfer,er_currency,er_fetched_at,er_mid_rate,er_rate_date,er_selling' AS expected_columns, 'primary(er_currency+er_rate_date)' AS expected_indexes
     UNION ALL SELECT 'tb_user_signatures' AS table_name, 'sig_created_at,sig_file_path,sig_id,sig_method,sig_revoked_at,sig_revoked_by,sig_user_id' AS expected_columns, 'fk_sig_revoked_by(sig_revoked_by),idx_sig_user_active(sig_user_id+sig_revoked_at),primary(sig_id)' AS expected_indexes
     UNION ALL SELECT 'tb_product_categories' AS table_name, 'pc_created_at,pc_id,pc_is_single_choice,pc_name,pc_sort_order,pc_status,pc_updated_at' AS expected_columns, 'primary(pc_id),uq_pc_name(pc_name)' AS expected_indexes
-    UNION ALL SELECT 'tb_products' AS table_name, 'product_category_id,product_code,product_created_at,product_description,product_id,product_image_url,product_is_public,product_name,product_percent,product_price,product_price_mode,product_status,product_unit,product_updated_at' AS expected_columns, 'fk_product_category(product_category_id),idx_product_name(product_name),primary(product_id),uq_product_code(product_code)' AS expected_indexes
-    UNION ALL SELECT 'tb_product_packages' AS table_name, 'pkg_category_id,pkg_created_at,pkg_description,pkg_id,pkg_image_url,pkg_is_public,pkg_name,pkg_status,pkg_updated_at' AS expected_columns, 'fk_pkg_category(pkg_category_id),primary(pkg_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_products' AS table_name, 'product_category_id,product_code,product_created_at,product_description,product_id,product_image_url,product_is_public,product_name,product_percent,product_price,product_price_mode,product_renewal_months,product_status,product_unit,product_updated_at' AS expected_columns, 'fk_product_category(product_category_id),idx_product_name(product_name),primary(product_id),uq_product_code(product_code)' AS expected_indexes
+    UNION ALL SELECT 'tb_product_packages' AS table_name, 'pkg_category_id,pkg_created_at,pkg_description,pkg_id,pkg_image_url,pkg_is_public,pkg_name,pkg_renewal_product_id,pkg_status,pkg_updated_at' AS expected_columns, 'fk_pkg_category(pkg_category_id),fk_pkg_renewal_product(pkg_renewal_product_id),primary(pkg_id)' AS expected_indexes
     UNION ALL SELECT 'tb_product_package_items' AS table_name, 'pki_description,pki_id,pki_order,pki_package_id,pki_product_id,pki_quantity,pki_type,pki_unit,pki_unit_price' AS expected_columns, 'fk_pki_product(pki_product_id),idx_pki_package(pki_package_id+pki_order),primary(pki_id)' AS expected_indexes
     UNION ALL SELECT 'tb_approval_levels' AS table_name, 'al_doc_type,al_level,al_min_amount_thb,al_require_distinct,al_updated_at' AS expected_columns, 'primary(al_doc_type+al_level)' AS expected_indexes
     UNION ALL SELECT 'tb_approval_level_roles' AS table_name, 'alr_doc_type,alr_level,alr_role_id' AS expected_columns, 'fk_alr_role(alr_role_id),primary(alr_doc_type+alr_level+alr_role_id)' AS expected_indexes
@@ -5334,6 +5407,8 @@ FROM (
     UNION ALL SELECT 'tb_credit_note_approvals' AS table_name, 'cna_action,cna_created_at,cna_credit_note_id,cna_id,cna_level,cna_reason,cna_role_id,cna_role_name,cna_round,cna_user_id,cna_user_name' AS expected_columns, 'fk_cna_user(cna_user_id),idx_cna_credit_note(cna_credit_note_id+cna_round+cna_level),primary(cna_id)' AS expected_indexes
     UNION ALL SELECT 'tb_employee_codes' AS table_name, 'ecd_branch_id,ecd_code,ecd_created_at,ecd_created_by,ecd_department_id,ecd_employee_id,ecd_id,ecd_note,ecd_reason,ecd_valid_from,ecd_valid_to' AS expected_columns, 'fk_ecd_branch(ecd_branch_id),fk_ecd_created_by(ecd_created_by),fk_ecd_department(ecd_department_id),idx_ecd_employee(ecd_employee_id+ecd_valid_to),primary(ecd_id),uq_ecd_code(ecd_code)' AS expected_indexes
     UNION ALL SELECT 'tb_employee_cards' AS table_name, 'ec_branch_name,ec_department_name,ec_emp_code,ec_employee_id,ec_expires_on,ec_id,ec_issued_at,ec_issued_by,ec_name_en,ec_name_th,ec_note,ec_photo_url,ec_position,ec_printed_at,ec_reason,ec_returned_at,ec_seq,ec_void_reason,ec_voided_at' AS expected_columns, 'fk_ec_issued_by(ec_issued_by),idx_ec_expires(ec_expires_on),idx_ec_printed(ec_printed_at),idx_ec_voided(ec_voided_at+ec_returned_at),primary(ec_id),uq_ec_employee_seq(ec_employee_id+ec_seq)' AS expected_indexes
+    UNION ALL SELECT 'tb_renewals' AS table_name, 'rnw_anchor_day,rnw_channel,rnw_client_id,rnw_created_at,rnw_created_by,rnw_cycle_months,rnw_end_reason,rnw_id,rnw_label,rnw_next_due_date,rnw_notes,rnw_paused_on,rnw_price,rnw_product_id,rnw_project_id,rnw_source,rnw_source_id,rnw_status,rnw_updated_at,rnw_version' AS expected_columns, 'fk_rnw_created_by(rnw_created_by),fk_rnw_product(rnw_product_id),fk_rnw_project(rnw_project_id),idx_rnw_client(rnw_client_id),idx_rnw_status_due(rnw_status+rnw_next_due_date),primary(rnw_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_renewal_cycles' AS table_name, 'rnc_amount,rnc_created_at,rnc_created_by,rnc_id,rnc_invoice_id,rnc_period_end,rnc_period_start,rnc_project_id,rnc_renewal_id,rnc_status' AS expected_columns, 'fk_rnc_created_by(rnc_created_by),fk_rnc_invoice(rnc_invoice_id),fk_rnc_project(rnc_project_id),idx_rnc_renewal(rnc_renewal_id+rnc_period_start),primary(rnc_id)' AS expected_indexes
 ) e
 LEFT JOIN (
     SELECT LOWER(c.TABLE_NAME) AS table_name,

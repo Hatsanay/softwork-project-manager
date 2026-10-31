@@ -5,6 +5,7 @@
 // แบบระบบ: docs/plans/2026-10-08-sales-cycle.md หัวข้อ 1 และ 4.1
 
 import { z } from "zod";
+import { RENEWAL_CYCLES } from "../renewal-math.mjs";
 import { activeStatus, decimalText, integerInRange, optionalText, requiredText } from "./common.mjs";
 
 export const MAX_PACKAGE_ITEMS = 200;
@@ -31,6 +32,16 @@ export const productSchema = z
         // งานเพิ่มแบบ % ของยอดรายการอื่นก่อน VAT เช่น งานด่วน +30% (2026-10-25)
         product_price_mode: z.enum(["fixed", "percent"], { error: "เลือกวิธีคิดราคา" }).default("fixed"),
         // ฟอร์มส่งช่องว่าง "" มาเมื่อเลือกราคาตายตัว (ช่องนี้ซ่อนอยู่) = ไม่ใช้ ไม่ใช่กรอกผิด (2026-10-31: เดิมกดบันทึกแล้วเงียบ เพราะ error อยู่ใต้ช่องที่ซ่อน)
+        // บริการรายรอบ (2026-10-31): ต่ออายุทุกกี่เดือน · ว่าง = ไม่ใช่รายรอบ · ลูกค้าตอบรับใบที่มีสินค้านี้ = ระบบตั้งต่ออายุให้
+        product_renewal_months: z
+            .preprocess(
+                (value) => (value === "" || value === undefined ? null : typeof value === "string" ? Number(value) : value),
+                z
+                    .number()
+                    .int()
+                    .refine((months) => RENEWAL_CYCLES.includes(months), { message: "รอบต้องเป็น 1, 3, 6, 12 หรือ 24 เดือน" })
+                    .nullable(),
+            ),
         product_percent: z
             .preprocess(
                 (value) => (typeof value === "string" && value.trim() === "" ? null : value),
@@ -41,6 +52,13 @@ export const productSchema = z
     .superRefine((product, context) => {
         if (product.product_price_mode === "percent" && !product.product_percent) {
             context.addIssue({ code: "custom", path: ["product_percent"], message: "ใส่อัตรา % เช่น 30" });
+        }
+        if (product.product_price_mode === "percent" && product.product_renewal_months !== null) {
+            context.addIssue({
+                code: "custom",
+                path: ["product_renewal_months"],
+                message: "สินค้าแบบ % เป็นบริการรายรอบไม่ได้ (ไม่มีราคาต่อรอบ)",
+            });
         }
     })
     // แบบ %: ราคาตั้งต้นไม่ใช้ (ตั้งเป็น 0) · แบบราคาตายตัว: ไม่มีอัตรา %
@@ -83,6 +101,8 @@ export const productPackageSchema = z
         pkg_status: activeStatus,
         // แสดงบนหน้าร้านของลิงก์เลือกบริการ (2026-10-25)
         pkg_is_public: z.boolean().default(false),
+        // รวมรอบแรกของบริการรายรอบนี้แล้ว (2026-10-31) · ลูกค้าตอบรับใบที่มีแพ็กนี้ = ตั้งต่ออายุหลังครบรอบแรก
+        pkg_renewal_product_id: optionalId,
         items: z
             .array(packageItemSchema)
             .min(1, "ชุดรายการต้องมีอย่างน้อย 1 แถว")

@@ -282,6 +282,15 @@ export type InvoiceDetail = {
     debit_notes: InvoiceDebitNoteRow[];
     debit_comparison: DebitComparison | null;
     reissued_to: { inv_id: string; inv_number: string | null; inv_status: InvoiceStatus } | null;
+    // รอบต่ออายุบริการที่ใบนี้เก็บ (2026-10-31)
+    renewal_cycles: {
+        rnw_id: string;
+        rnw_label: string | null;
+        product_name: string;
+        rnc_status: "billed" | "void";
+        rnc_period_start: string;
+        rnc_period_end: string;
+    }[];
     payment: InvoicePayment;
     actions: InvoiceActions;
     readiness: { key: string; ok: boolean; message: string }[];

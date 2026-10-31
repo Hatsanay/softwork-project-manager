@@ -4,6 +4,8 @@ import { buttonClass } from "@/components/ui/button";
 import { CARD_CLASS } from "@/components/ui/card";
 
 type SectionCardProps = {
+    // ปลายทางของลิงก์ในหน้า เช่น "#project-tasks" จากกล่อง "ต่อไปต้องทำ" (2026-10-31)
+    id?: string;
     title: string;
     description?: React.ReactNode;
     icon?: LucideIcon;
@@ -11,9 +13,10 @@ type SectionCardProps = {
     children: React.ReactNode;
 };
 
-export default function SectionCard({ title, description, icon: Icon, actions, children }: SectionCardProps) {
+export default function SectionCard({ id, title, description, icon: Icon, actions, children }: SectionCardProps) {
     return (
-        <section className={`grid gap-5 p-5 sm:p-6 ${CARD_CLASS}`}>
+        // scroll-mt: เลื่อนมาแล้วหัวการ์ดไม่จมใต้แถบบนที่ติดหน้าจอ
+        <section id={id} className={`grid scroll-mt-24 gap-5 p-5 sm:p-6 ${CARD_CLASS}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
                 {/* หัวข้อยืดเต็มที่เหลือ (ขั้นต่ำ 18rem) — ปุ่มจึงอยู่มุมขวาบรรทัดเดียวกัน ตกบรรทัดเฉพาะจอแคบ */}
                 <div className="flex min-w-0 flex-1 basis-72 items-start gap-3.5">

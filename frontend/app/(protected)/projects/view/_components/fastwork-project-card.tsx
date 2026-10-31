@@ -72,6 +72,7 @@ export default function FastworkProjectCard({ projectId, isMember }: { projectId
 
     return (
         <SectionCard
+            id="project-fastwork"
             icon={BriefcaseBusiness}
             title="งาน Fastwork"
             description="งวดงานตามที่ตกลงบน Fastwork · ส่งงานบนแพลตฟอร์มแล้วกด ส่งงานแล้ว ที่งวดนั้น"

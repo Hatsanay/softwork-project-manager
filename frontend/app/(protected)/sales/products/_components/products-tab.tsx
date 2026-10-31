@@ -17,6 +17,7 @@ import { apiFetch } from "@/lib/api";
 import { useRecordEditor } from "@/lib/use-record-editor";
 import { formatAmount } from "@/lib/shared/money.mjs";
 import { productSchema } from "@/lib/shared/schemas/product.mjs";
+import { RENEWAL_CYCLES, cycleLabel } from "@/lib/shared/renewal-math.mjs";
 import { PRODUCT_MESSAGES } from "../_messages";
 import type { ActiveStatus, Product, ProductCategory } from "../_types";
 import CategorySelect from "./category-select";
@@ -36,6 +37,8 @@ const EMPTY_FORM = {
     product_is_public: false,
     product_price_mode: "fixed" as "fixed" | "percent",
     product_percent: "",
+    // "" = ไม่ใช่บริการรายรอบ · ตัวเลข = ต่ออายุทุกกี่เดือน
+    product_renewal_months: "",
 };
 
 type ProductForm = typeof EMPTY_FORM;
@@ -65,6 +68,7 @@ function toForm(product: Product): ProductForm {
         product_is_public: Boolean(product.product_is_public),
         product_price_mode: product.product_price_mode ?? "fixed",
         product_percent: product.product_percent ?? "",
+        product_renewal_months: product.product_renewal_months ? String(product.product_renewal_months) : "",
     };
 }
 
@@ -172,8 +176,14 @@ export default function ProductsTab({ categories, canEdit, onOpenQuestions }: Pr
             // แบบ %: ราคาตั้งต้นไม่ใช้ (ส่ง 0) · ราคาตายตัว: ไม่ส่งช่อง % ที่ซ่อนอยู่ (ค่าค้างจากตอนสลับโหมดไม่ทำให้บันทึกไม่ได้)
             toPayload: (currentForm) =>
                 currentForm.product_price_mode === "percent"
-                    ? { ...currentForm, product_price: "0" }
-                    : { ...currentForm, product_percent: "" },
+                    ? { ...currentForm, product_price: "0", product_renewal_months: null }
+                    : {
+                          ...currentForm,
+                          product_percent: "",
+                          product_renewal_months: currentForm.product_renewal_months
+                              ? Number(currentForm.product_renewal_months)
+                              : null,
+                      },
         });
     }
 
@@ -229,6 +239,9 @@ export default function ProductsTab({ categories, canEdit, onOpenQuestions }: Pr
                         </span>
                         {row.product_status !== "active" && <StatusPill tone="neutral">ปิดใช้งาน</StatusPill>}
                         {Boolean(row.product_is_public) && <StatusPill tone="info">หน้าร้าน</StatusPill>}
+                        {row.product_renewal_months && (
+                            <StatusPill tone="neutral">รายรอบ · {cycleLabel(row.product_renewal_months)}</StatusPill>
+                        )}
                     </span>
                     <span className="text-xs text-gray-500">
                         {[row.product_code, row.category_name ?? "ไม่มีหมวด"].filter(Boolean).join(" · ")}
@@ -480,6 +493,28 @@ export default function ProductsTab({ categories, canEdit, onOpenQuestions }: Pr
                                 {textInput("product_unit", undefined, "งาน")}
                             </FormField>
                         </div>
+                        {!isPercent && (
+                            <FormField
+                                label="ต่ออายุทุก"
+                                htmlFor="product_renewal_months"
+                                hint="เลือกเมื่อเป็นค่าบริการที่เก็บซ้ำ เช่น โฮสติ้ง โดเมน ดูแลรายเดือน · ลูกค้าตอบรับใบที่มีสินค้านี้ ระบบสร้างรายการต่ออายุให้ (หน้าต่ออายุบริการ)"
+                                error={fieldErrors.product_renewal_months}
+                            >
+                                <select
+                                    id="product_renewal_months"
+                                    value={form.product_renewal_months}
+                                    onChange={(event) => editor.updateField("product_renewal_months", event.target.value)}
+                                    className={inputClass(Boolean(fieldErrors.product_renewal_months))}
+                                >
+                                    <option value="">ไม่ใช่บริการรายรอบ</option>
+                                    {RENEWAL_CYCLES.map((months) => (
+                                        <option key={months} value={String(months)}>
+                                            {cycleLabel(months)}
+                                        </option>
+                                    ))}
+                                </select>
+                            </FormField>
+                        )}
                     </DrawerSection>
 
                     <DrawerSection number={3} title="การใช้งานและหน้าร้าน">

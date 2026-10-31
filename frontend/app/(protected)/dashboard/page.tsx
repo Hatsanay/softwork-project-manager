@@ -11,6 +11,7 @@ import {
     ListTodo,
     MessageCircle,
     ReceiptText,
+    RefreshCw,
     Rocket,
     Send,
     TriangleAlert,
@@ -30,6 +31,7 @@ import TeamWorkloadCard from "./_components/team-workload-card";
 import KpiSection, { type KpiPeriod } from "./_components/kpi-section";
 import RecentActivityCard from "./_components/recent-activity-card";
 import { ActionStrip, CapitalCard, CashCard, FastworkJobsCard, type ActionItem } from "./_components/business-cards";
+import ProjectTodoCard from "./_components/project-todo-card";
 
 function currentPeriod(): KpiPeriod {
     const today = new Date();
@@ -69,6 +71,22 @@ function actionItemsOf(
             href: "/sales/quotations?tab=sent",
             icon: Send,
             tone: expiringSoon > 0 ? "wait" : "normal",
+        });
+    }
+    if (business?.renewals) {
+        add(business.renewals.overdue, {
+            key: "renewals-overdue",
+            label: "เลยกำหนดต่ออายุบริการ",
+            href: "/sales/renewals?tab=overdue",
+            icon: RefreshCw,
+            tone: "urgent",
+        });
+        add(business.renewals.due_soon, {
+            key: "renewals-due",
+            label: `ต่ออายุบริการใน ${business.renewals.due_soon_days} วัน`,
+            href: "/sales/renewals?tab=due_soon",
+            icon: RefreshCw,
+            tone: "normal",
         });
     }
     if (business?.receivables && parseHundredths(business.receivables.overdue, "ยอด") > 0n) {
@@ -232,6 +250,7 @@ export default function DashboardPage() {
                 <>
                     <SectionHeading title="ต้องจัดการ" note="กดเพื่อไปหน้านั้น · ช่องที่ไม่มีอะไรค้างจะไม่แสดง" />
                     <ActionStrip items={actionItems} />
+                    {business?.todo && <ProjectTodoCard todo={business.todo} />}
                 </>
             )}
 

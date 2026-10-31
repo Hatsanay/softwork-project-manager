@@ -109,7 +109,7 @@ export default function QuotationViewPage() {
         if (!detail) return;
         setIsWorking(true);
         setActionError(null);
-        const { data, error } = await apiFetch<{ qt_id?: string; qt_number?: string }>(path, {
+        const { data, error } = await apiFetch<{ qt_id?: string; qt_number?: string; renewal_count?: number }>(path, {
             method: options.method ?? "POST",
             body: { ...body, qt_version: detail.quotation.qt_version },
         });
@@ -118,7 +118,13 @@ export default function QuotationViewPage() {
             setActionError(error.message);
             return;
         }
-        toast.success(successMessage);
+        // ตอบรับแล้วตั้งต่ออายุให้ (2026-10-31) · บอกจำนวนให้ไปตรวจวันครบ
+        const renewalCount = data?.renewal_count ?? 0;
+        toast.success(
+            renewalCount > 0
+                ? `${successMessage} · ตั้งต่ออายุบริการ ${renewalCount} รายการ ตรวจวันครบได้ที่หน้าต่ออายุบริการ`
+                : successMessage,
+        );
         closeDialogs();
         if (options.navigateTo) {
             router.push(options.navigateTo(data ?? {}));

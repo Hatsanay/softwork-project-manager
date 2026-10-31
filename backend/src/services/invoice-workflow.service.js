@@ -489,6 +489,8 @@ async function cancel(conn, invoiceId, reason, expectedVersion, actor) {
          WHERE inv_id = ?`,
         [actor.user_id, reason, invoiceId],
     );
+    // ใบที่ออกจากหน้าต่ออายุ: รอบกลับเป็นยังไม่ออก วันครบถอยกลับ (2026-10-31) · ออกแทนต้องกดจากหน้าต่ออายุใหม่
+    await require("./renewal.service").voidByInvoice(conn, invoiceId);
     return { inv_id: invoiceId };
 }
 

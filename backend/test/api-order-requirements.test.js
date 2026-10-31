@@ -202,6 +202,23 @@ test("ชุดคำถาม: ตั้งต้น 5 กลุ่ม · ผ�
     assert.equal(reordered.data.find((group) => group.rqg_id === ids.webGroup.rqg_id).questions[0].rqq_id, ids.colorQuestion);
 });
 
+test("เพิ่มคำถามทุกชนิดได้ด้วยค่าที่หน้าเว็บส่งจริง (ผลตรวจของ schema) · 2026-10-31: เดิมชนิดที่ไม่ใช่ตัวเลือกได้ 400", async () => {
+    const { requirementQuestionSchema } = await import("../src/shared/schemas/requirement.mjs");
+    const { QUESTION_TYPES } = await import("../src/shared/requirement-answers.mjs");
+    const [[group]] = await api.pool.query("SELECT rqg_id FROM tb_requirement_groups ORDER BY rqg_id LIMIT 1");
+    for (const rqqType of QUESTION_TYPES) {
+        const typed = requirementQuestionSchema.safeParse({
+            rqq_text: `คำถามชนิด ${rqqType}`,
+            rqq_type: rqqType,
+            rqq_options: ["ก", "ข"],
+            rqq_status: "active",
+        });
+        assert.ok(typed.success, rqqType);
+        assert.ok(requirementQuestionSchema.safeParse(typed.data).success, `ผลตรวจของ ${rqqType} ต้องตรวจซ้ำผ่าน`);
+        expectStatus(await api.callApi("POST", `/V1/requirement-groups/${group.rqg_id}/questions`, { body: typed.data }), 201);
+    }
+});
+
 test("ส่งคำขอพร้อมคำตอบ: ถามเฉพาะกลุ่มที่เกี่ยว · ข้อบังคับ · แนบไฟล์ · ลบคำถามทีหลังคำตอบยังอยู่ · พนักงานเปิดไฟล์ได้", async () => {
     const code = ids.link.ol_short_code;
     const shop = expectStatus(await anonymous("GET", `/V1/order/${code}`), 200);

@@ -12,6 +12,7 @@ const sales = require("./sales");
 const purchasing = require("./purchasing");
 const projects = require("./projects");
 const { HEAD_OFFICE_ID } = require("./setup");
+const { setTaskDue } = require("./timeline-next-steps");
 
 const LAST_DAY = "2026-10-23";
 const OWNER = "hatsanai";
@@ -123,10 +124,13 @@ async function setup({ pool, permissionKeys, generateDailyId, password }) {
     for (const product of [
         { key: "website", code: "WEB", name: "พัฒนาเว็บไซต์พร้อมระบบหลังบ้าน", unit: "งาน", price: "28000" },
         { key: "screen", code: "UI", name: "ออกแบบหน้าจอ", unit: "หน้าจอ", price: "1500" },
+        // บริการรายรอบ (2026-10-31): ค่าเซิร์ฟเวอร์/โดเมนปีถัดไป (ปีแรกรวมในราคางาน)
+        { key: "hosting", code: "HOST", name: "Server/Hosting และโดเมนปีถัดไป", unit: "ปี", price: "1290", renewalMonths: 12 },
     ]) {
         const created = await as(OWNER, "POST", "/V1/products", {
             product_code: product.code, product_name: product.name, product_unit: product.unit, product_price: product.price,
             product_category_id: category.pc_id, product_status: "active", product_is_public: true,
+            product_renewal_months: product.renewalMonths ?? null,
         });
         ids.products[product.key] = { id: created.product_id, ...product };
     }
@@ -152,6 +156,8 @@ async function takeFastworkJob(job) {
         project_start_date: new Date().toISOString().slice(0, 10),
         project_due_date: job.milestones[job.milestones.length - 1][2],
         milestones: job.milestones.map(([name, amount, dueDate]) => ({ fwm_name: name, fwm_amount: String(amount), fwm_due_date: dueDate })),
+        // งานจากสินค้าที่เลือก (2026-10-31): หัวข้อ = งานหลัก · รายการ = งานย่อย · ไม่ส่ง = ไม่สร้างงาน
+        tasks: job.tasks ?? [],
     });
     const detail = await as(OWNER, "GET", `/V1/fastwork/projects/${created.project_id}`);
     return { projectId: created.project_id, milestoneIds: detail.fastwork.milestones.map((milestone) => milestone.fwm_id) };
@@ -416,6 +422,112 @@ function schedule(ids) {
             ],
         });
         await addTeam(state.F.projectId, [["supawadee", "developer"]], ids);
+    });
+
+    // ── งานช่วงปลาย ต.ค. ให้ "ต่อไปต้องทำ" ครบทุกสถานการณ์ (2026-10-31 · N-4) · สร้างงานจากสินค้าตอนรับงาน
+    // I) โลโก้ร้านนวด: งานครบ ส่งครบ เงินเข้าครบ ยังไม่ปิดยอดส่วนแบ่ง และยังไม่ปิดโปรเจกต์
+    on("2026-09-21", "I รับงาน", async () => {
+        state.I = await takeFastworkJob({
+            name: "โลโก้และนามบัตรร้านนวดแผนไทย", buyer: "relax_massage", orderNo: "FW2609-38820",
+            milestones: [["โลโก้และนามบัตร", 3500, "2026-10-05"]],
+            tasks: [
+                { type: "item", description: "ออกแบบโลโก้ 3 แบบให้เลือก" },
+                { type: "item", description: "นามบัตรหน้า-หลัง พร้อมไฟล์สั่งพิมพ์" },
+            ],
+        });
+        await addTeam(state.I.projectId, [["chonthicha", "designer"]], ids);
+        await setShares(state.I.projectId, [userShare(ids, "chonthicha", 50, "ออกแบบ")]);
+    });
+    on("2026-10-03", "I งานเสร็จครบ", () => projects.completeAllTasks(OWNER, state.I.projectId));
+    milestoneFlow({ state, key: "I", index: 0, gross: 3500, deliveredBy: "chonthicha", deliveredOn: "2026-10-04", approvedOn: "2026-10-06", receivedOn: "2026-10-09", ids });
+
+    // H) เว็บร้านกาแฟ: มีงานเลยกำหนด
+    on("2026-10-09", "H รับงาน", async () => {
+        state.H = await takeFastworkJob({
+            name: "เว็บไซต์ร้านกาแฟ 3 หน้า พร้อมเมนู", buyer: "cafe_aonang", orderNo: "FW2610-40112",
+            milestones: [["เว็บไซต์ 3 หน้า", 4900, "2026-10-30"]],
+            tasks: [
+                { type: "heading", description: "เว็บธุรกิจ 3 หน้า" },
+                { type: "item", description: "หน้าแรกและเมนูเครื่องดื่ม" },
+                { type: "item", description: "หน้าเกี่ยวกับร้านและแผนที่" },
+                { type: "item", description: "หน้าติดต่อและฟอร์มสั่งจองโต๊ะ" },
+            ],
+        });
+        await addTeam(state.H.projectId, [["chonthicha", "designer"], ["nattapon", "developer"]], ids);
+        await setShares(state.H.projectId, [userShare(ids, "nattapon", 30, "พัฒนาเว็บ"), userShare(ids, "chonthicha", 20, "ออกแบบ")]);
+    });
+    on("2026-10-12", "H ตั้งวันส่งร่างหน้าแรก", () => setTaskDue(OWNER, state.H.projectId, 0, "2026-10-19"));
+
+    // K) ระบบนัดหมายคลินิกสัตว์ (ส่งลิงก์ความต้องการ → ผู้ซื้อตอบแล้ว: order-links.js) · L) บอทแจ้งยอด (ส่งลิงก์ ยังไม่ตอบ)
+    on("2026-10-16", "K รับงาน", async () => {
+        state.K = await takeFastworkJob({
+            name: "ระบบนัดหมายคลินิกรักษาสัตว์", buyer: "krabi_vet", orderNo: "FW2610-42205",
+            milestones: [
+                ["ออกแบบหน้าจอ", 8000, "2026-11-05"],
+                ["ระบบนัดหมายและแจ้งเตือน", 20000, "2026-12-01"],
+            ],
+            tasks: [
+                { type: "item", description: "ออกแบบหน้าจอ 6 หน้า" },
+                { type: "item", description: "ระบบนัดหมายและแจ้งเตือนทาง LINE" },
+            ],
+        });
+        await addTeam(state.K.projectId, [["nattapon", "developer"], ["chonthicha", "designer"]], ids);
+    });
+    on("2026-10-19", "L รับงาน", async () => {
+        state.L = await takeFastworkJob({
+            name: "บอทแจ้งเตือนยอดขายรายวันทาง LINE", buyer: "shop_alert", orderNo: "FW2610-42977",
+            milestones: [["บอทแจ้งยอดรายวัน", 5000, "2026-11-12"]],
+            tasks: [
+                { type: "item", description: "เชื่อมข้อมูลยอดขายจากร้าน" },
+                { type: "item", description: "ข้อความสรุปยอดรายวันทาง LINE" },
+            ],
+        });
+        await addTeam(state.L.projectId, [["supawadee", "developer"]], ids);
+    });
+
+    // ── บริการรายรอบ (2026-10-31): ค่าเซิร์ฟเวอร์/โดเมนปีถัดไปของงานที่ส่งแล้ว (ผู้ซื้อ Fastwork สั่งต่ออายุบน Fastwork)
+    const renewalFor = async (job, body) => {
+        const project = await as(OWNER, "GET", `/V1/projects/${job.projectId}`);
+        return (
+            await as(OWNER, "POST", "/V1/renewals", {
+                rnw_client_id: project.client_id,
+                rnw_project_id: job.projectId,
+                rnw_product_id: ids.products.hosting.id,
+                rnw_price: "1290",
+                rnw_cycle_months: 12,
+                rnw_channel: "fastwork",
+                ...body,
+            })
+        ).rnw_id;
+    };
+    on("2026-10-08", "รายการต่ออายุของงานที่ส่งแล้ว", async () => {
+        state.renewalA = await renewalFor(state.A, { rnw_label: "beautyclinic-krabi.com", rnw_next_due_date: "2026-10-18" });
+        state.renewalB = await renewalFor(state.B, { rnw_label: "LINE OA ร้านกาแฟ (เซิร์ฟเวอร์บอต)", rnw_next_due_date: "2026-11-05" });
+        state.renewalC = await renewalFor(state.C, { rnw_label: "hairqueue-krabi.com", rnw_price: "2400", rnw_next_due_date: "2026-10-10" });
+        state.renewalD = await renewalFor(state.D, { rnw_label: "สำรองข้อมูลแอปรายรับรายจ่าย", rnw_price: "1800", rnw_next_due_date: "2026-11-20" });
+    });
+    on("2026-10-09", "พักต่ออายุบอต LINE OA (ร้านปิดชั่วคราว)", () =>
+        as(OWNER, "POST", `/V1/renewals/${state.renewalB}/pause`, { reason: "ร้านกาแฟปิดปรับปรุง ขอพักบอตไว้ก่อน", rnw_version: 0 }),
+    );
+    on("2026-10-12", "ผู้ซื้อ C สั่งต่ออายุบน Fastwork → รับงานต่ออายุ", async () => {
+        const project = await as(OWNER, "GET", `/V1/projects/${state.C.projectId}`);
+        await as(OWNER, "POST", "/V1/fastwork/projects", {
+            project_name: "ต่ออายุ hairqueue-krabi.com (10 ต.ค. 2569 - 9 ต.ค. 2570)",
+            client_id: project.client_id,
+            project_fastwork_order_no: "FW2610-41002",
+            project_start_date: "2026-10-12",
+            milestones: [{ fwm_name: "ต่ออายุ ปี", fwm_amount: "2400", fwm_due_date: "2026-10-12" }],
+            renewal_id: state.renewalC,
+            renewal_version: 0,
+        });
+    });
+
+    // J) แก้บั๊กหน้าชำระเงิน: เพิ่งรับงาน ยังไม่แบ่งงาน
+    on("2026-10-23", "J รับงาน (ยังไม่แบ่งงาน)", async () => {
+        state.J = await takeFastworkJob({
+            name: "แก้บั๊กหน้าชำระเงินเว็บขายของ", buyer: "gadget_hub", orderNo: "FW2610-43511",
+            milestones: [["แก้บั๊กและทดสอบ", 2500, "2026-11-06"]],
+        });
     });
 }
 

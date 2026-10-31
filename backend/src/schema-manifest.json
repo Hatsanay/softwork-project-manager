@@ -1035,6 +1035,7 @@
             "pkg_image_url",
             "pkg_is_public",
             "pkg_name",
+            "pkg_renewal_product_id",
             "pkg_status",
             "pkg_updated_at"
         ],
@@ -1050,6 +1051,7 @@
             "product_percent",
             "product_price",
             "product_price_mode",
+            "product_renewal_months",
             "product_status",
             "product_unit",
             "product_updated_at"
@@ -1288,6 +1290,40 @@
             "rc_wht_file_name",
             "rc_wht_file_path",
             "rc_wht_file_uploaded_at"
+        ],
+        "tb_renewal_cycles": [
+            "rnc_amount",
+            "rnc_created_at",
+            "rnc_created_by",
+            "rnc_id",
+            "rnc_invoice_id",
+            "rnc_period_end",
+            "rnc_period_start",
+            "rnc_project_id",
+            "rnc_renewal_id",
+            "rnc_status"
+        ],
+        "tb_renewals": [
+            "rnw_anchor_day",
+            "rnw_channel",
+            "rnw_client_id",
+            "rnw_created_at",
+            "rnw_created_by",
+            "rnw_cycle_months",
+            "rnw_end_reason",
+            "rnw_id",
+            "rnw_label",
+            "rnw_next_due_date",
+            "rnw_notes",
+            "rnw_paused_on",
+            "rnw_price",
+            "rnw_product_id",
+            "rnw_project_id",
+            "rnw_source",
+            "rnw_source_id",
+            "rnw_status",
+            "rnw_updated_at",
+            "rnw_version"
         ],
         "tb_requirement_group_categories": [
             "rgc_category_id",

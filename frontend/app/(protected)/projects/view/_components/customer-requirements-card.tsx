@@ -83,6 +83,7 @@ export default function CustomerRequirementsCard({ projectId }: { projectId: str
 
     return (
         <SectionCard
+            id="project-requirements"
             title="ความต้องการจากลูกค้า"
             description="สิ่งที่ลูกค้าเลือกและตอบไว้ในลิงก์เลือกบริการ ใช้เป็นข้อมูลออกแบบและพัฒนา"
             icon={ClipboardList}

@@ -15,6 +15,20 @@ import { Archive, Ban, FolderKanban, Plus, RotateCcw } from "lucide-react";
 import { buttonClass } from "@/components/ui/button";
 import PageHeader from "@/components/ui/page-header";
 import StatusPill, { type PillTone } from "@/components/ui/status-pill";
+import Segmented from "@/components/ui/segmented";
+import FieldHint from "@/components/ui/guidance/field-hint";
+
+// ต่อไปต้องทำ (2026-10-31): เรื่องที่เร่งที่สุดของแต่ละโปรเจกต์ · กฎอยู่ที่ backend (project-next-steps.service)
+type NextLevel = "urgent" | "todo" | "wait" | "info";
+type NextFilter = "all" | "urgent" | "todo" | "wait";
+type NextCounts = { urgent: number; todo: number; wait: number };
+
+const NEXT_DOT: Record<NextLevel, string> = {
+    urgent: "bg-red-500",
+    todo: "bg-blue-500",
+    wait: "bg-gray-300",
+    info: "bg-gray-300",
+};
 
 type Project = {
     project_id: string;
@@ -25,6 +39,7 @@ type Project = {
     project_progress_percent: string;
     client_name: string | null;
     member_count: number;
+    next_step: { title: string; level: NextLevel; more_count: number } | null;
 };
 
 const STATUS_LABEL: Record<Project["project_status"], string> = {
@@ -47,16 +62,17 @@ function authHeader() {
     return { Authorization: `Bearer ${localStorage.getItem("token")}` };
 }
 
-async function fetchProjects(params: { limit: number; offset: number; search: string; cancelled: boolean }) {
+async function fetchProjects(params: { limit: number; offset: number; search: string; cancelled: boolean; next: NextFilter }) {
     const query = new URLSearchParams({
         limit: String(params.limit),
         offset: String(params.offset),
         search: params.search,
     });
     if (params.cancelled) query.set("status", "cancelled");
+    if (!params.cancelled && params.next !== "all") query.set("next", params.next);
     const res = await fetch(`${api}/projects?${query}`, { headers: authHeader() });
-    if (!res.ok) return { data: [] as Project[], total: 0 };
-    return res.json() as Promise<{ data: Project[]; total: number }>;
+    if (!res.ok) return { data: [] as Project[], total: 0, next_counts: null };
+    return res.json() as Promise<{ data: Project[]; total: number; next_counts: NextCounts | null }>;
 }
 
 export default function ProjectsPage() {
@@ -70,6 +86,8 @@ export default function ProjectsPage() {
     const [search, setSearch] = useState("");
     const [pageSize, setPageSize] = useState(10);
     const [showCancelled, setShowCancelled] = useState(false);
+    const [nextFilter, setNextFilter] = useState<NextFilter>("all");
+    const [nextCounts, setNextCounts] = useState<NextCounts | null>(null);
 
     const [cancelTarget, setCancelTarget] = useState<Project | null>(null);
     const [isCancelling, setIsCancelling] = useState(false);
@@ -79,16 +97,17 @@ export default function ProjectsPage() {
         const limit = pageSize === -1 ? 99999 : pageSize;
         const offset = pageSize === -1 ? 0 : (page - 1) * pageSize;
         startTransition(async () => {
-            const result = await fetchProjects({ limit, offset, search, cancelled: showCancelled });
+            const result = await fetchProjects({ limit, offset, search, cancelled: showCancelled, next: nextFilter });
             setProjects(result.data);
             setTotal(result.total);
+            setNextCounts(result.next_counts ?? null);
         });
     }
 
     useEffect(() => {
         reload();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [page, search, pageSize, showCancelled]);
+    }, [page, search, pageSize, showCancelled, nextFilter]);
 
     function handleSearch(val: string) {
         setSearch(val);
@@ -102,6 +121,12 @@ export default function ProjectsPage() {
 
     function toggleShowCancelled() {
         setShowCancelled((v) => !v);
+        setNextFilter("all");
+        setPage(1);
+    }
+
+    function changeNextFilter(value: NextFilter) {
+        setNextFilter(value);
         setPage(1);
     }
 
@@ -144,7 +169,17 @@ export default function ProjectsPage() {
     }
 
     const columns: Column<Project>[] = [
-        { key: "project_name", header: "ชื่อโปรเจกต์" },
+        {
+            // ชื่อ + เรื่องที่ต้องทำต่อใต้ชื่อ (คอลัมน์แยกทำให้ตารางกว้างเกินจอ) · กว้างคงที่บนจอใหญ่ให้ข้อความยาวตัดบรรทัด
+            key: "project_name",
+            header: "โปรเจกต์ · ต่อไปต้องทำ",
+            render: (_, row) => (
+                <div className="grid gap-1 whitespace-normal sm:w-80">
+                    <span className="wrap-break-word text-gray-900">{row.project_name}</span>
+                    <NextStepCell step={row.next_step} />
+                </div>
+            ),
+        },
         { key: "client_name", mobile: "meta", header: "ลูกค้า", render: (v) => (v as string) || "-" },
         {
             key: "project_status",
@@ -194,6 +229,24 @@ export default function ProjectsPage() {
                     </>
                 }
             />
+            {!showCancelled && nextCounts && (
+                <div className="grid gap-1.5">
+                    <Segmented<NextFilter>
+                        label="กรองตามสิ่งที่ต้องทำ"
+                        value={nextFilter}
+                        onChange={changeNextFilter}
+                        options={[
+                            { value: "all", label: "ทั้งหมด" },
+                            { value: "urgent", label: "เลยกำหนด", count: nextCounts.urgent },
+                            { value: "todo", label: "ถึงคิวเรา", count: nextCounts.todo },
+                            { value: "wait", label: "รอคนอื่น", count: nextCounts.wait },
+                        ]}
+                    />
+                    <FieldHint>
+                        บรรทัดใต้ชื่อ = เรื่องที่เร่งที่สุดของโปรเจกต์ (เห็นตามสิทธิ์ของคุณ) · เปิดโปรเจกต์เพื่อดูทุกเรื่องและปุ่มพาไปทำ
+                    </FieldHint>
+                </div>
+            )}
             <DataTable
                 columns={columns}
                 data={projects}
@@ -207,7 +260,13 @@ export default function ProjectsPage() {
                 searchable
                 searchValue={search}
                 onSearch={handleSearch}
-                emptyMessage={showCancelled ? "ไม่มีโปรเจกต์ที่ยกเลิก" : "ยังไม่มีโปรเจกต์ในระบบ"}
+                emptyMessage={
+                    showCancelled
+                        ? "ไม่มีโปรเจกต์ที่ยกเลิก"
+                        : nextFilter !== "all"
+                          ? "ไม่มีโปรเจกต์ในกลุ่มนี้"
+                          : "ยังไม่มีโปรเจกต์ในระบบ"
+                }
                 actions={(row) => (
                     <div className="flex items-center gap-2 justify-end">
                         <ViewButton onClick={() => router.push(`/projects/view?id=${row.project_id}`)} />
@@ -253,5 +312,18 @@ export default function ProjectsPage() {
                 onCancel={() => setCancelTarget(null)}
             />
         </div>
+    );
+}
+
+function NextStepCell({ step }: { step: Project["next_step"] }) {
+    if (!step) return null;
+    return (
+        <span className="flex items-start gap-2">
+            <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${NEXT_DOT[step.level]}`} aria-hidden="true" />
+            <span className="min-w-0 wrap-break-word text-sm text-gray-600">
+                {step.title}
+                {step.more_count > 0 && <span className="ml-1 text-xs text-gray-500">+{step.more_count} เรื่อง</span>}
+            </span>
+        </span>
     );
 }

@@ -19,6 +19,8 @@ export type Product = {
     // งานเพิ่มแบบ % ของยอดรายการอื่น (2026-10-25)
     product_price_mode: "fixed" | "percent";
     product_percent: string | null;
+    // บริการรายรอบ: ต่ออายุทุกกี่เดือน · null = ไม่ใช่รายรอบ (2026-10-31)
+    product_renewal_months: number | null;
     product_created_at: string;
     product_updated_at: string;
 };
@@ -75,6 +77,8 @@ export type ProductPackage = {
     pkg_status: ActiveStatus;
     pkg_is_public: number | boolean;
     pkg_image_url: string | null;
+    // รวมรอบแรกของบริการรายรอบนี้แล้ว (2026-10-31)
+    pkg_renewal_product_id: string | null;
     items: ProductPackageItem[];
     // กติกางานเพิ่มบนหน้าร้าน (2026-10-25)
     addon_rules: { product_id: string; rule: "included" | "not_available"; product_name: string }[];

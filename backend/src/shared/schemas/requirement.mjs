@@ -58,10 +58,14 @@ export const requirementQuestionSchema = z
         rqq_help: optionalText("ข้อความช่วย", 300),
         rqq_placeholder: optionalText("ตัวอย่างในช่อง", 150),
         rqq_type: z.enum(QUESTION_TYPES, { error: "เลือกชนิดคำตอบ" }),
-        rqq_options: z
-            .array(z.string().trim().min(1).max(100, "ตัวเลือกยาวได้ไม่เกิน 100 ตัวอักษร"))
-            .max(MAX_OPTIONS, `ตัวเลือกได้ไม่เกิน ${MAX_OPTIONS} ข้อ`)
-            .default([]),
+        // null = ไม่มีตัวเลือก: ผลตรวจของ schema นี้เองให้ null กับชนิดที่ไม่ใช่ตัวเลือก และหน้าเว็บส่งผลตรวจนั้นมา
+        // ต้องรับกลับได้ (2026-10-31: เดิมเพิ่ม/แก้คำถามชนิดอื่นนอกจากตัวเลือกไม่ได้ 400 "ข้อมูลไม่ถูกต้อง 1 ช่อง")
+        rqq_options: z.preprocess(
+            (value) => value ?? [],
+            z
+                .array(z.string().trim().min(1).max(100, "ตัวเลือกยาวได้ไม่เกิน 100 ตัวอักษร"))
+                .max(MAX_OPTIONS, `ตัวเลือกได้ไม่เกิน ${MAX_OPTIONS} ข้อ`),
+        ),
         rqq_allow_other: z.boolean().default(false),
         rqq_unit: optionalText("หน่วย", 30),
         rqq_min: decimalText("ค่าต่ำสุด", { maximum: MAX_NUMBER_LIMIT })

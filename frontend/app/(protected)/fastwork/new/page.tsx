@@ -5,12 +5,13 @@
 // งวดงานตามที่ตกลงบน Fastwork (ราคางวด = ยอดที่ลูกค้าจ่าย ก่อนหักค่าธรรมเนียม) · บันทึกแล้วไปหน้าโปรเจกต์ (ผู้สร้างเป็น PM)
 // ?request=<SVR> (S-5) = รับงานจากคำขอบริการ: เติมชื่องาน ลูกค้า งวด จากคำขอ/ใบภายใน · บันทึกแล้วสร้างงานจากรายการ + ผูกคำขอ
 // ?name=&amount=&cart= = มาจากตัวคิดราคา: เติมชื่องาน งวดเดียวเท่ายอดตะกร้า และสินค้าที่จะสร้างเป็นงาน (2026-10-31)
+// ?renewal=<RNW> (2026-10-31) = รับงานต่ออายุ: เติมชื่องาน ลูกค้า งวดเดียวเท่าราคาต่อรอบ · บันทึกแล้วรอบนี้ผูกงาน + วันครบขยับ
 // ไม่ได้รับจากคำขอ: เลือกสินค้า/ชุดรายการ → สร้างงานและงานย่อยพร้อมโปรเจกต์ (คำขอสร้างงานจากรายการให้เองอยู่แล้ว)
 import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { ListTree, Plus, Trash2, UserRoundCheck } from "lucide-react";
+import { ListTree, Plus, RefreshCw, Trash2, UserRoundCheck } from "lucide-react";
 import PageHeader from "@/components/ui/page-header";
 import SectionCard from "@/components/ui/section-card";
 import FormField, { inputClass } from "@/components/ui/form-field";
@@ -28,6 +29,23 @@ import { todayBangkokText } from "../../people/employees/_card-status";
 import { FASTWORK_MESSAGES } from "../_messages";
 import CatalogTaskPicker, { tasksFromSelection, useTaskCatalog } from "@/components/feature/catalog-task-picker";
 import { selectionFromParam, type CatalogSelection } from "@/lib/catalog-tasks";
+import JobRenewals, { jobRenewalsOf, useRenewalOptions } from "./_components/job-renewals";
+import { cycleUnit } from "@/lib/shared/renewal-math.mjs";
+import { thaiShortDate } from "@/lib/shared/thai-date.mjs";
+
+type RenewalSource = {
+    rnw_id: string;
+    rnw_version: number;
+    rnw_label: string | null;
+    rnw_client_id: string;
+    rnw_price: string;
+    rnw_cycle_months: number;
+    rnw_status: string;
+    rnw_channel: string;
+    client_name: string;
+    product_name: string;
+    next_period: { start: string; end: string };
+};
 
 type ClientChoice = { client_id: string; client_name: string; client_company: string | null };
 type MilestoneRow = { key: number; fwm_name: string; fwm_amount: string; fwm_due_date: string };
@@ -69,6 +87,9 @@ function NewFastworkJob() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const requestId = searchParams.get("request");
+    const renewalId = searchParams.get("renewal");
+    const [renewalSource, setRenewalSource] = useState<RenewalSource | null>(null);
+    const [renewalError, setRenewalError] = useState<string | null>(null);
     const hasBit = usePermission();
     const [plan, setPlan] = useState<FastworkPlan | null>(null);
     const [planError, setPlanError] = useState<string | null>(null);
@@ -87,7 +108,12 @@ function NewFastworkJob() {
     const [milestones, setMilestones] = useState<MilestoneRow[]>(() => [{ ...emptyMilestone(0, "งานทั้งหมด"), fwm_amount: searchParams.get("amount") ?? "" }]);
     const nextKey = useRef(1);
     const [selection, setSelection] = useState<CatalogSelection[]>(() => selectionFromParam(searchParams.get("cart")));
-    const { catalog, loadError: catalogError } = useTaskCatalog(!requestId && hasBit(BITS.manageFastwork));
+    const isPlainJob = !requestId && !renewalId;
+    const { catalog, loadError: catalogError } = useTaskCatalog(isPlainJob && hasBit(BITS.manageFastwork));
+    // ตั้งต่ออายุจากสินค้ารายรอบที่เลือก (2026-10-31) · รับจากคำขอ = ตั้งจากใบภายในตอนตอบรับแทน
+    const renewalOptions = useRenewalOptions(isPlainJob && hasBit(BITS.manageFastwork));
+    const [renewalOverrides, setRenewalOverrides] = useState<Record<string, { isSkipped?: boolean; label?: string; dueDate?: string }>>({});
+    const jobRenewals = jobRenewalsOf(selection, renewalOptions, form.project_start_date, renewalOverrides);
 
     // รับงานจากคำขอ: เติมจากคำขอ (ลูกค้าที่ผูกไว้/ชื่อผู้ซื้อ · งวดจากใบภายใน หรือ 1 งวด = ยอด)
     useEffect(() => {
@@ -115,6 +141,36 @@ function NewFastworkJob() {
             isLeftPage = true;
         };
     }, [requestId]);
+    // รับงานต่ออายุ: เติมจากรายการต่ออายุ (ลูกค้าเดิม · งวดเดียว = ราคาต่อรอบ)
+    useEffect(() => {
+        if (!renewalId) return;
+        let isLeftPage = false;
+        apiFetch<{ renewal: RenewalSource }>(`/renewals/${encodeURIComponent(renewalId)}`).then(({ data, error }) => {
+            if (isLeftPage) return;
+            if (error) {
+                setRenewalError(error.message);
+                return;
+            }
+            const loaded = data.renewal;
+            if (loaded.rnw_status !== "active" || loaded.rnw_channel !== "fastwork") {
+                setRenewalError("รายการนี้ไม่ได้ใช้งานอยู่ หรือไม่ใช่รายการของผู้ซื้อ Fastwork");
+                return;
+            }
+            const title = loaded.rnw_label || loaded.product_name;
+            const period = `${thaiShortDate(loaded.next_period.start)} - ${thaiShortDate(loaded.next_period.end)}`;
+            setRenewalSource(loaded);
+            setForm((current) => ({
+                ...current,
+                project_name: `ต่ออายุ ${title} (${period})`.slice(0, 150),
+                project_description: `ต่ออายุ ${loaded.product_name} รอบ ${period}`,
+            }));
+            setClient({ client_id: loaded.rnw_client_id, client_name: loaded.client_name, client_company: null });
+            setMilestones([{ key: 0, fwm_name: `ต่ออายุ ${cycleUnit(loaded.rnw_cycle_months)}`, fwm_amount: loaded.rnw_price, fwm_due_date: "" }]);
+        });
+        return () => {
+            isLeftPage = true;
+        };
+    }, [renewalId]);
     const [errors, setErrors] = useState<FieldErrors>({});
     const [bannerError, setBannerError] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
@@ -152,7 +208,20 @@ function NewFastworkJob() {
             client_name: client ? null : form.client_name,
             milestones: milestones.map(({ fwm_name, fwm_amount, fwm_due_date }) => ({ fwm_name, fwm_amount, fwm_due_date })),
             service_request_id: requestId,
-            tasks: requestId ? [] : tasksFromSelection(selection, catalog),
+            renewal_id: renewalSource?.rnw_id ?? null,
+            renewal_version: renewalSource?.rnw_version ?? null,
+            tasks: isPlainJob ? tasksFromSelection(selection, catalog) : [],
+            renewals: !isPlainJob
+                ? []
+                : jobRenewals
+                      .filter((renewal) => !renewal.isSkipped)
+                      .map((renewal) => ({
+                          rnw_product_id: renewal.productId,
+                          rnw_label: renewal.label || null,
+                          rnw_price: renewal.price,
+                          rnw_cycle_months: renewal.cycleMonths,
+                          rnw_next_due_date: renewal.dueDate,
+                      })),
         };
         const checked = fastworkProjectSchema.safeParse(payload);
         if (!checked.success) {
@@ -161,7 +230,7 @@ function NewFastworkJob() {
         }
         setErrors({});
         setIsSaving(true);
-        const { data, error } = await apiFetch<{ project_id: string; task_count: number }>("/fastwork/projects", {
+        const { data, error } = await apiFetch<{ project_id: string; task_count: number; renewal_count: number }>("/fastwork/projects", {
             method: "POST",
             body: checked.data,
         });
@@ -174,6 +243,8 @@ function NewFastworkJob() {
         let doneMessage = "สร้างงาน Fastwork แล้ว · เพิ่มสมาชิกทีมได้ในหน้าโปรเจกต์";
         if (requestId) doneMessage = "รับงานแล้ว · สร้างงานจากรายการในคำขอให้แล้ว";
         else if (data.task_count > 0) doneMessage = `สร้างงาน Fastwork แล้ว · เพิ่ม ${data.task_count} งานจากสินค้าที่เลือก`;
+        if (data.renewal_count > 0) doneMessage += ` · ตั้งต่ออายุ ${data.renewal_count} รายการ`;
+        if (renewalSource) doneMessage = "รับงานต่ออายุแล้ว · วันครบของรายการขยับไปรอบถัดไป";
         toast.success(doneMessage);
         router.push(`/projects/view?id=${data.project_id}`);
     }
@@ -190,6 +261,20 @@ function NewFastworkJob() {
         );
     }
 
+    if (renewalId && renewalError) {
+        return (
+            <div className="grid w-full grid-cols-1 gap-6">
+                {header}
+                <StatusBanner tone="warn" title="รับงานต่ออายุจากรายการนี้ไม่ได้">
+                    {renewalError}
+                </StatusBanner>
+                <Link href="/sales/renewals" className={buttonClass("secondary", "md", "justify-self-start")}>
+                    กลับไปหน้าต่ออายุบริการ
+                </Link>
+            </div>
+        );
+    }
+    if (renewalId && !renewalSource) return <PageSkeleton />;
     if (requestId && !plan && !planError) return <PageSkeleton />;
     if (requestId && (planError || (plan && !plan.can_take))) {
         const reason = planError ?? plan?.blocked_reason ?? (plan?.mode === "existing" ? 'คำขอนี้มาจากลิงก์ของงานเดิม · กด "ลูกค้ายืนยันบน Fastwork แล้ว" ในหน้าคำขอ' : "คำขอนี้รับงานหรือปิดไปแล้ว");
@@ -205,7 +290,7 @@ function NewFastworkJob() {
             </div>
         );
     }
-    const isClientLocked = Boolean(plan?.quotation && plan.client_id);
+    const isClientLocked = Boolean((plan?.quotation && plan.client_id) || renewalSource);
     const total = totalOf(milestones);
     const isMilestoneLimit = milestones.length >= MAX_FASTWORK_MILESTONES;
 
@@ -218,7 +303,12 @@ function NewFastworkJob() {
                 </StatusBanner>
             )}
             {/* ใช้หน้านี้เมื่อไร (2026-10-31): ผู้ใช้งงว่าเริ่มจากหน้าไหน และถามว่าทำไมไม่มีใบเสนอราคา */}
-            {!requestId && (
+            {renewalSource && (
+                <StatusBanner tone="info" title={`รับงานต่ออายุ ${renewalSource.rnw_label || renewalSource.product_name}`}>
+                    ผู้ซื้อสั่งต่ออายุบน Fastwork แล้ว · ใส่เลขคำสั่งซื้อใหม่ · บันทึกแล้วรอบนี้ผูกกับงานนี้ และวันครบของรายการขยับไปรอบถัดไป
+                </StatusBanner>
+            )}
+            {isPlainJob && (
                 <StatusBanner tone="info" title="ใช้หน้านี้หลังผู้ซื้อจ่ายบน Fastwork แล้ว">
                     <span className="grid gap-1">
                         <span>
@@ -282,7 +372,13 @@ function NewFastworkJob() {
                                         </button>
                                     )}
                                 </div>
-                                {isClientLocked && <FieldHint>ลูกค้าเดียวกับใบเสนอราคาภายในของคำขอ (เปลี่ยนไม่ได้)</FieldHint>}
+                                {isClientLocked && (
+                                    <FieldHint>
+                                        {renewalSource
+                                            ? "ลูกค้าเดียวกับรายการต่ออายุ (เปลี่ยนไม่ได้)"
+                                            : "ลูกค้าเดียวกับใบเสนอราคาภายในของคำขอ (เปลี่ยนไม่ได้)"}
+                                    </FieldHint>
+                                )}
                             </>
                         ) : (
                             <FormField
@@ -393,7 +489,7 @@ function NewFastworkJob() {
                 </div>
             </SectionCard>
 
-            {!requestId && (
+            {isPlainJob && (
                 <SectionCard
                     title="สร้างงานจากสินค้า (ไม่บังคับ)"
                     description="เลือกสิ่งที่ผู้ซื้อจ้าง ระบบสร้างงานและงานย่อยในโปรเจกต์ให้ตอนบันทึก · ชุดรายการเป็นงานหลัก รายการในชุดเป็นงานย่อย"
@@ -406,6 +502,22 @@ function NewFastworkJob() {
                         loadError={catalogError}
                         selection={selection}
                         onChange={setSelection}
+                    />
+                </SectionCard>
+            )}
+
+            {isPlainJob && jobRenewals.length > 0 && (
+                <SectionCard
+                    title="ตั้งต่ออายุบริการ"
+                    description="บริการรายรอบในงานนี้ · ระบบเตือนก่อนครบ 30 วันที่หน้าต่ออายุบริการ ผู้ซื้อสั่งต่ออายุบน Fastwork แล้วรับเป็นงานใหม่ · ติ๊กออกถ้าผู้ซื้อไม่ต่อ"
+                    icon={RefreshCw}
+                >
+                    <JobRenewals
+                        renewals={jobRenewals}
+                        errors={errors}
+                        onChange={(key, override) =>
+                            setRenewalOverrides((current) => ({ ...current, [key]: { ...current[key], ...override } }))
+                        }
                     />
                 </SectionCard>
             )}

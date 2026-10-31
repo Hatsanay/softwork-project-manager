@@ -13,6 +13,7 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import ProjectFinanceCard from "./_components/project-finance-card";
 import FastworkProjectCard from "./_components/fastwork-project-card";
 import ProfitShareLinkCard from "./_components/profit-share-link-card";
+import NextStepsCard from "./_components/next-steps-card";
 import CustomerRequirementsCard from "./_components/customer-requirements-card";
 import ShareEmailModal from "./_components/share-email-modal";
 import ProjectChatModal from "./_components/project-chat-modal";
@@ -595,6 +596,12 @@ export default function ViewProjectPage() {
                 onOpenChat={() => setProjectChatOpen(true)}
                 onEdit={() => router.push(`/projects/edit?id=${id}`)}
                 onDelete={() => setDeleteProjectConfirm(true)}
+            />
+
+            {/* ต่อไปต้องทำ (2026-10-31) — โหลดใหม่เมื่องานเปลี่ยน (จำนวน/สถานะ/วันครบ) */}
+            <NextStepsCard
+                projectId={id}
+                refreshKey={tasks.map((task) => `${task.task_status}${task.task_due_date ?? ""}`).join("|")}
             />
 
             {/* ลิงก์สำหรับลูกค้า */}

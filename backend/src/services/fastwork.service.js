@@ -155,7 +155,37 @@ async function createProject(conn, user, input) {
         const { insertTasksFromRows } = require("./quotation-accept.service");
         taskCount = await insertTasksFromRows(conn, projectId, input.tasks, "จากสินค้าที่เลือกตอนรับงาน Fastwork");
     }
-    return { project_id: projectId, client_id: clientId, task_count: taskCount };
+    // รับงานต่ออายุของรายการเดิม (2026-10-31): ล็อก + version กันรับซ้ำ · ลูกค้าต้องเป็นรายเดียวกัน
+    if (input.renewal_id) {
+        const renewalService = require("./renewal.service");
+        const [renewal] = await renewalService.lockForBilling(
+            conn,
+            user,
+            [{ rnw_id: input.renewal_id, rnw_version: input.renewal_version ?? -1 }],
+            "fastwork",
+        );
+        if (renewal.rnw_client_id !== clientId) throw validationError({ client_id: "งานต่ออายุต้องเป็นลูกค้าเดียวกับรายการต่ออายุ" });
+        await renewalService.recordCycle(conn, user.user_id, renewal, { projectId });
+    }
+    // บริการรายรอบที่ตั้งตอนรับงาน (2026-10-31) · สินค้าต้องตั้งรอบไว้จริง
+    if (input.renewals.length > 0) {
+        const renewalService = require("./renewal.service");
+        const productIds = [...new Set(input.renewals.map((renewal) => renewal.rnw_product_id))];
+        const [products] = await conn.query(
+            "SELECT product_id FROM tb_products WHERE product_id IN (?) AND product_renewal_months IS NOT NULL",
+            [productIds],
+        );
+        if (products.length !== productIds.length) throw validationError({ renewals: "มีสินค้าที่ไม่ได้ตั้งเป็นบริการรายรอบ กรุณาโหลดหน้าใหม่" });
+        for (const renewal of input.renewals) {
+            await renewalService.insertRenewal(
+                conn,
+                user.user_id,
+                { ...renewal, rnw_client_id: clientId, rnw_project_id: projectId, rnw_channel: "fastwork", rnw_notes: null },
+                { source: "fastwork", sourceId: projectId },
+            );
+        }
+    }
+    return { project_id: projectId, client_id: clientId, task_count: taskCount, renewal_count: input.renewals.length };
 }
 
 /** แก้เลขคำสั่งซื้อ/ลิงก์ + งวดงานทั้งชุด — งวดที่มีเงินบันทึกแล้วลบไม่ได้ */
@@ -468,6 +498,38 @@ async function projectFastwork(conn, projectId) {
 
 // ─── หน้า Fastwork (ศูนย์รวมขั้นตอน) ─────────────────────────────────────────────────────────
 
+/** งวดของงาน Fastwork พร้อมสถานะส่งงาน/เงิน · ใช้ทั้งหน้า Fastwork และ "ต่อไปต้องทำ" ของโปรเจกต์ (2026-10-31) */
+async function findMilestoneStates(conn, projectIds) {
+    if (projectIds.length === 0) return [];
+    const [milestones] = await conn.query(
+        `SELECT m.fwm_id, m.fwm_project_id, m.fwm_order, m.fwm_name, m.fwm_amount,
+                DATE_FORMAT(m.fwm_due_date, '%Y-%m-%d') AS fwm_due_date, m.fwm_delivered_at IS NOT NULL AS is_delivered,
+                (SELECT p.fwp_status FROM tb_fastwork_payouts p
+                 WHERE p.fwp_milestone_id = m.fwm_id AND p.fwp_status IN ${ACTIVE_PAYOUT} LIMIT 1) AS payout_status
+         FROM tb_fastwork_milestones m WHERE m.fwm_project_id IN (?) ORDER BY m.fwm_project_id, m.fwm_order`,
+        [projectIds],
+    );
+    return milestones;
+}
+
+/**
+ * แยกงวดของงานหนึ่งตามสถานะ + ขั้นถัดไป (ลำดับเดียวกับการ์ดในหน้า Fastwork)
+ * @param {object[]} own งวดของงานนี้ (จาก findMilestoneStates)
+ * @param {number | undefined} unpaidShareLines ปิดยอดส่วนแบ่งแล้ว = จำนวนผู้รับที่ยังไม่จ่าย · ยังไม่ปิดยอด = undefined
+ */
+function milestoneStepOf(own, unpaidShareLines) {
+    const open = own.filter((milestone) => !milestone.payout_status && !Number(milestone.is_delivered));
+    const delivered = own.filter((milestone) => !milestone.payout_status && Number(milestone.is_delivered));
+    const pendingPayouts = own.filter((milestone) => milestone.payout_status === "pending");
+    const received = own.filter((milestone) => milestone.payout_status === "received");
+    let nextStep = "work";
+    if (unpaidShareLines !== undefined) nextStep = unpaidShareLines > 0 ? "pay" : "done";
+    else if (pendingPayouts.length > 0) nextStep = "receive";
+    else if (delivered.length > 0) nextStep = "record";
+    else if (open.length === 0 && own.length > 0) nextStep = "close";
+    return { open, delivered, pendingPayouts, received, nextStep };
+}
+
 /**
  * ตัวเลขงานค้างของแต่ละขั้น + งาน Fastwork ที่กำลังทำ
  * @param {{ canSeeMoney: boolean }} options ยอดเงินเฉพาะผู้จัดการเงิน Fastwork
@@ -482,16 +544,7 @@ async function overview(conn, { canSeeMoney }) {
          ORDER BY p.project_due_date IS NULL, p.project_due_date, p.project_created_at`,
     );
     const projectIds = projects.map((project) => project.project_id);
-    const [milestones] = projectIds.length
-        ? await conn.query(
-              `SELECT m.fwm_id, m.fwm_project_id, m.fwm_order, m.fwm_name, m.fwm_amount,
-                      DATE_FORMAT(m.fwm_due_date, '%Y-%m-%d') AS fwm_due_date, m.fwm_delivered_at IS NOT NULL AS is_delivered,
-                      (SELECT p.fwp_status FROM tb_fastwork_payouts p
-                       WHERE p.fwp_milestone_id = m.fwm_id AND p.fwp_status IN ${ACTIVE_PAYOUT} LIMIT 1) AS payout_status
-               FROM tb_fastwork_milestones m WHERE m.fwm_project_id IN (?) ORDER BY m.fwm_project_id, m.fwm_order`,
-              [projectIds],
-          )
-        : [[]];
+    const milestones = await findMilestoneStates(conn, projectIds);
     const [[pending]] = await conn.query(
         "SELECT COUNT(*) AS payout_count, COALESCE(SUM(fwp_net), 0) AS net_total FROM tb_fastwork_payouts WHERE fwp_status = 'pending'",
     );
@@ -519,17 +572,10 @@ async function overview(conn, { canSeeMoney }) {
     let awaitingRecord = 0;
     const rows = projects.map((project) => {
         const own = milestones.filter((milestone) => milestone.fwm_project_id === project.project_id);
-        const open = own.filter((milestone) => !milestone.payout_status && !Number(milestone.is_delivered));
-        const delivered = own.filter((milestone) => !milestone.payout_status && Number(milestone.is_delivered));
-        const pendingPayouts = own.filter((milestone) => milestone.payout_status === "pending");
-        const received = own.filter((milestone) => milestone.payout_status === "received");
+        // ปิดยอดส่วนแบ่งแล้ว: ค้างจ่าย = ขั้นจ่ายส่วนแบ่ง · จ่ายครบ = เสร็จ
+        const { open, delivered, received, nextStep } = milestoneStepOf(own, unpaidBySettledProject.get(project.project_id));
         dueSoon += open.filter((milestone) => milestone.fwm_due_date && milestone.fwm_due_date <= dueSoonLimit).length;
         awaitingRecord += delivered.length;
-        // ขั้นถัดไปของโปรเจกต์นี้ (ลำดับเดียวกับการ์ดในหน้า Fastwork)
-        let nextStep = "work";
-        if (pendingPayouts.length > 0) nextStep = "receive";
-        else if (delivered.length > 0) nextStep = "record";
-        else if (open.length === 0 && own.length > 0) nextStep = "close";
         const nextOpen = open[0] ?? null;
         return {
             ...project,
@@ -541,11 +587,6 @@ async function overview(conn, { canSeeMoney }) {
         };
     });
 
-    // ปิดยอดส่วนแบ่งแล้ว: ค้างจ่าย = ขั้นจ่ายส่วนแบ่ง · จ่ายครบ = เสร็จ
-    for (const row of rows) {
-        if (!unpaidBySettledProject.has(row.project_id)) continue;
-        row.next_step = unpaidBySettledProject.get(row.project_id) > 0 ? "pay" : "done";
-    }
     return {
         today,
         steps: {
@@ -580,4 +621,6 @@ module.exports = {
     cancelPayout,
     projectFastwork,
     overview,
+    findMilestoneStates,
+    milestoneStepOf,
 };

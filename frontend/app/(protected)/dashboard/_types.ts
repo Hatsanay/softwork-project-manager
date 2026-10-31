@@ -1,6 +1,7 @@
 // ชนิดข้อมูลของแดชบอร์ด — ตรงกับคำตอบของ backend/src/controllers/dashboard.controller.js (ไม่เปลี่ยน API ในขั้น U3)
 
 import type { FastworkOverview } from "../fastwork/_types";
+import type { ProjectTodo } from "./_components/project-todo-card";
 export type ProjectStatus = "planning" | "in_progress" | "on_hold" | "completed" | "cancelled";
 export type TaskStatus = "todo" | "in_progress" | "review" | "done";
 
@@ -146,9 +147,13 @@ export type BusinessCashMonth = { month: string; direct: string; fastwork: strin
 
 export type BusinessSummary = {
     today: string;
+    // สิ่งที่ต้องทำในโปรเจกต์ (2026-10-31) · ดูโปรเจกต์ไม่ได้ = ไม่มีส่วนนี้
+    todo?: ProjectTodo;
     requests?: { submitted: number };
     quotations?: { waiting: number; expiring_soon: number; expiring_days: number };
     receivables?: { outstanding: string; overdue: string; overdue_clients: number };
+    // ต่ออายุบริการ (2026-10-31) · ไม่มีสิทธิ์ = ไม่มีส่วนนี้
+    renewals?: { due_soon: number; overdue: number; due_soon_days: number };
     fastwork?: {
         steps: FastworkOverview["steps"];
         projects: FastworkOverview["projects"];

@@ -8,6 +8,8 @@ const { insertTasksFromRows } = require("../services/quotation-accept.service");
 const { validate } = require("../utils/validate");
 const { withTransaction } = require("../utils/with-transaction");
 const { projectCreateTasksSchema } = require("../shared/schemas/project.mjs");
+const { nextStepsFor, nextStepsForUser } = require("../services/project-next-steps.service");
+const renewalService = require("../services/renewal.service");
 
 async function getAll(req, res, next) {
     try {
@@ -25,24 +27,48 @@ async function getAll(req, res, next) {
         const memberJoin = seesAll ? "" : "JOIN tb_project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?";
         const memberParams = seesAll ? [] : [req.user.user_id];
 
-        const [rows] = await pool.query(
-            `SELECT p.project_id, p.project_name, p.project_status, p.project_type, p.project_start_date, p.project_due_date,
-                    p.project_progress_percent, c.client_name,
-                    (SELECT COUNT(*) FROM tb_project_members pm2 WHERE pm2.project_id = p.project_id) AS member_count
-             FROM tb_projects p
-             ${memberJoin}
-             LEFT JOIN tb_clients c ON c.client_id = p.client_id
+        // ต่อไปต้องทำ (2026-10-31): คิดทุกโปรเจกต์ที่เห็น (ไม่ใช่แค่หน้านี้) เพราะตัวกรอง ?next= และตัวเลขบนตัวกรองนับจากทั้งหมด
+        // โปรเจกต์หลักสิบ-ร้อยพอไหว · เกินหลักพันค่อยทำตารางสรุป (docs/plans/2026-10-31-project-next-steps.md ข้อ 7)
+        const [matched] = await pool.query(
+            `SELECT p.project_id FROM tb_projects p ${memberJoin}
              WHERE p.project_name LIKE ? AND ${statusClause}
-             ORDER BY p.project_id DESC
-             LIMIT ? OFFSET ?`,
-            [...memberParams, search, limit, offset]
-        );
-        const [[{ total }]] = await pool.query(
-            `SELECT COUNT(*) AS total FROM tb_projects p ${memberJoin} WHERE p.project_name LIKE ? AND ${statusClause}`,
+             ORDER BY p.project_id DESC`,
             [...memberParams, search]
         );
+        let projectIds = matched.map((row) => row.project_id);
+        const nextById = wantCancelled ? new Map() : await nextStepsForUser(pool, req.user, projectIds);
+        const levelOf = (projectId) => nextById.get(projectId)?.items[0]?.level ?? null;
+        const nextCounts = { urgent: 0, todo: 0, wait: 0 };
+        for (const projectId of projectIds) {
+            const level = levelOf(projectId);
+            if (level in nextCounts) nextCounts[level] += 1;
+        }
+        if (req.query.next in nextCounts) projectIds = projectIds.filter((projectId) => levelOf(projectId) === req.query.next);
 
-        res.json({ data: rows, total });
+        const pageIds = projectIds.slice(offset, offset + limit);
+        const [rows] = pageIds.length
+            ? await pool.query(
+                `SELECT p.project_id, p.project_name, p.project_status, p.project_type, p.project_start_date, p.project_due_date,
+                        p.project_progress_percent, c.client_name,
+                        (SELECT COUNT(*) FROM tb_project_members pm2 WHERE pm2.project_id = p.project_id) AS member_count
+                 FROM tb_projects p
+                 LEFT JOIN tb_clients c ON c.client_id = p.client_id
+                 WHERE p.project_id IN (?)
+                 ORDER BY p.project_id DESC`,
+                [pageIds]
+            )
+            : [[]];
+        // เรื่องแรก (เร่งที่สุด) + จำนวนเรื่องที่เหลือ · ไม่มีเรื่อง = null
+        const data = rows.map((row) => {
+            const items = nextById.get(row.project_id)?.items ?? [];
+            const first = items[0];
+            return {
+                ...row,
+                next_step: first ? { title: first.title, level: first.level, more_count: items.length - 1 } : null,
+            };
+        });
+
+        res.json({ data, total: projectIds.length, next_counts: nextCounts });
     } catch (err) {
         next(err);
     }
@@ -110,6 +136,20 @@ async function create(req, res, next) {
 async function taskCatalog(req, res, next) {
     try {
         res.json(await listTaskCatalog(pool));
+    } catch (err) {
+        next(err);
+    }
+}
+
+// ต่อไปต้องทำ (2026-10-31) — เรื่องที่คนดูเห็นตามสิทธิ์ระบบ + ปุ่มตามสิทธิ์ในโปรเจกต์ (req.projectPermission จาก requireProjectMember)
+async function nextSteps(req, res, next) {
+    try {
+        const projectId = req.params.id;
+        const steps = await nextStepsFor(pool, [projectId], {
+            rolePermission: req.user.role_permission,
+            positionPermissionById: new Map([[projectId, req.projectPermission ?? ""]]),
+        });
+        res.json(steps.get(projectId) ?? { stage: null, items: [] });
     } catch (err) {
         next(err);
     }
@@ -212,7 +252,11 @@ async function cancel(req, res, next) {
         const [rows] = await pool.query("SELECT project_id FROM tb_projects WHERE project_id = ?", [req.params.id]);
         if (!rows[0]) return res.status(404).json({ message: "ไม่พบโปรเจกต์นี้" });
 
-        await pool.query("UPDATE tb_projects SET project_status = 'cancelled' WHERE project_id = ?", [req.params.id]);
+        await withTransaction(async (conn) => {
+            await conn.query("UPDATE tb_projects SET project_status = 'cancelled' WHERE project_id = ?", [req.params.id]);
+            // งานต่ออายุ Fastwork ถูกยกเลิก: รอบกลับเป็นยังไม่ออก วันครบถอยกลับ (2026-10-31) · กู้คืนโปรเจกต์ไม่คืนรอบ (รับงานต่ออายุใหม่)
+            await renewalService.voidByProject(conn, req.params.id);
+        });
         res.json({ message: "ยกเลิกโปรเจกต์สำเร็จ" });
     } catch (err) {
         next(err);
@@ -478,7 +522,7 @@ async function removeMember(req, res, next) {
 }
 
 module.exports = {
-    getAll, getOne, create, taskCatalog, update, remove, cancel, reactivate,
+    getAll, getOne, create, taskCatalog, nextSteps, update, remove, cancel, reactivate,
     regenerateShareLink, toggleShareEnabled, toggleTaskWeight, sendShareLinkEmail,
     getMembers, addMember, updateMemberPositions, removeMember,
     getMyPermissions,

@@ -408,6 +408,11 @@
                 {
                     "client_name": "string",
                     "member_count": "number",
+                    "next_step": {
+                        "level": "string",
+                        "more_count": "number",
+                        "title": "string"
+                    },
                     "project_due_date": "string",
                     "project_id": "string",
                     "project_name": "string",
@@ -417,6 +422,11 @@
                     "project_type": "string"
                 }
             ],
+            "next_counts": {
+                "todo": "number",
+                "urgent": "number",
+                "wait": "number"
+            },
             "total": "number"
         }
     },

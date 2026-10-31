@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { decimalText, integerInRange, optionalDate, optionalText, requiredDate, requiredText } from "./common.mjs";
 import { catalogTasksField } from "./project.mjs";
+import { jobRenewalsField } from "./renewal.mjs";
 
 export const MAX_FASTWORK_MILESTONES = 20;
 const MAX_AMOUNT = "99999999.99";
@@ -52,6 +53,11 @@ export const fastworkProjectSchema = z
         service_request_id: optionalText("คำขอบริการ", 18),
         // งานจากสินค้าที่เลือก (2026-10-31) · รับจากคำขอ = คำขอสร้างงานให้แล้ว ส่งซ้ำไม่ได้
         tasks: catalogTasksField,
+        // บริการรายรอบที่ตั้งให้ตอนรับงาน (2026-10-31) · รับจากคำขอ = ตั้งจากใบภายในตอนตอบรับแทน
+        renewals: jobRenewalsField,
+        // รับงานต่ออายุจากหน้าต่ออายุบริการ (2026-10-31) · บันทึกรอบ + ขยับวันครบตอนสร้างงาน
+        renewal_id: optionalText("รายการต่ออายุ", 18),
+        renewal_version: integerInRange("เวอร์ชัน", 0, 2_000_000_000).nullish(),
     })
     .superRefine((project, context) => {
         if (!project.client_id && !project.client_name) {
@@ -59,6 +65,9 @@ export const fastworkProjectSchema = z
         }
         if (project.project_start_date && project.project_due_date && project.project_due_date < project.project_start_date) {
             context.addIssue({ code: "custom", path: ["project_due_date"], message: "กำหนดส่งต้องไม่ก่อนวันเริ่ม" });
+        }
+        if (project.service_request_id && project.renewals.length > 0) {
+            context.addIssue({ code: "custom", path: ["renewals"], message: "รับงานจากคำขอ ระบบตั้งต่ออายุจากรายการในคำขอให้แล้ว" });
         }
         if (project.service_request_id && project.tasks.length > 0) {
             context.addIssue({ code: "custom", path: ["tasks"], message: "รับงานจากคำขอ ระบบสร้างงานจากรายการในคำขอให้แล้ว · ไม่ต้องเลือกสินค้าเพิ่ม" });

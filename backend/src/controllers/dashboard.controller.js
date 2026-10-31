@@ -2,6 +2,9 @@ const pool = require("../config/db");
 const { hasBit } = require("../utils/permissions");
 const { currentYearMonthBangkok } = require("../utils/bangkok-time");
 const dashboardBusinessService = require("../services/dashboard-business.service");
+const projectNextStepsService = require("../services/project-next-steps.service");
+
+const DASHBOARD_TODO_LIMIT = 8;
 
 // แปลง query param เป็นช่วงวันที่ [start, end) สำหรับกรอง KPI — รับได้ทั้ง "YYYY-MM" (รายเดือน) และ "YYYY" (รายปีทั้งปี)
 // ไม่ใส่มา/ใส่รูปแบบผิด default เป็นเดือนปัจจุบัน
@@ -799,7 +802,13 @@ async function getMemberTasks(req, res, next) {
 // ภาพรวมธุรกิจ (2026-10-31): แต่ละส่วนตามสิทธิ์เดิมของหน้านั้น · ไม่มีสิทธิ์ = ไม่มีส่วนนั้นในคำตอบ
 async function getBusiness(req, res, next) {
     try {
-        res.json(await dashboardBusinessService.businessSummary(pool, req.user.role_permission));
+        const summary = await dashboardBusinessService.businessSummary(pool, req.user.role_permission);
+        // สิ่งที่ต้องทำรวมทุกโปรเจกต์ (2026-10-31 · docs/plans/2026-10-31-project-next-steps.md ข้อ 6.3) · เฉพาะเรื่องที่คนดูกดทำได้
+        // ดูโปรเจกต์ไม่ได้เลย = ไม่มีส่วนนี้ (เหมือนส่วนอื่น: ไม่มีสิทธิ์ = ไม่ส่งมา)
+        if (hasBit(req.user.role_permission, "viewAllProjects") || hasBit(req.user.role_permission, "viewOwnProjects")) {
+            summary.todo = await projectNextStepsService.todoForUser(pool, req.user, DASHBOARD_TODO_LIMIT);
+        }
+        res.json(summary);
     } catch (err) {
         next(err);
     }

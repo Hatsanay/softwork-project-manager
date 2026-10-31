@@ -32,6 +32,8 @@ export type ProductChoice = {
     product_unit: string | null;
     product_price: string;
     product_status: "active" | "inactive";
+    // บริการรายรอบ (เลือกเป็นบริการที่รวมรอบแรกในแพ็กได้)
+    product_renewal_months?: number | null;
 };
 
 const TYPE_LABELS: Record<PackageItemType, string> = { item: "รายการ", heading: "หัวข้อ", note: "หมายเหตุ" };

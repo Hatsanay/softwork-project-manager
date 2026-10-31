@@ -237,6 +237,13 @@ const ENTITIES = [
     { re: /^\/payroll\/runs\/([^/]+)$/, type: "payroll", id: "1", label: { PUT: "แก้วันจ่ายเงินเดือน" } },
     { re: /^\/employees\/([^/]+)\/tax-profiles\/[^/]+$/, type: "employee", id: "1", label: { PUT: "บันทึกค่าลดหย่อนรายปี" } },
     // งาน Fastwork (2026-10-24 · P-1)
+    // บริการรายรอบ (2026-10-31)
+    { re: /^\/renewals$/, type: "renewal", table: "tb_renewals", pk: "rnw_id", id: "response:rnw_id", label: { POST: "เพิ่มรายการต่ออายุ" } },
+    { re: /^\/renewals\/invoice$/, type: "invoice", id: "response:inv_id", label: { POST: "ออกใบแจ้งหนี้ต่ออายุบริการ" } },
+    { re: /^\/renewals\/([^/]+)$/, type: "renewal", table: "tb_renewals", pk: "rnw_id", id: "1", label: { PUT: "แก้รายการต่ออายุ" } },
+    { re: /^\/renewals\/([^/]+)\/pause$/, type: "renewal", id: "1", label: { POST: "พักรายการต่ออายุ" } },
+    { re: /^\/renewals\/([^/]+)\/resume$/, type: "renewal", id: "1", label: { POST: "เปิดรายการต่ออายุต่อ" } },
+    { re: /^\/renewals\/([^/]+)\/cancel$/, type: "renewal", id: "1", label: { POST: "ยกเลิกรายการต่ออายุ" } },
     { re: /^\/fastwork\/settings$/, type: "fastwork", label: { PUT: "ตั้งอัตราค่าธรรมเนียม Fastwork" } },
     { re: /^\/fastwork\/projects$/, type: "project", table: "tb_projects", pk: "project_id", id: "response:project_id", project: "response:project_id", label: { POST: "สร้างงาน Fastwork" } },
     { re: /^\/fastwork\/projects\/([^/]+)$/, type: "project", table: "tb_projects", pk: "project_id", id: "1", project: "1", label: { PUT: "แก้งวดงาน Fastwork" } },

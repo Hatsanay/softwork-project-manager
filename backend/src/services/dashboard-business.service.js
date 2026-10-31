@@ -92,6 +92,10 @@ async function businessSummary(conn, rolePermission) {
         result.fastwork = { steps: overview.steps, projects: overview.projects.slice(0, FASTWORK_PROJECT_LIMIT), project_count: overview.projects.length };
     }
 
+    // บริการรายรอบ (2026-10-31): ต่ออายุใกล้ครบ/เลยกำหนด ตามช่องทางที่มีสิทธิ์
+    const renewals = await require("./renewal.service").dueCounts(conn, rolePermission);
+    if (renewals) result.renewals = renewals;
+
     if (can("salesReports")) {
         // เงินที่ยังรอเข้า (ลูกหนี้ · Fastwork รอโอน) อยู่ในส่วนของตัวเอง แสดงแยกบรรทัด ไม่รวมกับเงินเข้าแล้ว
         result.cash = { months: await cashByMonth(conn, today) };

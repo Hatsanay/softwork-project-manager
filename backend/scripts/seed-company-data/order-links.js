@@ -463,6 +463,22 @@ function scheduleFastworkLinks({ on, ids, state, owner }) {
         await as(owner, "POST", `/V1/projects/${state.F.projectId}/requirements/close-links`, {});
     });
 
+    // ── ลิงก์ความต้องการของงานที่รับแล้ว (2026-10-31 · ต่อไปต้องทำ N-4): K ผู้ซื้อตอบแล้ว (รออ่านแล้วปิดรับ) · L ยังไม่ตอบ
+    on("2026-10-18", "ส่งลิงก์ความต้องการให้ krabi_vet (งาน K)", async () => {
+        state.vetLink = await as(owner, "POST", "/V1/order-links", { ol_kind: "fastwork", ol_project_id: state.K.projectId, ol_assignee_id: ids.users[owner], category_ids: [] });
+    });
+    on("2026-10-19", "krabi_vet ส่งความต้องการผ่านลิงก์", async () => {
+        setToday("2026-10-19", 19, 30);
+        await submitOrder(state.vetLink.ol_short_code, {
+            items: [{ kind: "product", id: screen, quantity: 6 }],
+            note: "อยากให้ลูกค้าเลือกหมอและเวลาเองได้ และเตือนก่อนนัด 1 วัน",
+            answers: GENERAL_ANSWER("คลินิกรักษาสัตว์ 2 สาขาในกระบี่"),
+        });
+    });
+    on("2026-10-20", "ส่งลิงก์ความต้องการให้ shop_alert (งาน L · ยังไม่ตอบ)", async () => {
+        await as(owner, "POST", "/V1/order-links", { ol_kind: "fastwork", ol_project_id: state.L.projectId, ol_assignee_id: ids.users[owner], category_ids: [] });
+    });
+
     on("2026-10-23", "kbi_bakery เลือกขอบเขตงาน (รอตรวจ)", async () => {
         const link = await as(owner, "POST", "/V1/order-links", { ol_kind: "fastwork", ol_buyer_name: "kbi_bakery", ol_assignee_id: ids.users[owner], category_ids: [] });
         setToday("2026-10-23", 14, 20);

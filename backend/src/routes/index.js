@@ -29,6 +29,7 @@ const { registerCreditNoteRoutes } = require("./credit-note.routes");
 const { registerBillingNoteRoutes } = require("./billing-note.routes");
 const { registerReceiptRoutes } = require("./receipt.routes");
 const { registerFinanceRoutes } = require("./finance.routes");
+const { registerRenewalRoutes } = require("./renewal.routes");
 const { registerPurchasingRoutes } = require("./purchasing.routes");
 const { registerExpenseRoutes } = require("./expense.routes");
 const { registerPaymentRoutes } = require("./payment.routes");
@@ -150,6 +151,8 @@ router.get(
 );
 router.get("/V1/projects/:id", requireAuth, requireProjectMember, projectController.getOne);
 router.get("/V1/projects/:id/my-permissions", requireAuth, requireProjectMember, projectController.getMyPermissions);
+// ต่อไปต้องทำ (2026-10-31) — สมาชิก หรือผู้ดูทุกโปรเจกต์ · เรื่องเงินคัดตามสิทธิ์ระบบใน service
+router.get("/V1/projects/:id/next-steps", requireAuth, requireProjectMember, projectController.nextSteps);
 router.put(
     "/V1/projects/:id", requireAuth, requireProjectMember,
     requireProjectPermission("editProjectInfo"), projectController.update
@@ -297,6 +300,7 @@ registerCreditNoteRoutes(router);
 registerBillingNoteRoutes(router);
 registerReceiptRoutes(router);
 registerFinanceRoutes(router);
+registerRenewalRoutes(router);
 registerPurchasingRoutes(router);
 registerExpenseRoutes(router);
 registerPaymentRoutes(router);

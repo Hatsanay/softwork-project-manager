@@ -76,6 +76,9 @@ export const MENU_DEFS: MenuItem[] = [
             { key: "viewInvoices", label: "ใบลดหนี้", href: "/sales/credit-notes" },
             { key: "viewReceipts", label: "ใบเสร็จรับเงิน", href: "/sales/receipts" },
             { key: "viewReceipts", label: "ลูกหนี้คงค้าง", href: "/sales/receivables" },
+            // ต่ออายุบริการ (2026-10-31): ลูกค้าตรง = สิทธิ์ออกใบแจ้งหนี้ · ผู้ซื้อ Fastwork = จัดการ Fastwork (เมนูซ่อนที่ href เดียวกัน)
+            { key: "createInvoice", label: "ต่ออายุบริการ", href: "/sales/renewals" },
+            { key: "manageFastwork", label: "ต่ออายุบริการ", href: "/sales/renewals", hidden: true },
             { key: "productManagement", label: "สินค้า/บริการ", href: "/sales/products" },
         ],
     },

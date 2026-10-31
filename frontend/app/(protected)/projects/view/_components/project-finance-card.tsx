@@ -268,7 +268,7 @@ export default function ProjectFinanceCard({ projectId }: { projectId: string })
         "เห็นเฉพาะผู้มีสิทธิ์ดูใบแจ้งหนี้ · ยอดรวมเป็นบาท (สกุลต่างประเทศคิดตามอัตราของเอกสาร) · ออกบิล = ใบแจ้งหนี้ที่ออกแล้ว ไม่นับร่าง/ยกเลิก";
 
     return (
-        <SectionCard icon={Wallet} title="การเงิน" description={description}>
+        <SectionCard id="project-finance" icon={Wallet} title="การเงิน" description={description}>
             {loadError && (
                 <StatusBanner tone="error" title="โหลดข้อมูลการเงินไม่สำเร็จ">
                     {loadError.message}

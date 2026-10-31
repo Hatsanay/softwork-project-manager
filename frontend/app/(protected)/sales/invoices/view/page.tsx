@@ -1002,8 +1002,10 @@ function RelatedCard({ detail }: { detail: InvoiceDetail }) {
         currency,
         credit_notes: creditNotes,
         debit_notes: debitNotes,
+        renewal_cycles: renewalCycles,
     } = detail;
     const hasAnything =
+        renewalCycles.length > 0 ||
         invoice.inv_quotation_id ||
         invoice.inv_project_id ||
         billingNote ||
@@ -1016,6 +1018,27 @@ function RelatedCard({ detail }: { detail: InvoiceDetail }) {
     return (
         <section className={`grid gap-2 p-5 text-sm ${CARD_CLASS}`}>
             <h2 className="text-base font-medium text-gray-900">เอกสารที่เกี่ยวข้อง</h2>
+            {renewalCycles.length > 0 && (
+                <div className="grid gap-1">
+                    <p>
+                        จาก{" "}
+                        <Link href="/sales/renewals?tab=all" className="py-2 text-blue-600 hover:underline">
+                            รายการต่ออายุบริการ
+                        </Link>{" "}
+                        {renewalCycles.length} รายการ
+                    </p>
+                    <ul className="grid gap-0.5 text-xs text-gray-600">
+                        {renewalCycles.map((cycle) => (
+                            <li key={`${cycle.rnw_id}-${cycle.rnc_period_start}`} className={cycle.rnc_status === "void" ? "line-through" : ""}>
+                                {cycle.rnw_label || cycle.product_name} · {formatDateOnly(cycle.rnc_period_start)} - {formatDateOnly(cycle.rnc_period_end)}
+                            </li>
+                        ))}
+                    </ul>
+                    <FieldHint>
+                        ยกเลิกใบหรือลบร่างแล้ว รอบนั้นกลับเป็นยังไม่ออก · ออกใหม่จากหน้าต่ออายุบริการ (ปุ่มออกใหม่แทนไม่ผูกรอบให้)
+                    </FieldHint>
+                </div>
+            )}
             {invoice.inv_reference_invoice_id && (
                 <p>
                     เพิ่มหนี้จากใบแจ้งหนี้{" "}

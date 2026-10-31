@@ -45,6 +45,7 @@ type PackageForm = {
     pkg_category_id: string;
     pkg_status: ActiveStatus;
     pkg_is_public: boolean;
+    pkg_renewal_product_id: string;
     items: PackageItemForm[];
     addon_rules: AddonRuleForm[];
 };
@@ -65,6 +66,7 @@ function emptyForm(): PackageForm {
         pkg_category_id: "",
         pkg_status: "active",
         pkg_is_public: false,
+        pkg_renewal_product_id: "",
         items: [emptyItem("item")],
         addon_rules: [],
     };
@@ -77,6 +79,7 @@ function toForm(productPackage: ProductPackage): PackageForm {
         pkg_category_id: productPackage.pkg_category_id ?? "",
         pkg_status: productPackage.pkg_status,
         pkg_is_public: Boolean(productPackage.pkg_is_public),
+        pkg_renewal_product_id: productPackage.pkg_renewal_product_id ?? "",
         items: productPackage.items.map((item) => ({
             rowKey: newRowKey(),
             pki_type: item.pki_type,
@@ -101,6 +104,7 @@ function toPayload(form: PackageForm) {
         pkg_category_id: form.pkg_category_id,
         pkg_status: form.pkg_status,
         pkg_is_public: form.pkg_is_public,
+        pkg_renewal_product_id: form.pkg_renewal_product_id || null,
         items: form.items.map((item) => ({
             pki_type: item.pki_type,
             pki_product_id: item.pki_product_id || null,
@@ -272,6 +276,8 @@ export default function PackagesTab({ categories, canEdit, onOpenQuestions }: Pa
 
     const choices = mergeChoices(referencedProducts, activeProducts);
     // งานเพิ่มแบบ % ใส่ในชุดไม่ได้ (backend ไม่รับ) ไม่ให้เลือกในแถว · กติกางานเพิ่มยังเลือกได้
+    // บริการที่รวมรอบแรกในแพ็ก = สินค้าที่ตั้งรอบต่ออายุไว้ (2026-10-31)
+    const renewalChoices = choices.filter((product) => Boolean(product.product_renewal_months));
     const rowChoices = choices.filter(
         (product) => !("product_price_mode" in product) || product.product_price_mode !== "percent",
     );
@@ -481,6 +487,31 @@ export default function PackagesTab({ categories, canEdit, onOpenQuestions }: Pa
                             products={rowChoices}
                             fieldErrors={fieldErrors}
                         />
+                        <FormField
+                            label="รวมรอบแรกของบริการรายรอบ"
+                            htmlFor="pkg_renewal_product_id"
+                            hint={
+                                renewalChoices.length === 0
+                                    ? "ยังไม่มีสินค้าที่ตั้ง ต่ออายุทุก ไว้ (แก้ได้ที่แท็บสินค้า/บริการ)"
+                                    : "เช่น แพ็กให้โฮสติ้งปีแรกฟรี · ลูกค้าตอบรับใบที่มีแพ็กนี้ ระบบตั้งต่ออายุให้ ครบหลังรอบแรก"
+                            }
+                            error={fieldErrors.pkg_renewal_product_id}
+                        >
+                            <select
+                                id="pkg_renewal_product_id"
+                                value={form.pkg_renewal_product_id}
+                                disabled={renewalChoices.length === 0 && !form.pkg_renewal_product_id}
+                                onChange={(event) => editor.updateField("pkg_renewal_product_id", event.target.value)}
+                                className={inputClass(Boolean(fieldErrors.pkg_renewal_product_id))}
+                            >
+                                <option value="">ไม่มี</option>
+                                {renewalChoices.map((product) => (
+                                    <option key={product.product_id} value={product.product_id}>
+                                        {product.product_name}
+                                    </option>
+                                ))}
+                            </select>
+                        </FormField>
                     </DrawerSection>
 
                     <DrawerSection number={3} title="หน้าร้าน" description="ลิงก์เลือกบริการที่ส่งให้ลูกค้า">

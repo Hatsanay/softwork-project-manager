@@ -101,6 +101,8 @@ TRUNCATE TABLE `tb_project_member_positions`;
 TRUNCATE TABLE `tb_project_members`;
 TRUNCATE TABLE `tb_project_positions`;
 TRUNCATE TABLE `tb_project_shares`;
+TRUNCATE TABLE `tb_renewal_cycles`;
+TRUNCATE TABLE `tb_renewals`;
 TRUNCATE TABLE `tb_projects`;
 TRUNCATE TABLE `tb_quotation_approvals`;
 TRUNCATE TABLE `tb_quotation_items`;

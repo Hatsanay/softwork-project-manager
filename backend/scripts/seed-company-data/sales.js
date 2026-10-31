@@ -160,6 +160,7 @@ module.exports = {
     sendQuotation,
     acceptQuotation,
     invoiceMilestone,
+    issueIfDraft,
     manualInvoice,
     debitNote,
     creditNote,

@@ -175,6 +175,8 @@ async function setupCompany({ pool, permissionKeys, generateDailyId, password })
             product_category_id: categoryIds[product.category],
             product_status: "active",
             product_is_public: Boolean(product.isPublic),
+            // บริการรายรอบ (2026-10-31): ลูกค้าตอบรับใบที่มีสินค้านี้ = ระบบตั้งต่ออายุให้
+            product_renewal_months: product.renewalMonths ?? null,
         });
         ids.products[product.key] = { id: created.product_id, ...product };
     }

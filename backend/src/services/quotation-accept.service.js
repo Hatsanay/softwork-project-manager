@@ -180,13 +180,23 @@ async function acceptQuotation(conn, quotationId, choice, actor, { isCustomerAcc
     }
 
     const taskCount = projectId && choice.create_tasks ? await createTasksFromItems(conn, quotation, projectId) : 0;
+    // บริการรายรอบ (2026-10-31): ตั้งต่ออายุจากสินค้ารายรอบ/แพ็กที่รวมรอบแรก · ตอบรับครั้งเดียวต่อใบ (สถานะเปลี่ยนเป็น accepted ข้างล่าง)
+    // โหลดตอนเรียกใช้ (กันวงจร require)
+    const renewalService = require("./renewal.service");
+    const renewalCount = await renewalService.createFromQuotation(
+        conn,
+        quotation,
+        projectId,
+        actor.user_id,
+        isFastworkTakeJob ? "fastwork" : "direct",
+    );
 
     await conn.query(
         `UPDATE tb_quotations SET qt_status = 'accepted', qt_responded_at = NOW(), qt_project_id = ?, qt_version = qt_version + 1
          WHERE qt_id = ?`,
         [projectId, quotationId],
     );
-    return { qt_id: quotationId, project_id: projectId, task_count: taskCount };
+    return { qt_id: quotationId, project_id: projectId, task_count: taskCount, renewal_count: renewalCount };
 }
 
 module.exports = { acceptQuotation, listProjectOptions, taskTitleFrom, insertTasksFromRows };

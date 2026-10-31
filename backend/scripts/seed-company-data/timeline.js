@@ -12,6 +12,7 @@ const { scheduleAttendance } = require("./timeline-attendance");
 const { scheduleCollaboration } = require("./timeline-collab");
 const { scheduleExtras, insertExchangeRates, addProductPackages } = require("./timeline-extras");
 const { scheduleOrderLinks } = require("./order-links");
+const { scheduleNextStepScenarios } = require("./timeline-next-steps");
 const { weekdayIndex } = require("../../src/shared/payroll-math.mjs");
 
 const LAST_DAY = "2026-10-23";
@@ -50,6 +51,8 @@ async function runTimeline({ ids, pool }) {
     scheduleCollaboration({ on, state });
     scheduleExtras({ on, ids, state });
     scheduleOrderLinks({ on, ids, state, sales });
+    // หลัง scheduleProjects: เหตุการณ์วันสุดท้ายต้องรันหลังตั้งความคืบหน้างาน (2026-10-31 · ต่อไปต้องทำ N-4)
+    scheduleNextStepScenarios({ on, ids, state, lastDay: LAST_DAY });
 
     // ก่อนเริ่มเหตุการณ์ (1 เม.ย.): อัตราแลกเปลี่ยนที่ ธปท. ประกาศ · ชุดรายการสินค้าเพิ่ม
     await insertExchangeRates(pool, { addDays, isWorkday });

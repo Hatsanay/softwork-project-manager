@@ -48,7 +48,7 @@ async function listPackages(conn) {
 async function listPackageRows(conn) {
     const [rows] = await conn.query(
         `SELECT k.pkg_id, k.pkg_name, k.pkg_description, k.pkg_category_id, c.pc_name AS category_name, k.pkg_status,
-                k.pkg_is_public, k.pkg_image_url, k.pkg_updated_at,
+                k.pkg_is_public, k.pkg_image_url, k.pkg_renewal_product_id, k.pkg_updated_at,
                 (SELECT COUNT(*) FROM tb_product_package_items i WHERE i.pki_package_id = k.pkg_id) AS item_count,
                 (SELECT COUNT(*) FROM tb_product_package_items i
                    JOIN tb_products p ON p.product_id = i.pki_product_id
@@ -67,7 +67,8 @@ async function listPackageRows(conn) {
  */
 async function findPackage(conn, packageId) {
     const [[productPackage]] = await conn.query(
-        `SELECT pkg_id, pkg_name, pkg_description, pkg_category_id, pkg_status, pkg_is_public, pkg_image_url FROM tb_product_packages WHERE pkg_id = ?`,
+        `SELECT pkg_id, pkg_name, pkg_description, pkg_category_id, pkg_status, pkg_is_public, pkg_image_url, pkg_renewal_product_id
+         FROM tb_product_packages WHERE pkg_id = ?`,
         [packageId],
     );
     if (!productPackage) {
@@ -149,13 +150,26 @@ async function insertItems(conn, packageId, items) {
  * @param {import("mysql2/promise").PoolConnection} conn
  * @param {object} productPackage ผ่าน productPackageSchema แล้ว
  */
+/** บริการที่รวมรอบแรกในแพ็ก ต้องเป็นสินค้าที่ตั้งรอบต่ออายุไว้แล้ว (2026-10-31) */
+async function assertRenewalProduct(conn, productId) {
+    if (!productId) return;
+    const [[product]] = await conn.query("SELECT product_renewal_months FROM tb_products WHERE product_id = ?", [productId]);
+    if (!product || product.product_renewal_months === null) {
+        throw new AppError(400, "VALIDATION", "บริการที่รวมรอบแรกต้องเป็นสินค้าที่ตั้งรอบต่ออายุไว้", {
+            pkg_renewal_product_id: "เลือกสินค้าที่ตั้ง ต่ออายุทุก ไว้แล้ว (แก้ได้ที่แท็บสินค้า/บริการ)",
+        });
+    }
+}
+
 async function createPackage(conn, productPackage) {
     await assertCategoryExists(conn, productPackage.pkg_category_id, "pkg_category_id");
     await assertProductsExist(conn, productPackage.items);
+    await assertRenewalProduct(conn, productPackage.pkg_renewal_product_id);
 
     const packageId = await generateDailyId("tb_product_packages", "pkg_id", "PKG");
     await conn.query(
-        "INSERT INTO tb_product_packages (pkg_id, pkg_name, pkg_description, pkg_category_id, pkg_status, pkg_is_public) VALUES (?, ?, ?, ?, ?, ?)",
+        `INSERT INTO tb_product_packages (pkg_id, pkg_name, pkg_description, pkg_category_id, pkg_status, pkg_is_public, pkg_renewal_product_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
             packageId,
             productPackage.pkg_name,
@@ -163,6 +177,7 @@ async function createPackage(conn, productPackage) {
             productPackage.pkg_category_id,
             productPackage.pkg_status,
             productPackage.pkg_is_public ? 1 : 0,
+            productPackage.pkg_renewal_product_id,
         ],
     );
     await insertItems(conn, packageId, productPackage.items);
@@ -185,15 +200,19 @@ async function updatePackage(conn, packageId, productPackage) {
     }
     await assertCategoryExists(conn, productPackage.pkg_category_id, "pkg_category_id");
     await assertProductsExist(conn, productPackage.items);
+    await assertRenewalProduct(conn, productPackage.pkg_renewal_product_id);
 
     await conn.query(
-        "UPDATE tb_product_packages SET pkg_name = ?, pkg_description = ?, pkg_category_id = ?, pkg_status = ?, pkg_is_public = ? WHERE pkg_id = ?",
+        `UPDATE tb_product_packages SET pkg_name = ?, pkg_description = ?, pkg_category_id = ?, pkg_status = ?, pkg_is_public = ?,
+                pkg_renewal_product_id = ?
+         WHERE pkg_id = ?`,
         [
             productPackage.pkg_name,
             productPackage.pkg_description,
             productPackage.pkg_category_id,
             productPackage.pkg_status,
             productPackage.pkg_is_public ? 1 : 0,
+            productPackage.pkg_renewal_product_id,
             packageId,
         ],
     );

@@ -864,6 +864,8 @@ async function deleteDraft(conn, invoiceId, expectedVersion) {
         throw wrongStatus('ลบได้เฉพาะร่าง · ใบที่ออกแล้วให้ใช้ "ยกเลิก" แทน');
     }
     assertVersion(existing, expectedVersion);
+    // ร่างที่ออกจากหน้าต่ออายุ: รอบกลับเป็นยังไม่ออก วันครบถอยกลับ (2026-10-31) · โหลดตอนเรียกใช้ กันวงจร require
+    await require("./renewal.service").voidByInvoice(conn, invoiceId);
     await conn.query("DELETE FROM tb_invoices WHERE inv_id = ?", [invoiceId]);
 }
 
@@ -1324,6 +1326,8 @@ async function getInvoiceDetail(conn, invoiceId, actor) {
         debit_notes: debitNotes,
         debit_comparison: debitComparison,
         reissued_to: reissuedTo ?? null,
+        // รอบต่ออายุที่ใบนี้เก็บ (2026-10-31)
+        renewal_cycles: await require("./renewal.service").cyclesOfInvoice(conn, invoiceId),
         payment: await buildPayment(conn, invoice),
         actions,
         readiness: invoice.inv_status === "draft" ? buildReadiness(invoice, items, currency) : [],
@@ -1413,6 +1417,7 @@ function buildReadiness(invoice, items, currency) {
 }
 
 module.exports = {
+    draftDefaults,
     createFromQuotation,
     createManual,
     createDebitNote,
