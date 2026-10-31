@@ -396,7 +396,8 @@
         "status": 201,
         "body": {
             "project_id": "string",
-            "project_share_token": "string"
+            "project_share_token": "string",
+            "task_count": "number"
         }
     },
     "รายการโปรเจกต์": {

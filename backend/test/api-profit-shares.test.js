@@ -134,6 +134,28 @@ test("ส่วนแบ่งงาน Fastwork: ตั้ง → เบิก 
     assert.deepEqual(estimate.estimate.lines.map((line) => line.amount), ["1000.00", "2520.00", "1921.50"]);
     assert.equal(estimate.estimate.company_amount, "1858.50");
 
+    // ถ้าเงินเข้าครบ: งวด 2 (5,000) ยังไม่บันทึก = หักค่าธรรมเนียมตามอัตราที่ตั้งไว้ · แบ่งด้วยสูตรเดียวกัน
+    const settings = expectStatus(await as(people.owner, "GET", "/V1/fastwork/settings"), 200);
+    const expectedFee = Math.round(5000 * Number(settings.cs_fastwork_fee_rate)) / 100;
+    const expectedFeeVat = Math.round(expectedFee * Number(settings.cs_fastwork_fee_vat_rate)) / 100;
+    const expectedDistributable = 7300 + 5000 - expectedFee - expectedFeeVat;
+    assert.equal(estimate.expected.remaining_revenue, "5000.00");
+    assert.equal(estimate.expected.revenue, "15000.00");
+    assert.equal(Number(estimate.expected.distributable), expectedDistributable);
+    const expectedSplit = splitProfit({
+        distributable: BigInt(Math.round(expectedDistributable * 100)),
+        shares: [
+            { kind: "fixed", percent: null, amount: "1000" },
+            { kind: "percent", percent: "40", amount: null },
+            { kind: "percent", percent: "30.5", amount: null },
+        ],
+    });
+    assert.deepEqual(
+        estimate.expected.lines.map((line) => Math.round(Number(line.amount) * 100)),
+        expectedSplit.amounts.map(Number),
+        "ส่วนแบ่งถ้าเงินเข้าครบ ใช้สูตรเดียวกับประมาณการ",
+    );
+
     // เบิกล่วงหน้า: ต้องอยู่ในรายชื่อ · เอาคนที่เบิกแล้วออกไม่ได้
     const advanceBody = { recipient_type: "user", recipient_id: people.dev1.userId, amount: "1000", paid_date: today, bank_account_id: bankAccountId };
     expectStatus(await as(people.owner, "POST", `/V1/profit-shares/projects/${projectId}/advances`, { ...advanceBody, recipient_id: people.owner.userId }), 400);

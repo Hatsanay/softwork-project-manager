@@ -240,6 +240,7 @@ const ENTITIES = [
     { re: /^\/fastwork\/settings$/, type: "fastwork", label: { PUT: "ตั้งอัตราค่าธรรมเนียม Fastwork" } },
     { re: /^\/fastwork\/projects$/, type: "project", table: "tb_projects", pk: "project_id", id: "response:project_id", project: "response:project_id", label: { POST: "สร้างงาน Fastwork" } },
     { re: /^\/fastwork\/projects\/([^/]+)$/, type: "project", table: "tb_projects", pk: "project_id", id: "1", project: "1", label: { PUT: "แก้งวดงาน Fastwork" } },
+    { re: /^\/fastwork\/projects\/([^/]+)\/milestones$/, type: "project", id: "1", project: "1", label: { POST: "เพิ่มงวดงาน Fastwork (ลูกค้าจ้างเพิ่ม)" } },
     { re: /^\/fastwork\/projects\/([^/]+)\/milestones\/[^/]+\/delivered$/, type: "project", id: "1", project: "1", label: { POST: "ส่งงานงวด Fastwork" } },
     { re: /^\/fastwork\/payouts$/, type: "fastwork_payout", id: "response:fwp_id", label: { POST: "บันทึกเงินจาก Fastwork" } },
     { re: /^\/fastwork\/payouts\/([^/]+)\/receive$/, type: "fastwork_payout", id: "1", label: { POST: "ยืนยันเงินเข้าจาก Fastwork" } },

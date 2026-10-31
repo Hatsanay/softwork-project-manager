@@ -2,6 +2,7 @@
 // ต้นฉบับอยู่ที่ backend/src/shared/ — สำเนาใน frontend/lib/shared/ สร้างด้วย `npm run sync-shared` ห้ามแก้ที่สำเนา
 import { z } from "zod";
 import { decimalText, integerInRange, optionalDate, optionalText, requiredDate, requiredText } from "./common.mjs";
+import { catalogTasksField } from "./project.mjs";
 
 export const MAX_FASTWORK_MILESTONES = 20;
 const MAX_AMOUNT = "99999999.99";
@@ -49,6 +50,8 @@ export const fastworkProjectSchema = z
         milestones: milestonesField,
         // รับงานจากคำขอบริการ (S-5) · ว่าง = รับงานปกติ
         service_request_id: optionalText("คำขอบริการ", 18),
+        // งานจากสินค้าที่เลือก (2026-10-31) · รับจากคำขอ = คำขอสร้างงานให้แล้ว ส่งซ้ำไม่ได้
+        tasks: catalogTasksField,
     })
     .superRefine((project, context) => {
         if (!project.client_id && !project.client_name) {
@@ -57,6 +60,9 @@ export const fastworkProjectSchema = z
         if (project.project_start_date && project.project_due_date && project.project_due_date < project.project_start_date) {
             context.addIssue({ code: "custom", path: ["project_due_date"], message: "กำหนดส่งต้องไม่ก่อนวันเริ่ม" });
         }
+        if (project.service_request_id && project.tasks.length > 0) {
+            context.addIssue({ code: "custom", path: ["tasks"], message: "รับงานจากคำขอ ระบบสร้างงานจากรายการในคำขอให้แล้ว · ไม่ต้องเลือกสินค้าเพิ่ม" });
+        }
     });
 
 /** แก้ข้อมูล Fastwork ของโปรเจกต์ + งวดงานทั้งชุด */
@@ -64,6 +70,12 @@ export const fastworkProjectUpdateSchema = z.object({
     project_fastwork_order_no: optionalText("เลขคำสั่งซื้อ", 50),
     project_fastwork_url: fastworkUrl,
     milestones: milestonesField,
+});
+
+/** เพิ่มงวดต่อท้ายงาน Fastwork เดิม (ลูกค้าจ้างเพิ่ม 2026-10-31) · งานในโปรเจกต์เพิ่มได้พร้อมกัน (ไม่บังคับ) */
+export const fastworkAddMilestonesSchema = z.object({
+    milestones: milestonesField,
+    tasks: catalogTasksField,
 });
 
 const payoutAmounts = {

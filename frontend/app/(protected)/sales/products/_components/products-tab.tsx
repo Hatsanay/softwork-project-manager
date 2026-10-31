@@ -169,9 +169,11 @@ export default function ProductsTab({ categories, canEdit, onOpenQuestions }: Pr
             updateSchema: productSchema,
             createPath: "/products",
             updatePath: (productId) => `/products/${productId}`,
-            // แบบ %: ราคาตั้งต้นไม่ใช้ (ส่ง 0)
+            // แบบ %: ราคาตั้งต้นไม่ใช้ (ส่ง 0) · ราคาตายตัว: ไม่ส่งช่อง % ที่ซ่อนอยู่ (ค่าค้างจากตอนสลับโหมดไม่ทำให้บันทึกไม่ได้)
             toPayload: (currentForm) =>
-                currentForm.product_price_mode === "percent" ? { ...currentForm, product_price: "0" } : currentForm,
+                currentForm.product_price_mode === "percent"
+                    ? { ...currentForm, product_price: "0" }
+                    : { ...currentForm, product_percent: "" },
         });
     }
 

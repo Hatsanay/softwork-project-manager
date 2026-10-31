@@ -12,6 +12,7 @@ const { addDays } = require("../shared/payroll-math.mjs");
 const { parseHundredths, formatHundredths } = require("../shared/money.mjs");
 const { payoutNetOf } = require("../shared/fastwork-math.mjs");
 const { clientSchema } = require("../shared/schemas/client.mjs");
+const { MAX_FASTWORK_MILESTONES } = require("../shared/schemas/fastwork.mjs");
 const { insertProject } = require("./project.service");
 const clientService = require("./client.service");
 
@@ -94,6 +95,34 @@ async function insertMilestones(conn, projectId, milestones, user, startOrder = 
     }
 }
 
+/**
+ * ลูกค้าจ้างเพิ่มในงานเดิม (2026-10-31 · จากตัวคิดราคา): งวดใหม่ต่อท้ายงวดเดิม + งานในโปรเจกต์ (ถ้าส่งมา)
+ * งานที่ปิดแล้วเพิ่มไม่ได้ (เปิดงานใหม่แทน) · ปิดยอดส่วนแบ่งแล้วเพิ่มงวดได้ แต่บันทึกเงินไม่ได้จนกว่าจะยกเลิกการปิดยอด → คืน shares_settled ให้หน้าเว็บเตือน
+ */
+async function addMilestones(conn, user, projectId, input) {
+    await lockFastworkProject(conn, projectId);
+    const [[project]] = await conn.query("SELECT project_status FROM tb_projects WHERE project_id = ?", [projectId]);
+    if (["completed", "cancelled"].includes(project.project_status)) {
+        throw new AppError(409, "PROJECT_CLOSED", "งานนี้ปิดแล้ว เพิ่มงวดไม่ได้ · ลูกค้าจ้างเพิ่มหลังจบงาน ให้รับเป็นงานใหม่");
+    }
+    const [[{ lastOrder, milestoneCount }]] = await conn.query(
+        "SELECT COALESCE(MAX(fwm_order), 0) AS lastOrder, COUNT(*) AS milestoneCount FROM tb_fastwork_milestones WHERE fwm_project_id = ?",
+        [projectId],
+    );
+    if (Number(milestoneCount) + input.milestones.length > MAX_FASTWORK_MILESTONES) {
+        throw validationError({ milestones: `งานหนึ่งมีงวดได้ไม่เกิน ${MAX_FASTWORK_MILESTONES} งวด (ตอนนี้มี ${milestoneCount} งวด)` });
+    }
+    await insertMilestones(conn, projectId, input.milestones, user, Number(lastOrder) + 1);
+    // require ตอนใช้: quotation-accept → quotation.service → fastwork.service วนกัน
+    const { insertTasksFromRows } = require("./quotation-accept.service");
+    const taskCount = input.tasks.length > 0 ? await insertTasksFromRows(conn, projectId, input.tasks, "จ้างเพิ่มผ่าน Fastwork (ตัวคิดราคา)") : 0;
+    const [[settled]] = await conn.query(
+        "SELECT sst_id FROM tb_share_settlements WHERE sst_project_id = ? AND sst_status = 'settled' LIMIT 1",
+        [projectId],
+    );
+    return { project_id: projectId, milestone_count: input.milestones.length, task_count: taskCount, shares_settled: Boolean(settled) };
+}
+
 /** สร้างโปรเจกต์จากงาน Fastwork — ผู้สร้างเป็น PM (insertProject) · สถานะกำลังทำ (รับงานแล้ว) */
 async function createProject(conn, user, input) {
     const clientId = await resolveClient(conn, input);
@@ -120,7 +149,13 @@ async function createProject(conn, user, input) {
         const serviceRequestService = require("./service-request.service");
         await serviceRequestService.attachFastworkRequest(conn, user, input.service_request_id, projectId, { isNewProject: true });
     }
-    return { project_id: projectId, client_id: clientId };
+    // งานจากสินค้าที่เลือก (2026-10-31) · schema กันส่งพร้อมคำขอแล้ว (คำขอสร้างงานให้เอง)
+    let taskCount = 0;
+    if (input.tasks.length > 0) {
+        const { insertTasksFromRows } = require("./quotation-accept.service");
+        taskCount = await insertTasksFromRows(conn, projectId, input.tasks, "จากสินค้าที่เลือกตอนรับงาน Fastwork");
+    }
+    return { project_id: projectId, client_id: clientId, task_count: taskCount };
 }
 
 /** แก้เลขคำสั่งซื้อ/ลิงก์ + งวดงานทั้งชุด — งวดที่มีเงินบันทึกแล้วลบไม่ได้ */
@@ -536,6 +571,7 @@ module.exports = {
     updateSettings,
     createProject,
     updateProject,
+    addMilestones,
     setDelivered,
     listPayouts,
     findPayout,

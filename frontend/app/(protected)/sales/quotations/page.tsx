@@ -2,7 +2,7 @@
 
 // รายการใบเสนอราคา (2026-10-13 ขั้น 1A-3) — แท็บตามสถานะ · ค้นหาเลข/ชื่อเรื่อง/ลูกค้า · ป้าย "รอคุณอนุมัติ"
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Plus } from "lucide-react";
 import DataTable, { type Column } from "@/components/ui/datatable/datatable";
 import PageHeader from "@/components/ui/page-header";
@@ -46,7 +46,12 @@ export default function QuotationsPage() {
     const router = useRouter();
     const hasBit = usePermission();
     const canCreate = hasBit(BITS.createQuotation);
-    const [tab, setTab] = useState<TabKey>("all");
+    const searchParams = useSearchParams();
+    // ลิงก์จากแดชบอร์ด (?tab=sent) เปิดแท็บนั้นเลย · ค่าที่ไม่รู้จัก = ทั้งหมด
+    const [tab, setTab] = useState<TabKey>(() => {
+        const requested = searchParams.get("tab");
+        return TABS.some((option) => option.value === requested) ? (requested as TabKey) : "all";
+    });
     const [search, setSearch] = useState("");
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);

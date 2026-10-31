@@ -26,6 +26,8 @@ export type WelcomeCardViewProps = {
     hasProjectAccess: boolean;
     // ช่องค้นหา (DashboardSearchView ที่ต่อข้อมูลแล้ว)
     search: ReactNode;
+    // ตัวเลข 4 ช่องใต้คำทักทาย · แดชบอร์ดจริงปิด (ย้ายไปแถบ "ต้องจัดการ" 2026-10-31) · เดโมหน้า login ยังแสดง
+    showCounters?: boolean;
 };
 
 function greetingOf(hour: number) {
@@ -65,7 +67,7 @@ export default function WelcomeCardView(props: WelcomeCardViewProps) {
 
             {props.hasProjectAccess && props.search}
 
-            <div className={`mt-5 grid-cols-2 gap-3 lg:grid-cols-4 ${props.hasProjectAccess ? "grid" : "hidden"}`}>
+            <div className={`mt-5 grid-cols-2 gap-3 lg:grid-cols-4 ${props.hasProjectAccess && props.showCounters !== false ? "grid" : "hidden"}`}>
                 {counters.map((counter) => {
                     const Icon = counter.icon;
                     const content = (

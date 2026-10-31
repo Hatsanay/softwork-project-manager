@@ -3,7 +3,11 @@ const { generateDailyId } = require("../utils/generateDailyId");
 const { generateShareToken } = require("../utils/shareToken");
 const { hasBit } = require("../utils/permissions");
 const { sendProjectMemberAddedEmail, sendClientShareLinkEmail } = require("../utils/mailer");
-const { insertProject } = require("../services/project.service");
+const { insertProject, listTaskCatalog } = require("../services/project.service");
+const { insertTasksFromRows } = require("../services/quotation-accept.service");
+const { validate } = require("../utils/validate");
+const { withTransaction } = require("../utils/with-transaction");
+const { projectCreateTasksSchema } = require("../shared/schemas/project.mjs");
 
 async function getAll(req, res, next) {
     try {
@@ -80,14 +84,32 @@ async function create(req, res, next) {
             return res.status(400).json({ message: "รูปแบบโปรเจกต์ไม่ถูกต้อง" });
         }
 
-        // แยกไปที่ services/project.service.js (2026-10-14) — ใช้ร่วมกับตอนลูกค้าตอบรับใบเสนอราคา
-        const { project_id, project_share_token } = await insertProject(
-            pool,
-            { project_name, client_id, project_description, project_status, project_type, project_start_date, project_due_date },
-            req.user.user_id
-        );
+        // งานจากสินค้าที่เลือก (2026-10-31) · ไม่ส่ง = ไม่สร้างงาน
+        const { tasks } = validate(projectCreateTasksSchema, { tasks: req.body.tasks });
 
-        res.status(201).json({ project_id, project_share_token });
+        // แยกไปที่ services/project.service.js (2026-10-14) — ใช้ร่วมกับตอนลูกค้าตอบรับใบเสนอราคา
+        // โปรเจกต์ + งานในธุรกรรมเดียว: สร้างงานไม่สำเร็จ = ไม่มีโปรเจกต์ค้างครึ่งทาง
+        const result = await withTransaction(async (conn) => {
+            const created = await insertProject(
+                conn,
+                { project_name, client_id, project_description, project_status, project_type, project_start_date, project_due_date },
+                req.user.user_id
+            );
+            const taskCount = tasks.length > 0
+                ? await insertTasksFromRows(conn, created.project_id, tasks, "จากสินค้าที่เลือกตอนสร้างโปรเจกต์")
+                : 0;
+            return { ...created, task_count: taskCount };
+        });
+
+        res.status(201).json(result);
+    } catch (err) {
+        next(err);
+    }
+}
+
+async function taskCatalog(req, res, next) {
+    try {
+        res.json(await listTaskCatalog(pool));
     } catch (err) {
         next(err);
     }
@@ -456,7 +478,7 @@ async function removeMember(req, res, next) {
 }
 
 module.exports = {
-    getAll, getOne, create, update, remove, cancel, reactivate,
+    getAll, getOne, create, taskCatalog, update, remove, cancel, reactivate,
     regenerateShareLink, toggleShareEnabled, toggleTaskWeight, sendShareLinkEmail,
     getMembers, addMember, updateMemberPositions, removeMember,
     getMyPermissions,

@@ -4,12 +4,13 @@
 // ไม่ต้องมีใบเสนอราคา · ลูกค้า: พิมพ์ชื่อที่แสดงบน Fastwork ระบบหาลูกค้าเดิมให้เลือก ไม่เจอ = สร้างลูกค้าใหม่จากชื่อ
 // งวดงานตามที่ตกลงบน Fastwork (ราคางวด = ยอดที่ลูกค้าจ่าย ก่อนหักค่าธรรมเนียม) · บันทึกแล้วไปหน้าโปรเจกต์ (ผู้สร้างเป็น PM)
 // ?request=<SVR> (S-5) = รับงานจากคำขอบริการ: เติมชื่องาน ลูกค้า งวด จากคำขอ/ใบภายใน · บันทึกแล้วสร้างงานจากรายการ + ผูกคำขอ
-// ?name=&amount= = มาจากตัวคิดราคา: เติมชื่องานและงวดเดียวเท่ายอดตะกร้า
+// ?name=&amount=&cart= = มาจากตัวคิดราคา: เติมชื่องาน งวดเดียวเท่ายอดตะกร้า และสินค้าที่จะสร้างเป็นงาน (2026-10-31)
+// ไม่ได้รับจากคำขอ: เลือกสินค้า/ชุดรายการ → สร้างงานและงานย่อยพร้อมโปรเจกต์ (คำขอสร้างงานจากรายการให้เองอยู่แล้ว)
 import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, Trash2, UserRoundCheck } from "lucide-react";
+import { ListTree, Plus, Trash2, UserRoundCheck } from "lucide-react";
 import PageHeader from "@/components/ui/page-header";
 import SectionCard from "@/components/ui/section-card";
 import FormField, { inputClass } from "@/components/ui/form-field";
@@ -25,6 +26,8 @@ import { formatAmount, formatHundredths, parseHundredths } from "@/lib/shared/mo
 import { fastworkProjectSchema, MAX_FASTWORK_MILESTONES } from "@/lib/shared/schemas/fastwork.mjs";
 import { todayBangkokText } from "../../people/employees/_card-status";
 import { FASTWORK_MESSAGES } from "../_messages";
+import CatalogTaskPicker, { tasksFromSelection, useTaskCatalog } from "@/components/feature/catalog-task-picker";
+import { selectionFromParam, type CatalogSelection } from "@/lib/catalog-tasks";
 
 type ClientChoice = { client_id: string; client_name: string; client_company: string | null };
 type MilestoneRow = { key: number; fwm_name: string; fwm_amount: string; fwm_due_date: string };
@@ -83,6 +86,8 @@ function NewFastworkJob() {
     const [suggestions, setSuggestions] = useState<ClientChoice[]>([]);
     const [milestones, setMilestones] = useState<MilestoneRow[]>(() => [{ ...emptyMilestone(0, "งานทั้งหมด"), fwm_amount: searchParams.get("amount") ?? "" }]);
     const nextKey = useRef(1);
+    const [selection, setSelection] = useState<CatalogSelection[]>(() => selectionFromParam(searchParams.get("cart")));
+    const { catalog, loadError: catalogError } = useTaskCatalog(!requestId && hasBit(BITS.manageFastwork));
 
     // รับงานจากคำขอ: เติมจากคำขอ (ลูกค้าที่ผูกไว้/ชื่อผู้ซื้อ · งวดจากใบภายใน หรือ 1 งวด = ยอด)
     useEffect(() => {
@@ -147,6 +152,7 @@ function NewFastworkJob() {
             client_name: client ? null : form.client_name,
             milestones: milestones.map(({ fwm_name, fwm_amount, fwm_due_date }) => ({ fwm_name, fwm_amount, fwm_due_date })),
             service_request_id: requestId,
+            tasks: requestId ? [] : tasksFromSelection(selection, catalog),
         };
         const checked = fastworkProjectSchema.safeParse(payload);
         if (!checked.success) {
@@ -155,14 +161,20 @@ function NewFastworkJob() {
         }
         setErrors({});
         setIsSaving(true);
-        const { data, error } = await apiFetch<{ project_id: string }>("/fastwork/projects", { method: "POST", body: checked.data });
+        const { data, error } = await apiFetch<{ project_id: string; task_count: number }>("/fastwork/projects", {
+            method: "POST",
+            body: checked.data,
+        });
         setIsSaving(false);
         if (error) {
             setErrors(error.fields);
             if (Object.keys(error.fields).length === 0) setBannerError(error.message);
             return;
         }
-        toast.success(requestId ? "รับงานแล้ว · สร้างงานจากรายการในคำขอให้แล้ว" : "สร้างงาน Fastwork แล้ว · เพิ่มสมาชิกทีมได้ในหน้าโปรเจกต์");
+        let doneMessage = "สร้างงาน Fastwork แล้ว · เพิ่มสมาชิกทีมได้ในหน้าโปรเจกต์";
+        if (requestId) doneMessage = "รับงานแล้ว · สร้างงานจากรายการในคำขอให้แล้ว";
+        else if (data.task_count > 0) doneMessage = `สร้างงาน Fastwork แล้ว · เพิ่ม ${data.task_count} งานจากสินค้าที่เลือก`;
+        toast.success(doneMessage);
         router.push(`/projects/view?id=${data.project_id}`);
     }
 
@@ -203,6 +215,28 @@ function NewFastworkJob() {
             {bannerError && (
                 <StatusBanner tone="error" title="บันทึกไม่สำเร็จ">
                     {bannerError}
+                </StatusBanner>
+            )}
+            {/* ใช้หน้านี้เมื่อไร (2026-10-31): ผู้ใช้งงว่าเริ่มจากหน้าไหน และถามว่าทำไมไม่มีใบเสนอราคา */}
+            {!requestId && (
+                <StatusBanner tone="info" title="ใช้หน้านี้หลังผู้ซื้อจ่ายบน Fastwork แล้ว">
+                    <span className="grid gap-1">
+                        <span>
+                            มาจากลิงก์ให้ผู้ซื้อ: รับจาก{" "}
+                            <Link href="/sales/service-requests" className="-my-2.5 inline-block py-2.5 text-blue-600 hover:underline">
+                                หน้าคำขอบริการ
+                            </Link>{" "}
+                            แทน (เติมชื่องาน งวด และคำตอบของผู้ซื้อให้)
+                        </span>
+                        <span>
+                            ลูกค้าจ้างเพิ่มในงานที่ยังไม่จบ: ใช้{" "}
+                            <Link href="/fastwork/price" className="-my-2.5 inline-block py-2.5 text-blue-600 hover:underline">
+                                ตัวคิดราคา
+                            </Link>{" "}
+                            › &quot;เพิ่มเป็นงวดของงานเดิม&quot; · งานจบแล้วค่อยรับเป็นงานใหม่ที่นี่
+                        </span>
+                        <span>ไม่ต้องออกใบเสนอราคา/ใบแจ้งหนี้/ใบเสร็จในระบบ: Fastwork ออกให้ผู้ซื้อเอง · ในระบบบันทึกเงินเข้าแต่ละงวดแทน</span>
+                    </span>
                 </StatusBanner>
             )}
             {requestId && plan && (
@@ -358,6 +392,23 @@ function NewFastworkJob() {
                     </FormField>
                 </div>
             </SectionCard>
+
+            {!requestId && (
+                <SectionCard
+                    title="สร้างงานจากสินค้า (ไม่บังคับ)"
+                    description="เลือกสิ่งที่ผู้ซื้อจ้าง ระบบสร้างงานและงานย่อยในโปรเจกต์ให้ตอนบันทึก · ชุดรายการเป็นงานหลัก รายการในชุดเป็นงานย่อย"
+                    icon={ListTree}
+                >
+                    {errors.tasks && <FieldHint error={errors.tasks} />}
+                    <CatalogTaskPicker
+                        id="fastwork_task_catalog"
+                        catalog={catalog}
+                        loadError={catalogError}
+                        selection={selection}
+                        onChange={setSelection}
+                    />
+                </SectionCard>
+            )}
 
             <SectionCard title="งวดงานและราคา" description={FASTWORK_MESSAGES.milestones}>
                 {errors.milestones && <FieldHint error={errors.milestones} />}

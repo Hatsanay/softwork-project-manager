@@ -1,6 +1,7 @@
 const pool = require("../config/db");
 const { hasBit } = require("../utils/permissions");
 const { currentYearMonthBangkok } = require("../utils/bangkok-time");
+const dashboardBusinessService = require("../services/dashboard-business.service");
 
 // แปลง query param เป็นช่วงวันที่ [start, end) สำหรับกรอง KPI — รับได้ทั้ง "YYYY-MM" (รายเดือน) และ "YYYY" (รายปีทั้งปี)
 // ไม่ใส่มา/ใส่รูปแบบผิด default เป็นเดือนปัจจุบัน
@@ -795,4 +796,13 @@ async function getMemberTasks(req, res, next) {
     }
 }
 
-module.exports = { getSummary, search, getTeamWorkload, getMemberTasks, getKpis, getKpisByMember };
+// ภาพรวมธุรกิจ (2026-10-31): แต่ละส่วนตามสิทธิ์เดิมของหน้านั้น · ไม่มีสิทธิ์ = ไม่มีส่วนนั้นในคำตอบ
+async function getBusiness(req, res, next) {
+    try {
+        res.json(await dashboardBusinessService.businessSummary(pool, req.user.role_permission));
+    } catch (err) {
+        next(err);
+    }
+}
+
+module.exports = { getSummary, search, getTeamWorkload, getMemberTasks, getKpis, getKpisByMember, getBusiness };

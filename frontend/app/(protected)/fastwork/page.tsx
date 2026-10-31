@@ -6,12 +6,12 @@
 // ไม่มีสิทธิ์ทำขั้นไหน การ์ดเป็นสีเทา บอกว่าต้องให้ผู้มีสิทธิ์ทำ (ยังเห็นขั้นตอนครบ)
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Calculator, Link2, Plus, Settings2 } from "lucide-react";
+import { Calculator, Link2, ListPlus, Plus, Settings2, type LucideIcon } from "lucide-react";
 import PageHeader from "@/components/ui/page-header";
 import StatusBanner from "@/components/ui/guidance/status-banner";
 import HowItWorks from "@/components/ui/guidance/how-it-works";
 import EmptyState from "@/components/ui/empty-state";
-import StatusPill, { type PillTone } from "@/components/ui/status-pill";
+import StatusPill from "@/components/ui/status-pill";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { CARD_CLASS } from "@/components/ui/card";
 import { buttonClass } from "@/components/ui/button";
@@ -22,6 +22,7 @@ import { formatDateOnly } from "@/app/function";
 import type { FastworkNextStep, FastworkOverview } from "./_types";
 import FastworkSettingsSheet from "./_components/settings-sheet";
 import { FASTWORK_MESSAGES } from "./_messages";
+import { NEXT_STEP } from "./_next-step";
 
 type Step = {
     number: number;
@@ -39,15 +40,6 @@ type Step = {
 
 const MANAGE_FASTWORK = "ต้องให้ผู้มีสิทธิ์จัดการ Fastwork ทำ";
 const MANAGE_SHARES = "ต้องให้ผู้มีสิทธิ์จัดการส่วนแบ่งกำไรทำ · ส่วนแบ่งของคุณดูได้ที่หน้าส่วนแบ่งของฉัน";
-
-const NEXT_STEP: Record<FastworkNextStep, { label: string; tone: PillTone }> = {
-    work: { label: "กำลังทำงาน", tone: "info" },
-    record: { label: "รอบันทึกเงิน", tone: "wait" },
-    receive: { label: "รอเงินเข้า", tone: "wait" },
-    close: { label: "เงินเข้าครบ พร้อมปิดยอด", tone: "success" },
-    pay: { label: "ปิดยอดแล้ว ค้างจ่ายส่วนแบ่ง", tone: "wait" },
-    done: { label: "จ่ายส่วนแบ่งครบแล้ว", tone: "success" },
-};
 
 const NEXT_STEP_BUTTON: Record<FastworkNextStep, string> = {
     work: "เปิดงาน",
@@ -235,29 +227,46 @@ export default function FastworkPage() {
                 <p>{FASTWORK_MESSAGES.profit}</p>
             </HowItWorks>
 
-            {/* ก่อนรับงาน (S-5): คิดราคาในระบบ หรือส่งลิงก์ให้ผู้ซื้อเลือกขอบเขตเอง · ราคาและการจ่ายเงินอยู่บน Fastwork */}
+            {/* เริ่มรับงาน (ปรับ 2026-10-31): เลือกทางตามสถานการณ์ · ราคาและการจ่ายเงินอยู่บน Fastwork เสมอ */}
             {(canManage || hasBit(BITS.manageServiceRequests)) && (
-                <section aria-labelledby="before-hire-title" className={`grid gap-3 p-4 sm:grid-cols-[1fr_auto] sm:items-center ${CARD_CLASS}`}>
+                <section aria-labelledby="start-job-title" className={`grid gap-3 p-4 sm:p-5 ${CARD_CLASS}`}>
                     <div className="grid gap-0.5">
-                        <h2 id="before-hire-title" className="text-base font-medium text-gray-900">
-                            ก่อนรับงาน (ยังคุยในแชต)
+                        <h2 id="start-job-title" className="text-base font-medium text-gray-900">
+                            เริ่มรับงาน Fastwork
                         </h2>
-                        <p className="text-sm text-gray-500">คิดราคาจากสินค้าในระบบพร้อมเงินเข้าจริงหลังหักค่าธรรมเนียม หรือส่งลิงก์ให้ผู้ซื้อเลือกขอบเขตและตอบคำถามเอง</p>
+                        <p className="text-sm text-gray-500">
+                            เลือกทางตามสถานการณ์ · ทุกทางจบที่ผู้ซื้อจ่ายบน Fastwork แล้วค่อยบันทึกงานในระบบ (Fastwork ออกใบเสร็จให้ผู้ซื้อเอง ไม่ต้องออกใบในระบบ)
+                        </p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                        {canManage && (
-                            <Link href="/fastwork/price" className={buttonClass("secondary", "md")}>
-                                <Calculator size={16} />
-                                ตัวคิดราคา
-                            </Link>
-                        )}
+                    <ul className="grid gap-3 lg:grid-cols-3">
                         {hasBit(BITS.manageServiceRequests) && (
-                            <Link href="/sales/order-links?kind=fastwork" className={buttonClass("secondary", "md")}>
-                                <Link2 size={16} />
-                                ลิงก์ให้ผู้ซื้อ
-                            </Link>
+                            <StartPath
+                                title="ผู้ซื้อยังไม่ชัดว่าต้องการอะไร"
+                                body="ส่งลิงก์ให้เลือกแพ็กและตอบคำถามเอง · จ่ายแล้วรับงานจากหน้าคำขอ (เติมให้ครบ)"
+                                href="/sales/order-links?kind=fastwork"
+                                label="ลิงก์ให้ผู้ซื้อ"
+                                icon={Link2}
+                            />
                         )}
-                    </div>
+                        {canManage && (
+                            <StartPath
+                                title="ผู้ซื้อบอกชัดแล้ว อยากตอบราคาเร็ว"
+                                body="คิดราคาเสนอและเงินเข้าจริง · คัดลอกคำถาม/ขอบเขตไปวางในแชต · จ่ายแล้วกดสร้างงาน"
+                                href="/fastwork/price"
+                                label="ตัวคิดราคา"
+                                icon={Calculator}
+                            />
+                        )}
+                        {canManage && (
+                            <StartPath
+                                title="ลูกค้าจ้างเพิ่มในงานที่ยังไม่จบ"
+                                body="คิดราคาในตัวคิดราคา แล้วกด &quot;เพิ่มเป็นงวดของงานเดิม&quot; · งานจบแล้ว = รับเป็นงานใหม่"
+                                href="/fastwork/price"
+                                label="ตัวคิดราคา"
+                                icon={ListPlus}
+                            />
+                        )}
+                    </ul>
                 </section>
             )}
 
@@ -366,6 +375,20 @@ function StepCard({ step }: { step: Step }) {
                     {body}
                 </Link>
             )}
+        </li>
+    );
+}
+
+/** ทางเริ่มรับงาน: สถานการณ์ · ทำอย่างไร · ปุ่มไปหน้านั้น */
+function StartPath({ title, body, href, label, icon: Icon }: { title: string; body: string; href: string; label: string; icon: LucideIcon }) {
+    return (
+        <li className="grid content-start gap-2 rounded-xl bg-gray-50 p-3">
+            <span className="text-sm font-medium text-gray-900">{title}</span>
+            <span className="text-xs leading-relaxed text-gray-600">{body}</span>
+            <Link href={href} className={buttonClass("secondary", "sm", "justify-self-start")}>
+                <Icon size={15} aria-hidden="true" />
+                {label}
+            </Link>
         </li>
     );
 }

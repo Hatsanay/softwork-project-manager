@@ -69,7 +69,12 @@ export function useRecordEditor<Form extends object>(emptyForm: Form, onSaved: (
         const schema = isEditing ? options.updateSchema : options.createSchema;
         const checked = schema.safeParse(options.toPayload(form));
         if (!checked.success) {
-            setFieldErrors(toFieldErrors(checked.error.issues));
+            const errors = toFieldErrors(checked.error.issues);
+            setFieldErrors(errors);
+            // บอกเสมอว่าบันทึกไม่ผ่าน (2026-10-31): ช่องที่ผิดอาจอยู่นอกจอหรือถูกซ่อน กดแล้วเงียบ = ผู้ใช้คิดว่าปุ่มเสีย
+            const message = `ข้อมูลไม่ถูกต้อง ${Object.keys(errors).length} ช่อง กรุณาแก้ตามข้อความสีแดงใต้ช่อง`;
+            setSaveError({ status: 400, message, code: "VALIDATION", fields: errors, request_id: null });
+            toast.error(message);
             return;
         }
 

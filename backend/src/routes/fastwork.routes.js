@@ -30,6 +30,7 @@ function registerFastworkRoutes(router) {
     router.get("/V1/fastwork/price-catalog", requireAuth, canManage, fastworkController.priceCatalog);
     router.get("/V1/fastwork/projects/:id", requireAuth, requireProjectMember, fastworkController.projectFastwork);
     router.put("/V1/fastwork/projects/:id", requireAuth, canManage, fastworkController.updateProject);
+    router.post("/V1/fastwork/projects/:id/milestones", requireAuth, canManage, fastworkController.addMilestones);
     router.post(
         "/V1/fastwork/projects/:id/milestones/:milestoneId/delivered",
         requireAuth,

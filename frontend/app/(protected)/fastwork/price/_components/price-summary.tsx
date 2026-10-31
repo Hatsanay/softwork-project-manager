@@ -4,7 +4,7 @@
 // ปุ่มสร้างงาน · คัดลอกคำถาม · คัดลอกขอบเขตงาน · มือถือมีแถบล่างบอกราคาเสนอ/เงินเข้าจริง กดไปดูสรุป
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ClipboardCopy, FileText, Trash2, X } from "lucide-react";
+import { ClipboardCopy, FileText, ListPlus, Trash2, X } from "lucide-react";
 import FieldHint from "@/components/ui/guidance/field-hint";
 import { buttonClass } from "@/components/ui/button";
 import { CARD_CLASS } from "@/components/ui/card";
@@ -32,6 +32,7 @@ export default function PriceSummary({
     payout,
     questionCount,
     newJobHref,
+    onAddToJob,
     onRemove,
     onClear,
     onCopyQuestions,
@@ -45,6 +46,8 @@ export default function PriceSummary({
     payout: Payout;
     questionCount: number;
     newJobHref: string;
+    // ลูกค้าจ้างเพิ่มในงานที่กำลังทำอยู่: ต่องวดใหม่ท้ายงานเดิม (แทนการสร้างงานใหม่)
+    onAddToJob: () => void;
     onRemove: (key: string) => void;
     onClear: () => void;
     onCopyQuestions: () => void;
@@ -152,6 +155,15 @@ export default function PriceSummary({
                         สร้างงาน Fastwork จากตะกร้านี้
                     </Link>
                 )}
+                <button
+                    type="button"
+                    className={`${buttonClass("secondary", "md")} min-h-11 justify-center`}
+                    disabled={isEmpty}
+                    onClick={onAddToJob}
+                >
+                    <ListPlus size={16} aria-hidden="true" />
+                    เพิ่มเป็นงวดของงานเดิม
+                </button>
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
                     <button
                         type="button"
@@ -176,7 +188,7 @@ export default function PriceSummary({
             <FieldHint>
                 คำถาม = ข้อที่ลิงก์ Fastwork ถามสำหรับรายการที่เลือก (ข้อที่ถามตามคำตอบ มีเงื่อนไขเขียนกำกับ) ·
                 ขอบเขตงาน = รายการ รายการในแพ็ก และราคารวม สำหรับวางในข้อเสนอ ไม่มีค่าธรรมเนียม ·
-                สร้างงานเมื่อผู้ซื้อจ่ายบน Fastwork แล้ว หน้ารับงานเติมชื่องานและงวดเดียวเท่าราคาเสนอ แบ่งงวดเพิ่มได้
+                กดสร้างงานหรือเพิ่มงวด<strong className="font-medium">หลังผู้ซื้อจ่ายบน Fastwork แล้ว</strong> · งานใหม่ = ลูกค้าใหม่หรืองานเดิมจบแล้ว · งวดของงานเดิม = ลูกค้าจ้างเพิ่มระหว่างงานยังไม่จบ
             </FieldHint>
         </aside>
     );

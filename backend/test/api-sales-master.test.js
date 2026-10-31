@@ -250,6 +250,18 @@ test("สินค้า: รหัสห้ามซ้ำ · ราคาท�
     assert.equal(notPublic.body.total, 1);
     const onStore = await api.callApi("GET", "/V1/products?search=WEB-01&public=yes");
     assert.equal(onStore.body.total, 0);
+
+    // ฟอร์มส่งช่อง % ว่าง ("") ตอนเลือกราคาตายตัว = ไม่ใช้ ต้องบันทึกได้ (2026-10-31: เดิมเงียบเพราะ error อยู่ใต้ช่องที่ซ่อน)
+    const fixedWithEmptyPercent = await api.callApi("POST", "/V1/products", {
+        body: product({ product_name: "ราคาตายตัว ช่อง % ว่าง", product_price_mode: "fixed", product_percent: "" }),
+    });
+    assert.equal(fixedWithEmptyPercent.status, 201, JSON.stringify(fixedWithEmptyPercent.body));
+    assert.equal(fixedWithEmptyPercent.body.product_percent, null);
+    const percentEmpty = await api.callApi("POST", "/V1/products", {
+        body: product({ product_name: "แบบ % ไม่ใส่อัตรา", product_price_mode: "percent", product_percent: "" }),
+    });
+    assert.equal(percentEmpty.status, 400);
+    assert.ok(percentEmpty.body.fields.product_percent);
 });
 
 test("หมวดหมู่: ชื่อห้ามซ้ำ · ลบหมวดแล้วสินค้ากลายเป็นไม่มีหมวด", async () => {

@@ -53,4 +53,41 @@ async function insertProject(conn, project, creatorId) {
     return { project_id: projectId, project_share_token: shareToken };
 }
 
-module.exports = { insertProject };
+/**
+ * สินค้า/ชุดรายการสำหรับสร้างงานตอนสร้างโปรเจกต์ (2026-10-31) — เปิดใช้งานทุกตัว ไม่สนว่าแสดงหน้าร้านไหม
+ * ไม่มีราคา (คนสร้างโปรเจกต์อาจไม่มีสิทธิ์ดูราคา) · สินค้าแบบ % ไม่อยู่ในรายการ เพราะเป็นค่าบริการเพิ่ม ไม่ใช่ชิ้นงาน
+ * @returns {Promise<{ products: object[], packages: object[] }>}
+ */
+async function listTaskCatalog(conn) {
+    const [products] = await conn.query(
+        `SELECT product_id, product_name, product_unit
+         FROM tb_products
+         WHERE product_status = 'active' AND product_price_mode = 'fixed'
+         ORDER BY product_name`,
+    );
+    const [packages] = await conn.query(
+        "SELECT pkg_id, pkg_name FROM tb_product_packages WHERE pkg_status = 'active' ORDER BY pkg_name",
+    );
+    const packageIds = packages.map((row) => row.pkg_id);
+    const [itemRows] = packageIds.length
+        ? await conn.query(
+              `SELECT i.pki_package_id, i.pki_description, i.pki_quantity, COALESCE(i.pki_unit, p.product_unit) AS unit
+               FROM tb_product_package_items i LEFT JOIN tb_products p ON p.product_id = i.pki_product_id
+               WHERE i.pki_package_id IN (?) AND i.pki_type = 'item'
+               ORDER BY i.pki_package_id, i.pki_order`,
+              [packageIds],
+          )
+        : [[]];
+    const itemsByPackage = new Map();
+    for (const row of itemRows) {
+        const items = itemsByPackage.get(row.pki_package_id) ?? [];
+        items.push({ name: row.pki_description, quantity: row.pki_quantity, unit: row.unit });
+        itemsByPackage.set(row.pki_package_id, items);
+    }
+    return {
+        products,
+        packages: packages.map((row) => ({ ...row, items: itemsByPackage.get(row.pkg_id) ?? [] })),
+    };
+}
+
+module.exports = { insertProject, listTaskCatalog };

@@ -161,8 +161,10 @@ function ProjectSharesContent() {
     }
     if (!detail) return <PageSkeleton />;
 
-    const { profit, estimate, settlement } = detail;
+    const { profit, estimate, settlement, expected } = detail;
     const isSettled = settlement !== null;
+    // ยังมีงวด/ใบที่ยังไม่ได้รับเงิน = แสดงคอลัมน์ "ถ้าเงินเข้าครบ" (ปิดยอดแล้วไม่แสดง ตัวเลขล็อกแล้ว)
+    const showExpected = !isSettled && Number(expected.remaining_revenue) > 0;
     const hasShares = detail.shares.length > 0;
     const showEditor = !isSettled && (isEditing || !hasShares);
     const paidAdvances = detail.advances.filter((advance) => advance.sha_status === "paid");
@@ -191,7 +193,13 @@ function ProjectSharesContent() {
             <SectionCard
                 title="ที่มาของกำไร"
                 icon={Coins}
-                description={isSettled ? `ตัวเลข ณ วันปิดยอด ${formatDateOnly(settlement.sst_settled_date)} (ล็อกแล้ว)` : SHARE_MESSAGES.estimate}
+                description={
+                    isSettled
+                        ? `ตัวเลข ณ วันปิดยอด ${formatDateOnly(settlement.sst_settled_date)} (ล็อกแล้ว)`
+                        : showExpected
+                          ? SHARE_MESSAGES.expected
+                          : SHARE_MESSAGES.estimate
+                }
             >
                 <ProfitBreakdown
                     revenue={isSettled ? settlement.sst_revenue : profit.revenue}
@@ -202,6 +210,18 @@ function ProjectSharesContent() {
                     afterFixed={isSettled ? settlement.sst_after_fixed : estimate.after_fixed}
                     revenueItems={profit.revenue_items}
                     expenseItems={profit.expense_items}
+                    expected={
+                        showExpected
+                            ? {
+                                  revenue: expected.revenue,
+                                  platformFee: expected.platform_fee,
+                                  expenseCost: expected.expense_cost,
+                                  distributable: expected.distributable,
+                                  fixedTotal: expected.fixed_total,
+                                  afterFixed: expected.after_fixed,
+                              }
+                            : undefined
+                    }
                 />
                 {!isSettled && Number(profit.pending_expense) > 0 && (
                     <FieldHint>มีค่าใช้จ่ายที่ยังไม่อนุมัติ {formatAmount(profit.pending_expense)} บาท ยังไม่หักในตัวเลขนี้</FieldHint>
@@ -244,7 +264,7 @@ function ProjectSharesContent() {
                         onPay={setPayingLine}
                     />
                 ) : (
-                    <EstimateTable detail={detail} />
+                    <EstimateTable detail={detail} showExpected={showExpected} />
                 )}
                 {isSettled && (
                     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4">
@@ -366,12 +386,19 @@ function ProjectSharesContent() {
 }
 
 /** ประมาณการ ณ วันนี้: ส่วนแบ่ง − เบิกแล้ว = ต้องจ่าย · แถวสุดท้ายเข้าเงินทุน → ผลรวม = กำไรที่แบ่งได้ */
-function EstimateTable({ detail }: { detail: ProjectSharesDetail }) {
+function EstimateTable({ detail, showExpected }: { detail: ProjectSharesDetail; showExpected: boolean }) {
     return (
         <div className="grid gap-2">
+            {showExpected && (
+                <div className="flex justify-end gap-3 text-xs text-gray-500">
+                    <span className="w-24 text-right sm:w-32">ได้ตอนนี้</span>
+                    <span className="w-24 text-right sm:w-32">ถ้าเงินเข้าครบ</span>
+                </div>
+            )}
             <ul className="grid gap-2">
                 {detail.shares.map((share, index) => {
                     const line = detail.estimate.lines[index];
+                    const expectedAmount = detail.expected.lines[index]?.amount;
                     return (
                         <li key={share.shr_id} className="grid gap-1 rounded-xl border border-gray-100 p-3 sm:grid-cols-[1fr_auto] sm:items-center">
                             <div className="grid min-w-0 gap-0.5">
@@ -383,7 +410,12 @@ function EstimateTable({ detail }: { detail: ProjectSharesDetail }) {
                                 </span>
                             </div>
                             <span className="text-sm text-gray-700 tabular-nums sm:text-right">
-                                {formatAmount(line.amount)}
+                                <span className="flex justify-end gap-3">
+                                    <span className={showExpected ? "w-24 text-right sm:w-32" : ""}>{formatAmount(line.amount)}</span>
+                                    {showExpected && expectedAmount !== undefined && (
+                                        <span className="w-24 text-right font-medium text-gray-900 sm:w-32">{formatAmount(expectedAmount)}</span>
+                                    )}
+                                </span>
                                 {Number(line.advanced) > 0 && (
                                     <span className="block text-xs text-gray-500">
                                         เบิกแล้ว {formatAmount(line.advanced)} · คงเหลือ {formatAmount(line.due)}
@@ -395,9 +427,18 @@ function EstimateTable({ detail }: { detail: ProjectSharesDetail }) {
                 })}
             </ul>
             <div className="rounded-xl bg-gray-50 px-3">
-                <TotalLine label="เข้าเงินทุน (ส่วนที่เหลือ)" amount={detail.estimate.company_amount} />
+                <TotalLine
+                    label="เข้าเงินทุน (ส่วนที่เหลือ)"
+                    amount={detail.estimate.company_amount}
+                    expectedAmount={showExpected ? detail.expected.company_amount : undefined}
+                />
             </div>
-            <FieldHint>ส่วนแบ่งทุกคน + เข้าเงินทุน = กำไรที่แบ่งได้ {formatAmount(detail.profit.distributable)} บาท พอดี</FieldHint>
+            <FieldHint>ส่วนแบ่งทุกคน + เข้าเงินทุน = กำไรที่แบ่งได้พอดี{showExpected ? " (ทั้งสองคอลัมน์)" : ""}</FieldHint>
+            {Number(showExpected ? detail.expected.company_amount : detail.estimate.company_amount) <= 0 && (
+                <StatusBanner tone="wait" title="งานนี้ไม่มีเงินเข้าเงินทุน">
+                    แบ่งให้ผู้รับครบแล้ว · ถ้าต้องการเก็บเงินทุนเปิดบริษัทจากงานนี้ กด &quot;แก้ส่วนแบ่ง&quot; แล้วลด % ของบางคนลง
+                </StatusBanner>
+            )}
         </div>
     );
 }

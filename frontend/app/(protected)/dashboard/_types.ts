@@ -1,5 +1,6 @@
 // ชนิดข้อมูลของแดชบอร์ด — ตรงกับคำตอบของ backend/src/controllers/dashboard.controller.js (ไม่เปลี่ยน API ในขั้น U3)
 
+import type { FastworkOverview } from "../fastwork/_types";
 export type ProjectStatus = "planning" | "in_progress" | "on_hold" | "completed" | "cancelled";
 export type TaskStatus = "todo" | "in_progress" | "review" | "done";
 
@@ -138,4 +139,21 @@ export type SearchResults = {
         project_id: string;
         project_name: string;
     }[];
+};
+
+// ภาพรวมธุรกิจ (2026-10-31 · GET /dashboard/business) · ส่วนที่ไม่มีสิทธิ์ = ไม่มีในคำตอบ
+export type BusinessCashMonth = { month: string; direct: string; fastwork: string; total: string };
+
+export type BusinessSummary = {
+    today: string;
+    requests?: { submitted: number };
+    quotations?: { waiting: number; expiring_soon: number; expiring_days: number };
+    receivables?: { outstanding: string; overdue: string; overdue_clients: number };
+    fastwork?: {
+        steps: FastworkOverview["steps"];
+        projects: FastworkOverview["projects"];
+        project_count: number;
+    };
+    cash?: { months: BusinessCashMonth[] };
+    capital?: { goal: string | null; target_date: string | null; percent: number | null; balance: string };
 };

@@ -59,6 +59,8 @@ export function rateTextColor(rate: number | null) {
 
 export function formatHours(hours: number | null) {
     if (hours === null) return "-";
+    // ทำเสร็จภายในไม่กี่นาที (เช่น ปิดงานทันทีที่เริ่ม) แสดง "0.0 ชม." แล้วดูเหมือนข้อมูลผิด
+    if (hours < 1) return "ไม่ถึง 1 ชม.";
     return hours < 24 ? `${hours.toFixed(1)} ชม.` : `${(hours / 24).toFixed(1)} วัน`;
 }
 

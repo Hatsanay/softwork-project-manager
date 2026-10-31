@@ -199,6 +199,18 @@ export type ProjectSharesDetail = {
         company_amount: string;
         lines: { shr_id: number; amount: string; advanced: string; due: string }[];
     };
+    // ถ้าเงินเข้าครบ (คาดการณ์ 2026-10-31) · remaining_revenue = 0 คือเงินเข้าครบแล้ว (ไม่ต้องแสดง)
+    expected: {
+        remaining_revenue: string;
+        revenue: string;
+        platform_fee: string;
+        expense_cost: string;
+        distributable: string;
+        fixed_total: string;
+        after_fixed: string;
+        company_amount: string;
+        lines: { shr_id: number; amount: string }[];
+    };
     advances: ShareAdvance[];
     settlement: Settlement | null;
     changed_since_settlement: boolean;

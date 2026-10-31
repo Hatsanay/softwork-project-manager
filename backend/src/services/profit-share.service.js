@@ -10,6 +10,7 @@ const { AppError } = require("../utils/app-error");
 const { nowBangkokText, todayBangkok } = require("../utils/bangkok-time");
 const { formatHundredths, parseHundredths } = require("../shared/money.mjs");
 const { splitProfit } = require("../shared/profit-share-math.mjs");
+const { suggestPayoutAmounts } = require("../shared/fastwork-math.mjs");
 const { findProjectCost } = require("./project-finance.service");
 const fastworkService = require("./fastwork.service");
 
@@ -154,6 +155,62 @@ function estimateOf(profit, shares, advances) {
     };
 }
 
+/**
+ * ถ้าเงินเข้าครบ (คาดการณ์ 2026-10-31): ช่วยตั้งส่วนแบ่งตั้งแต่ยังไม่มีเงินเข้า · ไม่ใช้ตอนปิดยอด (ปิดยอดใช้เงินที่เข้าจริงเสมอ)
+ * Fastwork: งวดที่เงินเข้าแล้วนับอยู่ในกำไรตอนนี้ · รอโอน = ยอดและค่าธรรมเนียมที่บันทึกไว้ · ยังไม่บันทึก = ราคางวดหักค่าธรรมเนียมตามอัตราที่ตั้งไว้
+ * ลูกค้าตรง: ยอดก่อน VAT ของใบเสนอราคาที่ตอบรับแล้ว ส่วนที่ยังไม่ได้รับเงิน · ค่าใช้จ่าย = เท่าที่บันทึกไว้ (ในอนาคตไม่รู้)
+ */
+async function expectedOf(conn, projectId, profit, shares) {
+    let remainingGross = 0n;
+    let remainingFee = 0n;
+    const fastwork = await fastworkService.projectFastwork(conn, projectId);
+    if (fastwork) {
+        const settings = await fastworkService.getSettings(conn);
+        const payoutById = new Map(fastwork.payouts.map((payout) => [payout.fwp_id, payout]));
+        for (const milestone of fastwork.milestones) {
+            if (milestone.state === "received") continue;
+            const pendingPayout = milestone.state === "pending" ? payoutById.get(milestone.payout_id) : null;
+            if (pendingPayout) {
+                remainingGross += money(pendingPayout.fwp_gross);
+                remainingFee += money(pendingPayout.fwp_fee) + money(pendingPayout.fwp_fee_vat);
+                continue;
+            }
+            const estimate = suggestPayoutAmounts({
+                gross: milestone.fwm_amount,
+                feeRate: settings.cs_fastwork_fee_rate,
+                feeVatRate: settings.cs_fastwork_fee_vat_rate,
+                whtRate: settings.cs_fastwork_wht_rate,
+            });
+            remainingGross += money(milestone.fwm_amount);
+            remainingFee += money(estimate.fee) + money(estimate.fee_vat);
+        }
+    }
+    const [[quoted]] = await conn.query(
+        "SELECT COALESCE(SUM(qt_after_discount_thb), 0) AS amount FROM tb_quotations WHERE qt_project_id = ? AND qt_status = 'accepted'",
+        [projectId],
+    );
+    const directReceived = profit.revenue - (fastwork?.received_gross_hundredths ?? 0n);
+    const directRemaining = money(quoted.amount) > directReceived ? money(quoted.amount) - directReceived : 0n;
+    remainingGross += directRemaining;
+
+    const distributable = profit.distributable + remainingGross - remainingFee;
+    const split = splitProfit({
+        distributable,
+        shares: shares.map((share) => ({ kind: share.shr_kind, percent: share.shr_percent, amount: share.shr_amount })),
+    });
+    return {
+        remaining_revenue: text(remainingGross),
+        revenue: text(profit.revenue + remainingGross),
+        platform_fee: text(profit.platformFee + remainingFee),
+        expense_cost: text(profit.expenseCost),
+        distributable: text(distributable),
+        fixed_total: text(split.fixedTotal),
+        after_fixed: text(split.afterFixed),
+        company_amount: text(split.companyAmount),
+        lines: shares.map((share, index) => ({ shr_id: share.shr_id, amount: text(split.amounts[index]) })),
+    };
+}
+
 /** หน้าจัดการส่วนแบ่งของโปรเจกต์ */
 async function projectShares(conn, projectId) {
     const [[project]] = await conn.query(
@@ -197,6 +254,8 @@ async function projectShares(conn, projectId) {
                 due: text(line.due),
             })),
         },
+        // ถ้าเงินเข้าครบ (คาดการณ์) · remaining_revenue = 0 คือเงินเข้าครบแล้ว
+        expected: await expectedOf(conn, projectId, profit, shares),
         advances,
         settlement,
         // ปิดยอดแล้วแต่ตัวเลขตอนนี้ต่างจากตอนปิด (เช่น มีค่าใช้จ่ายมาทีหลัง) → เตือนให้ยกเลิกการปิดยอดแล้วปิดใหม่ (ถ้ายังไม่ได้จ่าย)

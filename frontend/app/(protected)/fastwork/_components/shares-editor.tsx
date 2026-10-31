@@ -159,6 +159,17 @@ export default function SharesEditor({ detail, canPickVendors, onCancel, onSaved
         .filter((row) => row.kind === "percent")
         .reduce((sum, row) => sum + parseHundredths(liveValue(row.percent), "เปอร์เซ็นต์"), 0n);
     const isOverHundred = percentTotal > 10000n;
+    // ถ้าเงินเข้าครบ (คาดการณ์) · ยังมีงวด/ใบที่ยังไม่ได้รับเงิน = คิดคู่กัน ให้ตั้ง % ได้โดยรู้ยอดจริงตั้งแต่ยังไม่มีเงินเข้า
+    const showExpected = Number(detail.expected.remaining_revenue) > 0;
+    const expectedSplit = splitProfit({
+        distributable: parseHundredths(detail.expected.distributable, "กำไรถ้าเงินเข้าครบ"),
+        shares: rows.map((row) => ({ kind: row.kind, percent: liveValue(row.percent), amount: liveValue(row.amount) })),
+    });
+    // เงินทุนจากงานนี้ (ใช้ยอดถ้าเงินเข้าครบ ถ้ามี) · ได้ 0 = แบ่งให้ผู้รับครบแล้ว เตือนเพราะช่วงนี้เป้าคือเก็บเงินทุน
+    const companySplit = showExpected ? expectedSplit : split;
+    const isNoCapital = rows.length > 0 && !isOverHundred && companySplit.companyAmount <= 0n;
+    const tenPercentOfBase = companySplit.afterFixed > 0n ? companySplit.afterFixed / 10n : 0n;
+    const percentSum = (amounts: bigint[], fixedTotal: bigint) => amounts.reduce((sum, amount) => sum + amount, 0n) - fixedTotal;
 
     return (
         <div className="grid gap-4">
@@ -245,7 +256,11 @@ export default function SharesEditor({ detail, canPickVendors, onCancel, onSaved
                                     htmlFor={`share_value_${row.rowId}`}
                                     required
                                     error={errors[`${prefix}.${valueField}`]}
-                                    hint={`ประมาณ ${formatAmount(split.amounts[index] ?? 0n)} บาท`}
+                                    hint={
+                                        showExpected
+                                            ? `ได้ตอนนี้ ${formatAmount(split.amounts[index] ?? 0n)} · ถ้าเงินเข้าครบ ≈ ${formatAmount(expectedSplit.amounts[index] ?? 0n)} บาท`
+                                            : `ประมาณ ${formatAmount(split.amounts[index] ?? 0n)} บาท`
+                                    }
                                 >
                                     <input
                                         id={`share_value_${row.rowId}`}
@@ -295,30 +310,30 @@ export default function SharesEditor({ detail, canPickVendors, onCancel, onSaved
             </div>
             {memberOptions.length === 0 && <FieldHint>โปรเจกต์นี้ยังไม่มีสมาชิก · เพิ่มสมาชิกในหน้าโปรเจกต์ก่อน</FieldHint>}
 
-            {/* สรุปบนลงล่าง: ส่วนตายตัว → ฐานของ % → % รวม → เข้าเงินทุน */}
+            {/* สรุป: ส่วนแบ่งรวม → เข้าเงินทุน (กำไรที่แบ่งได้อยู่ในการ์ดด้านบนแล้ว ไม่แสดงซ้ำ) */}
             <div className="grid gap-1 rounded-xl bg-gray-50 p-3 text-sm">
-                <div className="flex justify-between gap-3 text-gray-700">
-                    <span>กำไรที่แบ่งได้ ณ วันนี้</span>
-                    <span className="tabular-nums">{formatAmount(distributable)}</span>
-                </div>
-                <div className="flex justify-between gap-3 text-gray-700">
-                    <span>− ส่วนแบ่งแบบจำนวนเงิน</span>
-                    <span className="tabular-nums">{formatAmount(split.fixedTotal)}</span>
-                </div>
-                <div className="flex justify-between gap-3 text-gray-700">
-                    <span>− ส่วนแบ่งแบบ % (รวม {formatAmount(percentTotal)}%)</span>
-                    <span className="tabular-nums">{formatAmount(split.amounts.reduce((sum, amount) => sum + amount, 0n) - split.fixedTotal)}</span>
-                </div>
-                <div className="flex justify-between gap-3 border-t border-gray-200 pt-1.5">
-                    <span className="font-medium text-gray-900">= เข้าเงินทุน</span>
-                    <span className={`font-medium tabular-nums ${split.companyAmount < 0n ? "text-red-600" : "text-gray-900"}`}>
-                        {formatAmount(split.companyAmount)}
-                    </span>
-                </div>
+                {showExpected && (
+                    <div className="flex justify-end gap-3 border-b border-gray-200 pb-1.5 text-xs text-gray-500">
+                        <span className="w-24 text-right sm:w-32">ได้ตอนนี้</span>
+                        <span className="w-24 text-right sm:w-32">ถ้าเงินเข้าครบ</span>
+                    </div>
+                )}
+                <SummaryLine label="ส่วนแบ่งแบบจำนวนเงิน" now={split.fixedTotal} expected={showExpected ? expectedSplit.fixedTotal : undefined} />
+                <SummaryLine
+                    label={`ส่วนแบ่งแบบ % (รวม ${formatAmount(percentTotal)}%)`}
+                    now={percentSum(split.amounts, split.fixedTotal)}
+                    expected={showExpected ? percentSum(expectedSplit.amounts, expectedSplit.fixedTotal) : undefined}
+                />
+                <SummaryLine label="เข้าเงินทุน" now={split.companyAmount} expected={showExpected ? expectedSplit.companyAmount : undefined} isTotal />
                 <FieldHint error={isOverHundred ? "รวม % เกิน 100% · ลดลงให้รวมไม่เกิน 100%" : null}>
-                    ที่เหลือจาก 100% ({formatAmount(10000n - percentTotal)}%) ของกำไรหลังหักส่วนตายตัวเข้าเงินทุน รวมเศษสตางค์
+                    เงินทุนได้ {formatAmount(10000n - percentTotal)}% ของกำไรหลังหักส่วนแบบจำนวนเงิน รวมเศษสตางค์
                 </FieldHint>
             </div>
+            {isNoCapital && (
+                <StatusBanner tone="wait" title="งานนี้ไม่มีเงินเข้าเงินทุน">
+                    แบ่งให้ผู้รับครบแล้ว · ถ้าต้องการเก็บเงินทุนเปิดบริษัทจากงานนี้ ลด % ของบางคนลง (เช่น เว้นไว้ 10% ≈ {formatAmount(tenPercentOfBase)} บาท)
+                </StatusBanner>
+            )}
 
             <div className="flex flex-wrap justify-end gap-2">
                 {onCancel && (
@@ -330,6 +345,19 @@ export default function SharesEditor({ detail, canPickVendors, onCancel, onSaved
                     {isSaving ? "กำลังบันทึก..." : "บันทึกส่วนแบ่ง"}
                 </button>
             </div>
+        </div>
+    );
+}
+
+function SummaryLine({ label, now, expected, isTotal = false }: { label: string; now: bigint; expected?: bigint; isTotal?: boolean }) {
+    const amountClass = (value: bigint) => `w-24 text-right tabular-nums sm:w-32 ${value < 0n ? "text-red-600" : ""}`;
+    return (
+        <div className={`flex items-baseline justify-between gap-3 ${isTotal ? "border-t border-gray-200 pt-1.5 font-medium text-gray-900" : "text-gray-700"}`}>
+            <span className="min-w-0">{isTotal ? `= ${label}` : `− ${label}`}</span>
+            <span className="flex shrink-0 gap-3">
+                <span className={amountClass(now)}>{formatAmount(now)}</span>
+                {expected !== undefined && <span className={amountClass(expected)}>{formatAmount(expected)}</span>}
+            </span>
         </div>
     );
 }

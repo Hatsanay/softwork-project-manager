@@ -30,8 +30,12 @@ export const productSchema = z
         product_is_public: z.boolean().default(false),
         // งานเพิ่มแบบ % ของยอดรายการอื่นก่อน VAT เช่น งานด่วน +30% (2026-10-25)
         product_price_mode: z.enum(["fixed", "percent"], { error: "เลือกวิธีคิดราคา" }).default("fixed"),
-        product_percent: decimalText("อัตรา %", { minimum: "0.01", maximum: "100" })
-            .nullish()
+        // ฟอร์มส่งช่องว่าง "" มาเมื่อเลือกราคาตายตัว (ช่องนี้ซ่อนอยู่) = ไม่ใช้ ไม่ใช่กรอกผิด (2026-10-31: เดิมกดบันทึกแล้วเงียบ เพราะ error อยู่ใต้ช่องที่ซ่อน)
+        product_percent: z
+            .preprocess(
+                (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+                decimalText("อัตรา %", { minimum: "0.01", maximum: "100" }).nullish(),
+            )
             .transform((value) => value ?? null),
     })
     .superRefine((product, context) => {

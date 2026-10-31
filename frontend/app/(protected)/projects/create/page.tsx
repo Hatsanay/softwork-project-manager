@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { api } from "@/app/constans";
 import Button from "@/components/ui/Button/Button";
 import Input from "@/components/ui/Input/input";
@@ -12,6 +13,8 @@ import { usePermission, BITS } from "@/app/components/permission-provider";
 import PageHeader from "@/components/ui/page-header";
 import { buttonClass } from "@/components/ui/button";
 import { inputClass } from "@/components/ui/form-field";
+import CatalogTaskPicker, { tasksFromSelection, useTaskCatalog } from "@/components/feature/catalog-task-picker";
+import type { CatalogSelection } from "@/lib/catalog-tasks";
 
 type FormState = {
     project_name: string;
@@ -48,6 +51,9 @@ export default function CreateProjectPage() {
 
     const [form, setForm] = useState<FormState>(EMPTY_FORM);
     const [error, setError] = useState<string | null>(null);
+    // งานจากสินค้าที่เลือก (2026-10-31) · ไม่เลือก = โปรเจกต์เปล่า เพิ่มงานเองทีหลัง
+    const [selection, setSelection] = useState<CatalogSelection[]>([]);
+    const { catalog, loadError: catalogError } = useTaskCatalog(hasBit(BITS.createProject));
 
     function setField<K extends keyof FormState>(name: K, value: FormState[K]) {
         setForm((prev) => ({ ...prev, [name]: value }));
@@ -67,7 +73,7 @@ export default function CreateProjectPage() {
             const res = await fetch(`${api}/projects`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", ...authHeader() },
-                body: JSON.stringify(form),
+                body: JSON.stringify({ ...form, tasks: tasksFromSelection(selection, catalog) }),
             });
             const data = await res.json().catch(() => ({}));
 
@@ -76,6 +82,7 @@ export default function CreateProjectPage() {
                 return;
             }
 
+            if (data.task_count > 0) toast.success(`สร้างโปรเจกต์แล้ว · เพิ่ม ${data.task_count} งานจากสินค้าที่เลือก`);
             router.push(`/projects/view?id=${data.project_id}`);
         });
     }
@@ -85,7 +92,7 @@ export default function CreateProjectPage() {
             <PageHeader
                 eyebrow="งาน · โปรเจกต์"
                 title="สร้างโปรเจกต์"
-                description="คุณจะได้เป็นสมาชิกตำแหน่ง PM ของโปรเจกต์นี้อัตโนมัติ · เพิ่มสมาชิกและงานได้หลังสร้าง"
+                description="คุณจะได้เป็นสมาชิกตำแหน่ง PM ของโปรเจกต์นี้อัตโนมัติ · เลือกสินค้าเพื่อสร้างงานพร้อมกัน หรือเพิ่มงานเองหลังสร้าง"
             />
 
             <Form cols={2} onSubmit={handleSubmit}>
@@ -124,6 +131,22 @@ export default function CreateProjectPage() {
                         rows={3}
                         placeholder="รายละเอียดโปรเจกต์"
                         className={inputClass(false)}
+                    />
+                </div>
+
+                <div className="col-span-full grid gap-3 rounded-xl border border-gray-200 p-4">
+                    <div className="grid gap-0.5">
+                        <p className="text-sm font-medium text-gray-700">สร้างงานจากสินค้า (ไม่บังคับ)</p>
+                        <p className="text-xs leading-relaxed text-gray-500">
+                            เลือกสินค้าหรือชุดรายการที่ลูกค้าจ้าง ระบบสร้างงานและงานย่อยให้ตอนบันทึก · ชุดรายการเป็นงานหลัก รายการในชุดเป็นงานย่อย
+                        </p>
+                    </div>
+                    <CatalogTaskPicker
+                        id="project_task_catalog"
+                        catalog={catalog}
+                        loadError={catalogError}
+                        selection={selection}
+                        onChange={setSelection}
                     />
                 </div>
 

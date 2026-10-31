@@ -907,7 +907,7 @@ export default function ViewProjectPage() {
                                 <hr className="border-gray-100" />
 
                                 <TaskIssuesSection
-                                    key={detailTask.task_id}
+                                    key={`issues-${detailTask.task_id}`}
                                     projectId={id ?? ""}
                                     task={detailTask}
                                     canAdd={canAddIssueTo(detailTask)}
@@ -973,7 +973,7 @@ export default function ViewProjectPage() {
 
                             {chatOpen && detailTask && id && (
                                 <TaskChatPanel
-                                    key={detailTask.task_id}
+                                    key={`chat-${detailTask.task_id}`}
                                     projectId={id}
                                     taskId={detailTask.task_id}
                                     currentUserId={currentUserId}

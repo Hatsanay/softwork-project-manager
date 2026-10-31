@@ -4,6 +4,7 @@ const { validate } = require("../utils/validate");
 const { withTransaction } = require("../utils/with-transaction");
 const { hasBit } = require("../shared/permissions.mjs");
 const {
+    fastworkAddMilestonesSchema,
     fastworkCancelSchema,
     fastworkPayoutSchema,
     fastworkProjectSchema,
@@ -12,6 +13,7 @@ const {
     fastworkSettingsSchema,
 } = require("../shared/schemas/fastwork.mjs");
 const fastworkService = require("../services/fastwork.service");
+const { recomputeProjectProgress } = require("../utils/projectProgress");
 
 const PAYOUT_STATUSES = new Set(["pending", "received", "cancelled"]);
 
@@ -49,6 +51,13 @@ module.exports = {
             next(err);
         }
     },
+    addMilestones: handle(async (req) => {
+        const input = validate(fastworkAddMilestonesSchema, req.body);
+        const result = await withTransaction((conn) => fastworkService.addMilestones(conn, req.user, req.params.id, input));
+        // งานใหม่ยังไม่เสร็จ = % ความคืบหน้าของงานเดิมลดลง (คิดหลัง commit เหมือนตอนตอบรับใบเสนอราคา)
+        if (result.task_count > 0) await recomputeProjectProgress(result.project_id);
+        return result;
+    }),
     updateProject: handle((req) => {
         const project = validate(fastworkProjectUpdateSchema, req.body);
         return withTransaction((conn) => fastworkService.updateProject(conn, req.user, req.params.id, project));

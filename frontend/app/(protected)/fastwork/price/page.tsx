@@ -29,6 +29,8 @@ import type { FastworkSettings } from "../_types";
 import PriceCatalog, { type AddonState } from "./_components/price-catalog";
 import PriceSummary, { PriceMobileBar } from "./_components/price-summary";
 import { offerText, questionsText } from "./_components/price-texts";
+import AddToJobSheet from "./_components/add-to-job-sheet";
+import { selectionToParam, tasksFromSources, type TaskSource } from "@/lib/catalog-tasks";
 
 type PriceCatalog = { vat_rate: string | null; catalog: Catalog; questionnaire: RequirementGroup[] };
 type PricedLine = { unitPrice: string; quantity: string } | { percent: string };
@@ -40,6 +42,8 @@ type CartLine = {
     unit: string | null;
     packageItems: string[];
     lines: PricedLine[];
+    // แถวนี้เป็นงานอะไรในโปรเจกต์ (lib/catalog-tasks)
+    taskSource: TaskSource;
 };
 
 export default function FastworkPricePage() {
@@ -49,6 +53,7 @@ export default function FastworkPricePage() {
     const [settings, setSettings] = useState<FastworkSettings | null>(null);
     const [loadError, setLoadError] = useState<ApiError | null>(null);
     const [quantities, setQuantities] = useState<Record<string, number>>({});
+    const [isAddingToJob, setIsAddingToJob] = useState(false);
 
     useEffect(() => {
         if (!canManage) return;
@@ -214,7 +219,12 @@ export default function FastworkPricePage() {
     ) as RequirementGroup[];
     const questionCount = groups.reduce((count, group) => count + group.questions.length, 0);
     const title = cart.map((line) => (line.quantity > 1 ? `${line.name} × ${line.quantity}` : line.name)).join(" + ");
-    const newJobHref = `/fastwork/new?${new URLSearchParams({ name: title.slice(0, 150), amount: offer })}`;
+    // ส่งตะกร้าไปด้วย (id + จำนวน) หน้ารับงานเลือกสินค้าไว้ให้ สร้างงานในโปรเจกต์ตอนบันทึก
+    const newJobHref = `/fastwork/new?${new URLSearchParams({
+        name: title.slice(0, 150),
+        amount: offer,
+        cart: selectionToParam(cart.map((line) => ({ key: line.key, quantity: line.quantity }))),
+    })}`;
     const itemCount = cart.reduce((sum, line) => sum + line.quantity, 0);
 
     return (
@@ -241,6 +251,7 @@ export default function FastworkPricePage() {
                     payout={payout}
                     questionCount={questionCount}
                     newJobHref={newJobHref}
+                    onAddToJob={() => setIsAddingToJob(true)}
                     onRemove={(key) => setQuantity(key, 0)}
                     onClear={() => setQuantities({})}
                     onCopyQuestions={() => copy(questionsText(groups), "คัดลอกคำถามแล้ว วางในแชต Fastwork ได้เลย")}
@@ -248,6 +259,7 @@ export default function FastworkPricePage() {
                 />
             </div>
             {cart.length > 0 && <PriceMobileBar itemCount={itemCount} offer={offer} net={payout.net} />}
+            {isAddingToJob && <AddToJobSheet title={title} offer={offer} tasks={tasksFromSources(cart.map((line) => line.taskSource))} onClose={() => setIsAddingToJob(false)} />}
         </div>
     );
 }
@@ -262,6 +274,7 @@ function productCartLine(product: CatalogProduct, quantity: number): CartLine {
         quantity: isPercent ? 1 : quantity,
         unit: product.product_unit,
         packageItems: [],
+        taskSource: { kind: "product", name: product.product_name, quantity: isPercent ? 1 : quantity, isPercent },
         lines: isPercent
             ? [{ percent: product.product_percent as string }]
             : [{ unitPrice: product.product_price, quantity: String(quantity) }],
@@ -280,6 +293,7 @@ function packageCartLine(productPackage: CatalogPackage, quantity: number): Cart
                 ? item.name
                 : `${item.name} × ${formatQuantity(item.quantity)}${item.unit ? ` ${item.unit}` : ""}`,
         ),
+        taskSource: { kind: "package", name: productPackage.pkg_name, quantity, items: productPackage.items },
         lines: productPackage.items.map((item) => ({
             unitPrice: item.unit_price,
             quantity: multiplyQuantity(item.quantity, quantity),

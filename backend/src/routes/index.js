@@ -49,6 +49,7 @@ router.get("/health", (req, res) => res.json({ status: "ok" }));
 // ใช้สิทธิ์ "dashboard" ที่มีอยู่แล้วคุมว่าเข้าหน้านี้ได้ไหม ส่วนแต่ละ widget ข้างในสโคปด้วยสิทธิ์เดิม
 // (viewAllProjects/viewOwnProjects) หรือเป็นข้อมูลส่วนตัวของผู้ใช้เอง ไม่มีบิตแยกสำหรับ dashboard โดยเฉพาะ
 router.get("/V1/dashboard/summary", requireAuth, requirePermission("dashboard"), dashboardController.getSummary);
+router.get("/V1/dashboard/business", requireAuth, requirePermission("dashboard"), dashboardController.getBusiness);
 router.get("/V1/dashboard/search", requireAuth, requirePermission("dashboard"), dashboardController.search);
 router.get("/V1/dashboard/team-workload", requireAuth, requirePermission("dashboard"), dashboardController.getTeamWorkload);
 router.get("/V1/dashboard/kpis", requireAuth, requirePermission("dashboard"), dashboardController.getKpis);
@@ -142,6 +143,11 @@ router.delete("/V1/clients/:id", requireAuth, requirePermission("deleteClient"),
 // แล้วจะทำอะไรได้ต่อ (แก้ข้อมูล/ลบ/จัดการสมาชิก/จัดการลิงก์) ขึ้นกับตำแหน่งที่ถือในโปรเจกต์นั้น (requireProjectPermission)
 router.get("/V1/projects", requireAuth, requirePermission(["viewAllProjects", "viewOwnProjects"]), projectController.getAll);
 router.post("/V1/projects", requireAuth, requirePermission("createProject"), projectController.create);
+// สินค้า/ชุดรายการสำหรับสร้างงานพร้อมโปรเจกต์ (2026-10-31) · หน้าสร้างโปรเจกต์ + หน้ารับงาน Fastwork · ต้องอยู่ก่อน /:id
+router.get(
+    "/V1/projects/task-catalog", requireAuth, requirePermission(["createProject", "manageFastwork"]),
+    projectController.taskCatalog
+);
 router.get("/V1/projects/:id", requireAuth, requireProjectMember, projectController.getOne);
 router.get("/V1/projects/:id/my-permissions", requireAuth, requireProjectMember, projectController.getMyPermissions);
 router.put(
