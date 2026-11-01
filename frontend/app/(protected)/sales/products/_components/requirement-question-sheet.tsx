@@ -81,6 +81,9 @@ export default function RequirementQuestionSheet({
         .filter((row) => PARENT_QUESTION_TYPES.includes(row.rqq_type));
     const parent = parentChoices.find((row) => row.rqq_id === form.rqq_parent_id) ?? null;
     const hasChildren = question ? group.questions.some((row) => row.rqq_parent_id === question.rqq_id) : false;
+    // ข้อแม่กลายเป็นข้อลูก: สินค้า/ชุดที่เลือกข้อนี้จะถูกเอาออก (ข้อลูกถามตามข้อแม่ · สินค้าเลือกคำถาม 2026-11-01)
+    const linkedItemCount = question && !question.rqq_parent_id ? question.product_ids.length + question.package_ids.length : 0;
+    const willUnlink = linkedItemCount > 0 && form.rqq_parent_id !== null;
 
     function update<Field extends keyof typeof form>(field: Field, value: (typeof form)[Field]) {
         setForm((current) => ({ ...current, [field]: value }));
@@ -346,6 +349,12 @@ export default function RequirementQuestionSheet({
                             ))}
                         </select>
                     </FormField>
+                    {willUnlink && (
+                        <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-600 ring-1 ring-amber-200">
+                            ข้อนี้มีสินค้าหรือชุดเลือกไว้ {linkedItemCount} รายการ บันทึกแล้วจะถูกเอาออก
+                            (ข้อที่ถามตามคำตอบขึ้นตามข้อด้านบนเอง)
+                        </p>
+                    )}
                     {parent && (
                         <fieldset className="grid gap-2">
                             <legend className="mb-1 text-sm text-gray-800">ถามข้อนี้เมื่อตอบว่า</legend>

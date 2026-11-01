@@ -32,6 +32,16 @@ function expectStatus(response, status, note) {
 
 const contact = { contact_name: "คุณมานพ", contact_phone: "0812223344", consent: true };
 
+/** สินค้า/ชุดเลือกคำถาม (2026-11-01): ผูกทุกข้อแม่ของกลุ่มที่ระบุ (แทนชุดเดิมทั้งหมด) · แทนการผูกกลุ่มกับหมวด/สินค้าแบบเดิม */
+async function askGroupsFor(kind, itemId, groupIds) {
+    const list = expectStatus(await api.callApi("GET", "/V1/requirement-groups"), 200).data;
+    const questionIds = list
+        .filter((group) => groupIds.includes(group.rqg_id))
+        .flatMap((group) => group.questions.filter((question) => !question.rqq_parent_id).map((question) => question.rqq_id));
+    const path = kind === "product" ? `/V1/products/${itemId}/questions` : `/V1/product-packages/${itemId}/questions`;
+    expectStatus(await api.callApi("PUT", path, { body: { question_ids: questionIds } }), 200);
+}
+
 test.before(async () => {
     api = await startTestServer("order_requirements");
     await api.loginAsAdmin();
@@ -102,9 +112,12 @@ test("อื่นๆ (ระบุ) · ช่วงตัวเลขพร้�
     assert.equal(answerError({ ...deadline, rqq_future_only: false }, "2020-01-01", { today: "2026-10-26" }), null);
 });
 
-test("ลูกค้าเห็นข้อไหน: ถามทุกคำขอ / ตามที่เลือก (หมวด ชุด สินค้า) / เฉพาะลิงก์ที่ถามเพิ่ม · ชนิดลิงก์ · ล็อกแพ็ก · ข้อลูก", () => {
-    const question = (id, extra = {}) => ({ rqq_id: id, rqq_type: "short_text", rqq_audience: "group", rqq_skip_when_preset: false, rqq_parent_id: null, rqq_parent_values: [], ...extra });
-    const group = (id, extra) => ({ rqg_id: id, rqg_audience: "all", category_ids: [], package_ids: [], product_ids: [], questions: [question(id * 10)], ...extra });
+test("ลูกค้าเห็นข้อไหน: ถามทุกคำขอ / ตามสินค้าที่เลือก (สินค้า/ชุดเลือกข้อ · ชุดได้ของสินค้าในชุด) / เฉพาะลิงก์ที่ถามเพิ่ม · ชนิดลิงก์ · ล็อกแพ็ก · ข้อลูก", () => {
+    const question = (id, extra = {}) => ({
+        rqq_id: id, rqq_type: "short_text", rqq_audience: "group", rqq_skip_when_preset: false, rqq_parent_id: null, rqq_parent_values: [],
+        product_ids: [], package_ids: [], via_package_ids: [], ...extra,
+    });
+    const group = (id, extra) => ({ rqg_id: id, rqg_audience: "all", questions: [question(id * 10)], ...extra });
     const groups = [
         group(1, {
             rqg_trigger: "always",
@@ -114,9 +127,18 @@ test("ลูกค้าเห็นข้อไหน: ถามทุกคำ
                 question(12, { rqq_skip_when_preset: true }), // งบประมาณ: ไม่ถามเมื่อล็อกแพ็ก
             ],
         }),
-        group(2, { rqg_trigger: "selection", category_ids: ["WEB"] }),
-        group(3, { rqg_trigger: "selection", package_ids: ["PKG-SYSTEM"] }),
-        group(4, { rqg_trigger: "selection", product_ids: ["P-2LANG"] }),
+        // สินค้าเลือกบางข้อในกลุ่ม · ข้อลูกตามข้อแม่ · ชุด PKG-WEB มีสินค้า P-DOMAIN อยู่ข้างใน (via)
+        group(2, {
+            rqg_trigger: "selection",
+            questions: [
+                question(20, { product_ids: ["P-DOMAIN"], via_package_ids: ["PKG-WEB"] }),
+                question(21, { rqq_type: "yes_no", product_ids: ["P-WEB"] }),
+                question(22, { rqq_parent_id: 21, rqq_parent_values: ["yes"] }),
+                question(23),
+            ],
+        }),
+        group(3, { rqg_trigger: "selection", questions: [question(30, { package_ids: ["PKG-SYSTEM"] })] }),
+        group(4, { rqg_trigger: "selection", questions: [question(40, { product_ids: ["P-2LANG"] })] }),
         group(5, { rqg_trigger: "link_only" }),
         group(6, { rqg_trigger: "always", rqg_audience: "fastwork" }),
         group(7, {
@@ -134,8 +156,12 @@ test("ลูกค้าเห็นข้อไหน: ถามทุกคำ
     const visibleIds = (context, answers = {}) =>
         visibleQuestionnaire(groups, { linkKind: "public", ...context }, answers).map((row) => `${row.rqg_id}:${row.questions.map((item) => item.rqq_id).join(",")}`);
 
-    assert.deepEqual(visibleIds({ categoryIds: [null] }), ["1:10,11,12", "7:70,74"]);
-    assert.deepEqual(visibleIds({ categoryIds: ["WEB"], packageIds: ["PKG-SYSTEM"], productIds: ["P-2LANG"] }), ["1:10,11,12", "2:20", "3:30", "4:40", "7:70,74"]);
+    assert.deepEqual(visibleIds({ categoryIds: ["WEB"] }), ["1:10,11,12", "7:70,74"], "หมวดไม่มีผลแล้ว");
+    assert.deepEqual(visibleIds({ packageIds: ["PKG-SYSTEM"], productIds: ["P-2LANG"] }), ["1:10,11,12", "3:30", "4:40", "7:70,74"]);
+    // เลือกเฉพาะข้อที่สินค้าผูก (ข้อ 23 ไม่มีใครผูก = ไม่ขึ้น) · ข้อลูกขึ้นตามคำตอบข้อแม่ · ชุดได้คำถามของสินค้าในชุด
+    assert.deepEqual(visibleIds({ productIds: ["P-DOMAIN"] }), ["1:10,11,12", "2:20", "7:70,74"]);
+    assert.deepEqual(visibleIds({ productIds: ["P-WEB"] }, { 21: "yes" }), ["1:10,11,12", "2:21,22", "7:70,74"]);
+    assert.deepEqual(visibleIds({ packageIds: ["PKG-WEB"] }), ["1:10,11,12", "2:20", "7:70,74"]);
     // ลิงก์ Fastwork: ไม่ถามช่องทางติดต่อ · เห็นกลุ่มเฉพาะ Fastwork · ล็อกแพ็ก = ไม่ถามงบประมาณ
     assert.deepEqual(visibleIds({ linkKind: "fastwork", hasPreset: true }), ["1:10", "6:60", "7:70,74"]);
     // ลิงก์ถามเพิ่มกลุ่มที่ไม่ถามเอง · ไม่ถามกลุ่มชนะทุกเงื่อนไข (รวมถามทุกคำขอ)
@@ -150,11 +176,13 @@ test("ลูกค้าเห็นข้อไหน: ถามทุกคำ
         [[70, 71, 72, 73, 74, 75]],
     );
     // matched บอกรายการที่ทำให้กลุ่มขึ้น (ใช้เขียน "ถามเพราะคุณเลือก …")
-    const web = visibleQuestionnaire(groups, { linkKind: "public", categoryIds: ["WEB", "APP"] }).find((row) => row.rqg_id === 2);
-    assert.deepEqual(web.matched, { category_ids: ["WEB"], package_ids: [], product_ids: [] });
+    const web = visibleQuestionnaire(groups, { linkKind: "public", productIds: ["P-DOMAIN", "P-OTHER"], packageIds: ["PKG-WEB"] }).find(
+        (row) => row.rqg_id === 2,
+    );
+    assert.deepEqual(web.matched, { package_ids: ["PKG-WEB"], product_ids: ["P-DOMAIN"] });
 });
 
-test("ชุดคำถาม: ตั้งต้น 5 กลุ่ม · ผูกหมวด · เพิ่ม/แก้/เรียง/ลบ · เลือกตอบต้องมีตัวเลือก 2 ข้อ · แก้ได้เฉพาะ productManagement", async () => {
+test("ชุดคำถาม: ตั้งต้น 5 กลุ่ม · ถามตามสินค้าที่เลือก · สินค้าเลือกคำถาม · เพิ่ม/แก้/เรียง/ลบ · เลือกตอบต้องมีตัวเลือก 2 ข้อ · แก้ได้เฉพาะ productManagement", async () => {
     const list = expectStatus(await api.callApi("GET", "/V1/requirement-groups"), 200);
     assert.deepEqual(list.data.map((group) => group.rqg_name), ["ทั่วไป", "เว็บไซต์", "แอปมือถือ", "ออกแบบ UX/UI", "ระบบงาน"]);
     // ชุดตั้งต้น: ทั่วไป = ถามทุกคำขอ · ที่เหลือยังไม่ผูกอะไร = ถามเฉพาะลิงก์ที่ถามเพิ่ม
@@ -165,16 +193,14 @@ test("ชุดคำถาม: ตั้งต้น 5 กลุ่ม · ผ�
 
     // ผู้ดูแลคำขอดูได้ แต่แก้ไม่ได้
     expectStatus(await api.callApi("GET", "/V1/requirement-groups", { token: staffToken }), 200);
-    const groupBody = (group, categoryIds) => ({
+    // กลุ่ม = หัวข้อ · ถามตามสินค้าที่เลือก (ไม่ผูกหมวดแล้ว)
+    const groupBody = (group) => ({
         rqg_name: group.rqg_name, rqg_description: group.rqg_description, rqg_trigger: "selection",
-        rqg_sort_order: group.rqg_sort_order, rqg_status: "active", category_ids: categoryIds,
+        rqg_sort_order: group.rqg_sort_order, rqg_status: "active",
     });
-    // ถามตามที่เลือกแต่ไม่ผูกอะไร = บอกให้เลือก (ไม่ปล่อยกลุ่มที่ไม่มีใครเห็น)
-    const unbound = expectStatus(await api.callApi("PUT", `/V1/requirement-groups/${ids.webGroup.rqg_id}`, { body: groupBody(ids.webGroup, []) }), 400);
-    assert.ok(unbound.fields.category_ids);
-    expectStatus(await api.callApi("PUT", `/V1/requirement-groups/${ids.webGroup.rqg_id}`, { token: staffToken, body: groupBody(ids.webGroup, [ids.web]) }), 403);
-    expectStatus(await api.callApi("PUT", `/V1/requirement-groups/${ids.webGroup.rqg_id}`, { body: groupBody(ids.webGroup, [ids.web]) }), 200);
-    expectStatus(await api.callApi("PUT", `/V1/requirement-groups/${ids.designGroup.rqg_id}`, { body: groupBody(ids.designGroup, [ids.design]) }), 200);
+    expectStatus(await api.callApi("PUT", `/V1/requirement-groups/${ids.webGroup.rqg_id}`, { token: staffToken, body: groupBody(ids.webGroup) }), 403);
+    expectStatus(await api.callApi("PUT", `/V1/requirement-groups/${ids.webGroup.rqg_id}`, { body: groupBody(ids.webGroup) }), 200);
+    expectStatus(await api.callApi("PUT", `/V1/requirement-groups/${ids.designGroup.rqg_id}`, { body: groupBody(ids.designGroup) }), 200);
 
     const noOptions = expectStatus(
         await api.callApi("POST", `/V1/requirement-groups/${ids.webGroup.rqg_id}/questions`, {
@@ -200,6 +226,16 @@ test("ชุดคำถาม: ตั้งต้น 5 กลุ่ม · ผ�
     expectStatus(await api.callApi("PUT", `/V1/requirement-groups/${ids.webGroup.rqg_id}/question-order`, { body: { question_ids: [ids.colorQuestion, ...order.slice(0, -1)] } }), 200);
     const reordered = expectStatus(await api.callApi("GET", "/V1/requirement-groups"), 200);
     assert.equal(reordered.data.find((group) => group.rqg_id === ids.webGroup.rqg_id).questions[0].rqq_id, ids.colorQuestion);
+
+    // สินค้าเลือกคำถาม: เว็บไซต์ถามหัวข้อเว็บไซต์ · โลโก้ถามหัวข้อออกแบบ · ผู้ดูแลคำขอตั้งไม่ได้ · ข้อลูก/ข้อที่ไม่มีจริงเลือกไม่ได้
+    expectStatus(await api.callApi("PUT", `/V1/products/${ids.website}/questions`, { token: staffToken, body: { question_ids: [ids.colorQuestion] } }), 403);
+    const missingQuestion = expectStatus(await api.callApi("PUT", `/V1/products/${ids.website}/questions`, { body: { question_ids: [999999] } }), 400);
+    assert.ok(missingQuestion.fields.question_ids);
+    await askGroupsFor("product", ids.website, [ids.webGroup.rqg_id]);
+    await askGroupsFor("product", ids.logo, [ids.designGroup.rqg_id]);
+    const linked = expectStatus(await api.callApi("GET", "/V1/requirement-groups"), 200);
+    const color = linked.data.find((group) => group.rqg_id === ids.webGroup.rqg_id).questions.find((question) => question.rqq_id === ids.colorQuestion);
+    assert.deepEqual(color.product_ids, [ids.website]);
 });
 
 test("เพิ่มคำถามทุกชนิดได้ด้วยค่าที่หน้าเว็บส่งจริง (ผลตรวจของ schema) · 2026-10-31: เดิมชนิดที่ไม่ใช่ตัวเลือกได้ 400", async () => {
@@ -295,7 +331,7 @@ async function addQuestion(groupId, body) {
 test("ข้อลูก + อื่นๆ (ระบุ) + ตัวเลข/วันที่ + ไฟล์งานออกแบบ: ตรวจเฉพาะข้อที่ขึ้น · SVG ดาวน์โหลดเท่านั้น", async () => {
     const shopGroup = expectStatus(
         await api.callApi("POST", "/V1/requirement-groups", {
-            body: { rqg_name: "ข้อมูลร้าน", rqg_customer_intro: "ใช้ออกแบบเว็บให้ตรงกับร้าน", rqg_trigger: "selection", rqg_status: "active", product_ids: [ids.website] },
+            body: { rqg_name: "ข้อมูลร้าน", rqg_customer_intro: "ใช้ออกแบบเว็บให้ตรงกับร้าน", rqg_trigger: "selection", rqg_status: "active" },
         }),
         201,
     );
@@ -306,6 +342,7 @@ test("ข้อลูก + อื่นๆ (ระบุ) + ตัวเลข/�
     const channels = await addQuestion(shopGroup.rqg_id, { rqq_text: "ช่องทางติดต่อในเว็บ", rqq_type: "multi", rqq_options: ["LINE", "โทร"], rqq_allow_other: true });
     const pages = await addQuestion(shopGroup.rqg_id, { rqq_text: "กี่หน้า", rqq_type: "number", rqq_unit: "หน้า", rqq_min: "1", rqq_max: "20" });
     const deadline = await addQuestion(shopGroup.rqg_id, { rqq_text: "อยากให้เสร็จภายใน", rqq_type: "date", rqq_future_only: true });
+    await askGroupsFor("product", ids.website, [ids.webGroup.rqg_id, shopGroup.rqg_id]);
 
     const code = ids.link.ol_short_code;
     const shop = expectStatus(await anonymous("GET", `/V1/order/${code}`), 200);
@@ -347,6 +384,8 @@ test("ข้อลูก + อื่นๆ (ระบุ) + ตัวเลข/�
 
     // ข้อรูป/PDF ไม่รับ SVG (ตรวจจากเนื้อไฟล์)
     const photoFile = await addQuestion(shopGroup.rqg_id, { rqq_text: "รูปหน้าร้าน", rqq_type: "file", rqq_file_kind: "document" });
+    // ข้อแม่ใหม่ยังไม่ถามจนกว่าสินค้าจะเลือก
+    await askGroupsFor("product", ids.website, [ids.webGroup.rqg_id, shopGroup.rqg_id]);
     const svgAsDocument = new FormData();
     svgAsDocument.append("payload", JSON.stringify({ ...base, submit_key: crypto.randomUUID(), answers: answers([{ question_id: hasLogo, value: "ยังไม่มี" }]) }));
     svgAsDocument.append(`file_${photoFile}`, new Blob([SVG_WITH_SCRIPT], { type: "image/svg+xml" }), "logo.svg");

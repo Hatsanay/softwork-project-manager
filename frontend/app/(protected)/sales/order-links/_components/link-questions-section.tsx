@@ -16,10 +16,8 @@ import CustomerPreviewSheet from "../../products/_components/customer-preview-sh
 import type { LinkableItems } from "../../products/_components/requirement-labels";
 import {
     activeQuestionnaire,
-    categoryIdsOf,
     type PreviewScenario,
 } from "../../products/_components/requirement-scenario";
-import type { ProductCategory } from "../../products/_types";
 import type { OrderLinkKind } from "../_types";
 
 export type QuestionRules = { include_group_ids: number[]; exclude_group_ids: number[] };
@@ -41,7 +39,6 @@ export default function LinkQuestionsSection({
 }) {
     const [groups, setGroups] = useState<RequirementGroup[] | null>(null);
     const [items, setItems] = useState<LinkableItems>({ packages: [], products: [] });
-    const [categories, setCategories] = useState<ProductCategory[]>([]);
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
     useEffect(() => {
@@ -50,12 +47,10 @@ export default function LinkQuestionsSection({
             apiFetch<{ data: RequirementGroup[] }>("/requirement-groups"),
             apiFetch<{ data: LinkableItems["packages"] }>("/product-packages"),
             apiFetch<{ data: LinkableItems["products"] }>("/products?limit=200&status=active"),
-            apiFetch<{ data: ProductCategory[] }>("/product-categories"),
-        ]).then(([groupResult, packageResult, productResult, categoryResult]) => {
+        ]).then(([groupResult, packageResult, productResult]) => {
             if (isClosed) return;
             setGroups(groupResult.data?.data ?? []);
             setItems({ packages: packageResult.data?.data ?? [], products: productResult.data?.data ?? [] });
-            setCategories(categoryResult.data?.data ?? []);
         });
         return () => {
             isClosed = true;
@@ -74,7 +69,6 @@ export default function LinkQuestionsSection({
     };
     const context = {
         linkKind: scenario.linkKind,
-        categoryIds: categoryIdsOf(items, scenario.packageIds, scenario.productIds),
         packageIds: scenario.packageIds,
         productIds: scenario.productIds,
         hasPreset: scenario.hasPreset,
@@ -194,7 +188,6 @@ export default function LinkQuestionsSection({
             {isPreviewOpen && (
                 <CustomerPreviewSheet
                     groups={groups}
-                    categories={categories}
                     items={items}
                     initial={scenario}
                     onClose={() => setIsPreviewOpen(false)}

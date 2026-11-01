@@ -1,7 +1,6 @@
 // สถานการณ์ของลูกค้าหนึ่งคน (2026-10-26 Q-3) — ใช้ร่วมกันระหว่าง "ดูมุมมองลูกค้า" และส่วนคำถามในฟอร์มลิงก์
 // หน้าร้านได้กลุ่มแบบ activeOnly (requirement.service listGroups) จึงกรองแบบเดียวกันที่นี่ แล้วให้ visibleQuestionnaire ตัดสินต่อ
 import type { RequirementGroup } from "@/app/order/_types";
-import type { LinkableItems } from "./requirement-labels";
 
 export type PreviewScenario = {
     linkKind: "public" | "fastwork";
@@ -39,14 +38,6 @@ export function activeQuestionnaire(groups: RequirementGroup[]) {
             questions: group.questions.filter((question) => question.rqq_status === "active"),
         }))
         .filter((group) => group.questions.length > 0);
-}
-
-/** หมวดของชุดและสินค้าที่เลือก (หน้าร้านคิดหมวดจากรายการในตะกร้า) */
-export function categoryIdsOf(items: LinkableItems, packageIds: string[], productIds: string[]) {
-    return [
-        ...items.packages.filter((row) => packageIds.includes(row.pkg_id)).map((row) => row.pkg_category_id),
-        ...items.products.filter((row) => productIds.includes(row.product_id)).map((row) => row.product_category_id),
-    ].filter((id): id is string => Boolean(id));
 }
 
 /** ลิงก์ → สถานการณ์ (รายการที่ทีมเลือกให้ = ล็อกแพ็ก) · ลิงก์เฉพาะลูกค้าถามแบบลิงก์ลูกค้าตรง */

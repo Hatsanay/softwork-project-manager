@@ -386,7 +386,6 @@ export default function OrderShop({ code, data, onReload }: { code: string; data
     const shownProducts = offeredProducts.filter((row) => inFilter(row.product_category_id));
 
     // คำถามที่ลูกค้าเห็น: กติกาเดียวกับ backend (shared/requirement-answers.mjs) · ข้อลูกขึ้นตามคำตอบตอนนี้
-    const cartCategoryIds = [...presetCategoryIds, ...cartEntries.map(([key]) => categoryOfKey(key))];
     const presetProducts = preset.flatMap((item) => (item.kind === "product" ? [item.product] : []));
     const cartProductIds = [
         ...presetProducts.map((product) => product.product_id),
@@ -396,7 +395,6 @@ export default function OrderShop({ code, data, onReload }: { code: string; data
         data.questionnaire ?? [],
         {
             linkKind: data.link.kind,
-            categoryIds: cartCategoryIds.filter((value): value is string => Boolean(value)),
             packageIds: cartPackages.map((row) => row.pkg_id),
             productIds: cartProductIds,
             hasPreset: preset.length > 0,
@@ -426,7 +424,6 @@ export default function OrderShop({ code, data, onReload }: { code: string; data
             ...group.matched.product_ids.map(
                 (id) => productsById.get(id)?.product_name ?? presetProducts.find((product) => product.product_id === id)?.product_name,
             ),
-            ...group.matched.category_ids.map((id) => catalog.categories.find((category) => category.pc_id === id)?.pc_name),
         ].filter((name): name is string => Boolean(name));
         return names.length > 0 ? `ถามเพราะคุณเลือก ${[...new Set(names)].join(", ")}` : null;
     }

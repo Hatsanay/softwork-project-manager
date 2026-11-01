@@ -491,7 +491,6 @@ async function submit(conn, code, input, { files = [], savedPaths = [] } = {}) {
         await requirementService.listGroups(conn, { activeOnly: true }),
         {
             linkKind: link.ol_kind,
-            categoryIds: entries.map((entry) => entry.category_id),
             packageIds: entries.filter((entry) => entry.kind === "package").map((entry) => entry.id),
             productIds: entries.filter((entry) => entry.kind === "product").map((entry) => entry.id),
             hasPreset: preset.items.length > 0,

@@ -2820,6 +2820,27 @@ CREATE TABLE IF NOT EXISTS `tb_requirement_questions` (
   CONSTRAINT `fk_rqq_parent` FOREIGN KEY (`rqq_parent_id`) REFERENCES `tb_requirement_questions` (`rqq_id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ════ สินค้าเลือกคำถาม (2026-11-01) · แบบ: docs/plans/2026-11-01-product-questions.md ════
+-- สินค้า/ชุดรายการเลือกข้อแม่ที่จะถามลูกค้า (ข้อลูกตามข้อแม่ไปเอง) · แทนการผูกกลุ่มกับหมวด/ชุด/สินค้า (tb_requirement_group_*)
+-- ชุดรายการ: ลูกค้าเห็นคำถามที่ชุดเลือก + คำถามของสินค้าในชุด (คิดใน requirement.service)
+CREATE TABLE IF NOT EXISTS `tb_product_questions` (
+  `pq_product_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pq_question_id` int unsigned NOT NULL,
+  PRIMARY KEY (`pq_product_id`,`pq_question_id`),
+  KEY `fk_pq_question` (`pq_question_id`),
+  CONSTRAINT `fk_pq_product` FOREIGN KEY (`pq_product_id`) REFERENCES `tb_products` (`product_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_pq_question` FOREIGN KEY (`pq_question_id`) REFERENCES `tb_requirement_questions` (`rqq_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `tb_package_questions` (
+  `kq_package_id` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `kq_question_id` int unsigned NOT NULL,
+  PRIMARY KEY (`kq_package_id`,`kq_question_id`),
+  KEY `fk_kq_question` (`kq_question_id`),
+  CONSTRAINT `fk_kq_package` FOREIGN KEY (`kq_package_id`) REFERENCES `tb_product_packages` (`pkg_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_kq_question` FOREIGN KEY (`kq_question_id`) REFERENCES `tb_requirement_questions` (`rqq_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- คำตอบในคำขอ (2026-10-25 · S-2) — ชื่อกลุ่ม/ข้อความคำถาม/ชนิด ณ วันส่ง (คัดลอกเพราะคำถามแก้หรือลบทีหลังได้ คำตอบต้องอ่านคู่กับคำถามเดิม)
 -- sva_value: ข้อความ · multi = JSON array · yes_no = yes/no · file = ว่าง (ไฟล์อยู่ใน tb_service_request_files)
 CREATE TABLE IF NOT EXISTS `tb_service_request_answers` (
@@ -5020,6 +5041,26 @@ SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CON
 -- บริการรายรอบ (2026-10-31)
 SET @q = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_product_packages' AND CONSTRAINT_NAME = 'fk_pkg_renewal_product' AND CONSTRAINT_TYPE = 'FOREIGN KEY') = 0, 'ALTER TABLE `tb_product_packages` ADD CONSTRAINT `fk_pkg_renewal_product` FOREIGN KEY (`pkg_renewal_product_id`) REFERENCES `tb_products` (`product_id`)', 'DO 0'); PREPARE s FROM @q; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- ── (ย้ายข้อมูล ไม่ใช่ข้อมูลเริ่มต้น จึงอยู่ท้ายส่วนที่ 4) สินค้าเลือกคำถาม (2026-11-01): ย้ายการผูกเดิม (กลุ่ม → หมวด/ชุด/สินค้า) มาเป็นสินค้า/ชุดเลือกข้อแม่ของกลุ่มนั้น ──
+-- ลูกค้าเห็นคำถามชุดเดิม · ผูกหมวด = สินค้าและชุดทุกตัวในหมวด · ย้ายแล้วล้างตารางเดิม (โครงตารางเก็บไว้ ลบรอบ deploy ถัดไป)
+INSERT IGNORE INTO tb_product_questions (pq_product_id, pq_question_id)
+SELECT l.rgr_product_id, q.rqq_id FROM tb_requirement_group_products l
+JOIN tb_requirement_questions q ON q.rqq_group_id = l.rgr_group_id AND q.rqq_parent_id IS NULL;
+INSERT IGNORE INTO tb_product_questions (pq_product_id, pq_question_id)
+SELECT p.product_id, q.rqq_id FROM tb_requirement_group_categories l
+JOIN tb_products p ON p.product_category_id = l.rgc_category_id
+JOIN tb_requirement_questions q ON q.rqq_group_id = l.rgc_group_id AND q.rqq_parent_id IS NULL;
+INSERT IGNORE INTO tb_package_questions (kq_package_id, kq_question_id)
+SELECT k.pkg_id, q.rqq_id FROM tb_requirement_group_categories l
+JOIN tb_product_packages k ON k.pkg_category_id = l.rgc_category_id
+JOIN tb_requirement_questions q ON q.rqq_group_id = l.rgc_group_id AND q.rqq_parent_id IS NULL;
+INSERT IGNORE INTO tb_package_questions (kq_package_id, kq_question_id)
+SELECT l.rgp_package_id, q.rqq_id FROM tb_requirement_group_packages l
+JOIN tb_requirement_questions q ON q.rqq_group_id = l.rgp_group_id AND q.rqq_parent_id IS NULL;
+DELETE FROM tb_requirement_group_products;
+DELETE FROM tb_requirement_group_categories;
+DELETE FROM tb_requirement_group_packages;
+
 -- ─── ส่วนที่ 5: ข้อมูลเริ่มต้น (ใส่เฉพาะตอนตารางยังว่างเท่านั้น) ─────────────────────────────────
 -- ตั้งใจเช็ค "ตารางว่าง" ไม่ใช่ "ไม่มีแถวนี้" — ถ้าแอดมินลบ/เปลี่ยนบัญชีเริ่มต้นไปแล้วบน production
 -- ห้ามสร้างบัญชีที่รู้รหัสผ่านกลับขึ้นมาใหม่เองตอน deploy
@@ -5279,6 +5320,7 @@ UPDATE tb_requirement_questions child JOIN tb_requirement_questions parent ON pa
 SET child.rqq_parent_id = parent.rqq_id, child.rqq_parent_values = '["มีครบ","มีโลโก้อย่างเดียว"]', child.rqq_file_kind = 'design', child.rqq_help = 'รูป PDF หรือไฟล์งานออกแบบ (AI PSD SVG ZIP) ไม่เกิน 20 MB'
 WHERE @seed_requirements = 1 AND child.rqq_group_id = 4 AND child.rqq_text = 'ไฟล์โลโก้หรือคู่มือแบรนด์';
 
+
 -- ─── ส่วนที่ 6: ตรวจสอบ — ไม่มีแถวผลลัพธ์ = โครงสร้างครบถ้วนตามไฟล์นี้ ─────────────────────────────
 -- มีแถว = ตารางนั้นมีคอลัมน์/index ไม่ตรงกับที่คาด (missing_* คือที่ขาด, extra_* คือที่เกินมาจากของเก่า)
 SELECT e.table_name,
@@ -5409,6 +5451,8 @@ FROM (
     UNION ALL SELECT 'tb_employee_cards' AS table_name, 'ec_branch_name,ec_department_name,ec_emp_code,ec_employee_id,ec_expires_on,ec_id,ec_issued_at,ec_issued_by,ec_name_en,ec_name_th,ec_note,ec_photo_url,ec_position,ec_printed_at,ec_reason,ec_returned_at,ec_seq,ec_void_reason,ec_voided_at' AS expected_columns, 'fk_ec_issued_by(ec_issued_by),idx_ec_expires(ec_expires_on),idx_ec_printed(ec_printed_at),idx_ec_voided(ec_voided_at+ec_returned_at),primary(ec_id),uq_ec_employee_seq(ec_employee_id+ec_seq)' AS expected_indexes
     UNION ALL SELECT 'tb_renewals' AS table_name, 'rnw_anchor_day,rnw_channel,rnw_client_id,rnw_created_at,rnw_created_by,rnw_cycle_months,rnw_end_reason,rnw_id,rnw_label,rnw_next_due_date,rnw_notes,rnw_paused_on,rnw_price,rnw_product_id,rnw_project_id,rnw_source,rnw_source_id,rnw_status,rnw_updated_at,rnw_version' AS expected_columns, 'fk_rnw_created_by(rnw_created_by),fk_rnw_product(rnw_product_id),fk_rnw_project(rnw_project_id),idx_rnw_client(rnw_client_id),idx_rnw_status_due(rnw_status+rnw_next_due_date),primary(rnw_id)' AS expected_indexes
     UNION ALL SELECT 'tb_renewal_cycles' AS table_name, 'rnc_amount,rnc_created_at,rnc_created_by,rnc_id,rnc_invoice_id,rnc_period_end,rnc_period_start,rnc_project_id,rnc_renewal_id,rnc_status' AS expected_columns, 'fk_rnc_created_by(rnc_created_by),fk_rnc_invoice(rnc_invoice_id),fk_rnc_project(rnc_project_id),idx_rnc_renewal(rnc_renewal_id+rnc_period_start),primary(rnc_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_product_questions' AS table_name, 'pq_product_id,pq_question_id' AS expected_columns, 'fk_pq_question(pq_question_id),primary(pq_product_id+pq_question_id)' AS expected_indexes
+    UNION ALL SELECT 'tb_package_questions' AS table_name, 'kq_package_id,kq_question_id' AS expected_columns, 'fk_kq_question(kq_question_id),primary(kq_package_id+kq_question_id)' AS expected_indexes
 ) e
 LEFT JOIN (
     SELECT LOWER(c.TABLE_NAME) AS table_name,

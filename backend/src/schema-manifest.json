@@ -845,6 +845,10 @@
             "par_product_id",
             "par_rule"
         ],
+        "tb_package_questions": [
+            "kq_package_id",
+            "kq_question_id"
+        ],
         "tb_payment_allocations": [
             "pva_amount",
             "pva_amount_thb",
@@ -1038,6 +1042,10 @@
             "pkg_renewal_product_id",
             "pkg_status",
             "pkg_updated_at"
+        ],
+        "tb_product_questions": [
+            "pq_product_id",
+            "pq_question_id"
         ],
         "tb_products": [
             "product_category_id",

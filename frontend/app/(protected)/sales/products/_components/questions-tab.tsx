@@ -15,13 +15,12 @@ import StatusBanner from "@/components/ui/guidance/status-banner";
 import { buttonClass } from "@/components/ui/button";
 import { apiFetch, type ApiError } from "@/lib/api";
 import type { RequirementGroup, RequirementQuestion } from "@/app/order/_types";
-import type { ProductCategory } from "../_types";
 import CustomerPreviewSheet from "./customer-preview-sheet";
 import MoveQuestionSheet from "./move-question-sheet";
 import RequirementGroupCard from "./requirement-group-card";
 import RequirementGroupSheet from "./requirement-group-sheet";
 import RequirementQuestionSheet from "./requirement-question-sheet";
-import { groupAudienceText, type LinkableItems } from "./requirement-labels";
+import { groupAudienceText, questionItemsText, type LinkableItems } from "./requirement-labels";
 import { questionnaireWarnings, warningCount } from "./requirement-warnings";
 import type { QuestionsTarget } from "./item-questions-panel";
 import type { ScenarioLink } from "./requirement-scenario";
@@ -47,18 +46,16 @@ function linkLabel(link: Omit<ScenarioLink, "label"> & LinkNames) {
 }
 
 type SheetState =
-    | { kind: "group"; group: RequirementGroup | null; initialItem?: { kind: "product" | "package"; id: string } }
+    | { kind: "group"; group: RequirementGroup | null }
     | { kind: "question"; group: RequirementGroup; question: RequirementQuestion | null }
     | { kind: "move"; group: RequirementGroup; question: RequirementQuestion }
     | { kind: "preview" }
     | null;
 
 export default function QuestionsTab({
-    categories,
     canEdit,
     target = null,
 }: {
-    categories: ProductCategory[];
     canEdit: boolean;
     target?: QuestionsTarget | null;
 }) {
@@ -67,11 +64,9 @@ export default function QuestionsTab({
     // ลิงก์สำหรับ "ใช้ค่าจากลิงก์" ในดูมุมมองลูกค้า · ไม่มีสิทธิ์ดูลิงก์ = ไม่มีตัวเลือกนี้ (ไม่ใช่ข้อผิดพลาด)
     const [links, setLinks] = useState<ScenarioLink[]>([]);
     const [loadError, setLoadError] = useState<ApiError | null>(null);
-    // มาจากแผ่นแก้สินค้า/ชุด "เพิ่มกลุ่มคำถามสำหรับรายการนี้" → เปิดแผ่นเพิ่มกลุ่มที่ผูกรายการนั้นไว้แล้ว
+    // มาจากแผงคำถามของสินค้า/ชุด "สร้างคำถามใหม่" → เปิดแผ่นเพิ่มกลุ่ม (เพิ่มข้อแล้วกลับไปติ๊กที่สินค้า)
     const [sheet, setSheet] = useState<SheetState>(() =>
-        target && "createFor" in target && canEdit
-            ? { kind: "group", group: null, initialItem: target.createFor }
-            : null,
+        target && "newGroup" in target && canEdit ? { kind: "group", group: null } : null,
     );
     const focusGroupId = target && "groupId" in target ? target.groupId : null;
     const [search, setSearch] = useState("");
@@ -172,7 +167,7 @@ export default function QuestionsTab({
     }
     if (!groups) return <p className="text-sm text-gray-500">กำลังโหลด...</p>;
 
-    const warnings = questionnaireWarnings(groups, categories, items);
+    const warnings = questionnaireWarnings(groups, items);
     const totalWarnings = groups.reduce((sum, group) => sum + warningCount(warnings.get(group.rqg_id)), 0);
     const keyword = search.trim().toLowerCase();
     const matchesSearch = (group: RequirementGroup) =>
@@ -187,8 +182,13 @@ export default function QuestionsTab({
         <div className="grid gap-5">
             <HowItWorks label="คำถามขึ้นให้ลูกค้าอย่างไร">
                 <p>
-                    กลุ่มขึ้นให้ลูกค้าตาม &quot;ถามเมื่อไหร่&quot;: ถามทุกคำขอ · เมื่อลูกค้าเลือก (หรือทีมงานเลือกให้)
-                    หมวด ชุด หรือสินค้าที่ผูกไว้ · หรือไม่ถามเอง ใช้กับลิงก์ที่เลือกถามเพิ่ม
+                    กลุ่มขึ้นให้ลูกค้าตาม &quot;ถามเมื่อไหร่&quot;: ถามทุกคำขอ · ถามตามสินค้าที่เลือก · หรือไม่ถามเอง
+                    ใช้กับลิงก์ที่เลือกถามเพิ่ม
+                </p>
+                <p>
+                    ถามตามสินค้าที่เลือก: สินค้าและชุดติ๊กข้อที่จะถามเองที่แผง &quot;คำถามที่ถามลูกค้า&quot;
+                    ในหน้าแก้สินค้า/ชุด · ลูกค้าเลือก (หรือทีมงานเลือกให้) รายการไหน เห็นเฉพาะข้อที่รายการนั้นติ๊ก ·
+                    เลือกชุด = ได้ข้อของสินค้าในชุดด้วย
                 </p>
                 <p>
                     แต่ละกลุ่มและคำถามเลือกได้ว่าถามในลิงก์แบบไหน (ลิงก์ Fastwork ห้ามถามช่องทางติดต่อนอกแพลตฟอร์ม) ·
@@ -265,7 +265,8 @@ export default function QuestionsTab({
                     <RequirementGroupCard
                         key={group.rqg_id}
                         group={group}
-                        description={groupAudienceText(group, categories, items)}
+                        description={groupAudienceText(group, items)}
+                        itemsTextOf={(question) => questionItemsText(question, group, items)}
                         warnings={warnings.get(group.rqg_id)}
                         canEdit={canEdit}
                         isFirst={index === 0}
@@ -303,8 +304,6 @@ export default function QuestionsTab({
             {sheet?.kind === "group" && (
                 <RequirementGroupSheet
                     group={sheet.group}
-                    initialItem={sheet.initialItem}
-                    categories={categories}
                     items={items}
                     onClose={() => setSheet(null)}
                     onSaved={load}
@@ -334,7 +333,6 @@ export default function QuestionsTab({
             {sheet?.kind === "preview" && (
                 <CustomerPreviewSheet
                     groups={groups}
-                    categories={categories}
                     items={items}
                     links={links}
                     onClose={() => setSheet(null)}

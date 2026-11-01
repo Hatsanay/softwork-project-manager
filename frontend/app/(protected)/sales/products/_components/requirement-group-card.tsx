@@ -24,6 +24,8 @@ import type { GroupWarnings } from "./requirement-warnings";
 type GroupCardProps = {
     group: RequirementGroup;
     description: string;
+    // "ถามเมื่อเลือก: ..." ของข้อแม่ (สินค้าเลือกคำถาม 2026-11-01)
+    itemsTextOf: (question: RequirementQuestion) => string | null;
     warnings: GroupWarnings | undefined;
     canEdit: boolean;
     isFirst: boolean;
@@ -106,6 +108,7 @@ export default function RequirementGroupCard(props: GroupCardProps) {
                                 question={question}
                                 number={index + 1}
                                 condition={questionConditionText(question, group.questions)}
+                                itemsText={props.itemsTextOf(question)}
                                 warnings={warnings?.questions.get(question.rqq_id) ?? []}
                                 isFirst={index === 0}
                                 isLast={index === group.questions.length - 1}
@@ -141,6 +144,7 @@ type QuestionRowProps = {
     question: RequirementQuestion;
     number: number;
     condition: string | null;
+    itemsText: string | null;
     warnings: string[];
     isFirst: boolean;
     isLast: boolean;
@@ -156,6 +160,7 @@ function QuestionRow({
     question,
     number,
     condition,
+    itemsText,
     warnings,
     isFirst,
     isLast,
@@ -180,6 +185,7 @@ function QuestionRow({
                         {question.rqq_is_required && <span className="ml-0.5 text-red-600">*</span>}
                     </span>
                     {condition && <span className="text-xs text-blue-600">{condition}</span>}
+                    {itemsText && <span className="text-xs text-gray-500">{itemsText}</span>}
                     <span className="flex flex-wrap items-center gap-1.5">
                         <StatusPill tone="neutral">{QUESTION_TYPE_LABEL[question.rqq_type]}</StatusPill>
                         {question.rqq_type === "file" && question.rqq_file_kind === "design" && (

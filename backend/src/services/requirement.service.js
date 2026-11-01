@@ -1,5 +1,6 @@
 // ชุดคำถามความต้องการ (2026-10-25 · S-2 · เงื่อนไขการถาม 2026-10-26 Q-1 docs/plans/2026-10-26-customer-questions.md)
-// กลุ่ม: ถามทุกคำขอ / ตามที่ลูกค้าเลือก (หมวด · ชุด · สินค้า) / เฉพาะลิงก์ที่ถามเพิ่ม + ชนิดลิงก์
+// กลุ่ม = หัวข้อจัดหน้า: ถามทุกคำขอ / ถามตามสินค้าที่เลือก / เฉพาะลิงก์ที่ถามเพิ่ม + ชนิดลิงก์
+// สินค้าเลือกคำถาม (2026-11-01 · docs/plans/2026-11-01-product-questions.md): สินค้า/ชุดเลือกข้อแม่ · ข้อลูกตามข้อแม่ · ชุด = ของชุด + ของสินค้าในชุด
 // คำถาม: ข้อลูกถามเมื่อคำตอบข้อแม่ (กลุ่มเดียวกัน อยู่ด้านบน) ตรงค่าที่ตั้ง · ลบ/แก้คำถามได้ คำตอบเดิมยังอ่านได้ (เก็บข้อความ ณ วันส่ง)
 const { AppError } = require("../utils/app-error");
 const { choiceValuesOf, PARENT_QUESTION_TYPES } = require("../shared/requirement-answers.mjs");
@@ -12,32 +13,6 @@ const GROUP_COLUMNS = `rqg_id, rqg_name, rqg_customer_intro, rqg_description, rq
 const QUESTION_COLUMNS = `rqq_id, rqq_group_id, rqq_text, rqq_help, rqq_placeholder, rqq_type, rqq_options, rqq_allow_other, rqq_unit, rqq_min, rqq_max,
     rqq_future_only, rqq_file_kind, rqq_is_required, rqq_parent_id, rqq_parent_values, rqq_audience, rqq_skip_when_preset, rqq_prefill,
     rqq_sort_order, rqq_status`;
-// ตารางที่ผูกกลุ่มกับสิ่งที่ลูกค้าเลือก · ชื่อตาราง/คอลัมน์มาจากค่าคงที่นี้เท่านั้น (ไม่ใช่ input)
-const GROUP_LINKS = [
-    {
-        field: "category_ids",
-        table: "tb_requirement_group_categories",
-        groupColumn: "rgc_group_id",
-        idColumn: "rgc_category_id",
-    },
-    {
-        field: "package_ids",
-        table: "tb_requirement_group_packages",
-        groupColumn: "rgp_group_id",
-        idColumn: "rgp_package_id",
-    },
-    {
-        field: "product_ids",
-        table: "tb_requirement_group_products",
-        groupColumn: "rgr_group_id",
-        idColumn: "rgr_product_id",
-    },
-];
-const LINKED_ITEM_SOURCES = {
-    category_ids: { table: "tb_product_categories", idColumn: "pc_id", message: "บางหมวดถูกลบไปแล้ว กรุณาเลือกใหม่" },
-    package_ids: { table: "tb_product_packages", idColumn: "pkg_id", message: "บางชุดถูกลบไปแล้ว กรุณาเลือกใหม่" },
-    product_ids: { table: "tb_products", idColumn: "product_id", message: "บางสินค้าถูกลบไปแล้ว กรุณาเลือกใหม่" },
-};
 // คอลัมน์ที่มาจากฟอร์มคำถาม (ลำดับเดียวกับ questionValues)
 const QUESTION_INPUT_COLUMNS = [
     "rqq_text",
@@ -81,7 +56,6 @@ async function listGroups(conn, { activeOnly = false } = {}) {
     );
     if (groups.length === 0) return [];
     const groupIds = groups.map((group) => group.rqg_id);
-    const linked = await loadGroupLinks(conn, groupIds);
     const [questions] = await conn.query(
         `SELECT ${QUESTION_COLUMNS} FROM tb_requirement_questions
          WHERE rqq_group_id IN (?) ${activeOnly ? "AND rqq_status = 'active'" : ""}
@@ -95,25 +69,26 @@ async function listGroups(conn, { activeOnly = false } = {}) {
               conn,
               questions.map((question) => question.rqq_id),
           );
+    const itemLinks = await loadItemLinks(conn, questions.map((question) => question.rqq_id));
+    const withLinks = (question) => ({
+        ...questionRow(question),
+        product_ids: itemLinks.productIds.get(question.rqq_id) ?? [],
+        package_ids: itemLinks.packageIds.get(question.rqq_id) ?? [],
+        via_package_ids: itemLinks.viaPackageIds.get(question.rqq_id) ?? [],
+    });
     return groups
         .map((group) => ({
             ...group,
-            category_ids: linked.category_ids.get(group.rqg_id) ?? [],
-            package_ids: linked.package_ids.get(group.rqg_id) ?? [],
-            product_ids: linked.product_ids.get(group.rqg_id) ?? [],
             questions: questions
                 .filter((question) => question.rqq_group_id === group.rqg_id)
                 .map((question) =>
-                    activeOnly
-                        ? questionRow(question)
-                        : { ...questionRow(question), answer_count: answerCounts.get(question.rqq_id) ?? 0 },
+                    activeOnly ? withLinks(question) : { ...withLinks(question), answer_count: answerCounts.get(question.rqq_id) ?? 0 },
                 ),
         }))
         .filter((group) => !activeOnly || group.questions.length > 0);
 }
 
 async function createGroup(conn, input) {
-    await assertLinkedItemsExist(conn, input);
     // กลุ่มใหม่ต่อท้ายเสมอ (หน้าตั้งค่าเรียงด้วยปุ่มขึ้น/ลง ไม่มีช่องลำดับแล้ว · 2026-10-26 Q-2)
     const [[{ nextOrder }]] = await conn.query(
         "SELECT COALESCE(MAX(rqg_sort_order), 0) + 1 AS nextOrder FROM tb_requirement_groups",
@@ -132,13 +107,11 @@ async function createGroup(conn, input) {
             input.rqg_status,
         ],
     );
-    await saveGroupLinks(conn, result.insertId, input);
     return { rqg_id: result.insertId };
 }
 
 async function updateGroup(conn, groupId, input) {
     await findGroupRow(conn, groupId, { forUpdate: true });
-    await assertLinkedItemsExist(conn, input);
     await conn.query(
         `UPDATE tb_requirement_groups
          SET rqg_name = ?, rqg_customer_intro = ?, rqg_description = ?, rqg_trigger = ?, rqg_audience = ?, rqg_sort_order = ?, rqg_status = ?
@@ -154,7 +127,6 @@ async function updateGroup(conn, groupId, input) {
             groupId,
         ],
     );
-    await saveGroupLinks(conn, groupId, input);
     return { rqg_id: groupId };
 }
 
@@ -191,6 +163,8 @@ async function updateQuestion(conn, questionId, input) {
         `UPDATE tb_requirement_questions SET ${QUESTION_INPUT_COLUMNS.map((column) => `${column} = ?`).join(", ")} WHERE rqq_id = ?`,
         [...questionValues(input), questionId],
     );
+    // กลายเป็นข้อลูก = ถามตามข้อแม่ ไม่ผูกสินค้าเองอีก (หน้าแก้คำถามบอกก่อนบันทึก)
+    if (input.rqq_parent_id) await unlinkItems(conn, questionId);
     return { rqq_id: questionId };
 }
 
@@ -384,45 +358,69 @@ function questionRow(question) {
     return row;
 }
 
-async function loadGroupLinks(conn, groupIds) {
-    const result = {};
-    for (const link of GROUP_LINKS) {
-        const [rows] = await conn.query(
-            `SELECT ${link.groupColumn} AS group_id, ${link.idColumn} AS item_id FROM ${link.table} WHERE ${link.groupColumn} IN (?)`,
-            [groupIds],
-        );
-        const byGroup = new Map();
-        for (const row of rows) {
-            const list = byGroup.get(row.group_id) ?? [];
-            list.push(row.item_id);
-            byGroup.set(row.group_id, list);
+/**
+ * สินค้า/ชุดที่เลือกแต่ละข้อ · via_package_ids = ชุดที่มีสินค้าที่เลือกข้อนี้อยู่ข้างใน (ชุดได้คำถามของสินค้าในชุด · Q2)
+ * @returns {Promise<{ productIds: Map<number, string[]>, packageIds: Map<number, string[]>, viaPackageIds: Map<number, string[]> }>}
+ */
+async function loadItemLinks(conn, questionIds) {
+    const productIds = new Map();
+    const packageIds = new Map();
+    const viaPackageIds = new Map();
+    if (questionIds.length === 0) return { productIds, packageIds, viaPackageIds };
+    const push = (map, key, value) => map.set(key, [...new Set([...(map.get(key) ?? []), value])]);
+    const [productRows] = await conn.query(
+        "SELECT pq_question_id, pq_product_id FROM tb_product_questions WHERE pq_question_id IN (?)",
+        [questionIds],
+    );
+    for (const row of productRows) push(productIds, row.pq_question_id, row.pq_product_id);
+    const [packageRows] = await conn.query(
+        "SELECT kq_question_id, kq_package_id FROM tb_package_questions WHERE kq_question_id IN (?)",
+        [questionIds],
+    );
+    for (const row of packageRows) push(packageIds, row.kq_question_id, row.kq_package_id);
+    const [viaRows] = await conn.query(
+        `SELECT DISTINCT pq.pq_question_id, i.pki_package_id
+         FROM tb_product_questions pq JOIN tb_product_package_items i ON i.pki_product_id = pq.pq_product_id
+         WHERE pq.pq_question_id IN (?)`,
+        [questionIds],
+    );
+    for (const row of viaRows) push(viaPackageIds, row.pq_question_id, row.pki_package_id);
+    return { productIds, packageIds, viaPackageIds };
+}
+
+async function unlinkItems(conn, questionId) {
+    await conn.query("DELETE FROM tb_product_questions WHERE pq_question_id = ?", [questionId]);
+    await conn.query("DELETE FROM tb_package_questions WHERE kq_question_id = ?", [questionId]);
+}
+
+// ตารางผูกของสินค้า/ชุด · ชื่อตาราง/คอลัมน์มาจากค่าคงที่นี้เท่านั้น (ไม่ใช่ input)
+const ITEM_LINKS = {
+    product: { itemTable: "tb_products", itemColumn: "product_id", table: "tb_product_questions", idColumn: "pq_product_id", questionColumn: "pq_question_id" },
+    package: { itemTable: "tb_product_packages", itemColumn: "pkg_id", table: "tb_package_questions", idColumn: "kq_package_id", questionColumn: "kq_question_id" },
+};
+
+/**
+ * สินค้า/ชุดเลือกคำถาม (แทนชุดเดิมทั้งหมด) · เลือกได้เฉพาะข้อแม่ (ข้อลูกตามข้อแม่ไปเอง)
+ * @param {"product" | "package"} kind
+ * @param {number[]} questionIds
+ */
+async function setItemQuestions(conn, kind, itemId, questionIds) {
+    const link = ITEM_LINKS[kind];
+    const [[item]] = await conn.query(`SELECT ${link.itemColumn} FROM ${link.itemTable} WHERE ${link.itemColumn} = ? FOR UPDATE`, [itemId]);
+    if (!item) throw new AppError(404, "ITEM_NOT_FOUND", kind === "product" ? "ไม่พบสินค้านี้" : "ไม่พบชุดรายการนี้");
+    const unique = [...new Set(questionIds)];
+    if (unique.length > 0) {
+        const [rows] = await conn.query("SELECT rqq_id, rqq_parent_id FROM tb_requirement_questions WHERE rqq_id IN (?)", [unique]);
+        if (rows.length !== unique.length) throw validationError({ question_ids: "บางคำถามถูกลบไปแล้ว กรุณาโหลดหน้าใหม่" });
+        if (rows.some((row) => row.rqq_parent_id !== null)) {
+            throw validationError({ question_ids: "เลือกได้เฉพาะข้อที่ไม่มีเงื่อนไข (ข้อที่ถามต่อตามคำตอบจะขึ้นตามข้อแม่เอง)" });
         }
-        result[link.field] = byGroup;
     }
-    return result;
-}
-
-async function saveGroupLinks(conn, groupId, input) {
-    for (const link of GROUP_LINKS) {
-        await conn.query(`DELETE FROM ${link.table} WHERE ${link.groupColumn} = ?`, [groupId]);
-        const unique = [...new Set(input[link.field])];
-        if (unique.length === 0) continue;
-        await conn.query(`INSERT INTO ${link.table} (${link.groupColumn}, ${link.idColumn}) VALUES ?`, [
-            unique.map((id) => [groupId, id]),
-        ]);
+    await conn.query(`DELETE FROM ${link.table} WHERE ${link.idColumn} = ?`, [itemId]);
+    if (unique.length > 0) {
+        await conn.query(`INSERT INTO ${link.table} (${link.idColumn}, ${link.questionColumn}) VALUES ?`, [unique.map((id) => [itemId, id])]);
     }
-}
-
-async function assertLinkedItemsExist(conn, input) {
-    for (const [field, source] of Object.entries(LINKED_ITEM_SOURCES)) {
-        const unique = [...new Set(input[field])];
-        if (unique.length === 0) continue;
-        const [rows] = await conn.query(
-            `SELECT ${source.idColumn} FROM ${source.table} WHERE ${source.idColumn} IN (?)`,
-            [unique],
-        );
-        if (rows.length !== unique.length) throw validationError({ [field]: source.message });
-    }
+    return { item_id: itemId, question_count: unique.length };
 }
 
 async function findGroupRow(conn, groupId, { forUpdate = false } = {}) {
@@ -506,4 +504,5 @@ module.exports = {
     copyGroup,
     copyQuestion,
     moveQuestion,
+    setItemQuestions,
 };

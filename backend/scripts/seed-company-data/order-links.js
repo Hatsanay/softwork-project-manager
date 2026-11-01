@@ -14,26 +14,52 @@ const { formatHundredths } = require("../../src/shared/money.mjs");
 const { visibleQuestionnaire } = require("../../src/shared/requirement-answers.mjs");
 
 /**
- * ผูกกลุ่มคำถามกับหมวดสินค้า/ชุด (กลุ่มที่ติดมากับระบบยังไม่ผูกอะไร = ถามเฉพาะลิงก์ที่ถามเพิ่ม) → ถามตามที่ลูกค้าเลือก
- * mapping: ชื่อกลุ่ม → รหัสหมวด · packageMapping: ชื่อกลุ่ม → รหัสชุด
+ * สินค้า/ชุดเลือกคำถาม (2026-11-01 · docs/plans/2026-11-01-product-questions.md): เลือกทุกข้อแม่ของกลุ่มที่ระบุ
+ * กลุ่มที่ระบุเปลี่ยนเป็น "ถามตามสินค้าที่เลือก" (กลุ่มที่ติดมากับระบบตั้งต้นเป็นถามเฉพาะลิงก์ที่ถามเพิ่ม)
+ * plan: ชื่อกลุ่ม → { products: [รหัสสินค้า], packages: [รหัสชุด] } · คำถามที่สินค้า/ชุดเลือกไว้ก่อนแล้วยังอยู่
  */
-async function linkRequirementGroups(username, mapping, packageMapping = {}) {
+async function askGroupQuestions(username, plan) {
     const { data: groups } = await as(username, "GET", "/V1/requirement-groups");
+    const chosen = { product: new Map(), package: new Map() };
+    const choose = (kind, itemId, questionIds) => {
+        chosen[kind].set(itemId, new Set([...(chosen[kind].get(itemId) ?? []), ...questionIds]));
+    };
+    const touched = { product: new Set(), package: new Set() };
     for (const group of groups) {
-        const categoryIds = mapping[group.rqg_name];
-        if (!categoryIds && !packageMapping[group.rqg_name]) continue;
-        await as(username, "PUT", `/V1/requirement-groups/${group.rqg_id}`, {
-            rqg_name: group.rqg_name,
-            rqg_customer_intro: group.rqg_customer_intro,
-            rqg_description: group.rqg_description,
-            rqg_trigger: "selection",
-            rqg_audience: group.rqg_audience,
-            rqg_sort_order: group.rqg_sort_order,
-            rqg_status: group.rqg_status,
-            category_ids: categoryIds ?? group.category_ids,
-            package_ids: packageMapping[group.rqg_name] ?? group.package_ids,
-            product_ids: group.product_ids,
-        });
+        for (const question of group.questions) {
+            for (const productId of question.product_ids) choose("product", productId, [question.rqq_id]);
+            for (const packageId of question.package_ids) choose("package", packageId, [question.rqq_id]);
+        }
+    }
+    for (const group of groups) {
+        const items = plan[group.rqg_name];
+        if (!items) continue;
+        if (group.rqg_trigger !== "selection") {
+            await as(username, "PUT", `/V1/requirement-groups/${group.rqg_id}`, {
+                rqg_name: group.rqg_name,
+                rqg_customer_intro: group.rqg_customer_intro,
+                rqg_description: group.rqg_description,
+                rqg_trigger: "selection",
+                rqg_audience: group.rqg_audience,
+                rqg_sort_order: group.rqg_sort_order,
+                rqg_status: group.rqg_status,
+            });
+        }
+        const topQuestionIds = group.questions.filter((question) => !question.rqq_parent_id).map((question) => question.rqq_id);
+        for (const productId of items.products ?? []) {
+            choose("product", productId, topQuestionIds);
+            touched.product.add(productId);
+        }
+        for (const packageId of items.packages ?? []) {
+            choose("package", packageId, topQuestionIds);
+            touched.package.add(packageId);
+        }
+    }
+    for (const productId of touched.product) {
+        await as(username, "PUT", `/V1/products/${productId}/questions`, { question_ids: [...chosen.product.get(productId)] });
+    }
+    for (const packageId of touched.package) {
+        await as(username, "PUT", `/V1/product-packages/${packageId}/questions`, { question_ids: [...chosen.package.get(packageId)] });
     }
 }
 
@@ -63,7 +89,6 @@ async function submitOrder(code, order) {
 
     const lines = [];
     const preset = shop.body.preset ?? [];
-    const categoryIds = preset.map((item) => (item.kind === "package" ? item.package.pkg_category_id : item.product.product_category_id));
     const packageIds = preset.filter((item) => item.kind === "package").map((item) => item.package.pkg_id);
     const productIds = preset.filter((item) => item.kind === "product").map((item) => item.product.product_id);
     for (const item of order.items) {
@@ -71,7 +96,6 @@ async function submitOrder(code, order) {
             const product = productsById.get(item.id);
             if (!product) throw new Error(`สินค้า ${item.id} ไม่อยู่บนหน้าร้านของลิงก์ ${code}`);
             lines.push({ unitPrice: product.product_price, quantity: String(item.quantity) });
-            categoryIds.push(product.product_category_id);
             productIds.push(product.product_id);
             continue;
         }
@@ -80,7 +104,6 @@ async function submitOrder(code, order) {
         for (const packageItem of productPackage.items) {
             lines.push({ unitPrice: packageItem.unit_price, quantity: multiplyQuantity(packageItem.quantity, item.quantity) });
         }
-        categoryIds.push(productPackage.pkg_category_id);
         packageIds.push(productPackage.pkg_id);
     }
 
@@ -93,7 +116,6 @@ async function submitOrder(code, order) {
         questionnaire,
         {
             linkKind: shop.body.link.kind,
-            categoryIds,
             packageIds,
             productIds,
             hasPreset: preset.length > 0,
@@ -166,20 +188,21 @@ function scheduleOrderLinks({ on, ids, state, sales }) {
 
     on("2026-08-03", "ตั้งลิงก์เลือกบริการบนหน้าเว็บบริษัท", async () => {
         await as(SALES_MANAGER, "PUT", "/V1/service-requests/settings", { cs_service_request_assignee_id: ids.users.siriporn });
-        await linkRequirementGroups(
-            SALES_MANAGER,
-            { เว็บไซต์: [ids.categories[0]], "ออกแบบ UX/UI": [ids.categories[1]] },
-            { ระบบงาน: [ids.packages.corporateWebsite] },
-        );
+        // สินค้าเลือกคำถาม: งานพัฒนาถามเรื่องเว็บไซต์ · งานออกแบบถามเรื่อง UX/UI · ชุดเว็บองค์กรถามระบบงานเพิ่ม
+        // (ชุดได้คำถามของสินค้าในชุดเองด้วย: ออกแบบ UX/UI + พัฒนาเว็บแอป)
+        await askGroupQuestions(SALES_MANAGER, {
+            เว็บไซต์: { products: [product("analysis"), product("webDev"), product("mobileDev"), product("testing")] },
+            "ออกแบบ UX/UI": { products: [product("uxui")] },
+            ระบบงาน: { packages: [ids.packages.corporateWebsite] },
+        });
         // ชุดเว็บไซต์องค์กรมีโฮสติ้งและโดเมนปีแรกแล้ว · แอปมือถือใช้กับชุดนี้ไม่ได้
-        // กลุ่มที่ถามเมื่อเลือกสินค้ารายตัว (2026-10-26 Q-1): บริการดูแลรายเดือน → ถามว่าดูแลเรื่องไหน (มี อื่นๆ ระบุ)
+        // หัวข้อของสินค้ารายตัว: บริการดูแลรายเดือน → ถามว่าดูแลเรื่องไหน (มี อื่นๆ ระบุ)
         const maintenanceGroup = await as(SALES_MANAGER, "POST", "/V1/requirement-groups", {
             rqg_name: "บริการดูแลรายเดือน",
             rqg_customer_intro: "ใช้วางแผนงานดูแลและรอบรายงานประจำเดือน",
             rqg_trigger: "selection",
             rqg_status: "active",
             rqg_sort_order: 9,
-            product_ids: [product("maintenance")],
         });
         await as(SALES_MANAGER, "POST", `/V1/requirement-groups/${maintenanceGroup.rqg_id}/questions`, {
             rqq_text: "อยากให้ดูแลเรื่องไหนบ้าง",
@@ -188,6 +211,7 @@ function scheduleOrderLinks({ on, ids, state, sales }) {
             rqq_allow_other: true,
             rqq_status: "active",
         });
+        await askGroupQuestions(SALES_MANAGER, { บริการดูแลรายเดือน: { products: [product("maintenance")] } });
         await setAddonRules(SALES_MANAGER, ids.packages.corporateWebsite, [
             { product_id: product("hosting"), rule: "included" },
             { product_id: product("domain"), rule: "included" },
@@ -384,7 +408,7 @@ function scheduleFastworkLinks({ on, ids, state, owner }) {
     const screen = ids.products.screen.id;
 
     on("2026-09-01", "ส่งลิงก์ Fastwork ให้ผู้ซื้อ seaside_spa (ก่อนจ้าง)", async () => {
-        await linkRequirementGroups(owner, { เว็บไซต์: [ids.categories.web] });
+        await askGroupQuestions(owner, { เว็บไซต์: { products: [website, screen] } });
         state.spaLink = await as(owner, "POST", "/V1/order-links", { ol_kind: "fastwork", ol_buyer_name: "seaside_spa", ol_assignee_id: ids.users[owner], category_ids: [] });
     });
     on("2026-09-02", "seaside_spa เลือกขอบเขตงานผ่านลิงก์", async () => {

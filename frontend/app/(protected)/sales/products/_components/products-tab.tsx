@@ -557,7 +557,6 @@ export default function ProductsTab({ categories, canEdit, onOpenQuestions }: Pr
                     <ItemQuestionsPanel
                         kind="product"
                         itemId={editor.editingId}
-                        categoryId={form.product_category_id || null}
                         onOpenQuestions={(target) => confirmDiscard(isDirty) && onOpenQuestions(target)}
                     />
                     <SaveErrorBanner error={editor.saveError} />

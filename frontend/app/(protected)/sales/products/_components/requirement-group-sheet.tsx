@@ -1,7 +1,8 @@
 "use client";
 
 // แผ่นเพิ่ม/แก้กลุ่มคำถามลูกค้า (2026-10-26 Q-1 · docs/plans/2026-10-26-customer-questions.md ข้อ 4.2)
-// ถามเมื่อไหร่ 3 แบบ: ทุกคำขอ / เมื่อลูกค้าเลือกหมวด-ชุด-สินค้าที่ผูก / ไม่ถามเอง (เฉพาะลิงก์ที่เลือกถามเพิ่ม) + ชนิดลิงก์ที่ถาม
+// ถามเมื่อไหร่ 3 แบบ: ทุกคำขอ / ถามตามสินค้าที่เลือก / ไม่ถามเอง (เฉพาะลิงก์ที่เลือกถามเพิ่ม) + ชนิดลิงก์ที่ถาม
+// สินค้าเลือกคำถาม (2026-11-01): กลุ่มไม่ผูกหมวด/ชุด/สินค้าแล้ว · สินค้าและชุดติ๊กข้อที่ถามเองในแผงของรายการนั้น
 // ใต้ฟอร์มมีประโยคสรุปว่าลูกค้าคนไหนเห็นกลุ่มนี้ อัปเดตทันทีที่เลือก
 import { useState } from "react";
 import { toast } from "sonner";
@@ -21,7 +22,6 @@ import {
 import { requirementGroupSchema } from "@/lib/shared/schemas/requirement.mjs";
 import type { RequirementGroup } from "@/app/order/_types";
 import { SheetButtons, SheetFrame } from "../../../fastwork/_components/sheet-frame";
-import type { ProductCategory } from "../_types";
 import { groupAudienceText, type LinkableItems } from "./requirement-labels";
 
 type Trigger = RequirementGroup["rqg_trigger"];
@@ -29,23 +29,18 @@ type Audience = RequirementGroup["rqg_audience"];
 
 const TRIGGER_HINT: Record<Trigger, string> = {
     always: "ทุกคนที่ส่งคำขอเห็นกลุ่มนี้ เช่น ธุรกิจทำอะไร",
-    selection: "เห็นเมื่อลูกค้าเลือก (หรือทีมงานเลือกให้) หมวด ชุด หรือสินค้าที่ผูกไว้อย่างน้อย 1 อย่าง",
+    selection: "ถามเฉพาะข้อที่สินค้าหรือชุดที่ลูกค้าเลือก (หรือทีมงานเลือกให้) ติ๊กไว้",
     link_only: "ลูกค้าไม่เห็นเอง ใช้กับลิงก์ที่ทีมงานเลือกถามกลุ่มนี้เพิ่ม เช่น งานสั่งทำเฉพาะลูกค้า",
 };
 
 export default function RequirementGroupSheet({
     group,
-    initialItem,
-    categories,
     items,
     onClose,
     onSaved,
     onDelete,
 }: {
     group: RequirementGroup | null;
-    // กลุ่มใหม่ที่เปิดจากแผ่นแก้สินค้า/ชุด: ผูกรายการนั้นไว้ให้แล้ว
-    initialItem?: { kind: "product" | "package"; id: string };
-    categories: ProductCategory[];
     items: LinkableItems;
     onClose: () => void;
     onSaved: () => Promise<void>;
@@ -59,20 +54,9 @@ export default function RequirementGroupSheet({
         rqg_audience: group?.rqg_audience ?? ("all" as Audience),
         rqg_sort_order: group?.rqg_sort_order ?? 0,
         rqg_status: group?.rqg_status ?? ("active" as const),
-        category_ids: group?.category_ids ?? ([] as string[]),
-        package_ids: group?.package_ids ?? (initialItem?.kind === "package" ? [initialItem.id] : ([] as string[])),
-        product_ids: group?.product_ids ?? (initialItem?.kind === "product" ? [initialItem.id] : ([] as string[])),
     });
-    const [productSearch, setProductSearch] = useState("");
     const [errors, setErrors] = useState<FieldErrors>({});
     const [isSaving, setIsSaving] = useState(false);
-
-    function toggle(field: "category_ids" | "package_ids" | "product_ids", id: string, isOn: boolean) {
-        setForm((current) => ({
-            ...current,
-            [field]: isOn ? [...current[field], id] : current[field].filter((value) => value !== id),
-        }));
-    }
 
     async function submit(event: React.FormEvent) {
         event.preventDefault();
@@ -96,17 +80,10 @@ export default function RequirementGroupSheet({
         onClose();
     }
 
-    const keyword = productSearch.trim().toLowerCase();
-    const shownProducts = items.products.filter(
-        (product) =>
-            form.product_ids.includes(product.product_id) ||
-            keyword === "" ||
-            product.product_name.toLowerCase().includes(keyword),
+    const summary = groupAudienceText(
+        { ...form, rqg_id: group?.rqg_id ?? 0, questions: group?.questions ?? [] },
+        items,
     );
-    const shownPackages = items.packages.filter(
-        (row) => row.pkg_status === "active" || form.package_ids.includes(row.pkg_id),
-    );
-    const summary = groupAudienceText({ ...form, product_ids: form.product_ids }, categories, items);
 
     return (
         <SheetFrame
@@ -169,44 +146,10 @@ export default function RequirementGroupSheet({
             </fieldset>
 
             {form.rqg_trigger === "selection" && (
-                <div className="grid gap-4 rounded-xl border border-gray-100 bg-gray-50 p-3">
-                    <ChipPicker
-                        legend="หมวด"
-                        items={categories.map((category) => ({ id: category.pc_id, name: category.pc_name }))}
-                        selected={form.category_ids}
-                        onToggle={(id, isOn) => toggle("category_ids", id, isOn)}
-                        hint={categories.length === 0 ? "ยังไม่มีหมวด เพิ่มได้ที่แท็บหมวดหมู่" : undefined}
-                    />
-                    <ChipPicker
-                        legend="ชุดบริการ"
-                        items={shownPackages.map((row) => ({ id: row.pkg_id, name: row.pkg_name }))}
-                        selected={form.package_ids}
-                        onToggle={(id, isOn) => toggle("package_ids", id, isOn)}
-                        hint='เช่น กลุ่ม "ระบบที่ต้องการ" ถามเฉพาะคนที่เลือกแพ็กเว็บ + ระบบ'
-                    />
-                    <div className="grid gap-2">
-                        <input
-                            aria-label="ค้นหาสินค้า"
-                            placeholder="ค้นหาสินค้า (งานเพิ่ม)"
-                            value={productSearch}
-                            onChange={(event) => setProductSearch(event.target.value)}
-                            className={inputClass(false)}
-                        />
-                        <ChipPicker
-                            legend="สินค้า (งานเพิ่มรายตัว)"
-                            items={shownProducts.map((product) => ({
-                                id: product.product_id,
-                                name: product.product_name,
-                            }))}
-                            selected={form.product_ids}
-                            onToggle={(id, isOn) => toggle("product_ids", id, isOn)}
-                            hint="เช่น เว็บ 2 ภาษา → ถามว่าใครแปล"
-                        />
-                    </div>
-                    <FieldHint error={errors.category_ids ?? errors.package_ids ?? errors.product_ids}>
-                        เลือกได้หลายรายการ · เข้าเงื่อนไขข้อใดข้อหนึ่ง = ถามกลุ่มนี้
-                    </FieldHint>
-                </div>
+                <FieldHint>
+                    ติ๊กข้อที่จะถามได้ที่แผง &quot;คำถามที่ถามลูกค้า&quot; ในหน้าแก้สินค้าหรือชุดรายการ · เลือกชุด =
+                    ถามข้อของสินค้าในชุดให้ด้วย
+                </FieldHint>
             )}
 
             <FormField
@@ -274,49 +217,5 @@ export default function RequirementGroupSheet({
                 <SheetButtons isSaving={isSaving} submitLabel="บันทึกกลุ่ม" onClose={onClose} />
             </div>
         </SheetFrame>
-    );
-}
-
-function ChipPicker({
-    legend,
-    items,
-    selected,
-    onToggle,
-    hint,
-}: {
-    legend: string;
-    items: { id: string; name: string }[];
-    selected: string[];
-    onToggle: (id: string, isOn: boolean) => void;
-    hint?: string;
-}) {
-    return (
-        <fieldset className="grid gap-2">
-            <legend className="mb-1 text-sm text-gray-800">{legend}</legend>
-            {items.length === 0 ? (
-                <p className="text-sm text-gray-500">ไม่มีรายการ</p>
-            ) : (
-                <div className="flex flex-wrap gap-2">
-                    {items.map((item) => {
-                        const isOn = selected.includes(item.id);
-                        return (
-                            <label
-                                key={item.id}
-                                className={`flex min-h-10 cursor-pointer items-center gap-2 rounded-xl border px-3 text-sm ${isOn ? "border-blue-300 bg-white text-blue-700" : "border-gray-200 bg-white text-gray-700"}`}
-                            >
-                                <input
-                                    type="checkbox"
-                                    className="h-4 w-4 accent-blue-600"
-                                    checked={isOn}
-                                    onChange={(event) => onToggle(item.id, event.target.checked)}
-                                />
-                                {item.name}
-                            </label>
-                        );
-                    })}
-                </div>
-            )}
-            {hint && <FieldHint>{hint}</FieldHint>}
-        </fieldset>
     );
 }

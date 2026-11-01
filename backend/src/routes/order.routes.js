@@ -48,6 +48,9 @@ function registerOrderRoutes(router) {
     router.post("/V1/requirement-groups/:id/copy", requireAuth, canManageQuestions, orderController.copyRequirementGroup);
     router.post("/V1/requirement-questions/:id/copy", requireAuth, canManageQuestions, orderController.copyRequirementQuestion);
     router.post("/V1/requirement-questions/:id/move", requireAuth, canManageQuestions, orderController.moveRequirementQuestion);
+    // สินค้า/ชุดเลือกคำถาม (2026-11-01) · สิทธิ์เดียวกับแก้คำถาม (productManagement)
+    router.put("/V1/products/:id/questions", requireAuth, canManageQuestions, orderController.setProductQuestions);
+    router.put("/V1/product-packages/:id/questions", requireAuth, canManageQuestions, orderController.setPackageQuestions);
 
     // การ์ด "ความต้องการจากลูกค้า" ในหน้าโปรเจกต์ (S-4) — สมาชิกโปรเจกต์ (ไม่มีราคา)
     router.get("/V1/projects/:id/requirements", requireAuth, requireProjectMember, orderController.projectRequirements);

@@ -10,6 +10,7 @@ const {
     groupOrderSchema,
     questionMoveSchema,
     questionOrderSchema,
+    itemQuestionsSchema,
     requirementGroupSchema,
     requirementQuestionSchema,
 } = require("../shared/schemas/requirement.mjs");
@@ -164,6 +165,15 @@ module.exports = {
     updateRequirementGroup: handle((req) => {
         const input = validate(requirementGroupSchema, req.body);
         return withTransaction((conn) => requirementService.updateGroup(conn, numericId(req.params.id), input));
+    }),
+    // สินค้า/ชุดเลือกคำถาม (2026-11-01)
+    setProductQuestions: handle((req) => {
+        const input = validate(itemQuestionsSchema, req.body);
+        return withTransaction((conn) => requirementService.setItemQuestions(conn, "product", req.params.id, input.question_ids));
+    }),
+    setPackageQuestions: handle((req) => {
+        const input = validate(itemQuestionsSchema, req.body);
+        return withTransaction((conn) => requirementService.setItemQuestions(conn, "package", req.params.id, input.question_ids));
     }),
     deleteRequirementGroup: handle((req) => withTransaction((conn) => requirementService.deleteGroup(conn, numericId(req.params.id)))),
     reorderRequirementQuestions: handle((req) => {

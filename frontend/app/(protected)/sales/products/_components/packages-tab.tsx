@@ -545,7 +545,6 @@ export default function PackagesTab({ categories, canEdit, onOpenQuestions }: Pa
                     <ItemQuestionsPanel
                         kind="package"
                         itemId={editor.editingId}
-                        categoryId={form.pkg_category_id || null}
                         onOpenQuestions={(target) => confirmDiscard(isDirty) && onOpenQuestions(target)}
                     />
                     <SaveErrorBanner error={editor.saveError} />

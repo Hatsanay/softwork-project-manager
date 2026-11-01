@@ -192,6 +192,62 @@ test("ข้อมูลเริ่มต้นไม่ทับของท�
     });
 });
 
+test("สินค้าเลือกคำถาม (2026-11-01): ย้ายการผูกกลุ่มเดิม (หมวด/ชุด/สินค้า) ไปที่สินค้า/ชุด · เฉพาะข้อแม่ · ล้างตารางเดิม · รันซ้ำไม่ซ้ำ", async () => {
+    await withTemporaryDatabase("productquestions", async (conn) => {
+        await runSchemaFile(conn, DEPLOY_SCHEMA);
+        await conn.query("INSERT INTO tb_product_categories (pc_id, pc_name) VALUES ('PCA000000000000001', 'เว็บไซต์'), ('PCA000000000000002', 'โดเมน')");
+        await conn.query(
+            `INSERT INTO tb_products (product_id, product_name, product_category_id) VALUES
+             ('PRO000000000000001', 'เว็บหน้าเดียว', 'PCA000000000000001'),
+             ('PRO000000000000002', 'เว็บธุรกิจ', 'PCA000000000000001'),
+             ('PRO000000000000003', 'จดโดเมน', 'PCA000000000000002')`,
+        );
+        await conn.query(
+            `INSERT INTO tb_product_packages (pkg_id, pkg_name, pkg_category_id) VALUES
+             ('PKG000000000000001', 'แพ็กเว็บ', 'PCA000000000000001'),
+             ('PKG000000000000002', 'แพ็กโดเมน', NULL)`,
+        );
+        await conn.query("INSERT INTO tb_requirement_groups (rqg_id, rqg_name, rqg_trigger) VALUES (901, 'เว็บไซต์', 'selection'), (902, 'โดเมน', 'selection')");
+        await conn.query(
+            `INSERT INTO tb_requirement_questions (rqq_id, rqq_group_id, rqq_text, rqq_type, rqq_parent_id, rqq_parent_values) VALUES
+             (9010, 901, 'มีเว็บเดิมไหม', 'yes_no', NULL, NULL),
+             (9011, 901, 'ลิงก์เว็บเดิม', 'url', 9010, '["ใช่"]'),
+             (9020, 902, 'ชื่อโดเมนที่อยากได้', 'short_text', NULL, NULL)`,
+        );
+        // แบบเดิม: กลุ่มเว็บผูกหมวดเว็บ · กลุ่มโดเมนผูกสินค้าจดโดเมน + แพ็กโดเมน
+        await conn.query("INSERT INTO tb_requirement_group_categories (rgc_group_id, rgc_category_id) VALUES (901, 'PCA000000000000001')");
+        await conn.query("INSERT INTO tb_requirement_group_products (rgr_group_id, rgr_product_id) VALUES (902, 'PRO000000000000003')");
+        await conn.query("INSERT INTO tb_requirement_group_packages (rgp_group_id, rgp_package_id) VALUES (902, 'PKG000000000000002')");
+
+        assert.deepEqual(await runSchemaFile(conn, DEPLOY_SCHEMA), [], "หลังย้าย: ส่วนที่ 6 ต้องไม่มีแถว");
+
+        const productLinks = async () =>
+            (await conn.query("SELECT pq_product_id, pq_question_id FROM tb_product_questions ORDER BY pq_product_id, pq_question_id"))[0];
+        const packageLinks = async () =>
+            (await conn.query("SELECT kq_package_id, kq_question_id FROM tb_package_questions ORDER BY kq_package_id, kq_question_id"))[0];
+        const expectedProducts = [
+            { pq_product_id: "PRO000000000000001", pq_question_id: 9010 },
+            { pq_product_id: "PRO000000000000002", pq_question_id: 9010 },
+            { pq_product_id: "PRO000000000000003", pq_question_id: 9020 },
+        ];
+        const expectedPackages = [
+            { kq_package_id: "PKG000000000000001", kq_question_id: 9010 },
+            { kq_package_id: "PKG000000000000002", kq_question_id: 9020 },
+        ];
+        assert.deepEqual(await productLinks(), expectedProducts, "หมวด → ทุกสินค้าในหมวด · ข้อลูก (9011) ไม่ถูกผูก");
+        assert.deepEqual(await packageLinks(), expectedPackages, "หมวด → ชุดในหมวด · ชุดที่ผูกตรง");
+        for (const table of ["tb_requirement_group_categories", "tb_requirement_group_products", "tb_requirement_group_packages"]) {
+            assert.equal(await countRows(conn, `SELECT COUNT(*) AS total FROM ${table}`), 0, `${table} ต้องว่างหลังย้าย`);
+        }
+
+        // ทีมเอาคำถามออกจากสินค้าหลังย้าย → deploy รอบถัดไปไม่ผูกกลับ
+        await conn.query("DELETE FROM tb_product_questions WHERE pq_product_id = 'PRO000000000000001'");
+        assert.deepEqual(await runSchemaFile(conn, DEPLOY_SCHEMA), [], "รันซ้ำ: ส่วนที่ 6 ต้องไม่มีแถว");
+        assert.deepEqual(await productLinks(), expectedProducts.slice(1));
+        assert.deepEqual(await packageLinks(), expectedPackages);
+    });
+});
+
 test("อัปเกรดจากโครงสร้าง deploy 16 ต.ค. 2026 20:11 (มีค่าใช้จ่ายแล้ว): ได้ช่องร้านค้าของใบเบิก · ค่าใช้จ่ายเดิมไม่หาย · รันซ้ำได้", async () => {
     await withTemporaryDatabase("upgrade10162011", async (conn) => {
         assert.deepEqual(

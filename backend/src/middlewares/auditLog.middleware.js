@@ -276,6 +276,9 @@ const ENTITIES = [
     { re: /^\/service-requests\/([^/]+)\/confirm$/, type: "service_request", id: "1", label: { POST: "ยืนยันคำขอบริการ" } },
     { re: /^\/service-requests\/([^/]+)\/fastwork-accept$/, type: "service_request", id: "1", label: { POST: "ลูกค้ายืนยันบน Fastwork แล้ว (งวดเพิ่ม)" } },
     { re: /^\/projects\/([^/]+)\/requirements\/close-links$/, type: "project", id: "1", label: { POST: "ปิดรับความต้องการจากลูกค้า" } },
+    // สินค้า/ชุดเลือกคำถาม (2026-11-01) · ต้องอยู่ก่อนแถว /products/:id ทั่วไป
+    { re: /^\/products\/([^/]+)\/questions$/, type: "product", id: "1", label: { PUT: "ตั้งคำถามที่ถามลูกค้าของสินค้า" } },
+    { re: /^\/product-packages\/([^/]+)\/questions$/, type: "product_package", id: "1", label: { PUT: "ตั้งคำถามที่ถามลูกค้าของชุดรายการ" } },
     { re: /^\/requirement-groups$/, type: "requirement_group", id: "response:rqg_id", label: { POST: "เพิ่มกลุ่มคำถามความต้องการ" } },
     { re: /^\/requirement-groups\/([^/]+)$/, type: "requirement_group", id: "1", label: { PUT: "แก้กลุ่มคำถามความต้องการ", DELETE: "ลบกลุ่มคำถามความต้องการ" } },
     { re: /^\/requirement-groups\/([^/]+)\/question-order$/, type: "requirement_group", id: "1", label: { PUT: "เรียงคำถามความต้องการ" } },

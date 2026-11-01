@@ -24,7 +24,7 @@ export const QUESTION_TYPE_LABEL = {
 export const GROUP_TRIGGERS = ["always", "selection", "link_only"];
 export const GROUP_TRIGGER_LABEL = {
     always: "ถามทุกคำขอ",
-    selection: "ถามเมื่อลูกค้าเลือกรายการที่ผูกไว้",
+    selection: "ถามตามสินค้าที่เลือก",
     link_only: "ไม่ถามเอง ใช้เฉพาะลิงก์ที่เลือกถามเพิ่ม",
 };
 
@@ -83,17 +83,20 @@ export function choiceValuesOf(question) {
  * @param {object[]} groups กลุ่มที่ใช้งาน พร้อมคำถามที่ใช้งาน (requirement.service listGroups activeOnly)
  * @param {{
  *   linkKind: "personal" | "public" | "fastwork",
- *   categoryIds?: string[], packageIds?: string[], productIds?: string[],
+ *   packageIds?: string[], productIds?: string[], (categoryIds ไม่มีผลแล้ว 2026-11-01)
  *   hasPreset?: boolean,
  *   includeGroupIds?: number[], excludeGroupIds?: number[],
  * }} context สิ่งที่ลูกค้าเลือก (รวมรายการที่ทีมเลือกให้) + การตั้งค่ากลุ่มของลิงก์
  * @param {Record<number, string | string[] | null | undefined> | null} [answers] คำตอบตอนนี้ (ใช้ตัดสินข้อที่ขึ้นตามคำตอบ)
  *   null = ยังไม่รู้คำตอบ (ข้อความคัดลอกไปถามในแชต Fastwork) → ข้อลูกขึ้นทั้งหมด ผู้เรียกเขียนเงื่อนไขกำกับเอง
  * @returns {object[]} สำเนาของกลุ่ม (questions = เฉพาะข้อที่ขึ้น) + matched = รายการที่ทำให้กลุ่มนี้ขึ้น
+ *
+ * สินค้าเลือกคำถาม (2026-11-01): กลุ่ม "ถามตามสินค้าที่เลือก" ถามเฉพาะข้อแม่ที่สินค้า/ชุดที่ลูกค้าเลือกผูกไว้
+ * (question.product_ids · package_ids · via_package_ids = ชุดที่มีสินค้านั้นอยู่) · ข้อลูกตามข้อแม่ · หมวดไม่มีผลแล้ว
+ * กลุ่ม "ถามทุกคำขอ" และกลุ่มที่ลิงก์สั่งถามเพิ่ม = ทั้งกลุ่มเหมือนเดิม
  */
 export function visibleQuestionnaire(groups, context, answers = {}) {
     const chosen = {
-        categoryIds: new Set((context.categoryIds ?? []).filter(Boolean)),
         packageIds: new Set((context.packageIds ?? []).filter(Boolean)),
         productIds: new Set((context.productIds ?? []).filter(Boolean)),
     };
@@ -103,15 +106,11 @@ export function visibleQuestionnaire(groups, context, answers = {}) {
     for (const group of groups) {
         if (excluded.has(group.rqg_id)) continue;
         if (!isAudienceAllowed(group.rqg_audience, context.linkKind)) continue;
-        const matched = matchedSelection(group, chosen);
-        const isAsked =
-            group.rqg_trigger === "always" ||
-            (group.rqg_trigger === "selection" && matched.isAny) ||
-            included.has(group.rqg_id);
-        if (!isAsked) continue;
-        const questions = visibleQuestionsOf(group, context, answers);
+        const isWholeGroup = group.rqg_trigger === "always" || included.has(group.rqg_id);
+        if (!isWholeGroup && group.rqg_trigger !== "selection") continue;
+        const { questions, matched } = visibleQuestionsOf(group, context, answers, isWholeGroup ? null : chosen);
         if (questions.length === 0) continue;
-        result.push({ ...group, questions, matched: matched.ids });
+        result.push({ ...group, questions, matched });
     }
     return result;
 }
@@ -236,19 +235,21 @@ function isAudienceAllowed(audience, linkKind) {
     return true;
 }
 
-/** หมวด/ชุด/สินค้าที่ผูกกับกลุ่มและลูกค้าเลือกอยู่ */
-function matchedSelection(group, chosen) {
-    const ids = {
-        category_ids: (group.category_ids ?? []).filter((id) => chosen.categoryIds.has(id)),
-        package_ids: (group.package_ids ?? []).filter((id) => chosen.packageIds.has(id)),
-        product_ids: (group.product_ids ?? []).filter((id) => chosen.productIds.has(id)),
-    };
-    const isAny = ids.category_ids.length > 0 || ids.package_ids.length > 0 || ids.product_ids.length > 0;
-    return { ids, isAny };
+/** สินค้า/ชุดที่ลูกค้าเลือกซึ่งผูกข้อนี้ไว้ (ชุดนับทั้งที่ชุดเลือกเอง และที่ได้จากสินค้าในชุด) */
+function linkedChoices(question, chosen) {
+    const productIds = (question.product_ids ?? []).filter((id) => chosen.productIds.has(id));
+    const packageIds = [...new Set([...(question.package_ids ?? []), ...(question.via_package_ids ?? [])])].filter((id) =>
+        chosen.packageIds.has(id),
+    );
+    return { productIds, packageIds };
 }
 
-/** คำถามที่ขึ้นในกลุ่ม · ไล่จากบนลงล่าง: ข้อลูกขึ้นเมื่อข้อแม่ (อยู่ด้านบนเสมอ) ขึ้นและคำตอบตรงค่าที่ตั้ง */
-function visibleQuestionsOf(group, context, answers) {
+/**
+ * คำถามที่ขึ้นในกลุ่ม · ไล่จากบนลงล่าง: ข้อลูกขึ้นเมื่อข้อแม่ (อยู่ด้านบนเสมอ) ขึ้นและคำตอบตรงค่าที่ตั้ง
+ * chosen = null → ทั้งกลุ่ม · มีค่า → ข้อแม่ต้องถูกสินค้า/ชุดที่เลือกผูกไว้
+ */
+function visibleQuestionsOf(group, context, answers, chosen) {
+    const matched = { package_ids: new Set(), product_ids: new Set() };
     const shownIds = new Set();
     const questionsById = new Map(group.questions.map((question) => [question.rqq_id, question]));
     const visible = [];
@@ -261,11 +262,19 @@ function visibleQuestionsOf(group, context, answers) {
             const parent = questionsById.get(question.rqq_parent_id);
             if (!parent || !shownIds.has(parent.rqq_id)) continue;
             if (answers !== null && !answerMatches(answers[parent.rqq_id], question.rqq_parent_values ?? [])) continue;
+        } else if (chosen) {
+            const linked = linkedChoices(question, chosen);
+            if (linked.productIds.length === 0 && linked.packageIds.length === 0) continue;
+            for (const id of linked.productIds) matched.product_ids.add(id);
+            for (const id of linked.packageIds) matched.package_ids.add(id);
         }
         shownIds.add(question.rqq_id);
         visible.push(question);
     }
-    return visible;
+    return {
+        questions: visible,
+        matched: { package_ids: [...matched.package_ids], product_ids: [...matched.product_ids] },
+    };
 }
 
 /** คำตอบของข้อแม่ตรงค่าที่ตั้งไหม · เลือกได้หลายข้อ = มีค่าใดค่าหนึ่ง */

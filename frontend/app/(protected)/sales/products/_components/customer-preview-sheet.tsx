@@ -15,11 +15,9 @@ import { questionnaireSummary, visibleQuestionnaire } from "@/lib/shared/require
 import OrderQuestions, { type AnswerValue } from "@/app/order/_components/order-questions";
 import type { RequirementGroup, VisibleRequirementGroup } from "@/app/order/_types";
 import { todayBangkokText } from "../../../people/employees/_card-status";
-import type { ProductCategory } from "../_types";
 import type { LinkableItems } from "./requirement-labels";
 import {
     activeQuestionnaire,
-    categoryIdsOf,
     EMPTY_SCENARIO,
     scenarioOfLink,
     type PreviewScenario,
@@ -34,14 +32,12 @@ const MANY_REQUIRED = 8;
 
 export default function CustomerPreviewSheet({
     groups,
-    categories,
     items,
     initial = EMPTY_SCENARIO,
     links = [],
     onClose,
 }: {
     groups: RequirementGroup[];
-    categories: ProductCategory[];
     items: LinkableItems;
     initial?: PreviewScenario;
     links?: ScenarioLink[];
@@ -73,7 +69,6 @@ export default function CustomerPreviewSheet({
         activeQuestionnaire(groups),
         {
             linkKind,
-            categoryIds: categoryIdsOf(items, packageIds, productIds),
             packageIds,
             productIds,
             hasPreset,
@@ -103,7 +98,6 @@ export default function CustomerPreviewSheet({
         const names = [
             ...group.matched.package_ids.map((id) => items.packages.find((row) => row.pkg_id === id)?.pkg_name),
             ...group.matched.product_ids.map((id) => items.products.find((row) => row.product_id === id)?.product_name),
-            ...group.matched.category_ids.map((id) => categories.find((category) => category.pc_id === id)?.pc_name),
         ].filter((name): name is string => Boolean(name));
         return names.length > 0 ? `ถามเพราะคุณเลือก ${[...new Set(names)].join(", ")}` : null;
     }
@@ -240,7 +234,7 @@ export default function CustomerPreviewSheet({
                                     />
                                 ))}
                             </div>
-                            <FieldHint>หมวดคิดจากชุดและสินค้าที่เลือกให้เอง</FieldHint>
+                            <FieldHint>เห็นเฉพาะข้อที่ชุดและสินค้าที่เลือกติ๊กไว้ · ชุดรวมข้อของสินค้าในชุดให้เอง</FieldHint>
                         </fieldset>
                     </div>
 

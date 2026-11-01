@@ -72,6 +72,10 @@ export type RequirementQuestion = {
     rqq_prefill: boolean;
     rqq_sort_order: number;
     rqq_status: "active" | "inactive";
+    // สินค้า/ชุดที่เลือกข้อนี้ (2026-11-01) · via_package_ids = ชุดที่มีสินค้าที่เลือกข้อนี้อยู่ข้างใน
+    product_ids: string[];
+    package_ids: string[];
+    via_package_ids: string[];
     // หน้าตั้งค่าเท่านั้น: มีคนตอบข้อนี้แล้วกี่คำขอ
     answer_count?: number;
 };
@@ -85,15 +89,12 @@ export type RequirementGroup = {
     rqg_audience: "all" | "direct" | "fastwork";
     rqg_sort_order: number;
     rqg_status: "active" | "inactive";
-    category_ids: string[];
-    package_ids: string[];
-    product_ids: string[];
     questions: RequirementQuestion[];
 };
 
 /** กลุ่มที่ลูกค้าเห็น (ผล visibleQuestionnaire) · matched = รายการที่ทำให้กลุ่มนี้ขึ้น */
 export type VisibleRequirementGroup = RequirementGroup & {
-    matched: { category_ids: string[]; package_ids: string[]; product_ids: string[] };
+    matched: { package_ids: string[]; product_ids: string[] };
 };
 
 /** กลุ่มที่ลิงก์นี้ถามเพิ่ม / ไม่ถาม (Q-3) */

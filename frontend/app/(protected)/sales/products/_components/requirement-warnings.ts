@@ -1,9 +1,9 @@
 // คำเตือนของแท็บคำถามลูกค้า (2026-10-26 Q-2 · docs/plans/2026-10-26-customer-questions.md ข้อ 4.4)
 // ระบบตรวจให้ คนตั้งไม่ต้องจำกติกา · เตือนอย่างเดียว ไม่บล็อกการบันทึก
 // ที่มา: เคสลิงก์ 323JYPCE (26 ต.ค.) ผูกหมวดที่ไม่มีสินค้าบนหน้าร้าน ลูกค้าเลยไม่เห็นอะไร · คำถามซ้ำในข้อมูลจริง
+// สินค้าเลือกคำถาม (2026-11-01): เตือนข้อที่ยังไม่มีสินค้า/ชุดเลือก และข้อที่มีแต่รายการที่ไม่แสดงบนหน้าร้าน
 import { choiceValuesOf } from "@/lib/shared/requirement-answers.mjs";
 import type { RequirementGroup, RequirementQuestion } from "@/app/order/_types";
-import type { ProductCategory } from "../_types";
 import type { LinkableItems } from "./requirement-labels";
 
 export type GroupWarnings = {
@@ -19,16 +19,16 @@ const CONTACT_WORDS = /(line|ไลน์|เบอร์|โทร|อีเม
  * คำเตือนของทุกกลุ่ม (คีย์ = รหัสกลุ่ม)
  * @param groups กลุ่มทั้งหมด (รวมที่ปิดใช้งาน)
  */
-export function questionnaireWarnings(groups: RequirementGroup[], categories: ProductCategory[], items: LinkableItems) {
+export function questionnaireWarnings(groups: RequirementGroup[], items: LinkableItems) {
     const duplicateIds = duplicateQuestionIds(groups);
     const result = new Map<number, GroupWarnings>();
     for (const group of groups) {
         const questionWarnings = new Map<number, string[]>();
         for (const question of group.questions) {
-            const warnings = warningsOfQuestion(question, group, duplicateIds);
+            const warnings = warningsOfQuestion(question, group, duplicateIds, items);
             if (warnings.length > 0) questionWarnings.set(question.rqq_id, warnings);
         }
-        result.set(group.rqg_id, { group: warningsOfGroup(group, categories, items), questions: questionWarnings });
+        result.set(group.rqg_id, { group: warningsOfGroup(group), questions: questionWarnings });
     }
     return result;
 }
@@ -41,52 +41,51 @@ export function warningCount(warnings: GroupWarnings | undefined) {
     return total;
 }
 
-function warningsOfGroup(group: RequirementGroup, categories: ProductCategory[], items: LinkableItems) {
+function warningsOfGroup(group: RequirementGroup) {
     const warnings: string[] = [];
     if (group.rqg_status === "inactive") return warnings;
     const activeQuestions = group.questions.filter((question) => question.rqq_status === "active");
     if (activeQuestions.length === 0) warnings.push("ยังไม่มีคำถามที่ใช้งาน ลูกค้าจะไม่เห็นกลุ่มนี้");
     if (group.rqg_trigger !== "selection") return warnings;
-
-    for (const categoryId of group.category_ids) {
-        const name = categories.find((category) => category.pc_id === categoryId)?.pc_name ?? "หมวดที่ถูกลบ";
-        const hasPublicItem =
-            items.products.some(
-                (product) => product.product_category_id === categoryId && Boolean(product.product_is_public),
-            ) ||
-            items.packages.some(
-                (row) =>
-                    row.pkg_category_id === categoryId && row.pkg_status === "active" && Boolean(row.pkg_is_public),
-            );
-        if (!hasPublicItem) {
-            warnings.push(
-                `หมวด "${name}" ไม่มีสินค้าหรือชุดที่แสดงบนหน้าร้าน ลูกค้าเห็นกลุ่มนี้เฉพาะเมื่อทีมงานเลือกรายการในหมวดนี้ให้ในลิงก์`,
-            );
-        }
-    }
-    for (const packageId of group.package_ids) {
-        const row = items.packages.find((item) => item.pkg_id === packageId);
-        if (!row || row.pkg_status !== "active") warnings.push(`ชุด "${row?.pkg_name ?? "ที่ถูกลบ"}" ปิดใช้งานแล้ว`);
-        else if (!row.pkg_is_public)
-            warnings.push(
-                `ชุด "${row.pkg_name}" ไม่ได้แสดงบนหน้าร้าน ลูกค้าเห็นกลุ่มนี้เฉพาะเมื่อทีมงานเลือกชุดนี้ให้ในลิงก์`,
-            );
-    }
-    for (const productId of group.product_ids) {
-        const product = items.products.find((item) => item.product_id === productId);
-        if (!product) warnings.push("มีสินค้าที่ผูกไว้ถูกปิดใช้งานหรือลบแล้ว");
-        else if (!product.product_is_public) {
-            warnings.push(
-                `สินค้า "${product.product_name}" ไม่ได้แสดงบนหน้าร้าน ลูกค้าเห็นกลุ่มนี้เฉพาะเมื่อทีมงานเลือกสินค้านี้ให้ในลิงก์`,
-            );
-        }
+    const isPicked = activeQuestions.some((question) => !question.rqq_parent_id && isLinked(question));
+    if (activeQuestions.length > 0 && !isPicked) {
+        warnings.push("ยังไม่มีสินค้าหรือชุดเลือกคำถามในกลุ่มนี้ ลูกค้าจะไม่เห็น (เลือกได้ที่แผงคำถามในหน้าแก้สินค้าหรือชุด)");
     }
     return warnings;
 }
 
-function warningsOfQuestion(question: RequirementQuestion, group: RequirementGroup, duplicateIds: Set<number>) {
+function isLinked(question: RequirementQuestion) {
+    return question.product_ids.length > 0 || question.package_ids.length > 0;
+}
+
+/** ข้อแม่ของกลุ่มถามตามสินค้าที่เลือก: ไม่มีใครเลือก / มีแต่รายการที่ไม่แสดงบนหน้าร้าน */
+function selectionWarning(question: RequirementQuestion, group: RequirementGroup, items: LinkableItems) {
+    if (group.rqg_trigger !== "selection" || question.rqq_parent_id) return null;
+    // ทั้งกลุ่มยังไม่มีใครเลือก = เตือนครั้งเดียวที่กลุ่ม
+    if (!isLinked(question)) {
+        const isGroupPicked = group.questions.some((row) => !row.rqq_parent_id && isLinked(row));
+        return isGroupPicked ? "ยังไม่มีสินค้าหรือชุดเลือกข้อนี้ ลูกค้าจะไม่เห็นข้อนี้" : null;
+    }
+    const hasPublicProduct = question.product_ids.some((id) =>
+        items.products.some((product) => product.product_id === id && Boolean(product.product_is_public)),
+    );
+    const hasPublicPackage = [...question.package_ids, ...question.via_package_ids].some((id) =>
+        items.packages.some((row) => row.pkg_id === id && row.pkg_status === "active" && Boolean(row.pkg_is_public)),
+    );
+    if (hasPublicProduct || hasPublicPackage) return null;
+    return "สินค้าหรือชุดที่เลือกข้อนี้ไม่ได้แสดงบนหน้าร้าน (หรือปิดใช้งานอยู่) ลูกค้าเห็นข้อนี้เฉพาะเมื่อทีมงานเลือกรายการให้ในลิงก์";
+}
+
+function warningsOfQuestion(
+    question: RequirementQuestion,
+    group: RequirementGroup,
+    duplicateIds: Set<number>,
+    items: LinkableItems,
+) {
     const warnings: string[] = [];
     if (question.rqq_status === "inactive" || group.rqg_status === "inactive") return warnings;
+    const selection = selectionWarning(question, group, items);
+    if (selection) warnings.push(selection);
     if (duplicateIds.has(question.rqq_id)) {
         warnings.push("คล้ายกับข้ออื่น (ข้อความเดียวกันหรือข้อหนึ่งอยู่ในอีกข้อ) ลูกค้าที่เห็นทั้งสองข้ออาจถูกถามซ้ำ");
     }

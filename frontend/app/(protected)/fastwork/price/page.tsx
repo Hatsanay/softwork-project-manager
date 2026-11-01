@@ -210,7 +210,6 @@ export default function FastworkPricePage() {
         data.questionnaire,
         {
             linkKind: "fastwork",
-            categoryIds: cart.map((line) => line.categoryId).filter((id): id is string => Boolean(id)),
             packageIds: cart.filter((line) => line.key.startsWith("k:")).map((line) => line.key.slice(2)),
             productIds: cart.filter((line) => line.key.startsWith("p:")).map((line) => line.key.slice(2)),
             hasPreset: false,

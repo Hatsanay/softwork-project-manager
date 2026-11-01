@@ -205,10 +205,10 @@ test("งานด่วน +30%: ยอดจากแถวอื่น · ท
     assert.match(inPackage.message, /คิดเป็น %/);
 });
 
-test("กลุ่มคำถามผูกแพ็ก: ถามเฉพาะเมื่อเลือกแพ็กนั้น", async () => {
+test("ชุดรายการเลือกคำถาม: ถามเฉพาะเมื่อเลือกชุดนั้น", async () => {
     const group = expectStatus(
         await api.callApi("POST", "/V1/requirement-groups", {
-            body: { rqg_name: "ระบบที่ต้องการ", rqg_description: null, rqg_trigger: "selection", rqg_sort_order: 9, rqg_status: "active", category_ids: [], package_ids: [ids.business] },
+            body: { rqg_name: "ระบบที่ต้องการ", rqg_description: null, rqg_trigger: "selection", rqg_sort_order: 9, rqg_status: "active" },
         }),
         201,
     );
@@ -218,6 +218,7 @@ test("กลุ่มคำถามผูกแพ็ก: ถามเฉพา
         }),
         201,
     );
+    expectStatus(await api.callApi("PUT", `/V1/product-packages/${ids.business}/questions`, { body: { question_ids: [question.rqq_id] } }), 200);
     const code = ids.publicLink.ol_short_code;
     const contact = { contact_name: "คุณถาม", contact_phone: "0844445555", consent: true };
     const missing = expectStatus(await anonymous("POST", `/V1/order/${code}/requests`, submitBody([{ kind: "package", id: ids.business, quantity: 1 }], "4900.00", { contact })), 400);
@@ -228,5 +229,5 @@ test("กลุ่มคำถามผูกแพ็ก: ถามเฉพา
     );
     expectStatus(await anonymous("POST", `/V1/order/${code}/requests`, submitBody([{ kind: "package", id: ids.onePage, quantity: 1 }], "1900.00", { contact })), 201);
     const groups = expectStatus(await api.callApi("GET", "/V1/requirement-groups"), 200).data;
-    assert.deepEqual(groups.find((row) => row.rqg_id === group.rqg_id).package_ids, [ids.business]);
+    assert.deepEqual(groups.find((row) => row.rqg_id === group.rqg_id).questions[0].package_ids, [ids.business]);
 });

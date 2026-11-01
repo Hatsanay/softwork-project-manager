@@ -13,14 +13,8 @@ import {
 } from "../requirement-answers.mjs";
 
 export const MAX_OPTIONS = 20;
-const MAX_LINKED_ITEMS = 100;
+const MAX_ITEM_QUESTIONS = 500;
 const MAX_NUMBER_LIMIT = "999999999.99";
-
-const idList = (label) =>
-    z
-        .array(z.string().trim().min(1))
-        .max(MAX_LINKED_ITEMS, `เลือก${label}ได้ไม่เกิน ${MAX_LINKED_ITEMS} รายการ`)
-        .default([]);
 
 export const requirementGroupSchema = z
     .object({
@@ -33,24 +27,14 @@ export const requirementGroupSchema = z
         rqg_audience: z.enum(GROUP_AUDIENCES, { error: "เลือกชนิดลิงก์ที่ถาม" }).default("all"),
         rqg_sort_order: integerInRange("ลำดับ", 0, 9999).default(0),
         rqg_status: activeStatus,
-        category_ids: idList("หมวด"),
-        package_ids: idList("ชุด"),
-        product_ids: idList("สินค้า"),
-    })
-    .superRefine((group, context) => {
-        const linkedCount = group.category_ids.length + group.package_ids.length + group.product_ids.length;
-        if (group.rqg_trigger === "selection" && linkedCount === 0) {
-            context.addIssue({
-                code: "custom",
-                path: ["category_ids"],
-                message: 'เลือกหมวด ชุด หรือสินค้าอย่างน้อย 1 รายการ หรือเปลี่ยนเป็น "ถามทุกคำขอ" / "ไม่ถามเอง"',
-            });
-        }
-    })
-    // ไม่ได้ถามตามที่ลูกค้าเลือก = ไม่เก็บรายการที่ผูก (กันเข้าใจผิดว่ายังผูกอยู่)
-    .transform((group) =>
-        group.rqg_trigger === "selection" ? group : { ...group, category_ids: [], package_ids: [], product_ids: [] },
-    );
+    });
+
+/** สินค้า/ชุดเลือกคำถาม (2026-11-01) · แทนชุดเดิมทั้งหมด · ว่าง = ไม่ถามเพิ่ม */
+export const itemQuestionsSchema = z.object({
+    question_ids: z
+        .array(z.number({ error: "คำถามไม่ถูกต้อง" }).int().positive())
+        .max(MAX_ITEM_QUESTIONS, `เลือกได้ไม่เกิน ${MAX_ITEM_QUESTIONS} ข้อ`),
+});
 
 export const requirementQuestionSchema = z
     .object({

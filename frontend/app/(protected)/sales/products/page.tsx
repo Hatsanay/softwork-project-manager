@@ -80,7 +80,7 @@ export default function ProductsPage() {
                     <CategoriesTab categories={categories} canEdit={canEdit} onSaved={reloadCategories} />
                 )}
                 {activeTab === "packages" && <PackagesTab categories={categories} canEdit={canEdit} onOpenQuestions={openQuestions} />}
-                {activeTab === "questions" && <QuestionsTab categories={categories} canEdit={canEdit} target={questionsTarget} />}
+                {activeTab === "questions" && <QuestionsTab canEdit={canEdit} target={questionsTarget} />}
             </div>
         </div>
     );
