@@ -126,11 +126,15 @@ async function setup({ pool, permissionKeys, generateDailyId, password }) {
         { key: "screen", code: "UI", name: "ออกแบบหน้าจอ", unit: "หน้าจอ", price: "1500" },
         // บริการรายรอบ (2026-10-31): ค่าเซิร์ฟเวอร์/โดเมนปีถัดไป (ปีแรกรวมในราคางาน)
         { key: "hosting", code: "HOST", name: "Server/Hosting และโดเมนปีถัดไป", unit: "ปี", price: "1290", renewalMonths: 12 },
+        // ราคาเริ่มต้น (2026-11-01): จดโดเมนให้ผู้ซื้อ ราคาขึ้นกับนามสกุล
+        { key: "domain", code: "DOM", name: "จดโดเมน", unit: "ปี", price: "450", priceMode: "from", priceNote: "นามสกุลและชื่อโดเมน" },
     ]) {
         const created = await as(OWNER, "POST", "/V1/products", {
             product_code: product.code, product_name: product.name, product_unit: product.unit, product_price: product.price,
             product_category_id: category.pc_id, product_status: "active", product_is_public: true,
             product_renewal_months: product.renewalMonths ?? null,
+            product_price_mode: product.priceMode ?? "fixed",
+            product_price_note: product.priceNote ?? null,
         });
         ids.products[product.key] = { id: created.product_id, ...product };
     }

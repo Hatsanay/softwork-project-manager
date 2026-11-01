@@ -110,8 +110,9 @@ function notReady(problems, verb) {
  * @param {{ rate: string, source: string | null, date: string | null, bot: string | null, reason: string | null }} freshRate
  * @param {{ user_id: string }} issuer ผู้กดออก (ใบสร้างเอง = ผู้อนุมัติชั้นสุดท้าย)
  */
-async function finalizeIssue(conn, invoice, freshRate, issuer) {
-    const today = todayBangkok();
+// documentDate: เอกสารงาน Fastwork ที่ระบบออกให้ (2026-11-01) ลงวันที่ตามเหตุการณ์จริง · ปกติ = วันนี้
+async function finalizeIssue(conn, invoice, freshRate, issuer, { documentDate = null } = {}) {
+    const today = documentDate ?? todayBangkok();
     const isDebitNote = invoice.inv_doc_type === "debit_note";
     // ใบเพิ่มหนี้: ล็อกใบเดิม (ลำดับล็อก ใบเพิ่มหนี้ → ใบเดิม) ตรวจว่ายังออกอยู่ แล้วบันทึกมูลค่าเดิม ณ ตอนนี้ไว้พิมพ์ (มาตรา 86/9)
     let originalTotal = null;
@@ -440,8 +441,12 @@ async function markSent(conn, invoiceId, expectedVersion) {
  * ยกเลิกใบที่ออกแล้ว — เลขยังอยู่ · งวดที่ผูกกลับมาออกบิลใหม่ได้
  * ห้ามเมื่ออยู่ในใบวางบิลที่ยังไม่ยกเลิก หรือรับเงินแล้ว (1C)
  */
-async function cancel(conn, invoiceId, reason, expectedVersion, actor) {
+// isFastworkSync: ยกเลิกตามรายการเงิน Fastwork (2026-11-01) · ใบที่ผูกรายการเงิน ยกเลิก/ออกใหม่เองไม่ได้
+async function cancel(conn, invoiceId, reason, expectedVersion, actor, { isFastworkSync = false } = {}) {
     const invoice = await invoiceService.findForUpdate(conn, invoiceId);
+    if (invoice.inv_fastwork_payout_id && !isFastworkSync) {
+        throw new AppError(409, "FASTWORK_DOCUMENT_LOCKED", "เอกสารนี้ระบบออกจากรายการเงิน Fastwork · ยกเลิกที่หน้า Fastwork > เงินจาก Fastwork (เอกสารจะยกเลิกตาม)");
+    }
     if (invoice.inv_status === "draft") throw invoiceService.wrongStatus('ร่างใช้ "ลบ" แทนการยกเลิก');
     if (invoice.inv_status === "pending_approval") {
         throw invoiceService.wrongStatus("ใบที่รออนุมัติยกเลิกไม่ได้ · ให้ผู้อนุมัติตีกลับ แล้วลบร่าง");
@@ -583,6 +588,7 @@ async function reissue(conn, invoiceId, reason, expectedVersion, actor) {
 }
 
 module.exports = {
+    finalizeIssue,
     prepareIssueRate,
     issue,
     submitForApproval,

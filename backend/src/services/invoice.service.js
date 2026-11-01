@@ -1354,7 +1354,10 @@ function buildActions(invoice, actor, approval, billingNote, creditNotes = [], d
     const isInCurrentLevel = Boolean(currentLevel?.roles.some((role) => role.role_id === actor.user_role_id));
 
     let cancelBlockedReason = null;
-    if (status === "issued" && billingNote) {
+    // เอกสารงาน Fastwork (2026-11-01): ยกเลิกตามรายการเงิน Fastwork เท่านั้น
+    if (status === "issued" && invoice.inv_fastwork_payout_id) {
+        cancelBlockedReason = "เอกสารนี้ระบบออกจากเงินงาน Fastwork · ยกเลิกที่หน้า Fastwork > เงินจาก Fastwork (ใบนี้และใบเสร็จยกเลิกตาม)";
+    } else if (status === "issued" && billingNote) {
         cancelBlockedReason = `ใบนี้อยู่ในใบวางบิล ${billingNote.bn_number ?? "(ร่าง)"} · ยกเลิกหรือลบใบวางบิลก่อน แล้วค่อยยกเลิกใบนี้`;
     } else if (status === "issued" && hasPayment) {
         cancelBlockedReason = "ใบนี้รับชำระเงินแล้ว · ยกเลิกใบเสร็จก่อน แล้วค่อยยกเลิกใบนี้";

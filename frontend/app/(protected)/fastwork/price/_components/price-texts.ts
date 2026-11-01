@@ -52,6 +52,8 @@ export function questionsText(groups: RequirementGroup[]) {
 export function offerText(
     lines: { name: string; quantity: number; unit: string | null; packageItems: string[] }[],
     offer: string,
+    // ราคาเริ่มต้นที่ทีมตั้งราคาจริงแล้ว เช่น "จดโดเมน 1,200.00 บาท (ราคาขึ้นกับนามสกุลและชื่อโดเมน)"
+    priceNotes: string[] = [],
 ) {
     const parts = ["ขอบเขตงาน"];
     for (const line of lines) {
@@ -59,6 +61,8 @@ export function offerText(
         parts.push(`- ${line.name}${quantity}`);
         for (const item of line.packageItems) parts.push(`   · ${item}`);
     }
+    if (priceNotes.length > 0)
+        parts.push("", "ราคาที่ขึ้นกับรายละเอียดของคุณ", ...priceNotes.map((note) => `- ${note}`));
     parts.push("", `ราคารวม ${formatAmount(offer)} บาท`);
     return parts.join("\n");
 }

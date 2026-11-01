@@ -120,6 +120,7 @@ async function findInvoices(conn, { from, to }) {
          LEFT JOIN tb_invoices ref ON ref.inv_id = i.inv_reference_invoice_id
          LEFT JOIN tb_projects p ON p.project_id = i.inv_project_id
          WHERE i.inv_status IN ('issued', 'cancelled') AND i.inv_issue_date BETWEEN ? AND ?
+           AND i.inv_fastwork_payout_id IS NULL -- เอกสารงาน Fastwork: อยู่คู่รายการเงิน Fastwork แทน (ไม่นับรายได้ซ้ำ)
          ORDER BY i.inv_issue_date, i.inv_number`,
         [from, to],
     );
@@ -222,7 +223,7 @@ async function findReceipts(conn, { from, to }) {
                  FROM tb_receipt_allocations a JOIN tb_invoices i ON i.inv_id = a.rca_invoice_id
                  WHERE a.rca_receipt_id = r.rc_id) AS invoice_numbers
          FROM tb_receipts r
-         WHERE r.rc_receipt_date BETWEEN ? AND ?
+         WHERE r.rc_receipt_date BETWEEN ? AND ? AND r.rc_fastwork_payout_id IS NULL
          ORDER BY r.rc_receipt_date, r.rc_number`,
         [from, to],
     );
@@ -287,7 +288,7 @@ async function findAgingAsOf(conn, asOf) {
                     COALESCE((SELECT SUM(cn.cn_refund_required) FROM tb_credit_notes cn
                               WHERE cn.cn_invoice_id = i.inv_id AND cn.cn_refunded_at IS NOT NULL AND cn.cn_refund_date <= ?), 0) AS refunded_as_of
              FROM tb_invoices i JOIN tb_clients c ON c.client_id = i.inv_client_id
-             WHERE i.inv_issue_date <= ? AND i.inv_total > 0
+             WHERE i.inv_issue_date <= ? AND i.inv_total > 0 AND i.inv_fastwork_payout_id IS NULL
                AND (i.inv_status = 'issued' OR (i.inv_status = 'cancelled' AND DATE(i.inv_cancelled_at) > ?))
          ) o
          WHERE o.inv_total - o.credited_as_of - o.paid_as_of + o.refunded_as_of > 0
@@ -502,7 +503,9 @@ async function findFastworkPayouts(conn, { from, to }) {
                 p.fwp_fee_vat, p.fwp_wht, p.fwp_wht_certificate_no, p.fwp_net, p.fwp_reference, p.fwp_cancel_reason,
                 DATE_FORMAT(p.fwp_cancelled_at, '%Y-%m-%d') AS cancelled_date,
                 pr.project_name, pr.project_fastwork_order_no, c.client_name, m.fwm_name,
-                CONCAT(b.ba_bank_name, ' ', b.ba_account_no) AS bank_account
+                CONCAT(b.ba_bank_name, ' ', b.ba_account_no) AS bank_account,
+                (SELECT GROUP_CONCAT(r.rc_number ORDER BY r.rc_id SEPARATOR ', ') FROM tb_receipts r
+                 WHERE r.rc_fastwork_payout_id = p.fwp_id) AS receipt_numbers
          FROM tb_fastwork_payouts p
          JOIN tb_projects pr ON pr.project_id = p.fwp_project_id
          LEFT JOIN tb_clients c ON c.client_id = pr.client_id
@@ -518,6 +521,8 @@ async function findFastworkPayouts(conn, { from, to }) {
         client: row.client_name,
         project: row.project_name,
         milestone: row.fwm_name,
+        // ใบเสร็จที่ระบบออกให้ลูกค้าจากรายการนี้ (เอกสารประกอบ · 2026-11-01)
+        receipt_numbers: row.receipt_numbers,
         gross: number(row.fwp_gross),
         fee_rate: number(row.fwp_fee_rate),
         fee: number(row.fwp_fee),
@@ -687,6 +692,7 @@ async function buildAccountingExport(conn, monthText, actor) {
             { header: "ลูกค้า", key: "client", width: 24 },
             { header: "งาน", key: "project", width: 30 },
             { header: "งวด", key: "milestone", width: 24 },
+            { header: "ใบเสร็จที่ออกให้ลูกค้า", key: "receipt_numbers", width: 22 },
             { header: "ราคางวด", key: "gross", type: "money" },
             { header: "อัตราค่าธรรมเนียม %", key: "fee_rate", type: "money", width: 10 },
             { header: "ค่าธรรมเนียม", key: "fee", type: "money" },

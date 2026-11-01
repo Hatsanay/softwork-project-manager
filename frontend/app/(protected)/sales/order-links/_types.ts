@@ -47,7 +47,8 @@ export type FastworkPlan = {
     milestones: { fwm_name: string; fwm_amount: string }[];
 };
 
-export type ServiceRequestStatus = "submitted" | "converted" | "rejected" | "closed";
+// awaiting_customer = รอลูกค้ายืนยันราคาที่ทีมปรับขึ้น (ราคาเริ่มต้น 2026-11-01)
+export type ServiceRequestStatus = "submitted" | "awaiting_customer" | "converted" | "rejected" | "closed";
 
 export type ServiceRequestRow = {
     svr_id: string;
@@ -67,6 +68,11 @@ export type ServiceRequestRow = {
     svr_project_id: string | null;
     svr_version: number;
     svr_submitted_at: string;
+    // ราคาเริ่มต้น: ลูกค้าตอบราคาที่ปรับขึ้น · เหตุผลที่ทีมไม่ให้ลูกค้ายืนยัน
+    svr_price_response: "accepted" | "declined" | null;
+    svr_price_response_at: string | null;
+    svr_price_response_note: string | null;
+    svr_price_skip_reason: string | null;
     svr_consent_at: string | null;
     svr_assignee_id: string;
     assignee_name: string | null;
@@ -81,6 +87,8 @@ export type ServiceRequestRow = {
     qt_status: string | null;
     project_name: string | null;
     item_count?: number;
+    // แถวราคาเริ่มต้นที่ยังไม่ตรวจราคา (หน้ารายการ)
+    price_pending_count?: number;
     totals?: { subtotal: string; vat: string; total: string };
 };
 
@@ -103,6 +111,12 @@ export type ServiceRequestItem = {
     svi_is_preset: boolean;
     svi_percent: string | null;
     percent_amount?: string | null;
+    // ราคาเริ่มต้น (2026-11-01): ต้องตรวจราคาก่อนออกเอกสาร · ยืนยันเมื่อไร/โดยใคร · ราคาขึ้นกับอะไร · คำตอบของคำถามที่สินค้านี้เลือก
+    svi_needs_price: boolean;
+    svi_price_confirmed_at: string | null;
+    price_confirmed_by_name: string | null;
+    price_note: string | null;
+    related_answers?: { question: string; answer: string }[];
 };
 
 export type ClientMatch = { client_id: string; client_name: string; client_company: string | null; client_phone: string | null; client_email: string | null };

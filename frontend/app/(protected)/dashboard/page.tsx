@@ -57,7 +57,16 @@ function actionItemsOf(
         add(business.requests.submitted, {
             key: "requests",
             label: "คำขอใหม่รอตรวจ",
+            note:
+                business.requests.price_pending > 0 ? `รอกรอกราคา ${business.requests.price_pending} คำขอ` : undefined,
             href: "/sales/service-requests?status=submitted",
+            icon: Inbox,
+            tone: business.requests.price_pending > 0 ? "wait" : "normal",
+        });
+        add(business.requests.awaiting_customer, {
+            key: "requests-awaiting-customer",
+            label: "รอลูกค้ายืนยันราคาใหม่",
+            href: "/sales/service-requests?status=awaiting_customer",
             icon: Inbox,
             tone: "normal",
         });

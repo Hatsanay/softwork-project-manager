@@ -62,7 +62,7 @@ async function listTaskCatalog(conn) {
     const [products] = await conn.query(
         `SELECT product_id, product_name, product_unit
          FROM tb_products
-         WHERE product_status = 'active' AND product_price_mode = 'fixed'
+         WHERE product_status = 'active' AND product_price_mode <> 'percent'
          ORDER BY product_name`,
     );
     const [packages] = await conn.query(

@@ -6,6 +6,8 @@
 // ยืนยัน (ลูกค้าตรง): ติ๊กออกใบเสนอราคา = สร้างร่างใบเสนอราคาจากยอดหลังปรับ · ไม่ติ๊ก = เปิดโปรเจกต์ + งานจากรายการทันที
 // คำขอจากลิงก์ Fastwork (S-5): ออกใบเสนอราคาภายในได้ (ไม่ส่งลูกค้า) · รับงาน = เปิดงาน Fastwork จากคำขอ
 //   ลิงก์ของงานเดิม = "ลูกค้ายืนยันบน Fastwork แล้ว" → งานจากรายการ + งวดเพิ่มในงานเดิม · ทุกการเปลี่ยนแปลงล็อกด้วยเวอร์ชัน
+// ราคาเริ่มต้น (2026-11-01 · docs/plans/2026-11-01-starting-price.md): แถว svi_needs_price ต้องยืนยันราคาก่อนออกเอกสารทุกทาง
+//   (ยืนยันคำขอ · ใบภายใน · รับงาน · งวดเพิ่ม = 409 PRICE_NOT_CONFIRMED) · เปิดงานตรงแล้วราคาสูงขึ้น = รอลูกค้ายืนยันราคา (awaiting_customer)
 const { AppError } = require("../utils/app-error");
 const { hasBit } = require("../utils/permissions");
 const { nowBangkokText } = require("../utils/bangkok-time");
@@ -17,7 +19,7 @@ const quotationService = require("./quotation.service");
 const projectService = require("./project.service");
 const { acceptQuotation, insertTasksFromRows } = require("./quotation-accept.service");
 
-const STATUSES = new Set(["submitted", "converted", "rejected", "closed"]);
+const STATUSES = new Set(["submitted", "awaiting_customer", "converted", "rejected", "closed"]);
 const text = (hundredths) => formatHundredths(hundredths);
 const MAX_TITLE_LENGTH = 150;
 
@@ -29,6 +31,8 @@ const REQUEST_COLUMNS = `
     r.svr_id, r.svr_status, r.svr_status_reason, r.svr_contact_name, r.svr_contact_phone, r.svr_contact_email, r.svr_contact_line,
     r.svr_company_name, r.svr_tax_id, r.svr_address, r.svr_note, r.svr_vat_rate, r.svr_client_id, r.svr_quotation_id, r.svr_project_id,
     r.svr_version, DATE_FORMAT(r.svr_submitted_at, '%Y-%m-%d %H:%i') AS svr_submitted_at,
+    r.svr_price_response, DATE_FORMAT(r.svr_price_response_at, '%Y-%m-%d %H:%i') AS svr_price_response_at, r.svr_price_response_note,
+    r.svr_price_skip_reason,
     DATE_FORMAT(r.svr_consent_at, '%Y-%m-%d %H:%i') AS svr_consent_at,
     r.svr_assignee_id, CONCAT(a.user_fname, ' ', a.user_lname) AS assignee_name,
     l.ol_id, l.ol_kind, l.ol_name, l.ol_buyer_name, l.ol_project_id, c.client_name, lp.project_name AS link_project_name,
@@ -46,9 +50,14 @@ const REQUEST_FROM = `
 async function findItems(conn, requestIds) {
     if (requestIds.length === 0) return new Map();
     const [rows] = await conn.query(
-        `SELECT svi_id, svi_request_id, svi_order, svi_type, svi_product_id, svi_package_id, svi_name, svi_unit, svi_unit_price, svi_quantity,
-                svi_adjusted_quantity, svi_adjusted_unit_price, svi_is_removed, svi_added_by_staff, svi_is_preset, svi_percent
-         FROM tb_service_request_items WHERE svi_request_id IN (?) ORDER BY svi_request_id, svi_order`,
+        `SELECT i.svi_id, i.svi_request_id, i.svi_order, i.svi_type, i.svi_product_id, i.svi_package_id, i.svi_name, i.svi_unit, i.svi_unit_price,
+                i.svi_quantity, i.svi_adjusted_quantity, i.svi_adjusted_unit_price, i.svi_is_removed, i.svi_added_by_staff, i.svi_is_preset, i.svi_percent,
+                i.svi_needs_price, DATE_FORMAT(i.svi_price_confirmed_at, '%Y-%m-%d %H:%i') AS svi_price_confirmed_at,
+                CONCAT(u.user_fname, ' ', u.user_lname) AS price_confirmed_by_name, p.product_price_note AS price_note
+         FROM tb_service_request_items i
+         LEFT JOIN tb_users u ON u.user_id = i.svi_price_confirmed_by
+         LEFT JOIN tb_products p ON p.product_id = i.svi_product_id
+         WHERE i.svi_request_id IN (?) ORDER BY i.svi_request_id, i.svi_order`,
         [requestIds],
     );
     const byRequest = new Map();
@@ -59,6 +68,7 @@ async function findItems(conn, requestIds) {
             svi_is_removed: Boolean(row.svi_is_removed),
             svi_added_by_staff: Boolean(row.svi_added_by_staff),
             svi_is_preset: Boolean(row.svi_is_preset),
+            svi_needs_price: Boolean(row.svi_needs_price),
         });
         byRequest.set(row.svi_request_id, list);
     }
@@ -89,6 +99,33 @@ function effectiveRows(items) {
 function totalsOf(lines, vatRate) {
     const totals = cartTotals({ lines, vatRate });
     return { subtotal: text(totals.subtotal), vat: text(totals.vat), total: text(totals.total) };
+}
+
+/** แถวราคาเริ่มต้นที่ยังไม่ยืนยันราคา (ไม่นับแถวที่เอาออก) */
+function pendingPriceRows(items) {
+    return items.filter((row) => row.svi_type === "item" && row.svi_needs_price && !row.svi_is_removed && !row.svi_price_confirmed_at);
+}
+
+/** ออกเอกสาร/เปิดงานได้เมื่อยืนยันราคาเริ่มต้นครบ (หน้าคำขอถามด้วยหน้าต่างตรวจราคาก่อนเสมอ ถึงตรงนี้ = หน้าเก่า/ยิงตรง) */
+function assertPricesConfirmed(items) {
+    const pending = pendingPriceRows(items);
+    if (pending.length === 0) return;
+    throw new AppError(409, "PRICE_NOT_CONFIRMED", `ตรวจราคาก่อน: ${pending.map((row) => row.svi_name).join(", ")} เป็นราคาเริ่มต้น · กรอกราคาจริงในหน้าต่างตรวจราคา`, {
+        prices: pending.map((row) => row.svi_id).join(","),
+    });
+}
+
+/** แถวของลูกค้าที่ทีมปรับราคาขึ้นจากที่ลูกค้าเห็นตอนเลือก (ต้องให้ลูกค้ายืนยัน · ลดราคาไม่ต้อง) */
+function raisedPriceRows(items) {
+    return items.filter(
+        (row) =>
+            row.svi_type === "item" &&
+            !row.svi_added_by_staff &&
+            !row.svi_is_removed &&
+            !row.svi_percent &&
+            row.svi_adjusted_unit_price !== null &&
+            parseHundredths(row.svi_adjusted_unit_price, "ราคา") > parseHundredths(row.svi_unit_price, "ราคา"),
+    );
 }
 
 /** ยอดที่ลูกค้าส่ง (แถวลูกค้า ค่า ณ วันส่ง) */
@@ -123,16 +160,19 @@ async function listRequests(conn, { status, linkId } = {}) {
     const [rows] = await conn.query(`SELECT ${REQUEST_COLUMNS} ${REQUEST_FROM} ${where} ORDER BY r.svr_submitted_at DESC LIMIT 300`, params);
     const items = await findItems(conn, rows.map((row) => row.svr_id));
     const [[{ waiting }]] = await conn.query("SELECT COUNT(*) AS waiting FROM tb_service_requests WHERE svr_status = 'submitted'");
+    const [[{ awaitingCustomer }]] = await conn.query("SELECT COUNT(*) AS awaitingCustomer FROM tb_service_requests WHERE svr_status = 'awaiting_customer'");
     return {
         data: rows.map((row) => {
             const list = effectiveRows(items.get(row.svr_id) ?? []);
             return {
                 ...row,
                 item_count: list.filter((item) => item.svi_type === "heading" || (item.svi_type === "item" && !item.svi_package_id)).length,
+                price_pending_count: pendingPriceRows(items.get(row.svr_id) ?? []).length,
                 totals: adjustedTotals(items.get(row.svr_id) ?? [], row.svr_vat_rate),
             };
         }),
         waiting_count: Number(waiting),
+        awaiting_customer_count: Number(awaitingCustomer),
     };
 }
 
@@ -180,15 +220,42 @@ async function findRequest(conn, requestId) {
     for (const item of items) {
         if (item.svi_percent) item.percent_amount = effectivePrices.get(item.svi_id) ?? null;
     }
+    const answers = await findAnswers(conn, requestId);
+    await attachRelatedAnswers(conn, items, answers);
     return {
         request: row,
         items,
         totals,
         submitted_totals: submittedTotals(items, row.svr_vat_rate),
-        answers: await findAnswers(conn, requestId),
+        price_pending_ids: pendingPriceRows(items).map((item) => item.svi_id),
+        raised_price_ids: raisedPriceRows(items).map((item) => item.svi_id),
+        answers,
         client_matches: row.svr_client_id ? [] : await clientMatches(conn, row),
         fastwork_plan: row.ol_kind === "fastwork" ? await fastworkPlanOf(conn, row, items, totals) : null,
     };
+}
+
+/**
+ * แถวราคาเริ่มต้น: คำตอบของคำถามที่สินค้านั้นเลือก (รวมข้อลูก) ไว้ข้างช่องราคา เช่น "ชื่อโดเมนที่อยากได้"
+ * (สินค้าเลือกคำถาม 2026-11-01 · ไฟล์แนบดูในส่วนความต้องการ)
+ */
+async function attachRelatedAnswers(conn, items, answers) {
+    const priceRows = items.filter((item) => item.svi_needs_price && item.svi_product_id);
+    if (priceRows.length === 0 || answers.length === 0) return;
+    const [links] = await conn.query("SELECT pq_product_id, pq_question_id FROM tb_product_questions WHERE pq_product_id IN (?)", [
+        [...new Set(priceRows.map((item) => item.svi_product_id))],
+    ]);
+    const parentIds = [...new Set(links.map((link) => link.pq_question_id))];
+    const [children] = parentIds.length
+        ? await conn.query("SELECT rqq_id, rqq_parent_id FROM tb_requirement_questions WHERE rqq_parent_id IN (?)", [parentIds])
+        : [[]];
+    for (const item of priceRows) {
+        const questionIds = new Set(links.filter((link) => link.pq_product_id === item.svi_product_id).map((link) => link.pq_question_id));
+        for (const child of children) if (questionIds.has(child.rqq_parent_id)) questionIds.add(child.rqq_id);
+        item.related_answers = answers
+            .filter((answer) => questionIds.has(answer.question_id) && answer.answer)
+            .map((answer) => ({ question: answer.question, answer: answer.answer }));
+    }
 }
 
 /**
@@ -234,8 +301,11 @@ async function findFile(conn, requestId, fileId) {
 
 // ─── ตรวจ / ปรับ / ยืนยัน ─────────────────────────────────────────────────────────────────
 
-/** ล็อกคำขอ · เวอร์ชันไม่ตรง = มีคนแก้ไปก่อน · แก้ได้เฉพาะคำขอที่ยังรอตรวจ */
-async function lockSubmitted(conn, requestId, expectedVersion) {
+/**
+ * ล็อกคำขอ · เวอร์ชันไม่ตรง = มีคนแก้ไปก่อน · แก้ได้เฉพาะคำขอที่ยังรอตรวจ
+ * allowAwaiting: คำขอที่รอลูกค้ายืนยันราคา ทีมยังแก้รายการ/ราคา/ปฏิเสธได้
+ */
+async function lockSubmitted(conn, requestId, expectedVersion, { allowAwaiting = false } = {}) {
     const [[request]] = await conn.query(
         `SELECT r.svr_id, r.svr_status, r.svr_version, r.svr_client_id, r.svr_vat_rate, l.ol_kind, l.ol_buyer_name
          FROM tb_service_requests r JOIN tb_order_links l ON l.ol_id = r.svr_link_id
@@ -246,7 +316,10 @@ async function lockSubmitted(conn, requestId, expectedVersion) {
     if (request.svr_version !== expectedVersion) {
         throw new AppError(409, "SERVICE_REQUEST_CHANGED", "คำขอนี้มีการเปลี่ยนแปลงไปก่อนแล้ว กรุณาโหลดหน้าใหม่");
     }
-    if (request.svr_status !== "submitted") {
+    if (request.svr_status === "awaiting_customer" && !allowAwaiting) {
+        throw new AppError(409, "SERVICE_REQUEST_AWAITING_CUSTOMER", "คำขอนี้รอลูกค้ายืนยันราคาอยู่ · แก้ราคาใหม่ได้ (ลูกค้าต้องยืนยันใหม่) หรือรอลูกค้าตอบ");
+    }
+    if (request.svr_status !== "submitted" && request.svr_status !== "awaiting_customer") {
         throw new AppError(409, "SERVICE_REQUEST_DONE", "คำขอนี้ดำเนินการไปแล้ว แก้ไม่ได้");
     }
     return request;
@@ -270,8 +343,8 @@ const sameDecimal = (first, second) => parseHundredths(first, "ค่า") === p
  * ปรับรายการ: แถวของลูกค้าเก็บค่าที่ปรับแยก (เหมือนเดิม = ไม่นับว่าปรับ) · แถวที่ผู้รับผิดชอบเพิ่มแทนชุดเดิมทั้งหมด
  * ต้องส่งแถวของลูกค้าครบทุกแถว (ไม่ลบแถวลูกค้า ใช้ is_removed แทน)
  */
-async function updateItems(conn, requestId, input) {
-    await lockSubmitted(conn, requestId, input.svr_version);
+async function updateItems(conn, actor, requestId, input) {
+    await lockSubmitted(conn, requestId, input.svr_version, { allowAwaiting: true });
     const items = (await findItems(conn, [requestId])).get(requestId) ?? [];
     const customerRows = items.filter((row) => row.svi_type === "item" && !row.svi_added_by_staff);
     const sentIds = new Set(input.items.filter((row) => row.svi_id).map((row) => row.svi_id));
@@ -290,12 +363,19 @@ async function updateItems(conn, requestId, input) {
             await conn.query("UPDATE tb_service_request_items SET svi_is_removed = ? WHERE svi_id = ?", [row.is_removed ? 1 : 0, row.svi_id]);
             continue;
         }
+        const adjustedPrice = sameDecimal(row.unit_price, original.svi_unit_price) ? null : row.unit_price;
+        const currentPrice = original.svi_adjusted_unit_price ?? original.svi_unit_price;
+        // ราคาเริ่มต้น: แก้ราคาในตาราง = ทีมตรวจราคาแล้ว (หน้าต่างตรวจราคาไม่ถามแถวนี้อีก)
+        const isPriceConfirmedNow = original.svi_needs_price && !sameDecimal(row.unit_price, currentPrice);
         await conn.query(
-            "UPDATE tb_service_request_items SET svi_adjusted_quantity = ?, svi_adjusted_unit_price = ?, svi_is_removed = ? WHERE svi_id = ?",
+            `UPDATE tb_service_request_items SET svi_adjusted_quantity = ?, svi_adjusted_unit_price = ?, svi_is_removed = ?
+                ${isPriceConfirmedNow ? ", svi_price_confirmed_at = ?, svi_price_confirmed_by = ?" : ""}
+             WHERE svi_id = ?`,
             [
                 sameDecimal(row.quantity, original.svi_quantity) ? null : row.quantity,
-                sameDecimal(row.unit_price, original.svi_unit_price) ? null : row.unit_price,
+                adjustedPrice,
                 row.is_removed ? 1 : 0,
+                ...(isPriceConfirmedNow ? [nowBangkokText(), actor.user_id] : []),
                 row.svi_id,
             ],
         );
@@ -305,19 +385,74 @@ async function updateItems(conn, requestId, input) {
     const [[{ lastOrder }]] = await conn.query("SELECT COALESCE(MAX(svi_order), 0) AS lastOrder FROM tb_service_request_items WHERE svi_request_id = ?", [requestId]);
     let order = Number(lastOrder);
     for (const row of input.items.filter((item) => !item.svi_id && !item.is_removed)) {
+        if (row.package_id) {
+            const [[productPackage]] = await conn.query("SELECT pkg_id FROM tb_product_packages WHERE pkg_id = ?", [row.package_id]);
+            if (!productPackage) throw validationError({ items: `ไม่พบชุด ${row.name} กรุณาเลือกใหม่` });
+        }
+        // หัวข้อชุดที่ทีมเพิ่ม: ชื่อชุด + จำนวนชุด (ไม่มีราคา · ยอดมาจากรายการในชุดที่ตามมา)
+        if (row.type === "heading") {
+            if (!row.package_id) throw validationError({ items: "หัวข้อชุดต้องอ้างชุดรายการ" });
+            order += 1;
+            await conn.query(
+                `INSERT INTO tb_service_request_items
+                    (svi_request_id, svi_order, svi_type, svi_package_id, svi_name, svi_unit, svi_unit_price, svi_quantity, svi_added_by_staff)
+                 VALUES (?, ?, 'heading', ?, ?, 'ชุด', NULL, ?, 1)`,
+                [requestId, order, row.package_id, row.name, row.quantity],
+            );
+            continue;
+        }
+        let needsPrice = false;
         if (row.product_id) {
-            const [[product]] = await conn.query("SELECT product_id FROM tb_products WHERE product_id = ?", [row.product_id]);
+            const [[product]] = await conn.query("SELECT product_id, product_price_mode FROM tb_products WHERE product_id = ?", [row.product_id]);
             if (!product) throw validationError({ items: `ไม่พบสินค้า ${row.name} กรุณาเลือกใหม่` });
+            needsPrice = product.product_price_mode === "from";
         }
         order += 1;
+        // ทีมเพิ่มสินค้าราคาเริ่มต้นเอง = ทีมใส่ราคาจริงตรงนั้น ถือว่ายืนยันแล้ว
         await conn.query(
             `INSERT INTO tb_service_request_items
-                (svi_request_id, svi_order, svi_type, svi_product_id, svi_name, svi_unit, svi_unit_price, svi_quantity, svi_added_by_staff)
-             VALUES (?, ?, 'item', ?, ?, ?, ?, ?, 1)`,
-            [requestId, order, row.product_id, row.name, row.unit, row.unit_price, row.quantity],
+                (svi_request_id, svi_order, svi_type, svi_product_id, svi_package_id, svi_name, svi_unit, svi_unit_price, svi_quantity, svi_added_by_staff,
+                 svi_needs_price, svi_price_confirmed_at, svi_price_confirmed_by)
+             VALUES (?, ?, 'item', ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+            [
+                requestId, order, row.product_id, row.package_id, row.name, row.unit, row.unit_price, row.quantity,
+                needsPrice ? 1 : 0, needsPrice ? nowBangkokText() : null, needsPrice ? actor.user_id : null,
+            ],
         );
     }
-    await bumpVersion(conn, requestId);
+    await backToTeam(conn, requestId);
+    return findRequest(conn, requestId);
+}
+
+/** รอลูกค้ายืนยันราคาอยู่แล้วทีมแก้ = กลับมารอตรวจ (ยืนยันคำขออีกครั้ง ลูกค้ายืนยันราคาใหม่) · เวอร์ชัน +1 เสมอ */
+async function backToTeam(conn, requestId) {
+    await conn.query(
+        `UPDATE tb_service_requests SET svr_status = IF(svr_status = 'awaiting_customer', 'submitted', svr_status), svr_version = svr_version + 1
+         WHERE svr_id = ?`,
+        [requestId],
+    );
+}
+
+/**
+ * ยืนยันราคาแถวราคาเริ่มต้น (หน้าต่าง "ตรวจราคาก่อนสร้างใบ") · ราคาเดิม = ยืนยันว่าใช้ราคาเริ่มต้น (Q2 ข)
+ * ส่งได้เฉพาะแถวราคาเริ่มต้นที่ยังอยู่ในคำขอ · แถวที่ยืนยันแล้วส่งซ้ำได้ (แก้ราคาอีกครั้ง)
+ */
+async function confirmPrices(conn, actor, requestId, input) {
+    await lockSubmitted(conn, requestId, input.svr_version, { allowAwaiting: true });
+    const items = (await findItems(conn, [requestId])).get(requestId) ?? [];
+    const byId = new Map(items.map((row) => [row.svi_id, row]));
+    const confirmedAt = nowBangkokText();
+    for (const price of input.prices) {
+        const row = byId.get(price.svi_id);
+        if (!row || row.svi_type !== "item" || !row.svi_needs_price || row.svi_is_removed) {
+            throw validationError({ prices: "บางแถวไม่ใช่รายการราคาเริ่มต้นของคำขอนี้ กรุณาโหลดหน้าใหม่" });
+        }
+        await conn.query(
+            "UPDATE tb_service_request_items SET svi_adjusted_unit_price = ?, svi_price_confirmed_at = ?, svi_price_confirmed_by = ? WHERE svi_id = ?",
+            [sameDecimal(price.unit_price, row.svi_unit_price) ? null : price.unit_price, confirmedAt, actor.user_id, row.svi_id],
+        );
+    }
+    await backToTeam(conn, requestId);
     return findRequest(conn, requestId);
 }
 
@@ -333,7 +468,7 @@ async function finish(conn, requestId, input, status) {
     );
     const isUnhiredFastwork = current?.ol_kind === "fastwork" && current.svr_status === "converted" && !current.svr_project_id;
     if (!(status === "closed" && isUnhiredFastwork && current.svr_version === input.svr_version)) {
-        await lockSubmitted(conn, requestId, input.svr_version);
+        await lockSubmitted(conn, requestId, input.svr_version, { allowAwaiting: true });
     }
     await conn.query(
         "UPDATE tb_service_requests SET svr_status = ?, svr_status_reason = ?, svr_version = svr_version + 1 WHERE svr_id = ?",
@@ -386,6 +521,7 @@ async function confirm(conn, actor, requestId, input) {
     }
     if (!request.svr_client_id) throw validationError({ client_id: "ผูกลูกค้าเดิมหรือสร้างลูกค้าใหม่ก่อนยืนยัน" }, "ยังไม่ได้ผูกลูกค้า");
     const items = (await findItems(conn, [requestId])).get(requestId) ?? [];
+    assertPricesConfirmed(items);
     const rows = orderedRows(items);
     if (!rows.some((row) => row.svi_type === "item")) throw validationError({ items: "ต้องเหลืออย่างน้อย 1 รายการ" });
     const title = titleOf(rows);
@@ -426,9 +562,32 @@ async function confirm(conn, actor, requestId, input) {
     if (!hasBit(actor.role_permission, "createProject")) {
         throw new AppError(403, "CANNOT_CREATE_PROJECT", "คุณไม่มีสิทธิ์สร้างโปรเจกต์ · ติ๊กออกใบเสนอราคาแทน หรือให้ผู้มีสิทธิ์ยืนยัน");
     }
+    // ราคาสูงขึ้นจากที่ลูกค้าเห็น (ข้อ 2.7): ให้ลูกค้ายืนยันในหน้าสถานะก่อน · ไม่ให้ยืนยัน = ต้องมีเหตุผล
+    if (raisedPriceRows(items).length > 0) {
+        if (input.ask_customer_price) {
+            await conn.query(
+                `UPDATE tb_service_requests SET svr_status = 'awaiting_customer', svr_price_response = NULL, svr_price_response_at = NULL,
+                    svr_price_response_note = NULL, svr_price_skip_reason = NULL, svr_version = svr_version + 1
+                 WHERE svr_id = ?`,
+                [requestId],
+            );
+            return { svr_id: requestId, awaiting_customer: true };
+        }
+        if (!input.price_skip_reason) {
+            throw validationError({ price_skip_reason: "บอกเหตุผลที่ไม่ให้ลูกค้ายืนยันราคาใหม่ เช่น ลูกค้าตกลงทางโทรศัพท์แล้ว" });
+        }
+        await conn.query("UPDATE tb_service_requests SET svr_price_skip_reason = ? WHERE svr_id = ?", [input.price_skip_reason, requestId]);
+    }
+    return openProjectFromRequest(conn, actor, requestId, request.svr_client_id, rows, `ยืนยันเมื่อ ${nowBangkokText().slice(0, 16)}`);
+}
+
+/** เปิดโปรเจกต์ + งานจากรายการของคำขอ (ทีมยืนยัน หรือลูกค้ายืนยันราคาใหม่ในหน้าสถานะ) */
+async function openProjectFromRequest(conn, actor, requestId, clientId, rows, whenText) {
+    const title = titleOf(rows);
+    const sourceNote = `จากคำขอบริการ ${requestId}`;
     const project = await projectService.insertProject(
         conn,
-        { project_name: title, client_id: request.svr_client_id, project_description: `${sourceNote} (ยืนยันเมื่อ ${nowBangkokText().slice(0, 16)})` },
+        { project_name: title, client_id: clientId, project_description: `${sourceNote} (${whenText})` },
         actor.user_id,
     );
     await insertTasksFromRows(
@@ -473,6 +632,7 @@ async function attachFastworkRequest(conn, actor, requestId, projectId, { isNewP
     }
     const [[project]] = await conn.query("SELECT client_id FROM tb_projects WHERE project_id = ?", [projectId]);
     const sourceNote = `จากคำขอบริการ ${requestId}`;
+    assertPricesConfirmed((await findItems(conn, [requestId])).get(requestId) ?? []);
 
     const { latestQuotation } = require("./order-public.service");
     const quotation = request.svr_quotation_id ? await latestQuotation(conn, request.svr_quotation_id, { forUpdate: true }) : null;
@@ -528,6 +688,14 @@ async function acceptOnFastwork(conn, actor, requestId, input) {
         [link.ol_project_id],
     );
     await fastworkService.insertMilestones(conn, link.ol_project_id, input.milestones, actor, Number(lastOrder) + 1);
+    // เอกสารงาน Fastwork (2026-11-01): ไม่ได้รับผ่านใบภายในที่อนุมัติแล้ว = ระบบออกใบเสนอราคาของงวดที่เพิ่ม
+    const [[usedQuotation]] = await conn.query(
+        `SELECT q.qt_id FROM tb_service_requests r JOIN tb_quotations root ON root.qt_id = r.svr_quotation_id
+         JOIN tb_quotations q ON q.qt_root_id = root.qt_root_id
+         WHERE r.svr_id = ? AND q.qt_status = 'accepted' AND q.qt_project_id = ? LIMIT 1`,
+        [requestId, link.ol_project_id],
+    );
+    if (!usedQuotation) await require("./fastwork-document.service").issueForAddedMilestones(conn, actor, link.ol_project_id, input.milestones);
     return result;
 }
 
@@ -627,6 +795,10 @@ module.exports = {
     bindClient,
     updateItems,
     finish,
+    findItems,
     confirm,
+    confirmPrices,
+    openProjectFromRequest,
+    orderedRows,
     effectiveRows,
 };

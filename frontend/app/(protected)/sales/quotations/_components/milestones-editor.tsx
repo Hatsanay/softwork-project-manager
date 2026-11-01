@@ -77,7 +77,7 @@ export default function MilestonesEditor({
                                     onChange={(event) =>
                                         update(index, { mode: event.target.value as MilestoneForm["mode"] })
                                     }
-                                    className={`${inputClass(false, "tight")} w-20`}
+                                    className={`${inputClass(false, "tight")} w-20! shrink-0`}
                                 >
                                     <option value="percent">%</option>
                                     <option value="amount">เงิน</option>

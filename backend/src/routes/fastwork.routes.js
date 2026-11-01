@@ -28,6 +28,8 @@ function registerFastworkRoutes(router) {
     router.post("/V1/fastwork/projects", requireAuth, canManage, fastworkController.createProject);
     // ตัวคิดราคาภายใน (S-5): สินค้าหน้าร้าน + ชุดคำถาม
     router.get("/V1/fastwork/price-catalog", requireAuth, canManage, fastworkController.priceCatalog);
+    router.get("/V1/fastwork/documents/missing", requireAuth, canManage, fastworkController.missingDocuments);
+    router.post("/V1/fastwork/documents/backfill", requireAuth, canManage, fastworkController.backfillDocuments);
     router.get("/V1/fastwork/projects/:id", requireAuth, requireProjectMember, fastworkController.projectFastwork);
     router.put("/V1/fastwork/projects/:id", requireAuth, canManage, fastworkController.updateProject);
     router.post("/V1/fastwork/projects/:id/milestones", requireAuth, canManage, fastworkController.addMilestones);

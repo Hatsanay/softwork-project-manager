@@ -3,7 +3,7 @@
 // แท็บสินค้า/บริการ (ปรับหน้า 2026-10-30): แถบเครื่องมือแถวเดียว (ค้นหา · แสดง · เพิ่ม) + ชิปหมวด · ตารางบอกเฉพาะสิ่งที่ต่างจากปกติ
 // เพิ่ม/แก้ในแผงด้านขวา (รายการด้านหลังอยู่ที่เดิม) แบ่ง 3 ส่วน: ข้อมูลบนเอกสาร · ราคา · การใช้งานและหน้าร้าน · ลบผ่านหน้าต่างยืนยัน
 import { useEffect, useState } from "react";
-import { Percent, Plus, Search, Tag, Trash2 } from "lucide-react";
+import { Percent, Plus, Search, Tag, Tags, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import DataTable, { type Column } from "@/components/ui/datatable/datatable";
 import EditButton from "@/components/ui/Button/EditButton";
@@ -35,8 +35,9 @@ const EMPTY_FORM = {
     product_category_id: "",
     product_status: "active" as ActiveStatus,
     product_is_public: false,
-    product_price_mode: "fixed" as "fixed" | "percent",
+    product_price_mode: "fixed" as "fixed" | "percent" | "from",
     product_percent: "",
+    product_price_note: "",
     // "" = ไม่ใช่บริการรายรอบ · ตัวเลข = ต่ออายุทุกกี่เดือน
     product_renewal_months: "",
 };
@@ -68,15 +69,19 @@ function toForm(product: Product): ProductForm {
         product_is_public: Boolean(product.product_is_public),
         product_price_mode: product.product_price_mode ?? "fixed",
         product_percent: product.product_percent ?? "",
+        product_price_note: product.product_price_note ?? "",
         product_renewal_months: product.product_renewal_months ? String(product.product_renewal_months) : "",
     };
 }
 
-/** ราคาที่คนอ่านเข้าใจทันที: "18,000.00 บาท / ปี" หรือ "+30% ของยอด" */
+/** ราคาที่คนอ่านเข้าใจทันที: "18,000.00 บาท / ปี" · "+30% ของยอด" · "เริ่มต้น 650.00 บาท / ปี" */
 function priceText(
     product: Pick<Product, "product_price_mode" | "product_percent" | "product_price" | "product_unit">,
 ) {
     if (product.product_price_mode === "percent") return `+${Number(product.product_percent)}% ของยอด`;
+    if (product.product_price_mode === "from") {
+        return `เริ่มต้น ${formatAmount(product.product_price)} บาท${product.product_unit ? ` / ${product.product_unit}` : ""}`;
+    }
     return `${formatAmount(product.product_price)} บาท${product.product_unit ? ` / ${product.product_unit}` : ""}`;
 }
 
@@ -180,6 +185,7 @@ export default function ProductsTab({ categories, canEdit, onOpenQuestions }: Pr
                     : {
                           ...currentForm,
                           product_percent: "",
+                          product_price_note: currentForm.product_price_mode === "from" ? currentForm.product_price_note : "",
                           product_renewal_months: currentForm.product_renewal_months
                               ? Number(currentForm.product_renewal_months)
                               : null,
@@ -207,7 +213,13 @@ export default function ProductsTab({ categories, canEdit, onOpenQuestions }: Pr
     }
 
     function textInput(
-        field: "product_code" | "product_name" | "product_unit" | "product_price" | "product_percent",
+        field:
+            | "product_code"
+            | "product_name"
+            | "product_unit"
+            | "product_price"
+            | "product_percent"
+            | "product_price_note",
         inputMode?: "decimal",
         placeholder?: string,
     ) {
@@ -259,6 +271,7 @@ export default function ProductsTab({ categories, canEdit, onOpenQuestions }: Pr
     ];
 
     const isPercent = form.product_price_mode === "percent";
+    const isFrom = form.product_price_mode === "from";
     const pricePreview = isPercent
         ? form.product_percent.trim() && !Number.isNaN(Number(form.product_percent))
             ? priceText({
@@ -270,7 +283,7 @@ export default function ProductsTab({ categories, canEdit, onOpenQuestions }: Pr
             : null
         : form.product_price.trim() && !Number.isNaN(Number(form.product_price))
           ? priceText({
-                product_price_mode: "fixed",
+                product_price_mode: form.product_price_mode,
                 product_percent: null,
                 product_price: form.product_price,
                 product_unit: form.product_unit.trim() || null,
@@ -446,13 +459,20 @@ export default function ProductsTab({ categories, canEdit, onOpenQuestions }: Pr
                         title="ราคา"
                         description="ราคาตั้งต้นเป็นบาท ก่อน VAT · ในใบเสนอราคาแก้ได้ทุกใบ"
                     >
-                        <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="วิธีคิดราคา">
+                        <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="วิธีคิดราคา">
                             <PriceModeCard
                                 icon={Tag}
                                 title="ราคาตายตัว"
                                 description="บาทต่อหน่วย เช่น 1,500 บาท / หน้า"
-                                isSelected={!isPercent}
+                                isSelected={form.product_price_mode === "fixed"}
                                 onSelect={() => editor.updateField("product_price_mode", "fixed")}
+                            />
+                            <PriceModeCard
+                                icon={Tags}
+                                title="ราคาเริ่มต้น"
+                                description="ราคาขึ้นกับรายละเอียด เช่น จดโดเมน · ทีมกรอกราคาจริงก่อนออกใบ"
+                                isSelected={isFrom}
+                                onSelect={() => editor.updateField("product_price_mode", "from")}
                             />
                             <PriceModeCard
                                 icon={Percent}
@@ -475,10 +495,14 @@ export default function ProductsTab({ categories, canEdit, onOpenQuestions }: Pr
                                 </FormField>
                             ) : (
                                 <FormField
-                                    label="ราคาตั้งต้น (บาท)"
+                                    label={isFrom ? "ราคาเริ่มต้น (บาท)" : "ราคาตั้งต้น (บาท)"}
                                     htmlFor="product_price"
                                     required
-                                    hint={messages.price}
+                                    hint={
+                                        isFrom
+                                            ? 'ราคาต่ำสุด · ลูกค้าเห็น "เริ่มต้น" และยอดเบื้องต้น · ทีมกรอกราคาจริงก่อนออกใบ'
+                                            : messages.price
+                                    }
                                     error={fieldErrors.product_price}
                                 >
                                     {textInput("product_price", "decimal", "0.00")}
@@ -493,6 +517,17 @@ export default function ProductsTab({ categories, canEdit, onOpenQuestions }: Pr
                                 {textInput("product_unit", undefined, "งาน")}
                             </FormField>
                         </div>
+                        {isFrom && (
+                            <FormField
+                                label="ราคาขึ้นกับอะไร"
+                                htmlFor="product_price_note"
+                                required
+                                hint="ลูกค้าเห็นใต้ราคา เช่น ราคาขึ้นกับนามสกุลและชื่อโดเมน · ผูกคำถามที่ใช้ตั้งราคาได้ที่แผงคำถามด้านล่าง"
+                                error={fieldErrors.product_price_note}
+                            >
+                                {textInput("product_price_note", undefined, "นามสกุลและชื่อโดเมน")}
+                            </FormField>
+                        )}
                         {!isPercent && (
                             <FormField
                                 label="ต่ออายุทุก"

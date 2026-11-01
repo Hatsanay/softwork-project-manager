@@ -19,7 +19,8 @@ export default function SectionCard({ id, title, description, icon: Icon, action
         <section id={id} className={`grid scroll-mt-24 gap-5 p-5 sm:p-6 ${CARD_CLASS}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
                 {/* หัวข้อยืดเต็มที่เหลือ (ขั้นต่ำ 18rem) — ปุ่มจึงอยู่มุมขวาบรรทัดเดียวกัน ตกบรรทัดเฉพาะจอแคบ */}
-                <div className="flex min-w-0 flex-1 basis-72 items-start gap-3.5">
+                {/* ไม่มีคำอธิบาย: หัวข้อกลางแนวกับไอคอน (เดิมชิดบน ดูเยื้อง 2026-11-01) */}
+                <div className={`flex min-w-0 flex-1 basis-72 gap-3.5 ${description ? "items-start" : "items-center"}`}>
                     {Icon && (
                         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
                             <Icon size={19} />

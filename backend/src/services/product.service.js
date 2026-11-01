@@ -12,7 +12,7 @@ const MAX_LIST_LIMIT = 200;
 const PRODUCT_COLUMNS = `
     p.product_id, p.product_code, p.product_name, p.product_description, p.product_unit, p.product_price,
     p.product_category_id, c.pc_name AS category_name, p.product_status, p.product_is_public, p.product_image_url,
-    p.product_price_mode, p.product_percent, p.product_renewal_months,
+    p.product_price_mode, p.product_percent, p.product_price_note, p.product_renewal_months,
     p.product_created_at, p.product_updated_at`;
 
 /**
@@ -107,6 +107,7 @@ function productValues(product) {
         product.product_is_public ? 1 : 0,
         product.product_price_mode,
         product.product_percent,
+        product.product_price_note,
         product.product_renewal_months,
     ];
 }
@@ -136,8 +137,8 @@ async function createProduct(conn, product) {
     await conn.query(
         `INSERT INTO tb_products
             (product_id, product_code, product_name, product_description, product_unit, product_price, product_category_id, product_status,
-             product_is_public, product_price_mode, product_percent, product_renewal_months)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             product_is_public, product_price_mode, product_percent, product_price_note, product_renewal_months)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [productId, ...productValues(product)],
     );
     return findProduct(conn, productId);
@@ -158,7 +159,7 @@ async function updateProduct(conn, productId, product) {
         `UPDATE tb_products SET
             product_code = ?, product_name = ?, product_description = ?, product_unit = ?, product_price = ?,
             product_category_id = ?, product_status = ?, product_is_public = ?, product_price_mode = ?, product_percent = ?,
-            product_renewal_months = ?
+            product_price_note = ?, product_renewal_months = ?
          WHERE product_id = ?`,
         [...productValues(product), productId],
     );

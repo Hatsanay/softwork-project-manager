@@ -20,7 +20,9 @@ const {
     serviceRequestConfirmSchema,
     serviceRequestFastworkAcceptSchema,
     serviceRequestItemsSchema,
+    serviceRequestPricesSchema,
     serviceRequestReasonSchema,
+    servicePriceResponseSchema,
 } = require("../shared/schemas/service-request.mjs");
 const {
     orderAcceptSchema,
@@ -128,7 +130,12 @@ module.exports = {
     }),
     updateRequestItems: handle((req) => {
         const input = validate(serviceRequestItemsSchema, req.body);
-        return withTransaction((conn) => serviceRequestService.updateItems(conn, req.params.id, input));
+        return withTransaction((conn) => serviceRequestService.updateItems(conn, req.user, req.params.id, input));
+    }),
+    // ราคาเริ่มต้น (2026-11-01): หน้าต่างตรวจราคาก่อนสร้างใบ
+    confirmRequestPrices: handle((req) => {
+        const input = validate(serviceRequestPricesSchema, req.body);
+        return withTransaction((conn) => serviceRequestService.confirmPrices(conn, req.user, req.params.id, input));
     }),
     rejectRequest: handle((req) => {
         const input = validate(serviceRequestReasonSchema, req.body);
@@ -235,6 +242,12 @@ module.exports = {
     publicAccept: publicHandle(async (req) => {
         const input = validate(orderAcceptSchema, req.body);
         await withTransaction((conn) => orderPublicService.acceptByCustomer(conn, req.params.token, input));
+        return orderPublicService.requestStatus(pool, req.params.token);
+    }),
+    // ลูกค้าตอบราคาที่ทีมปรับขึ้น (ราคาเริ่มต้น 2026-11-01)
+    publicPriceResponse: publicHandle(async (req) => {
+        const input = validate(servicePriceResponseSchema, req.body);
+        await withTransaction((conn) => orderPublicService.respondToPrice(conn, req.params.token, input));
         return orderPublicService.requestStatus(pool, req.params.token);
     }),
 

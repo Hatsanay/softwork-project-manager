@@ -30,7 +30,10 @@ export const productSchema = z
         // แสดงบนหน้าร้านของลิงก์เลือกบริการ (2026-10-25)
         product_is_public: z.boolean().default(false),
         // งานเพิ่มแบบ % ของยอดรายการอื่นก่อน VAT เช่น งานด่วน +30% (2026-10-25)
-        product_price_mode: z.enum(["fixed", "percent"], { error: "เลือกวิธีคิดราคา" }).default("fixed"),
+        // ราคาเริ่มต้น (2026-11-01 · docs/plans/2026-11-01-starting-price.md): ราคา = ราคาต่ำสุด · ทีมกรอกราคาจริงก่อนออกใบ
+        product_price_mode: z.enum(["fixed", "percent", "from"], { error: "เลือกวิธีคิดราคา" }).default("fixed"),
+        // ราคาเริ่มต้น: ราคาขึ้นกับอะไร (ลูกค้าเห็น) เช่น "นามสกุลและชื่อโดเมน"
+        product_price_note: optionalText("ราคาขึ้นกับอะไร", 150),
         // ฟอร์มส่งช่องว่าง "" มาเมื่อเลือกราคาตายตัว (ช่องนี้ซ่อนอยู่) = ไม่ใช้ ไม่ใช่กรอกผิด (2026-10-31: เดิมกดบันทึกแล้วเงียบ เพราะ error อยู่ใต้ช่องที่ซ่อน)
         // บริการรายรอบ (2026-10-31): ต่ออายุทุกกี่เดือน · ว่าง = ไม่ใช่รายรอบ · ลูกค้าตอบรับใบที่มีสินค้านี้ = ระบบตั้งต่ออายุให้
         product_renewal_months: z
@@ -50,6 +53,9 @@ export const productSchema = z
             .transform((value) => value ?? null),
     })
     .superRefine((product, context) => {
+        if (product.product_price_mode === "from" && !product.product_price_note) {
+            context.addIssue({ code: "custom", path: ["product_price_note"], message: "บอกลูกค้าว่าราคาขึ้นกับอะไร เช่น นามสกุลและชื่อโดเมน" });
+        }
         if (product.product_price_mode === "percent" && !product.product_percent) {
             context.addIssue({ code: "custom", path: ["product_percent"], message: "ใส่อัตรา % เช่น 30" });
         }
@@ -61,10 +67,12 @@ export const productSchema = z
             });
         }
     })
-    // แบบ %: ราคาตั้งต้นไม่ใช้ (ตั้งเป็น 0) · แบบราคาตายตัว: ไม่มีอัตรา %
-    .transform((product) =>
-        product.product_price_mode === "percent" ? { ...product, product_price: "0.00" } : { ...product, product_percent: null },
-    );
+    // แบบ %: ราคาตั้งต้นไม่ใช้ (ตั้งเป็น 0) · แบบอื่น: ไม่มีอัตรา % · "ราคาขึ้นกับอะไร" เก็บเฉพาะราคาเริ่มต้น
+    .transform((product) => {
+        const priceNote = product.product_price_mode === "from" ? product.product_price_note : null;
+        if (product.product_price_mode === "percent") return { ...product, product_price: "0.00", product_price_note: priceNote };
+        return { ...product, product_percent: null, product_price_note: priceNote };
+    });
 
 export const productCategorySchema = z.object({
     pc_name: requiredText("ชื่อหมวด", 100),

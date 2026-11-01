@@ -63,6 +63,19 @@ async function askGroupQuestions(username, plan) {
     }
 }
 
+/**
+ * ราคาเริ่มต้น (2026-11-01): ยืนยันราคาแถวที่รอกรอกราคา ก่อนยืนยันคำขอ/รับงาน (แบบเดียวกับหน้าต่างตรวจราคา)
+ * prices: รหัสสินค้า → ราคาจริง · ไม่ระบุ = ใช้ราคาปัจจุบัน (กดต่อได้เลย)
+ */
+async function confirmStartingPrices(username, detail, prices = {}) {
+    if (detail.price_pending_ids.length === 0) return detail;
+    const rows = detail.items.filter((row) => detail.price_pending_ids.includes(row.svi_id));
+    return as(username, "PUT", `/V1/service-requests/${detail.request.svr_id}/prices`, {
+        svr_version: detail.request.svr_version,
+        prices: rows.map((row) => ({ svi_id: row.svi_id, unit_price: prices[row.svi_product_id] ?? row.svi_adjusted_unit_price ?? row.svi_unit_price })),
+    });
+}
+
 /** รูปตัวอย่างที่ลูกค้าแนบ (ข้อความอังกฤษ · ฟอนต์ไทยในเครื่องสร้างภาพไม่แน่นอน) */
 function sampleImage(title, color) {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="320">
@@ -295,6 +308,8 @@ function scheduleOrderLinks({ on, ids, state, sales }) {
                 is_removed: false,
             })),
         });
+        // โดเมนในชุด (ราคาเริ่มต้น): baanrimklong.com ใช้ราคาเริ่มต้นได้เลย
+        detail = await confirmStartingPrices(SALES_MANAGER, detail);
         const confirmed = await as(SALES_MANAGER, "POST", `/V1/service-requests/${requestId}/confirm`, { svr_version: detail.request.svr_version, create_quotation: true });
         state.homestayQuotation = confirmed.qt_id;
         await sales.submitAndApprove(SALES_MANAGER, confirmed.qt_id, ["hatsanai"]);
@@ -360,6 +375,8 @@ function scheduleOrderLinks({ on, ids, state, sales }) {
             items: [
                 { kind: "product", id: product("uxui"), quantity: 10 },
                 { kind: "product", id: product("mobileDev"), quantity: 20 },
+                // ราคาเริ่มต้น: คำขอนี้ยังรอทีมกรอกราคาโดเมน (ข้อมูลจำลองของป้าย "รอกรอกราคา")
+                { kind: "product", id: product("domain"), quantity: 1 },
             ],
             contact: {
                 contact_name: "คุณอรอุมา ทองสุข",
@@ -429,7 +446,7 @@ function scheduleFastworkLinks({ on, ids, state, owner }) {
     });
     on("2026-09-03", "ออกใบเสนอราคาภายใน (ไม่ส่งลูกค้า) แล้วส่งราคาบน Fastwork", async () => {
         const requestId = state.spaRequest.svr_id;
-        const detail = await requestDetail(owner, requestId);
+        const detail = await confirmStartingPrices(owner, await requestDetail(owner, requestId));
         const confirmed = await as(owner, "POST", `/V1/service-requests/${requestId}/confirm`, { svr_version: detail.request.svr_version, create_quotation: true });
         await as(owner, "POST", `/V1/quotations/${confirmed.qt_id}/submit`, {});
         // ช่วงก่อนจดอนุมัติเองได้ (ตั้งค่าอนุญาตอนุมัติเอกสารของตัวเอง)
@@ -450,6 +467,8 @@ function scheduleFastworkLinks({ on, ids, state, owner }) {
             ],
             service_request_id: state.spaRequest.svr_id,
         });
+        // เอกสารงาน Fastwork (2026-11-01): ผู้ซื้อขอใบเสนอราคา/ใบเสร็จ → เปิดเอกสารในลิงก์ติดตามงาน
+        await as(owner, "PUT", `/V1/projects/${state.G.project_id}/share/documents`, { project_share_documents: true });
     });
 
     on("2026-10-14", "ส่งลิงก์ Fastwork ให้ phuket_pet (ก่อนจ้าง)", async () => {
@@ -510,6 +529,8 @@ function scheduleFastworkLinks({ on, ids, state, owner }) {
             items: [
                 { kind: "product", id: website, quantity: 1 },
                 { kind: "product", id: screen, quantity: 3 },
+                // ราคาเริ่มต้น: รอทีมกรอกราคาโดเมน
+                { kind: "product", id: ids.products.domain.id, quantity: 1 },
             ],
             answers: { ...GENERAL_ANSWER("ร้านเบเกอรี่ในตัวเมืองกระบี่ ขายหน้าร้านและส่งเดลิเวอรี"), มีเว็บไซต์เดิมไหม: "no" },
         });

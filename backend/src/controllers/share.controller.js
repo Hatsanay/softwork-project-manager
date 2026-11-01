@@ -1,4 +1,5 @@
 const pool = require("../config/db");
+const shareDocumentService = require("../services/share-document.service");
 
 async function getSharedProject(req, res, next) {
     try {
@@ -57,10 +58,27 @@ async function getSharedProject(req, res, next) {
         // ชื่อร้านและโลโก้บนหัวหน้า (แทนคำว่า SOFTWORK)
         const [[shop]] = await pool.query("SELECT cs_name_th AS name, cs_logo_url AS logo_url FROM tb_company_settings WHERE cs_id = 1");
 
-        res.json({ project, tasks, timeline, shop: shop ?? null });
+        // เอกสาร (2026-11-01): เฉพาะเมื่อทีมเปิด "แสดงเอกสารในลิงก์ติดตามงาน" · ปิด = null (หน้าไม่แสดงส่วนเอกสาร)
+        const documentProject = await shareDocumentService.findProject(pool, req.params.token);
+        const documents = documentProject ? await shareDocumentService.listDocuments(pool, documentProject.project_id) : null;
+
+        res.json({ project, tasks, timeline, shop: shop ?? null, documents });
     } catch (err) {
         next(err);
     }
 }
 
-module.exports = { getSharedProject };
+/** หน้าเอกสาร A4 ในลิงก์ติดตามงาน (ลูกค้าพิมพ์/บันทึก PDF) */
+async function getSharedDocument(req, res, next) {
+    try {
+        const type = req.params.type;
+        if (!["quotation", "invoice", "receipt"].includes(type)) {
+            return res.status(404).json({ message: "ไม่พบเอกสารนี้" });
+        }
+        res.json(await shareDocumentService.documentDetail(pool, req.params.token, type, req.params.id));
+    } catch (err) {
+        next(err);
+    }
+}
+
+module.exports = { getSharedProject, getSharedDocument };

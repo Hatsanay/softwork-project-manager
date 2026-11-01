@@ -149,7 +149,8 @@ export type BusinessSummary = {
     today: string;
     // สิ่งที่ต้องทำในโปรเจกต์ (2026-10-31) · ดูโปรเจกต์ไม่ได้ = ไม่มีส่วนนี้
     todo?: ProjectTodo;
-    requests?: { submitted: number };
+    // ราคาเริ่มต้น (2026-11-01): price_pending = คำขอรอตรวจที่มีรายการรอกรอกราคา · awaiting_customer = รอลูกค้ายืนยันราคา
+    requests?: { submitted: number; price_pending: number; awaiting_customer: number };
     quotations?: { waiting: number; expiring_soon: number; expiring_days: number };
     receivables?: { outstanding: string; overdue: string; overdue_clients: number };
     // ต่ออายุบริการ (2026-10-31) · ไม่มีสิทธิ์ = ไม่มีส่วนนี้

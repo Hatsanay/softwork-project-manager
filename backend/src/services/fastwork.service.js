@@ -113,6 +113,8 @@ async function addMilestones(conn, user, projectId, input) {
         throw validationError({ milestones: `งานหนึ่งมีงวดได้ไม่เกิน ${MAX_FASTWORK_MILESTONES} งวด (ตอนนี้มี ${milestoneCount} งวด)` });
     }
     await insertMilestones(conn, projectId, input.milestones, user, Number(lastOrder) + 1);
+    // เอกสารงาน Fastwork (2026-11-01): ใบเสนอราคาของงวดที่เพิ่ม · require ตอนใช้ (กันวงจร require กับ quotation.service)
+    await require("./fastwork-document.service").issueForAddedMilestones(conn, user, projectId, input.milestones);
     // require ตอนใช้: quotation-accept → quotation.service → fastwork.service วนกัน
     const { insertTasksFromRows } = require("./quotation-accept.service");
     const taskCount = input.tasks.length > 0 ? await insertTasksFromRows(conn, projectId, input.tasks, "จ้างเพิ่มผ่าน Fastwork (ตัวคิดราคา)") : 0;
@@ -185,6 +187,8 @@ async function createProject(conn, user, input) {
             );
         }
     }
+    // เอกสารงาน Fastwork (2026-11-01): ใบเสนอราคาตอบรับแล้วของงวดทั้งหมด (รับผ่านใบภายในจากคำขอ = ใช้ใบนั้น ไม่ออกซ้ำ)
+    await require("./fastwork-document.service").issueForNewJob(conn, user, projectId, input.project_start_date);
     return { project_id: projectId, client_id: clientId, task_count: taskCount, renewal_count: input.renewals.length };
 }
 
@@ -370,6 +374,8 @@ async function createPayout(conn, user, input) {
             [nowBangkokText(), user.user_id, input.fwp_milestone_id],
         );
     }
+    // เอกสารงาน Fastwork (2026-11-01): ใบแจ้งหนี้ + ใบเสร็จของงวดนี้ (ราคาเต็ม · เอกสารประกอบ ไม่นับรายได้ซ้ำ)
+    await require("./fastwork-document.service").issueForPayout(conn, user, result.insertId);
     return findPayout(conn, result.insertId);
 }
 
@@ -427,6 +433,8 @@ async function cancelPayout(conn, user, payoutId, input) {
          WHERE fwp_id = ?`,
         [input.reason, nowBangkokText(), user.user_id, payoutId],
     );
+    // เอกสารงาน Fastwork (2026-11-01): ยกเลิกใบเสร็จ + ใบแจ้งหนี้ของรายการนี้ตาม
+    await require("./fastwork-document.service").cancelForPayout(conn, user, payoutId, input.reason);
     return findPayout(conn, payoutId);
 }
 

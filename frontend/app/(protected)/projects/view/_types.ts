@@ -19,6 +19,8 @@ export type ProjectDetail = {
     project_progress_percent: string;
     project_share_token: string;
     project_share_enabled: number;
+    // แสดงเอกสารในลิงก์ติดตามงาน (2026-11-01) · MySQL ส่ง 0/1
+    project_share_documents: number;
     project_use_task_weight: number;
     // ช่องทางงาน (2026-10-24 · P-1): fastwork = รับงานผ่าน fastwork.com (การ์ดงวดงาน + เงินจากแพลตฟอร์ม)
     project_channel: "direct" | "fastwork";

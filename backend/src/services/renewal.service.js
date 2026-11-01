@@ -161,7 +161,7 @@ async function formOptions(conn, clientId) {
     const [products] = await conn.query(
         `SELECT product_id, product_name, product_unit, product_price, product_renewal_months
          FROM tb_products
-         WHERE product_status = 'active' AND product_price_mode = 'fixed' AND product_renewal_months IS NOT NULL
+         WHERE product_status = 'active' AND product_price_mode <> 'percent' AND product_renewal_months IS NOT NULL
          ORDER BY product_name`,
     );
     // แพ็กที่รวมรอบแรกของบริการไว้ (หน้ารับงาน Fastwork ใช้เสนอรายการต่ออายุจากตะกร้า)

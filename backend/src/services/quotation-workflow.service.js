@@ -230,8 +230,9 @@ async function approvalsThisRound(conn, quotation) {
 }
 
 // ครบชั้นสุดท้าย: วันที่เอกสาร = วันนี้ · ออกเลข (Rev.0) · snapshot ลูกค้า/บริษัท/สาขา · ลายเซ็นผู้อนุมัติ · ฉบับก่อน → superseded
-async function finalizeApproval(conn, quotation, actor, approver) {
-    const today = todayBangkok();
+// documentDate: เอกสารงาน Fastwork ที่ระบบออกให้ (2026-11-01) ลงวันที่ตามเหตุการณ์จริง · ปกติ = วันนี้
+async function finalizeApproval(conn, quotation, actor, approver, { documentDate = null } = {}) {
+    const today = documentDate ?? todayBangkok();
     const documentNumber = quotation.qt_number ?? (await issueDocumentNumber(conn, DOCUMENT_TYPE, today));
     const validUntil = shiftDate(today, quotation.qt_valid_days);
 
@@ -590,6 +591,8 @@ async function copy(conn, quotationId, freshRate, actor) {
 }
 
 module.exports = {
+    finalizeApproval,
+    findUserLabel,
     submitForApproval,
     approve,
     returnToDraft,

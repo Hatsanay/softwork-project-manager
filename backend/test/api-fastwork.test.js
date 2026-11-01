@@ -199,7 +199,8 @@ test("งาน Fastwork: สร้าง → ส่งงาน → รอโ�
     expectStatus(removeMilestone, 409);
     assert.equal(removeMilestone.body.code, "MILESTONE_HAS_PAYOUT");
     const removeProject = expectStatus(await as(people.owner, "DELETE", `/V1/projects/${projectId}`), 409);
-    assert.equal(removeProject.code, "PROJECT_HAS_FASTWORK_PAYOUTS");
+    // เอกสารงาน Fastwork (2026-11-01): รับงานแล้วมีใบเสนอราคาที่ระบบออก = ลบโปรเจกต์ไม่ได้ (ใช้ยกเลิกแทน)
+    assert.equal(removeProject.code, "PROJECT_HAS_QUOTATIONS");
 });
 
 test("ตั้งอัตราค่าธรรมเนียม: ค่าเริ่มต้น 17% · แก้ได้เฉพาะผู้จัดการ Fastwork · เกิน 100% ไม่ได้", async () => {

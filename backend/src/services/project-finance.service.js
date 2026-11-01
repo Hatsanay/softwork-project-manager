@@ -110,6 +110,7 @@ async function getProjectFinance(conn, projectId) {
     const [quotations] = await conn.query(
         `SELECT qt_id, qt_number, qt_title, qt_currency, qt_total, qt_total_thb, DATE_FORMAT(qt_responded_at, '%Y-%m-%d') AS qt_accepted_date
          FROM tb_quotations WHERE qt_project_id = ? AND qt_status = 'accepted'
+           AND NOT EXISTS (SELECT 1 FROM tb_projects fp WHERE fp.project_id = qt_project_id AND fp.project_channel = 'fastwork') -- งาน Fastwork: มูลค่างานจากงวด Fastwork (ใบที่ระบบออก = เอกสารประกอบ)
          ORDER BY qt_responded_at, qt_number`,
         [projectId],
     );
@@ -122,6 +123,7 @@ async function getProjectFinance(conn, projectId) {
                           WHERE a.rca_invoice_id = i.inv_id AND r.rc_status = 'issued'), 0) AS received_thb
          FROM tb_invoices i
          WHERE i.inv_project_id = ? AND i.inv_status <> 'cancelled'
+           AND i.inv_fastwork_payout_id IS NULL -- เอกสารงาน Fastwork: รายได้นับจากเงินที่ Fastwork โอน (ไม่นับซ้ำ)
          ORDER BY i.inv_issue_date IS NULL, i.inv_issue_date, i.inv_number`,
         [projectId],
     );

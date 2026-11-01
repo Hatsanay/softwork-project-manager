@@ -20,6 +20,8 @@ type Product = {
     product_unit: string | null;
     product_price: string;
     category_name: string | null;
+    product_price_mode: "fixed" | "percent" | "from";
+    product_price_note: string | null;
 };
 
 type PackageSummary = {
@@ -42,6 +44,8 @@ type PackageDetail = {
         product_name: string | null;
         product_price: string | null;
         product_status: "active" | "inactive" | null;
+        product_price_mode: "fixed" | "percent" | "from" | null;
+        product_price_note: string | null;
     }[];
 };
 
@@ -135,6 +139,8 @@ export default function ItemPicker({
                 qti_unit_price: price ?? "",
                 qti_list_price: price ?? "",
                 baht_price: product.product_price,
+                is_starting_price: product.product_price_mode === "from",
+                price_note: product.product_price_note,
             },
         ]);
         setNotice(
@@ -169,6 +175,8 @@ export default function ItemPicker({
                 qti_unit_price: price ?? "",
                 qti_list_price: packageItem.pki_product_id ? (price ?? "") : "",
                 baht_price: packageItem.pki_product_id ? packageItem.product_price : null,
+                is_starting_price: packageItem.product_price_mode === "from",
+                price_note: packageItem.product_price_note,
             });
         }
         onAdd(rows);

@@ -126,6 +126,9 @@ export type QuotationItem = {
     qti_amount: string;
     product_name: string | null;
     product_price: string | null;
+    // ราคาเริ่มต้น (2026-11-01): เตือนในฟอร์มให้ตรวจราคาจริงก่อนส่ง
+    product_price_mode: "fixed" | "percent" | "from" | null;
+    product_price_note: string | null;
     product_status: "active" | "inactive" | null;
 };
 

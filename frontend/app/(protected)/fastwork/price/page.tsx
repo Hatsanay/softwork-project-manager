@@ -2,18 +2,25 @@
 
 // ตัวคิดราคาภายใน (2026-10-25 · S-5 · docs/plans/2026-10-25-client-order-link.md ข้อ 13 · ปรับหน้า 2026-10-30) — ใช้ตอนยังคุยในแชต Fastwork
 // เลือกสินค้า/ชุดจากหน้าร้าน (ชุดเดียวกับที่ผู้ซื้อเห็นในลิงก์) → ราคาเสนอ → หักค่าธรรมเนียมตามตั้งค่า → เงินเข้าบัญชีโดยประมาณ
-// กติกาตะกร้าเดียวกับหน้าร้าน: หมวดเลือกได้อย่างเดียว = เปลี่ยนแทน · แพ็กใหม่เอางานเพิ่มที่มีในแพ็กแล้ว/ใช้ไม่ได้ออก · งานเพิ่มแบบ % ได้ครั้งเดียว
+// ทีมเลือกให้ลูกค้าได้อิสระ (2026-11-01): ทุกสินค้า/ชุดที่เปิดใช้งาน · กติกาหน้าร้าน (หมวดเลือกได้อย่างเดียว · งานเพิ่มที่มีในแพ็ก/ใช้ไม่ได้) เตือน ไม่เอาออกเอง · งานเพิ่มแบบ % ได้ครั้งเดียว
 // คัดลอกคำถาม/ขอบเขตงานไปวางในแชต · สร้างงาน Fastwork จากตะกร้า (เติมชื่องานและงวดเดียวเท่าราคาเสนอ) · ไม่บันทึกอะไรในระบบ
+// ราคาเริ่มต้น (2026-11-01): ช่องกรอกราคาจริงต่อสินค้า (ใช้กับแถวในชุดด้วย) · คัดลอก/สร้างงาน/เพิ่มงวด ก่อนตรวจราคา = ถามก่อน (กดใช้ราคาเดิมต่อได้)
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import PageHeader from "@/components/ui/page-header";
 import StatusBanner from "@/components/ui/guidance/status-banner";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import FieldHint from "@/components/ui/guidance/field-hint";
+import FormField, { inputClass } from "@/components/ui/form-field";
+import SectionCard from "@/components/ui/section-card";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { buttonClass } from "@/components/ui/button";
 import { usePermission, BITS } from "@/app/components/permission-provider";
 import { apiFetch, type ApiError } from "@/lib/api";
-import { formatHundredths, formatQuantity } from "@/lib/shared/money.mjs";
+import { formatAmount, formatHundredths, formatQuantity } from "@/lib/shared/money.mjs";
+import { Tags } from "lucide-react";
 import {
     cartTotals,
     fixedSubtotal,
@@ -46,7 +53,12 @@ type CartLine = {
     taskSource: TaskSource;
 };
 
+/** ราคาที่ทีมกรอก (ราคาเริ่มต้น) · กรอกไม่ครบ/ผิดรูปแบบ = ใช้ราคาเริ่มต้นไปก่อน */
+type StartingPrices = Record<string, string>;
+const isPriceText = (value: string | undefined) => value !== undefined && /^\d+(\.\d{1,2})?$/.test(value.trim());
+
 export default function FastworkPricePage() {
+    const router = useRouter();
     const hasBit = usePermission();
     const canManage = hasBit(BITS.manageFastwork);
     const [data, setData] = useState<PriceCatalog | null>(null);
@@ -54,6 +66,11 @@ export default function FastworkPricePage() {
     const [loadError, setLoadError] = useState<ApiError | null>(null);
     const [quantities, setQuantities] = useState<Record<string, number>>({});
     const [isAddingToJob, setIsAddingToJob] = useState(false);
+    const [showHidden, setShowHidden] = useState(false);
+    // ราคาเริ่มต้น: ราคาจริงต่อสินค้า · สินค้าที่ทีมตรวจราคาแล้ว (แก้ราคา หรือกดใช้ราคาเดิมต่อ)
+    const [startingPrices, setStartingPrices] = useState<StartingPrices>({});
+    const [checkedPriceIds, setCheckedPriceIds] = useState<Set<string>>(new Set());
+    const [guardedAction, setGuardedAction] = useState<(() => void) | null>(null);
 
     useEffect(() => {
         if (!canManage) return;
@@ -86,11 +103,11 @@ export default function FastworkPricePage() {
             const [kind, id] = key.split(":");
             const product = kind === "p" ? productsById.get(id) : undefined;
             const productPackage = kind === "k" ? packagesById.get(id) : undefined;
-            if (product) productLines.push(productCartLine(product, quantity));
-            if (productPackage) packageLines.push(packageCartLine(productPackage, quantity));
+            if (product) productLines.push(productCartLine(product, quantity, startingPrices));
+            if (productPackage) packageLines.push(packageCartLine(productPackage, quantity, startingPrices));
         }
         return [...packageLines, ...productLines];
-    }, [quantities, productsById, packagesById]);
+    }, [quantities, productsById, packagesById, startingPrices]);
 
     const header = (
         <PageHeader
@@ -151,23 +168,22 @@ export default function FastworkPricePage() {
         const next = { ...quantities };
         const notes: string[] = [];
         if (!quantities[key] && quantity > 0) {
-            // หมวดเลือกได้อย่างเดียว (เช่น แพ็กเกจ): เอาอันเดิมในหมวดออก
+            // กติกาหน้าร้าน = คำเตือน (ทีมเลือกให้ลูกค้าได้อิสระ) · ไม่เอาของในตะกร้าออกเอง
             const categoryId = categoryOfKey(key);
             if (categoryId && singleChoiceIds.has(categoryId)) {
                 for (const otherKey of Object.keys(next)) {
                     if (otherKey === key || categoryOfKey(otherKey) !== categoryId) continue;
-                    delete next[otherKey];
-                    notes.push(`เปลี่ยนเป็น ${productPackage?.pkg_name ?? product?.product_name} แล้ว`);
+                    const [otherKind, otherId] = otherKey.split(":");
+                    const otherName = otherKind === "k" ? packagesById.get(otherId)?.pkg_name : productsById.get(otherId)?.product_name;
+                    notes.push(`หมวดนี้ลูกค้าเลือกได้อย่างเดียว · ตะกร้ามี ${otherName} อยู่แล้ว`);
                 }
             }
-            // แพ็กใหม่: งานเพิ่มที่มีในแพ็กแล้ว/ใช้กับแพ็กนี้ไม่ได้ เอาออกจากตะกร้า
             for (const rule of productPackage?.addon_rules ?? []) {
                 if (!next[`p:${rule.product_id}`]) continue;
-                delete next[`p:${rule.product_id}`];
-                notes.push(
-                    `เอา ${productsById.get(rule.product_id)?.product_name} ออก (${rule.rule === "included" ? "มีในแพ็กแล้ว" : "ใช้กับแพ็กนี้ไม่ได้"})`,
-                );
+                notes.push(`${productsById.get(rule.product_id)?.product_name} ${rule.rule === "included" ? "มีในแพ็กนี้แล้ว" : "ใช้กับแพ็กนี้ไม่ได้ (หน้าร้าน)"}`);
             }
+            const rule = product ? addonStateOf(product.product_id) : null;
+            if (product && rule) notes.push(`${product.product_name} ${rule.rule === "included" ? `มีใน ${rule.packageName} แล้ว` : `หน้าร้านใช้กับ ${rule.packageName} ไม่ได้`}`);
         }
         // งานเพิ่มแบบ % เลือกได้ครั้งเดียว
         const limit = product?.product_price_mode === "percent" ? 1 : MAX_SET_COUNT;
@@ -226,6 +242,34 @@ export default function FastworkPricePage() {
     })}`;
     const itemCount = cart.reduce((sum, line) => sum + line.quantity, 0);
 
+    // สินค้าราคาเริ่มต้นในตะกร้า (เดี่ยว + แถวในชุด) · สินค้าเดียวกันกรอกราคาครั้งเดียว
+    const startingRows = [
+        ...new Map(
+            cart.flatMap((line) => {
+                const [kind, id] = line.key.split(":");
+                if (kind === "p") {
+                    const product = productsById.get(id);
+                    return product?.product_price_mode === "from" ? [[product.product_id, { productId: product.product_id, name: product.product_name, basePrice: product.product_price, note: product.product_price_note }] as const] : [];
+                }
+                return (packagesById.get(id)?.items ?? [])
+                    .filter((item) => item.needs_price && item.product_id)
+                    .map((item) => [item.product_id as string, { productId: item.product_id as string, name: item.name, basePrice: item.unit_price, note: item.price_note }] as const);
+            }),
+        ).values(),
+    ];
+    const uncheckedRows = startingRows.filter((row) => !checkedPriceIds.has(row.productId));
+    const priceOf = (row: (typeof startingRows)[number]) => (isPriceText(startingPrices[row.productId]) ? startingPrices[row.productId].trim() : row.basePrice);
+    const priceNotes = startingRows.map((row) => `${row.name} ${formatAmount(priceOf(row))} บาท${row.note ? ` (ราคาขึ้นกับ${row.note})` : ""}`);
+
+    /** ส่งราคาออกไป (คัดลอก/สร้างงาน/เพิ่มงวด): ยังไม่ตรวจราคาเริ่มต้น = ถามก่อน */
+    function withPriceCheck(action: () => void) {
+        if (uncheckedRows.length > 0) {
+            setGuardedAction(() => action);
+            return;
+        }
+        action();
+    }
+
     return (
         <div className={`grid w-full grid-cols-1 gap-5 ${cart.length > 0 ? "max-lg:pb-24" : ""}`}>
             {header}
@@ -235,7 +279,37 @@ export default function FastworkPricePage() {
                     quantities={quantities}
                     addonStateOf={addonStateOf}
                     onChange={setQuantity}
+                    showHidden={showHidden}
+                    onShowHiddenChange={setShowHidden}
                 />
+                <div className="grid gap-5">
+                {startingRows.length > 0 && (
+                    <SectionCard icon={Tags} title="ราคาเริ่มต้น" description="ราคาขึ้นกับรายละเอียดของผู้ซื้อ · กรอกราคาจริงก่อนเสนอ">
+                        <div className="grid gap-3">
+                            {startingRows.map((row) => (
+                                <FormField
+                                    key={row.productId}
+                                    label={`${row.name} (บาทต่อหน่วย)`}
+                                    htmlFor={`starting_${row.productId}`}
+                                    hint={`เริ่มต้น ${formatAmount(row.basePrice)} บาท${row.note ? ` · ขึ้นกับ${row.note}` : ""}${checkedPriceIds.has(row.productId) ? " · ตรวจแล้ว" : ""}`}
+                                    error={startingPrices[row.productId] !== undefined && !isPriceText(startingPrices[row.productId]) ? "ใส่ตัวเลข เช่น 1200 (ตอนนี้ใช้ราคาเริ่มต้นไปก่อน)" : undefined}
+                                >
+                                    <input
+                                        id={`starting_${row.productId}`}
+                                        inputMode="decimal"
+                                        value={startingPrices[row.productId] ?? row.basePrice}
+                                        onChange={(event) => {
+                                            setStartingPrices((current) => ({ ...current, [row.productId]: event.target.value }));
+                                            setCheckedPriceIds((current) => new Set([...current, row.productId]));
+                                        }}
+                                        className={`${inputClass(false)} text-right tabular-nums`}
+                                    />
+                                </FormField>
+                            ))}
+                            <FieldHint>ใช้กับทุกแถวของสินค้านั้น (รวมแถวในชุด) · ราคาเสนอและขอบเขตงานที่คัดลอกใช้ราคานี้</FieldHint>
+                        </div>
+                    </SectionCard>
+                )}
                 <PriceSummary
                     lines={cart.map((line) => ({
                         key: line.key,
@@ -249,14 +323,31 @@ export default function FastworkPricePage() {
                     settings={settings}
                     payout={payout}
                     questionCount={questionCount}
-                    newJobHref={newJobHref}
-                    onAddToJob={() => setIsAddingToJob(true)}
+                    onNewJob={() => withPriceCheck(() => router.push(newJobHref))}
+                    onAddToJob={() => withPriceCheck(() => setIsAddingToJob(true))}
                     onRemove={(key) => setQuantity(key, 0)}
                     onClear={() => setQuantities({})}
                     onCopyQuestions={() => copy(questionsText(groups), "คัดลอกคำถามแล้ว วางในแชต Fastwork ได้เลย")}
-                    onCopyOffer={() => copy(offerText(cart, offer), "คัดลอกขอบเขตงานแล้ว วางในข้อเสนอ Fastwork ได้เลย")}
+                    onCopyOffer={() =>
+                        withPriceCheck(() => copy(offerText(cart, offer, priceNotes), "คัดลอกขอบเขตงานแล้ว วางในข้อเสนอ Fastwork ได้เลย"))
+                    }
                 />
+                </div>
             </div>
+            <ConfirmDialog
+                open={guardedAction !== null}
+                title="ตรวจราคาเริ่มต้นแล้วหรือยัง?"
+                description={`ยังไม่ได้แก้ราคา: ${uncheckedRows.map((row) => `${row.name} ${formatAmount(priceOf(row))} บาท`).join(", ")} · ใช้ราคานี้ต่อ หรือกลับไปกรอกราคาจริงในกล่องราคาเริ่มต้น`}
+                confirmLabel="ใช้ราคานี้ต่อ"
+                cancelLabel="กลับไปแก้ราคา"
+                onConfirm={() => {
+                    const action = guardedAction;
+                    setCheckedPriceIds((current) => new Set([...current, ...startingRows.map((row) => row.productId)]));
+                    setGuardedAction(null);
+                    action?.();
+                }}
+                onCancel={() => setGuardedAction(null)}
+            />
             {cart.length > 0 && <PriceMobileBar itemCount={itemCount} offer={offer} net={payout.net} />}
             {isAddingToJob && <AddToJobSheet title={title} offer={offer} tasks={tasksFromSources(cart.map((line) => line.taskSource))} onClose={() => setIsAddingToJob(false)} />}
         </div>
@@ -264,7 +355,8 @@ export default function FastworkPricePage() {
 }
 
 // งานเพิ่มแบบ % คิดจากยอดรายการอื่น (เลือกได้ครั้งเดียว)
-function productCartLine(product: CatalogProduct, quantity: number): CartLine {
+// ราคาเริ่มต้น: ใช้ราคาที่ทีมกรอก (ถ้ากรอกถูกรูปแบบ)
+function productCartLine(product: CatalogProduct, quantity: number, startingPrices: StartingPrices): CartLine {
     const isPercent = product.product_price_mode === "percent" && Boolean(product.product_percent);
     return {
         key: `p:${product.product_id}`,
@@ -276,11 +368,11 @@ function productCartLine(product: CatalogProduct, quantity: number): CartLine {
         taskSource: { kind: "product", name: product.product_name, quantity: isPercent ? 1 : quantity, isPercent },
         lines: isPercent
             ? [{ percent: product.product_percent as string }]
-            : [{ unitPrice: product.product_price, quantity: String(quantity) }],
+            : [{ unitPrice: product.product_price_mode === "from" && isPriceText(startingPrices[product.product_id]) ? startingPrices[product.product_id].trim() : product.product_price, quantity: String(quantity) }],
     };
 }
 
-function packageCartLine(productPackage: CatalogPackage, quantity: number): CartLine {
+function packageCartLine(productPackage: CatalogPackage, quantity: number, startingPrices: StartingPrices): CartLine {
     return {
         key: `k:${productPackage.pkg_id}`,
         name: productPackage.pkg_name,
@@ -294,7 +386,7 @@ function packageCartLine(productPackage: CatalogPackage, quantity: number): Cart
         ),
         taskSource: { kind: "package", name: productPackage.pkg_name, quantity, items: productPackage.items },
         lines: productPackage.items.map((item) => ({
-            unitPrice: item.unit_price,
+            unitPrice: item.needs_price && item.product_id && isPriceText(startingPrices[item.product_id]) ? startingPrices[item.product_id].trim() : item.unit_price,
             quantity: multiplyQuantity(item.quantity, quantity),
         })),
     };

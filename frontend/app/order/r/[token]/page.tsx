@@ -2,6 +2,7 @@
 
 // หน้าสถานะคำขอของลูกค้า /order/r/<token> (2026-10-25 · S-1, S-4) — ขั้นของงาน ใบเสนอราคา (ยอมรับได้ในหน้านี้)
 // สิ่งที่ส่ง และความต้องการที่แจ้งไว้ · ไม่มีข้อมูลภายใน
+// ราคาเริ่มต้น (2026-11-01): ยอดเบื้องต้น · ทีมกำลังตรวจราคา · ราคาที่ปรับจากที่คุณเลือก · ยืนยันราคาใหม่ก่อนเริ่มงาน
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { ArrowDown, Check, CircleAlert, CircleCheck, Clock, ExternalLink, FileText, MessageCircle, SearchX, XCircle } from "lucide-react";
@@ -10,7 +11,7 @@ import FieldHint from "@/components/ui/guidance/field-hint";
 import StatusBanner from "@/components/ui/guidance/status-banner";
 import FormField, { inputClass } from "@/components/ui/form-field";
 import { buttonClass } from "@/components/ui/button";
-import { formatAmount, formatHundredths } from "@/lib/shared/money.mjs";
+import { formatAmount, formatHundredths, formatQuantity } from "@/lib/shared/money.mjs";
 import { lineAmount } from "@/lib/shared/order-cart-math.mjs";
 import { orderAcceptSchema } from "@/lib/shared/schemas/order-link.mjs";
 import type { ApiError } from "@/lib/api";
@@ -31,6 +32,7 @@ const STAGE: Record<RequestStage, { title: string; body: string; Icon: typeof Cl
     expired: { title: "ใบเสนอราคาหมดอายุแล้ว", body: "ทีมงานจะติดต่อกลับเพื่อออกใบใหม่ หรือแจ้งทีมงานได้เลย", Icon: CircleAlert, tone: "bg-gray-100 text-gray-600" },
     contact: { title: "ทีมงานจะติดต่อกลับ", body: "ทีมงานจะติดต่อเพื่อคุยรายละเอียดเพิ่มเติม", Icon: MessageCircle, tone: "bg-gray-100 text-gray-600" },
     closed: { title: "ปิดคำขอแล้ว", body: "ขอบคุณที่สนใจ หากต้องการเริ่มงานใหม่ ติดต่อทีมงานได้ตลอด", Icon: XCircle, tone: "bg-gray-100 text-gray-600" },
+    price_confirm: { title: "ทีมงานปรับราคาบางรายการ", body: "ตรวจราคาด้านล่าง ถ้าตกลงกดยืนยันราคา แล้วทีมงานเริ่มงานให้ทันที", Icon: CircleAlert, tone: "bg-amber-50 text-amber-600" },
 };
 
 /**
@@ -42,6 +44,7 @@ const STAGE: Record<RequestStage, { title: string; body: string; Icon: typeof Cl
 function journeyOf(stage: RequestStage, isFastwork: boolean, hasQuotation: boolean): { steps: string[]; current: number } | null {
     if (stage === "contact" || stage === "closed") return null;
     if (isFastwork) return { steps: ["ส่งคำขอ", "ทีมงานตรวจ", "ตกลงราคาบน Fastwork"], current: stage === "submitted" ? 1 : 2 };
+    if (stage === "price_confirm") return { steps: ["ส่งคำขอ", "ทีมงานตรวจ", "คุณยืนยันราคา", "เริ่มงาน"], current: 2 };
     if (stage === "started" || (!hasQuotation && stage !== "submitted" && stage !== "preparing")) {
         return { steps: ["ส่งคำขอ", "ทีมงานตรวจ", "เริ่มงาน"], current: 3 };
     }
@@ -110,7 +113,17 @@ export default function OrderStatusPage() {
     const quotation = progress.quotation;
     const journey = journeyOf(progress.stage, isFastwork, Boolean(quotation));
     // เลขลำดับส่วนของหน้า (01, 02…) ตามที่มีจริง
-    const sectionIndex = { quotation: quotation ? 1 : undefined, sent: quotation ? 2 : 1, answers: quotation ? 3 : 2 };
+    const priceCheck = data.price_check;
+    // ราคาที่ปรับ: อยู่ในส่วนใบเสนอราคา (เหนือปุ่มยอมรับ) ถ้ามีใบ · ไม่มีใบ = ส่วนของตัวเองบนสุด
+    const hasPriceSection = !quotation && (progress.stage === "price_confirm" || priceCheck.adjustments.length > 0);
+    const firstIndex = quotation || hasPriceSection ? 2 : 1;
+    const sectionIndex = { top: quotation || hasPriceSection ? 1 : undefined, sent: firstIndex, answers: firstIndex + 1 };
+    const heroBody =
+        progress.stage === "submitted" && progress.price_declined
+            ? "ทีมงานได้รับข้อความของคุณแล้ว จะติดต่อกลับเพื่อคุยเรื่องราคา"
+            : isFastwork && progress.stage === "submitted"
+              ? "ทีมงานจะตรวจรายการแล้วส่งข้อเสนอในแชต Fastwork"
+              : stage.body;
 
     return (
         <OrderShell shop={data.shop} subtitle="สถานะคำขอ">
@@ -121,7 +134,10 @@ export default function OrderStatusPage() {
                     </span>
                     <div className="grid min-w-0 gap-1.5">
                         <h1 className="text-fluid-display font-medium text-gray-900">{stage.title}</h1>
-                        <p className="text-fluid-lead text-gray-500">{isFastwork && progress.stage === "submitted" ? "ทีมงานจะตรวจรายการแล้วส่งข้อเสนอในแชต Fastwork" : stage.body}</p>
+                        <p className="text-fluid-lead text-gray-500">{heroBody}</p>
+                        {progress.stage === "submitted" && priceCheck.pending.length > 0 && (
+                            <p className="text-sm text-gray-600">ทีมงานกำลังตรวจราคา {priceCheck.pending.join(", ")} ตามรายละเอียดที่คุณแจ้ง</p>
+                        )}
                     </div>
                 </div>
                 {journey && <JourneySteps steps={journey.steps} current={journey.current} />}
@@ -136,6 +152,12 @@ export default function OrderStatusPage() {
                             ดูใบเสนอราคาและยอมรับ
                         </a>
                     )}
+                    {progress.stage === "price_confirm" && (
+                        <a href="#price" className={buttonClass("primary", "md", "min-h-11")}>
+                            <ArrowDown size={16} aria-hidden="true" />
+                            ดูราคาและยืนยัน
+                        </a>
+                    )}
                     {progress.share_token && (
                         <a href={`/share/${progress.share_token}`} target="_blank" rel="noreferrer" className={buttonClass(progress.stage === "quotation" ? "secondary" : "primary", "md", "min-h-11")}>
                             <ExternalLink size={16} aria-hidden="true" />
@@ -146,7 +168,7 @@ export default function OrderStatusPage() {
             </section>
 
             {quotation && (
-                <CustomerSection index={sectionIndex.quotation} id="quotation" title="ใบเสนอราคา" description={progress.stage === "quotation" ? "ตรวจรายการและยอด แล้วกดยอมรับท้ายใบ" : undefined}>
+                <CustomerSection index={sectionIndex.top} id="quotation" title="ใบเสนอราคา" description={progress.stage === "quotation" ? "ตรวจรายการและยอด แล้วกดยอมรับท้ายใบ" : undefined}>
                     <QuotationSummary quotation={quotation} />
                     <div className="grid gap-1.5">
                         <a href={`/order/r/${token}/quotation`} target="_blank" rel="noreferrer" className={buttonClass("secondary", "md", "min-h-11 justify-self-start")}>
@@ -155,6 +177,7 @@ export default function OrderStatusPage() {
                         </a>
                         <FieldHint>เปิดใบฉบับเต็มขนาด A4 ในแท็บใหม่ กดพิมพ์แล้วเลือก &quot;บันทึกเป็น PDF&quot; เก็บไว้ได้</FieldHint>
                     </div>
+                    {priceCheck.adjustments.length > 0 && <PriceChanges adjustments={priceCheck.adjustments} />}
                     {progress.stage === "quotation" && <AcceptForm token={token} defaultName={data.request.contact_name ?? ""} onAccepted={load} />}
                     {progress.stage === "accepted" && (
                         <StatusBanner tone="done" title="ยอมรับแล้ว">
@@ -165,7 +188,21 @@ export default function OrderStatusPage() {
                 </CustomerSection>
             )}
 
-            <SentItems data={data} isFastwork={isFastwork} isCollapsed={Boolean(quotation)} index={sectionIndex.sent} />
+            {hasPriceSection && (
+                <CustomerSection
+                    index={sectionIndex.top}
+                    id="price"
+                    title={isFastwork ? "ราคาที่ทีมงานยืนยัน" : "ราคาที่ปรับจากที่คุณเลือก"}
+                    description={progress.stage === "price_confirm" ? "ราคาบางรายการขึ้นกับรายละเอียดที่คุณแจ้ง ทีมงานตรวจแล้วตามนี้" : undefined}
+                >
+                    {priceCheck.adjustments.length > 0 && <PriceChanges adjustments={priceCheck.adjustments} />}
+                    {priceCheck.confirmed_totals && <ConfirmedTotals totals={priceCheck.confirmed_totals} vatRate={data.request.vat_rate} />}
+                    {progress.stage === "price_confirm" && <PriceResponseForm token={token} onAnswered={load} />}
+                    {isFastwork && <FieldHint>ราคาและการชำระเงินทำผ่าน Fastwork ตามข้อเสนอในแชต</FieldHint>}
+                </CustomerSection>
+            )}
+
+            <SentItems data={data} isFastwork={isFastwork} isCollapsed={Boolean(quotation) || hasPriceSection} index={sectionIndex.sent} />
 
             {data.answers.length > 0 && (
                 <CustomerSection index={sectionIndex.answers} id="answers" title="ความต้องการที่แจ้งไว้" description="ทีมงานใช้ข้อมูลนี้ออกแบบและประเมินงาน">
@@ -229,6 +266,106 @@ function AcceptForm({ token, defaultName, onAccepted }: { token: string; default
     );
 }
 
+/** ราคาที่ต่างจากตอนเลือก: "จดโดเมน: ราคาเริ่มต้น 650.00 → ราคาจริง 1,200.00 บาท" + ราคาขึ้นกับอะไร */
+function PriceChanges({ adjustments }: { adjustments: RequestStatusResponse["price_check"]["adjustments"] }) {
+    return (
+        <ul className="grid gap-2 rounded-xl bg-amber-50/60 p-3 ring-1 ring-amber-200">
+            {adjustments.map((adjustment, index) => (
+                <li key={index} className="grid gap-0.5 text-sm">
+                    <span className="font-medium wrap-break-word text-gray-900">{adjustment.name}</span>
+                    <span className="text-gray-700 tabular-nums">
+                        ราคาที่เห็นตอนเลือก {formatAmount(adjustment.seen_price)} → ราคาจริง{" "}
+                        <span className="font-medium text-gray-900">{formatAmount(adjustment.real_price)} บาท</span>
+                    </span>
+                    {adjustment.note && <span className="text-xs text-gray-500">ราคาขึ้นกับ{adjustment.note}</span>}
+                </li>
+            ))}
+        </ul>
+    );
+}
+
+/** ยอดหลังทีมปรับ (บนลงล่าง: รวม → VAT → ยอดรวม) */
+function ConfirmedTotals({ totals, vatRate }: { totals: { subtotal: string; vat: string; total: string }; vatRate: string | null }) {
+    return (
+        <div className="grid gap-1 rounded-xl bg-gray-50 p-3 text-sm">
+            <div className="flex justify-between gap-3 text-gray-700">
+                <span>รวม</span>
+                <span className="tabular-nums">{formatAmount(totals.subtotal)}</span>
+            </div>
+            {vatRate && (
+                <div className="flex justify-between gap-3 text-gray-700">
+                    <span>+ VAT {Number(vatRate)}%</span>
+                    <span className="tabular-nums">{formatAmount(totals.vat)}</span>
+                </div>
+            )}
+            <div className="flex justify-between gap-3 border-t border-gray-200 pt-1.5">
+                <span className="font-medium text-gray-900">= ยอดรวมที่ทีมงานยืนยัน</span>
+                <span className="text-base font-medium text-blue-700 tabular-nums">{formatAmount(totals.total)} บาท</span>
+            </div>
+        </div>
+    );
+}
+
+/** ยืนยันราคาที่ทีมปรับ (ทีมเริ่มงานให้ทันที) หรือไม่ตกลง (ทีมติดต่อกลับ พิมพ์ข้อความถึงทีมได้) */
+function PriceResponseForm({ token, onAnswered }: { token: string; onAnswered: () => Promise<void> }) {
+    const [isDeclining, setIsDeclining] = useState(false);
+    const [note, setNote] = useState("");
+    const [banner, setBanner] = useState<string | null>(null);
+    const [isSaving, setIsSaving] = useState(false);
+
+    async function answer(response: "accepted" | "declined") {
+        setBanner(null);
+        setIsSaving(true);
+        const { error } = await publicFetch(`/order/requests/${token}/price-response`, {
+            method: "POST",
+            body: { response, note: note.trim() || null },
+        });
+        setIsSaving(false);
+        if (error) {
+            setBanner(error.message);
+            return;
+        }
+        await onAnswered();
+    }
+
+    return (
+        <div className="grid gap-3 rounded-xl border border-blue-100 bg-blue-50/40 p-3 sm:p-4">
+            {banner && (
+                <StatusBanner tone="error" title="บันทึกไม่สำเร็จ">
+                    {banner}
+                </StatusBanner>
+            )}
+            {isDeclining && (
+                <FormField label="ข้อความถึงทีมงาน" htmlFor="price-note" hint="ไม่บังคับ · เช่น งบที่ตั้งไว้ หรือขอคุยก่อน">
+                    <textarea id="price-note" rows={3} maxLength={300} value={note} onChange={(event) => setNote(event.target.value)} className={inputClass(false)} />
+                </FormField>
+            )}
+            <div className="flex flex-wrap justify-end gap-2">
+                {isDeclining ? (
+                    <>
+                        <button type="button" className={buttonClass("secondary", "md", "min-h-11")} disabled={isSaving} onClick={() => setIsDeclining(false)}>
+                            กลับ
+                        </button>
+                        <button type="button" className={buttonClass("primary", "md", "min-h-11")} disabled={isSaving} onClick={() => answer("declined")}>
+                            {isSaving ? "กำลังส่ง..." : "ส่งให้ทีมงานติดต่อกลับ"}
+                        </button>
+                    </>
+                ) : (
+                    <>
+                        <button type="button" className={buttonClass("secondary", "md", "min-h-11")} disabled={isSaving} onClick={() => setIsDeclining(true)}>
+                            ไม่ตกลง (ให้ทีมงานติดต่อกลับ)
+                        </button>
+                        <button type="button" className={buttonClass("primary", "md", "min-h-11")} disabled={isSaving} onClick={() => answer("accepted")}>
+                            {isSaving ? "กำลังบันทึก..." : "ยืนยันราคานี้"}
+                        </button>
+                    </>
+                )}
+            </div>
+            <FieldHint>ยืนยันแล้ว ทีมงานเปิดงานให้ทันทีและจะติดต่อเรื่องการเริ่มงาน · ไม่ตกลง ทีมงานจะติดต่อกลับเพื่อคุยเรื่องราคา</FieldHint>
+        </div>
+    );
+}
+
 /** สิ่งที่ส่ง → กล่องตามชุด (แถวในชุดผูกด้วย package_id) + รายการเดี่ยว · แถว % แสดงอัตรา */
 function sentGroups(items: RequestStatusResponse["items"]): ItemGroup[] {
     const groups: ItemGroup[] = [];
@@ -245,7 +382,11 @@ function sentGroups(items: RequestStatusResponse["items"]): ItemGroup[] {
             unit: item.unit,
             unitPrice: item.unit_price,
             amount: formatHundredths(lineAmount(item.unit_price ?? "0", item.quantity)),
-            priceNote: item.percent ? `+${Number(item.percent)}% ของยอด` : null,
+            priceNote: item.percent
+                ? `+${Number(item.percent)}% ของยอด`
+                : item.needs_price
+                  ? `เริ่มต้น ${formatAmount(item.unit_price ?? "0")} × ${formatQuantity(item.quantity)} ${item.unit ?? ""}`
+                  : null,
         };
         const group = item.package_id ? groups.find((candidate) => candidate.key === `k:${item.package_id}`) : null;
         (group ?? standalone).rows.push(row);
@@ -270,11 +411,17 @@ function SentItems({ data, isFastwork, isCollapsed, index }: { data: RequestStat
                     </div>
                 )}
                 <div className="flex justify-between gap-3 border-t border-gray-100 pt-1.5">
-                    <span className="font-medium text-gray-900">= ยอดประมาณการตอนส่ง</span>
+                    <span className="font-medium text-gray-900">= {data.price_check.is_estimate ? "ยอดเบื้องต้นตอนส่ง" : "ยอดประมาณการตอนส่ง"}</span>
                     <span className="text-base font-medium text-gray-900 tabular-nums">{formatAmount(data.totals.total)} บาท</span>
                 </div>
                 <FieldHint>
-                    {isFastwork ? "ราคาและการชำระเงินทำผ่าน Fastwork" : isCollapsed ? "ยอดที่ใช้จริงคือยอดตามใบเสนอราคาด้านบน" : "ราคาประมาณการ ณ วันที่ส่ง ทีมงานจะยืนยันราคาสุดท้ายอีกครั้ง"}
+                    {isFastwork
+                        ? "ราคาและการชำระเงินทำผ่าน Fastwork"
+                        : isCollapsed
+                          ? "ยอดที่ใช้จริงคือยอดด้านบน"
+                          : data.price_check.is_estimate
+                            ? "มีรายการราคาเริ่มต้น ทีมงานยืนยันราคาจริงอีกครั้ง"
+                            : "ราคาประมาณการ ณ วันที่ส่ง ทีมงานจะยืนยันราคาสุดท้ายอีกครั้ง"}
                 </FieldHint>
             </div>
             {data.request.note && <p className="rounded-xl bg-gray-50 p-3 text-sm whitespace-pre-line text-gray-700">{data.request.note}</p>}

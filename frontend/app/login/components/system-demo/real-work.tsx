@@ -67,6 +67,8 @@ function ProjectTop({ progress, copied }: { progress: number; copied: boolean })
             />
             <ShareLinkCard
                 isEnabled
+                isDocumentsShared={false}
+                onToggleDocuments={noop}
                 shareUrl={`https://softwork.app${SHARE_PATH}`}
                 copied={copied}
                 isRegenerating={false}

@@ -32,7 +32,7 @@ async function cashByMonth(conn, today) {
     const fromDate = `${firstMonth}-01`;
     const [receiptRows] = await conn.query(
         `SELECT DATE_FORMAT(rc_receipt_date, '%Y-%m') AS month, SUM(rc_received_thb) AS amount
-         FROM tb_receipts WHERE rc_status = 'issued' AND rc_receipt_date >= ? AND rc_receipt_date <= ?
+         FROM tb_receipts WHERE rc_status = 'issued' AND rc_fastwork_payout_id IS NULL AND rc_receipt_date >= ? AND rc_receipt_date <= ?
          GROUP BY month`,
         [fromDate, today],
     );
@@ -65,7 +65,14 @@ async function businessSummary(conn, rolePermission) {
 
     if (can("manageServiceRequests")) {
         const [[{ count }]] = await conn.query("SELECT COUNT(*) AS count FROM tb_service_requests WHERE svr_status = 'submitted'");
-        result.requests = { submitted: Number(count) };
+        // ราคาเริ่มต้น (2026-11-01): คำขอรอตรวจที่มีรายการรอกรอกราคา · คำขอที่รอลูกค้ายืนยันราคา
+        const [[pricing]] = await conn.query(
+            `SELECT COUNT(DISTINCT r.svr_id) AS count FROM tb_service_requests r
+             JOIN tb_service_request_items i ON i.svi_request_id = r.svr_id
+             WHERE r.svr_status = 'submitted' AND i.svi_needs_price = 1 AND i.svi_is_removed = 0 AND i.svi_price_confirmed_at IS NULL`,
+        );
+        const [[awaiting]] = await conn.query("SELECT COUNT(*) AS count FROM tb_service_requests WHERE svr_status = 'awaiting_customer'");
+        result.requests = { submitted: Number(count), price_pending: Number(pricing.count), awaiting_customer: Number(awaiting.count) };
     }
 
     if (can("viewQuotations")) {

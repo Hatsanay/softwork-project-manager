@@ -169,6 +169,10 @@ router.put(
     "/V1/projects/:id/share/toggle", requireAuth, requireProjectMember,
     requireProjectPermission("manageShareLink"), projectController.toggleShareEnabled
 );
+router.put(
+    "/V1/projects/:id/share/documents", requireAuth, requireProjectMember,
+    requireProjectPermission("manageShareLink"), projectController.toggleShareDocuments
+);
 router.post(
     "/V1/projects/:id/share/send-email", requireAuth, requireProjectMember,
     requireProjectPermission("manageShareLink"), projectController.sendShareLinkEmail
@@ -315,5 +319,6 @@ registerOrderRoutes(router);
 
 // ─── public share (ลูกค้าดู ไม่ต้อง login) ───────────────────────────────────
 router.get("/V1/share/:token", shareController.getSharedProject);
+router.get("/V1/share/:token/documents/:type/:id", shareController.getSharedDocument);
 
 module.exports = router;

@@ -95,6 +95,8 @@ export type Receipt = {
     rc_notes: string | null;
     rc_internal_note: string | null;
     rc_billing_note_id: string | null;
+    // ระบบออกจากเงินงาน Fastwork (2026-11-01) · ยกเลิกตามรายการเงินเท่านั้น
+    rc_fastwork_payout_id?: number | null;
     bn_number: string | null;
     bn_status: string | null;
     rc_client_snapshot: ClientSnapshot | null;

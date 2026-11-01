@@ -4,6 +4,7 @@ import type { ServiceRequestRow, ServiceRequestStatus } from "../order-links/_ty
 
 export const REQUEST_STATUS: Record<ServiceRequestStatus, { label: string; tone: PillTone }> = {
     submitted: { label: "รอตรวจ", tone: "wait" },
+    awaiting_customer: { label: "รอลูกค้ายืนยันราคา", tone: "wait" },
     converted: { label: "ดำเนินการแล้ว", tone: "success" },
     rejected: { label: "ปฏิเสธ", tone: "neutral" },
     closed: { label: "ปิด (ไม่ได้งาน)", tone: "neutral" },

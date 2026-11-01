@@ -76,8 +76,18 @@ export function CartLines({ items, onChange }: { items: CartItem[]; onChange: (k
     );
 }
 
-/** ยอดบนลงล่าง: รวม → + VAT → = ยอดประมาณการ */
-export function CartTotalsBlock({ totals, vatRate, note }: { totals: CartTotals; vatRate: string | null; note: string }) {
+/** ยอดบนลงล่าง: รวม → + VAT → = ยอดประมาณการ · มีรายการราคาเริ่มต้น = ยอดเบื้องต้น (2026-11-01) */
+export function CartTotalsBlock({
+    totals,
+    vatRate,
+    note,
+    totalLabel = "ยอดประมาณการ",
+}: {
+    totals: CartTotals;
+    vatRate: string | null;
+    note: string;
+    totalLabel?: string;
+}) {
     return (
         <div className="grid gap-1 rounded-xl bg-gray-50 p-3 text-sm">
             <div className="flex justify-between gap-3 text-gray-700">
@@ -91,7 +101,7 @@ export function CartTotalsBlock({ totals, vatRate, note }: { totals: CartTotals;
                 </div>
             )}
             <div className="flex justify-between gap-3 border-t border-gray-200 pt-1.5">
-                <span className="font-medium text-gray-900">= ยอดประมาณการ</span>
+                <span className="font-medium text-gray-900">= {totalLabel}</span>
                 <span className="text-base font-medium text-blue-700 tabular-nums">{formatAmount(totals.total)} บาท</span>
             </div>
             <FieldHint>{note}</FieldHint>
@@ -116,13 +126,14 @@ type PanelProps = {
     totals: CartTotals;
     vatRate: string | null;
     note: string;
+    totalLabel: string;
     nextLabel: string;
     onChange: (key: string, quantity: number) => void;
     onNext: () => void;
 };
 
 /** แผงตะกร้าข้างขวา (จอคอม · ติดอยู่ตอนเลื่อน) */
-export function CartSidePanel({ items, totals, vatRate, note, nextLabel, onChange, onNext }: PanelProps) {
+export function CartSidePanel({ items, totals, vatRate, note, totalLabel, nextLabel, onChange, onNext }: PanelProps) {
     const count = items.reduce((sum, item) => sum + item.quantity, 0);
     return (
         <aside className="card-customer grid max-h-[calc(100vh-6rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-3 p-4" aria-label="ตะกร้า">
@@ -133,7 +144,7 @@ export function CartSidePanel({ items, totals, vatRate, note, nextLabel, onChang
             </h2>
             <div className="overflow-x-hidden overflow-y-auto pr-1">{items.length === 0 ? <EmptyCart /> : <CartLines items={items} onChange={onChange} />}</div>
             <div className="grid gap-3">
-                <CartTotalsBlock totals={totals} vatRate={vatRate} note={note} />
+                <CartTotalsBlock totals={totals} vatRate={vatRate} note={note} totalLabel={totalLabel} />
                 <button type="button" className="min-h-11 rounded-xl bg-blue-600 px-4 text-sm font-medium text-white shadow-brand hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300 disabled:shadow-none" disabled={items.length === 0} onClick={onNext}>
                     {nextLabel}
                 </button>
@@ -143,7 +154,7 @@ export function CartSidePanel({ items, totals, vatRate, note, nextLabel, onChang
 }
 
 /** แผ่นตะกร้าเลื่อนขึ้นจากล่าง (มือถือ) · ปิดด้วยปุ่ม X พื้นหลัง หรือปุ่ม Esc */
-export function CartSheet({ items, totals, vatRate, note, nextLabel, onChange, onNext, onClose }: PanelProps & { onClose: () => void }) {
+export function CartSheet({ items, totals, vatRate, note, totalLabel, nextLabel, onChange, onNext, onClose }: PanelProps & { onClose: () => void }) {
     useEffect(() => {
         const previousOverflow = document.body.style.overflow;
         document.body.style.overflow = "hidden";
@@ -178,7 +189,7 @@ export function CartSheet({ items, totals, vatRate, note, nextLabel, onChange, o
                 </div>
                 <div className="overflow-x-hidden overflow-y-auto">{items.length === 0 ? <EmptyCart /> : <CartLines items={items} onChange={onChange} />}</div>
                 <div className="grid gap-3">
-                    <CartTotalsBlock totals={totals} vatRate={vatRate} note={note} />
+                    <CartTotalsBlock totals={totals} vatRate={vatRate} note={note} totalLabel={totalLabel} />
                     <div className="flex gap-2">
                         <button type="button" className="min-h-11 shrink-0 rounded-xl border border-gray-200 bg-white px-4 text-sm text-gray-700 hover:bg-gray-50" onClick={onClose}>
                             เลือกต่อ

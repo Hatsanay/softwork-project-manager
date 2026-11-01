@@ -1,10 +1,12 @@
 "use client";
 
 // ฝั่งเลือกสินค้าของตัวคิดราคา Fastwork (ปรับหน้า 2026-10-30) — ค้นหา · ชิปหมวด · แพ็กเป็นการ์ดวางเทียบกัน · งานเพิ่มแยกตามหมวด
-// กติกาเดียวกับหน้าร้าน: หมวดเลือกได้อย่างเดียว = เปลี่ยนแทน (คิดที่ page) · งานเพิ่มที่มีในแพ็กแล้ว = กดไม่ได้ · ใช้กับแพ็กไม่ได้ = ซ่อน
+// ทีมเลือกให้ลูกค้าได้อิสระ (2026-11-01): กติกาหน้าร้านเป็นคำเตือน (มีในแพ็กแล้ว · ใช้กับแพ็กไม่ได้ · หมวดเลือกได้อย่างเดียว)
+// สวิตช์ "แสดงรายการที่ไม่อยู่บนหน้าร้าน" · ราคาเริ่มต้นบอก "เริ่มต้น" (กรอกราคาจริงที่กล่องราคาเริ่มต้นของหน้า)
 import { useState } from "react";
 import { Check, Package, Search } from "lucide-react";
 import EmptyState from "@/components/ui/empty-state";
+import Switch from "@/components/ui/switch";
 import { inputClass } from "@/components/ui/form-field";
 import { formatAmount, formatHundredths } from "@/lib/shared/money.mjs";
 import { packagePrice } from "@/app/order/_components/order-shop";
@@ -22,12 +24,16 @@ export default function PriceCatalog({
     quantities,
     addonStateOf,
     onChange,
+    showHidden,
+    onShowHiddenChange,
 }: {
     catalog: Catalog;
     quantities: Record<string, number>;
     // งานเพิ่มชิ้นนี้ติดกติกาของแพ็กที่เลือกอยู่ไหม (included / not_available)
     addonStateOf: (productId: string) => AddonState;
     onChange: (key: string, quantity: number) => void;
+    showHidden: boolean;
+    onShowHiddenChange: (isOn: boolean) => void;
 }) {
     const [search, setSearch] = useState("");
     const [categoryFilter, setCategoryFilter] = useState("all");
@@ -38,14 +44,19 @@ export default function PriceCatalog({
     const inFilter = (categoryId: string | null) =>
         categoryFilter === "all" || (categoryId ?? NO_CATEGORY) === categoryFilter;
 
+    // ที่เลือกไว้แล้วแสดงเสมอ (ปิดสวิตช์ทีหลังไม่หายจากหน้า)
+    const isShown = (isPublic: boolean | undefined, key: string) =>
+        showHidden || isPublic !== false || (quantities[key] ?? 0) > 0;
+    const hiddenItemCount =
+        catalog.products.filter((row) => row.product_is_public === false).length +
+        catalog.packages.filter((row) => row.pkg_is_public === false).length;
     const packages = catalog.packages
+        .filter((row) => isShown(row.pkg_is_public, `k:${row.pkg_id}`))
         .filter((row) => matches(row.pkg_name, row.pkg_description) && inFilter(row.pkg_category_id))
         .sort((first, second) => Number(packagePrice(first) - packagePrice(second)));
-    const visibleProducts = catalog.products.filter((row) => addonStateOf(row.product_id)?.rule !== "not_available");
-    const hiddenCount = catalog.products.length - visibleProducts.length;
-    const products = visibleProducts.filter(
-        (row) => matches(row.product_name, row.product_description) && inFilter(row.product_category_id),
-    );
+    const products = catalog.products
+        .filter((row) => isShown(row.product_is_public, `p:${row.product_id}`))
+        .filter((row) => matches(row.product_name, row.product_description) && inFilter(row.product_category_id));
     const productGroups = [
         ...catalog.categories.map((category) => ({
             key: category.pc_id,
@@ -91,6 +102,15 @@ export default function PriceCatalog({
                         className={`${inputClass()} pl-10`}
                     />
                 </label>
+                {hiddenItemCount > 0 && (
+                    <Switch
+                        id="show_hidden_items"
+                        label="แสดงรายการที่ไม่อยู่บนหน้าร้าน"
+                        description={`${hiddenItemCount} รายการ · ทีมเลือกให้ลูกค้าได้ทุกอย่างที่เปิดใช้งาน`}
+                        checked={showHidden}
+                        onChange={onShowHiddenChange}
+                    />
+                )}
                 {chips.length > 2 && (
                     <div
                         className="-mx-4 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden"
@@ -136,7 +156,7 @@ export default function PriceCatalog({
                         แพ็กเกจ
                         {isOnePackage && (
                             <span className="text-sm font-normal text-gray-500">
-                                เลือกได้ 1 แพ็ก · เลือกใหม่ = เปลี่ยนแทน
+                                ลูกค้าเลือกได้ 1 แพ็ก · ทีมเลือกหลายแพ็กได้ (ระบบเตือน)
                             </span>
                         )}
                     </h2>
@@ -174,9 +194,6 @@ export default function PriceCatalog({
                     </ul>
                 </div>
             ))}
-            {hiddenCount > 0 && (
-                <p className="text-xs text-gray-500">ซ่อน {hiddenCount} รายการที่ใช้กับแพ็กที่เลือกไม่ได้</p>
-            )}
         </section>
     );
 }
@@ -201,6 +218,9 @@ function PackageCard({
             <div className="grid gap-1">
                 <div className="flex items-start justify-between gap-2">
                     <h3 className="text-base font-medium wrap-break-word text-gray-900">{productPackage.pkg_name}</h3>
+                    {productPackage.pkg_is_public === false && (
+                        <span className="text-xs text-amber-600">ไม่อยู่บนหน้าร้าน</span>
+                    )}
                     {isChosen && (
                         <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
                             <Check size={12} aria-hidden="true" />
@@ -254,8 +274,14 @@ function AddonRow({
     const isPercent = product.product_price_mode === "percent";
     const priceText = isPercent
         ? `+${Number(product.product_percent)}% ของยอด`
-        : `${formatAmount(product.product_price)} บาท${product.product_unit ? ` / ${product.product_unit}` : ""}`;
+        : `${product.product_price_mode === "from" ? "เริ่มต้น " : ""}${formatAmount(product.product_price)} บาท${product.product_unit ? ` / ${product.product_unit}` : ""}`;
     const isIncluded = state?.rule === "included";
+    // กติกาหน้าร้านเป็นคำเตือน ทีมเลือกได้ (2026-11-01)
+    const warning = state
+        ? isIncluded
+            ? `มีใน ${state.packageName} แล้ว`
+            : `หน้าร้านซ่อนเมื่อเลือก ${state.packageName}`
+        : null;
     return (
         <li
             className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-gray-100 px-4 py-3 first:border-t-0 ${quantity > 0 ? "bg-blue-50/50" : ""}`}
@@ -268,17 +294,20 @@ function AddonRow({
                     <span className="line-clamp-1 text-xs text-gray-500">{product.product_description}</span>
                 )}
                 <span className="text-sm text-gray-700 tabular-nums">{priceText}</span>
+                {(warning || product.product_is_public === false) && (
+                    <span className="text-xs text-amber-600">
+                        {[warning, product.product_is_public === false ? "ไม่อยู่บนหน้าร้าน" : null]
+                            .filter(Boolean)
+                            .join(" · ")}
+                    </span>
+                )}
             </div>
-            {isIncluded ? (
-                <span className="max-w-32 text-right text-xs text-gray-500">มีใน {state.packageName} แล้ว</span>
-            ) : (
-                <QuantityControl
-                    quantity={quantity}
-                    onChange={(next) => onChange(isPercent ? Math.min(next, 1) : next)}
-                    label={product.product_name}
-                    compact
-                />
-            )}
+            <QuantityControl
+                quantity={quantity}
+                onChange={(next) => onChange(isPercent ? Math.min(next, 1) : next)}
+                label={product.product_name}
+                compact
+            />
         </li>
     );
 }

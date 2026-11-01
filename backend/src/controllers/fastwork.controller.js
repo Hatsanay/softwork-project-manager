@@ -43,6 +43,24 @@ module.exports = {
         return withTransaction((conn) => fastworkService.updateSettings(conn, settings));
     }),
     priceCatalog: handle(() => require("../services/order-public.service").internalCatalog(pool)),
+    // เอกสารงาน Fastwork (2026-11-01): งานที่ยังขาดเอกสาร · ออกย้อนหลังทีละงาน (ธุรกรรมแยกต่องาน พังงานเดียวไม่ล้มทั้งหมด)
+    missingDocuments: handle(async () => ({ data: await require("../services/fastwork-document.service").listMissing(pool) })),
+    backfillDocuments: handle(async (req) => {
+        const documentService = require("../services/fastwork-document.service");
+        const missing = await documentService.listMissing(pool);
+        const result = { projects: 0, quotations: 0, payouts: 0, failed: [] };
+        for (const row of missing) {
+            try {
+                const issued = await withTransaction((conn) => documentService.backfillProject(conn, req.user, row.project_id));
+                result.projects += 1;
+                result.quotations += issued.quotations;
+                result.payouts += issued.payouts;
+            } catch (err) {
+                result.failed.push({ project_id: row.project_id, message: err.message });
+            }
+        }
+        return result;
+    }),
     createProject: async (req, res, next) => {
         try {
             const project = validate(fastworkProjectSchema, req.body);

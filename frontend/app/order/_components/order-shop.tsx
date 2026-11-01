@@ -63,6 +63,9 @@ const ANSWERS_PREFIX = "order-answers:";
 type SavedAnswers = { answers: Record<number, AnswerValue>; otherTexts: Record<number, string>; prefilledIds?: number[] };
 const ESTIMATE_NOTE = "ราคาประมาณการ ทีมงานจะยืนยันราคาสุดท้ายอีกครั้ง";
 const FASTWORK_NOTE = "ราคาและการชำระเงินทำผ่าน Fastwork · หน้านี้ใช้เลือกขอบเขตงานเท่านั้น";
+// มีรายการราคาเริ่มต้นในตะกร้า (2026-11-01): ยอดเป็นยอดเบื้องต้น ไม่ใช่ยอดสุทธิ
+const STARTING_PRICE_NOTE = "มีรายการราคาเริ่มต้น ทีมงานยืนยันราคาจริงในใบเสนอราคา";
+const FASTWORK_STARTING_PRICE_NOTE = "มีรายการราคาเริ่มต้น ทีมงานยืนยันราคาจริงก่อนส่งราคาบน Fastwork";
 
 function readCart(code: string): Cart {
     try {
@@ -226,6 +229,21 @@ function presetLines(item: PresetItem): PricedLine[] {
 }
 
 const percentLabel = (product: CatalogProduct) => `+${Number(product.product_percent)}% ของยอด`;
+
+/** ราคาเริ่มต้น: ชุดที่มีรายการราคาเริ่มต้น = ราคาชุดเป็นราคาต่ำสุด */
+const hasStartingPrice = (productPackage: CatalogPackage) => productPackage.items.some((item) => item.needs_price);
+
+/** ราคาของสินค้าในการ์ด/ตะกร้า: "+30% ของยอด" · "เริ่มต้น 650.00 บาท / ปี" · "1,500.00 บาท / หน้า" */
+function productPriceLabel(product: CatalogProduct) {
+    if (product.product_price_mode === "percent") return percentLabel(product);
+    const label = priceLabel(product.product_price, product.product_unit);
+    return product.product_price_mode === "from" ? `เริ่มต้น ${label}` : label;
+}
+
+function packagePriceLabel(productPackage: CatalogPackage) {
+    const label = priceLabel(packagePrice(productPackage), "ชุด");
+    return hasStartingPrice(productPackage) ? `เริ่มต้น ${label}` : label;
+}
 
 function priceLabel(price: string | bigint, unit: string | null) {
     const isZero = typeof price === "bigint" ? price === 0n : Number(price) === 0;
@@ -541,7 +559,23 @@ export default function OrderShop({ code, data, onReload }: { code: string; data
 
     const subtitle = isFastwork ? "เลือกขอบเขตงาน" : "เลือกบริการและส่งความต้องการ";
     const categoryNameOf = (categoryId: string | null) => catalog.categories.find((category) => category.pc_id === categoryId)?.pc_name;
-    const priceNote = isFastwork ? FASTWORK_NOTE : ESTIMATE_NOTE;
+    // ตะกร้ามีรายการราคาเริ่มต้น (รวมที่ทีมเลือกให้) = ยอดเบื้องต้น
+    const isEstimate =
+        preset.some((item) => (item.kind === "product" ? item.product.product_price_mode === "from" : hasStartingPrice(item.package))) ||
+        cartEntries.some(([key]) => {
+            const [kind, id] = key.split(":");
+            if (kind === "p") return productsById.get(id)?.product_price_mode === "from";
+            const productPackage = packagesById.get(id);
+            return productPackage ? hasStartingPrice(productPackage) : false;
+        });
+    const priceNote = isEstimate
+        ? isFastwork
+            ? FASTWORK_STARTING_PRICE_NOTE
+            : STARTING_PRICE_NOTE
+        : isFastwork
+          ? FASTWORK_NOTE
+          : ESTIMATE_NOTE;
+    const totalLabel = isEstimate ? "ยอดเบื้องต้น" : "ยอดประมาณการ";
     // สินค้าแยกกลุ่มตามหมวด (ลำดับหมวดตามที่ตั้งไว้) · ไม่มีหมวด = "อื่นๆ" ท้ายสุด
     const productGroups = [
         ...catalog.categories.map((category) => ({ key: category.pc_id, name: category.pc_name, products: shownProducts.filter((row) => row.product_category_id === category.pc_id) })),
@@ -560,7 +594,7 @@ export default function OrderShop({ code, data, onReload }: { code: string; data
             isLocked,
             isPercent,
             quantity,
-            priceText: isPercent ? percentLabel(product) : priceLabel(product.product_price, product.product_unit),
+            priceText: productPriceLabel(product),
             lineTotal: lineTotalOf(productLines(product, quantity)),
             Icon: iconOf(categoryNameOf(product.product_category_id)),
             imageUrl: product.product_image_url,
@@ -575,7 +609,7 @@ export default function OrderShop({ code, data, onReload }: { code: string; data
             isLocked,
             isPercent: false,
             quantity,
-            priceText: priceLabel(packagePrice(productPackage), "ชุด"),
+            priceText: packagePriceLabel(productPackage),
             lineTotal: lineTotalOf(packageLines(productPackage, quantity)),
             Icon: Package,
             imageUrl: productPackage.pkg_image_url,
@@ -601,6 +635,7 @@ export default function OrderShop({ code, data, onReload }: { code: string; data
         totals,
         vatRate: data.vat_rate ?? null,
         note: priceNote,
+        totalLabel,
         nextLabel,
         onChange: setQuantity,
         onNext: () => {
@@ -782,7 +817,7 @@ export default function OrderShop({ code, data, onReload }: { code: string; data
                         ) : (
                             <CartLines items={cartItems} onChange={setQuantity} />
                         )}
-                        <CartTotalsBlock totals={totals} vatRate={data.vat_rate ?? null} note={priceNote} />
+                        <CartTotalsBlock totals={totals} vatRate={data.vat_rate ?? null} note={priceNote} totalLabel={totalLabel} />
                     </CustomerSection>
 
                     {hasQuestions && (
@@ -878,11 +913,7 @@ function PresetSection({ items, categoryNameOf }: { items: PresetItem[]; categor
                     const isPackage = item.kind === "package";
                     const name = isPackage ? item.package.pkg_name : item.product.product_name;
                     const Icon = isPackage ? Package : iconOf(categoryNameOf(item.product.product_category_id));
-                    const price = isPackage
-                        ? priceLabel(packagePrice(item.package), "ชุด")
-                        : item.product.product_price_mode === "percent"
-                          ? percentLabel(item.product)
-                          : priceLabel(item.product.product_price, item.product.product_unit);
+                    const price = isPackage ? packagePriceLabel(item.package) : productPriceLabel(item.product);
                     return (
                         <li key={index} className="flex gap-3 rounded-xl bg-white p-3 shadow-card">
                             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
@@ -959,7 +990,12 @@ function ProductCard({
                             {percentAmountText && <span className="text-xs font-normal text-gray-500">ตอนนี้ {percentAmountText} บาท</span>}
                         </span>
                     ) : (
-                        <span className="text-sm font-medium text-blue-700 tabular-nums">{priceLabel(product.product_price, product.product_unit)}</span>
+                        <span className="grid text-sm font-medium text-blue-700 tabular-nums">
+                            {productPriceLabel(product)}
+                            {product.product_price_mode === "from" && product.product_price_note && (
+                                <span className="text-xs font-normal text-gray-500">ราคาขึ้นกับ{product.product_price_note}</span>
+                            )}
+                        </span>
                     )}
                     {isIncluded ? (
                         <span className="flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
@@ -1014,6 +1050,7 @@ function PackageCard({ productPackage, quantity, onChange }: { productPackage: C
                         <span className="text-xl font-medium text-blue-700">สอบถามราคา</span>
                     ) : (
                         <>
+                            {hasStartingPrice(productPackage) && <span className="text-sm text-gray-500">เริ่มต้น</span>}
                             {/* ราคาตัวใหญ่: ไม่แสดง .00 ให้อ่านง่าย (ตะกร้าและยอดรวมยังแสดงทศนิยมครบ) */}
                             <span className="text-3xl font-medium text-blue-700 tabular-nums">{formatAmount(price).replace(/.00$/, "")}</span>
                             <span className="text-sm text-gray-500">บาท</span>
@@ -1032,6 +1069,11 @@ function PackageCard({ productPackage, quantity, onChange }: { productPackage: C
                                 {Number(item.quantity) !== 1 && (
                                     <span className="text-gray-500 tabular-nums">
                                         {" "}· {formatQuantity(item.quantity)} {item.unit ?? ""}
+                                    </span>
+                                )}
+                                {item.needs_price && (
+                                    <span className="block text-xs text-gray-500">
+                                        ราคาเริ่มต้น{item.price_note ? ` · ขึ้นกับ${item.price_note}` : ""}
                                     </span>
                                 )}
                             </span>

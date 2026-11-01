@@ -36,7 +36,7 @@ async function profitOf(conn, projectId) {
          FROM tb_receipt_allocations a
          JOIN tb_receipts r ON r.rc_id = a.rca_receipt_id
          JOIN tb_invoices i ON i.inv_id = a.rca_invoice_id
-         WHERE i.inv_project_id = ? AND r.rc_status = 'issued'
+         WHERE i.inv_project_id = ? AND r.rc_status = 'issued' AND r.rc_fastwork_payout_id IS NULL -- งาน Fastwork นับจากเงินที่ Fastwork โอน
          ORDER BY r.rc_receipt_date, r.rc_number`,
         [projectId],
     );
@@ -186,7 +186,9 @@ async function expectedOf(conn, projectId, profit, shares) {
         }
     }
     const [[quoted]] = await conn.query(
-        "SELECT COALESCE(SUM(qt_after_discount_thb), 0) AS amount FROM tb_quotations WHERE qt_project_id = ? AND qt_status = 'accepted'",
+        // ใบเสนอราคาของงาน Fastwork = เอกสารประกอบ (2026-11-01) · ยอดงานนับจากงวด Fastwork แล้ว
+        `SELECT COALESCE(SUM(qt_after_discount_thb), 0) AS amount FROM tb_quotations
+         WHERE qt_project_id = ? AND qt_status = 'accepted' AND NOT EXISTS (SELECT 1 FROM tb_projects fp WHERE fp.project_id = qt_project_id AND fp.project_channel = 'fastwork')`,
         [projectId],
     );
     const directReceived = profit.revenue - (fastwork?.received_gross_hundredths ?? 0n);

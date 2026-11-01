@@ -147,7 +147,7 @@ async function findPriorShares(conn, invoiceIds) {
  * สาขา / บัญชีที่เงินเข้า / ใบวางบิลที่อ้าง / วันที่รับเงิน
  * @returns {Promise<Record<string, string>>} ช่องที่ผิด (ว่าง = ผ่าน)
  */
-async function checkHeader(conn, input, invoices) {
+async function checkHeader(conn, input, invoices, { allowBackdate = false } = {}) {
     const fields = {};
     const today = todayBangkok();
 
@@ -183,7 +183,7 @@ async function checkHeader(conn, input, invoices) {
         .pop();
     if (receiptDate > today) {
         fields.rc_receipt_date = "วันที่รับเงินต้องไม่เป็นวันในอนาคต";
-    } else if (receiptDate < shiftDate(today, -MAX_RECEIPT_BACKDATE_DAYS)) {
+    } else if (!allowBackdate && receiptDate < shiftDate(today, -MAX_RECEIPT_BACKDATE_DAYS)) {
         fields.rc_receipt_date = `ย้อนหลังได้ไม่เกิน ${MAX_RECEIPT_BACKDATE_DAYS} วัน`;
     } else if (latestIssueDate && receiptDate < latestIssueDate) {
         fields.rc_receipt_date = `ต้องไม่ก่อนวันที่ออกใบแจ้งหนี้ (${latestIssueDate})`;
@@ -234,7 +234,10 @@ async function buildSnapshots(conn, input) {
  * @param {{ user_id: string }} actor
  * @returns {Promise<{ rc_id: string, rc_number: string, rc_received_amount: string }>}
  */
-async function createReceipt(conn, input, actor) {
+/**
+ * @param {{ allowBackdate?: boolean }} [options] ใบเสร็จงาน Fastwork ที่ระบบออกย้อนหลัง (2026-11-01) = ไม่จำกัด 30 วัน
+ */
+async function createReceipt(conn, input, actor, options = {}) {
     const invoiceIds = input.allocations.map((row) => row.rca_invoice_id);
     const invoicesById = await lockInvoices(conn, invoiceIds);
     const invoices = assertInvoicesReceivable(invoiceIds, invoicesById, input.rc_client_id);
@@ -242,7 +245,7 @@ async function createReceipt(conn, input, actor) {
     const currency = await quotationService.findCurrency(conn, currencyCode);
     const isForeign = currencyCode !== BASE_CURRENCY;
 
-    const fields = await checkHeader(conn, input, invoices);
+    const fields = await checkHeader(conn, input, invoices, options);
     const prior = await findPriorShares(conn, invoiceIds);
     const calculation = calculateReceipt({
         allocations: input.allocations.map((row) => {
@@ -337,10 +340,14 @@ async function createReceipt(conn, input, actor) {
 // ─── หลังออก ─────────────────────────────────────────────────────────────────────────────────
 
 /** ยกเลิก — เลขยังอยู่ · ยอดรับแล้วของทุกใบที่ตัดลดกลับ (ใบกลับเป็นค้างชำระ) */
-async function cancelReceipt(conn, receiptId, reason, expectedVersion, actor) {
+// isFastworkSync: ยกเลิกตามรายการเงิน Fastwork (2026-11-01) · ใบที่ผูกรายการเงิน ยกเลิกเองจากหน้าใบเสร็จไม่ได้
+async function cancelReceipt(conn, receiptId, reason, expectedVersion, actor, { isFastworkSync = false } = {}) {
     const receipt = await findForUpdate(conn, receiptId);
     if (receipt.rc_status !== "issued") throw wrongStatus("ใบเสร็จนี้ถูกยกเลิกไปแล้ว");
     assertVersion(receipt, expectedVersion);
+    if (receipt.rc_fastwork_payout_id && !isFastworkSync) {
+        throw new AppError(409, "FASTWORK_DOCUMENT_LOCKED", "เอกสารนี้ระบบออกจากรายการเงิน Fastwork · ยกเลิกที่หน้า Fastwork > เงินจาก Fastwork (เอกสารจะยกเลิกตาม)");
+    }
 
     const [allocations] = await conn.query(
         "SELECT rca_invoice_id, rca_amount FROM tb_receipt_allocations WHERE rca_receipt_id = ? ORDER BY rca_invoice_id",
@@ -606,7 +613,8 @@ async function getReceiptDetail(conn, receiptId, actor) {
         })),
         currency,
         actions: {
-            can_cancel: hasBit(actor.role_permission, "cancelReceipt") && isIssued,
+            // เอกสารงาน Fastwork (2026-11-01): ยกเลิกตามรายการเงิน Fastwork เท่านั้น
+            can_cancel: hasBit(actor.role_permission, "cancelReceipt") && isIssued && !receipt.rc_fastwork_payout_id,
             can_edit_details: canCreate && isIssued,
             can_manage_file: canCreate && isIssued,
         },

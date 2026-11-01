@@ -30,6 +30,10 @@ const SETS = {
         // ตารางว่างได้ (ชื่อ → เหตุผล) · ตารางอื่นว่าง = ข้อมูลจำลองยังไม่ครอบคลุม
         emptyAllowed: new Map([
             ["tb_error_logs", "ระบบไม่มีข้อผิดพลาดระหว่างใส่ข้อมูล"],
+            // สินค้าเลือกคำถาม (2026-11-01): ตารางผูกกลุ่มแบบเดิม ย้ายไป tb_product_questions/tb_package_questions แล้ว รอลบ
+            ["tb_requirement_group_categories", "เลิกใช้ 2026-11-01 (สินค้าเลือกคำถามแทน)"],
+            ["tb_requirement_group_packages", "เลิกใช้ 2026-11-01 (สินค้าเลือกคำถามแทน)"],
+            ["tb_requirement_group_products", "เลิกใช้ 2026-11-01 (สินค้าเลือกคำถามแทน)"],
             ...PRE_INCORPORATION_TABLES.map((table) => [table, "อยู่ในชุดช่วงก่อนจด (mock_data_pre_incorporation.sql)"]),
         ]),
         // null = ทุกตารางที่ไม่อยู่ใน emptyAllowed ต้องมีข้อมูล
@@ -83,6 +87,7 @@ const SETS = {
             "tb_service_requests",
             "tb_service_request_items",
             "tb_service_request_answers",
+            "tb_product_questions",
         ],
         requiresShareLinkEmail: false,
         resultCounts: ["tb_users", "tb_projects", "tb_fastwork_payouts", "tb_share_settlements", "tb_capital_entries"],

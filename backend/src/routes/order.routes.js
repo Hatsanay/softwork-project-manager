@@ -27,6 +27,7 @@ function registerOrderRoutes(router) {
     // ตรวจคำขอ (S-3) · ออกใบเสนอราคา/เปิดโปรเจกต์ตรวจสิทธิ์ createQuotation/createProject เพิ่มใน service
     router.put("/V1/service-requests/:id/client", requireAuth, canManage, orderController.bindRequestClient);
     router.put("/V1/service-requests/:id/items", requireAuth, canManage, orderController.updateRequestItems);
+    router.put("/V1/service-requests/:id/prices", requireAuth, canManage, orderController.confirmRequestPrices);
     router.post("/V1/service-requests/:id/reject", requireAuth, canManage, orderController.rejectRequest);
     router.post("/V1/service-requests/:id/close", requireAuth, canManage, orderController.closeRequest);
     router.post("/V1/service-requests/:id/confirm", requireAuth, canManage, orderController.confirmRequest);
@@ -63,6 +64,7 @@ function registerOrderRoutes(router) {
     router.get("/V1/order/requests/:token", orderController.publicStatus);
     router.get("/V1/order/requests/:token/quotation-document", orderController.publicQuotationDocument);
     router.post("/V1/order/requests/:token/accept", orderController.publicAccept);
+    router.post("/V1/order/requests/:token/price-response", orderController.publicPriceResponse);
     router.get("/V1/order/:code", orderController.publicShop);
     router.post("/V1/order/:code/requests", uploadOrderFiles.any(), orderController.publicSubmit);
 }

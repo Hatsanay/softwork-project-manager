@@ -323,17 +323,6 @@ export default function QuotationForm({ options, detail }: QuotationFormProps) {
                                     ))}
                             </select>
                         </FormField>
-                        <FormField label="ภาษาเอกสาร" htmlFor="qt_language" hint={QUOTATION_MESSAGES.language}>
-                            <select
-                                id="qt_language"
-                                value={form.qt_language}
-                                onChange={(event) => changeLanguage(event.target.value as "th" | "en")}
-                                className={inputClass()}
-                            >
-                                <option value="th">ไทย</option>
-                                <option value="en">อังกฤษ</option>
-                            </select>
-                        </FormField>
                         <FormField
                             label="ยืนราคา (วัน)"
                             htmlFor="qt_valid_days"
@@ -349,40 +338,32 @@ export default function QuotationForm({ options, detail }: QuotationFormProps) {
                                 className={inputClass(Boolean(fieldErrors.qt_valid_days))}
                             />
                         </FormField>
-                        <FormField
-                            label="การคิด VAT"
-                            htmlFor="qt_vat_treatment"
-                            hint={
-                                !isVatRegistered
-                                    ? QUOTATION_MESSAGES.vatNotRegistered
-                                    : form.qt_vat_treatment === "zero"
-                                      ? QUOTATION_MESSAGES.vatZero
-                                      : QUOTATION_MESSAGES.vatStandard(vatRate)
-                            }
-                        >
-                            <select
-                                id="qt_vat_treatment"
-                                value={form.qt_vat_treatment}
-                                onChange={(event) =>
-                                    update({ qt_vat_treatment: event.target.value as FormState["qt_vat_treatment"] })
-                                }
-                                className={inputClass()}
-                            >
-                                <option value="standard">ปกติ</option>
-                                <option value="zero">0% (ส่งออกบริการ)</option>
-                            </select>
-                        </FormField>
                     </div>
                 </SectionCard>
 
-                <SectionCard icon={Coins} title="สกุลเงิน">
-                    <div className="grid gap-4">
+                {/* ภาษา สกุลเงิน VAT รวมการ์ดเดียว (2026-11-01 · เดิมการ์ดสกุลเงินมีช่องเดียว) · เลือกลูกค้าแล้วเติมให้ทั้ง 3 ช่อง */}
+                <SectionCard
+                    icon={Coins}
+                    title="ภาษา สกุลเงิน และ VAT"
+                    description="เลือกลูกค้าแล้วระบบเติมให้ตามข้อมูลลูกค้า · แก้เฉพาะใบนี้ได้"
+                >
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <FormField label="ภาษาเอกสาร" htmlFor="qt_language" hint={QUOTATION_MESSAGES.language}>
+                            <select
+                                id="qt_language"
+                                value={form.qt_language}
+                                onChange={(event) => changeLanguage(event.target.value as "th" | "en")}
+                                className={inputClass()}
+                            >
+                                <option value="th">ไทย</option>
+                                <option value="en">อังกฤษ</option>
+                            </select>
+                        </FormField>
                         <FormField
                             label="สกุลเงินของเอกสาร"
                             htmlFor="qt_currency"
                             error={fieldErrors.qt_currency}
-                            className="sm:max-w-xs"
-                            hint="ราคาสินค้าเก็บเป็นบาท · ใส่ใบสกุลอื่นระบบแปลงตามอัตราในใบ"
+                            hint="ราคาสินค้าเก็บเป็นบาท · ใบสกุลอื่นระบบแปลงตามอัตราในใบ"
                         >
                             <select
                                 id="qt_currency"
@@ -401,38 +382,75 @@ export default function QuotationForm({ options, detail }: QuotationFormProps) {
                                     ))}
                             </select>
                         </FormField>
-                        {isForeign && (
-                            <RatePanel
-                                currency={form.qt_currency}
-                                rate={form.qt_exchange_rate}
-                                source={form.qt_rate_source}
-                                rateDate={form.qt_rate_date}
-                                rateBot={form.qt_rate_bot}
-                                reason={form.qt_rate_override_reason}
-                                errors={fieldErrors}
-                                onRateChange={(change: RateChange) => update(change)}
-                                onReasonChange={(reason) => update({ qt_rate_override_reason: reason })}
-                            />
-                        )}
-                        {staleRows.length > 0 && (
-                            <StatusBanner
-                                tone="warn"
-                                title={`ราคาของ ${staleRows.length} รายการยังคิดจากอัตรา/สกุลเงินเดิม`}
-                            >
-                                <p>
-                                    แปลงราคาตั้งต้นของสินค้าตามอัตราปัจจุบันไหม? แถวที่คุณแก้ราคาเองจะคงราคาเดิม
-                                    แค่ปรับราคาตั้งต้นที่ใช้เทียบ
-                                </p>
-                                <button
-                                    type="button"
-                                    className={`${buttonClass("secondary", "sm")} mt-2`}
-                                    onClick={convertStalePrices}
+                        <FormField
+                            label="การคิด VAT"
+                            htmlFor="qt_vat_treatment"
+                            hint={
+                                !isVatRegistered
+                                    ? "บริษัทยังไม่จด VAT ทุกใบจึงไม่คิด VAT · จดแล้วตั้งวันที่มีผลที่ ตั้งค่าระบบ › ข้อมูลบริษัท › VAT"
+                                    : form.qt_vat_treatment === "zero"
+                                      ? QUOTATION_MESSAGES.vatZero
+                                      : QUOTATION_MESSAGES.vatStandard(vatRate)
+                            }
+                        >
+                            {/* ยังไม่จด VAT: เลือกไม่ได้ (เดิมช่องขึ้น "ปกติ" แต่ใบไม่คิด VAT ขัดกันเอง) */}
+                            {isVatRegistered ? (
+                                <select
+                                    id="qt_vat_treatment"
+                                    value={form.qt_vat_treatment}
+                                    onChange={(event) =>
+                                        update({
+                                            qt_vat_treatment: event.target.value as FormState["qt_vat_treatment"],
+                                        })
+                                    }
+                                    className={inputClass()}
                                 >
-                                    แปลงราคาตามอัตราปัจจุบัน
-                                </button>
-                            </StatusBanner>
+                                    <option value="standard">ปกติ ({vatRate}%)</option>
+                                    <option value="zero">0% (ส่งออกบริการ)</option>
+                                </select>
+                            ) : (
+                                <p
+                                    id="qt_vat_treatment"
+                                    className="flex min-h-11 items-center rounded-xl border border-gray-100 bg-gray-50 px-3.5 text-sm text-gray-600"
+                                >
+                                    ไม่คิด VAT
+                                </p>
+                            )}
+                        </FormField>
+                        {isForeign && (
+                            <div className="sm:col-span-2">
+                                <RatePanel
+                                    currency={form.qt_currency}
+                                    rate={form.qt_exchange_rate}
+                                    source={form.qt_rate_source}
+                                    rateDate={form.qt_rate_date}
+                                    rateBot={form.qt_rate_bot}
+                                    reason={form.qt_rate_override_reason}
+                                    errors={fieldErrors}
+                                    onRateChange={(change: RateChange) => update(change)}
+                                    onReasonChange={(reason) => update({ qt_rate_override_reason: reason })}
+                                />
+                            </div>
                         )}
                     </div>
+                    {staleRows.length > 0 && (
+                        <StatusBanner
+                            tone="warn"
+                            title={`ราคาของ ${staleRows.length} รายการยังคิดจากอัตรา/สกุลเงินเดิม`}
+                        >
+                            <p>
+                                แปลงราคาตั้งต้นของสินค้าตามอัตราปัจจุบันไหม? แถวที่คุณแก้ราคาเองจะคงราคาเดิม
+                                แค่ปรับราคาตั้งต้นที่ใช้เทียบ
+                            </p>
+                            <button
+                                type="button"
+                                className={`${buttonClass("secondary", "sm")} mt-2`}
+                                onClick={convertStalePrices}
+                            >
+                                แปลงราคาตามอัตราปัจจุบัน
+                            </button>
+                        </StatusBanner>
+                    )}
                 </SectionCard>
 
                 <SectionCard icon={ListChecks} title="รายการ">
@@ -467,7 +485,7 @@ export default function QuotationForm({ options, detail }: QuotationFormProps) {
                                             qt_discount_type: event.target.value as FormState["qt_discount_type"],
                                         })
                                     }
-                                    className={`${inputClass(false, "tight")} w-20`}
+                                    className={`${inputClass(false, "tight")} w-20! shrink-0`}
                                 >
                                     <option value="amount">฿</option>
                                     <option value="percent">%</option>
@@ -477,7 +495,11 @@ export default function QuotationForm({ options, detail }: QuotationFormProps) {
                     </div>
                 </SectionCard>
 
-                <SectionCard icon={Wallet} title="การเก็บเงิน">
+                <SectionCard
+                    icon={Wallet}
+                    title="การเก็บเงิน"
+                    description="เก็บครั้งเดียว = ลูกค้าจ่ายเต็มยอดครั้งเดียว · แบ่งงวด = แบ่งยอดรวมเป็นหลายงวด เช่น มัดจำ 50% ส่งมอบ 50%"
+                >
                     <Segmented<FormState["qt_payment_mode"]>
                         label="การเก็บเงิน"
                         value={form.qt_payment_mode}

@@ -3,12 +3,13 @@
 // ส่วนแสดงผลของหน้าที่ลูกค้าเปิดผ่านลิงก์ (แยกจาก page.tsx 18 ต.ค. 2026 ให้เดโมหน้า login ใช้หน้าตัวจริงได้)
 // รับข้อมูลผ่าน props อย่างเดียว — ห้ามเรียก API / router ในไฟล์นี้ (scripts/check-demo-imports.mjs)
 // ปรับ 25 ต.ค. 2026: ชื่อร้าน/โลโก้บนหัว · สถานะที่ลูกค้าอ่านเข้าใจ (ไม่ขัดกับ %) · งานย่อยเป็นเช็กลิสต์ · ไม่แสดงผู้รับผิดชอบ/วันที่ว่าง
-import { CalendarDays, Check, ChevronDown } from "lucide-react";
+import { CalendarDays, Check, ChevronDown, FileText } from "lucide-react";
 import CustomerShell, { CustomerSection } from "@/components/customer/customer-shell";
 import HeroEyebrow from "@/components/ui/hero-eyebrow";
 import CircularProgress from "@/components/ui/CircularProgress";
 import StatusPill, { type PillTone } from "@/components/ui/status-pill";
 import formatDate, { formatDateOnly } from "@/app/function";
+import { formatAmount } from "@/lib/shared/money.mjs";
 
 type ProjectStatus = "planning" | "in_progress" | "on_hold" | "completed" | "cancelled";
 type TaskStatus = "todo" | "in_progress" | "review" | "done";
@@ -98,16 +99,36 @@ export function ShareShell({ shop, children }: { shop?: ShareShop | null; childr
     );
 }
 
+/** เอกสารในลิงก์ติดตามงาน (2026-11-01) · null = ทีมงานยังไม่เปิดให้เห็น */
+export type SharedDocument = {
+    type: "quotation" | "invoice" | "receipt";
+    id: string;
+    number: string;
+    revision: number;
+    date: string | null;
+    total: string;
+    currency: string;
+    is_cancelled: boolean;
+    title: string | null;
+};
+
+const DOCUMENT_LABEL: Record<SharedDocument["type"], string> = { quotation: "ใบเสนอราคา", invoice: "ใบแจ้งหนี้", receipt: "ใบเสร็จรับเงิน" };
+
 export default function SharedProjectView({
     project,
     tasks,
     timeline,
     shop = null,
+    documents = null,
+    documentHref,
 }: {
     project: SharedProject;
     tasks: SharedTask[];
     timeline: TimelineEntry[];
     shop?: ShareShop | null;
+    documents?: SharedDocument[] | null;
+    // ลิงก์ไปหน้าเอกสาร A4 (หน้าเดโมไม่มีเอกสาร)
+    documentHref?: (document: SharedDocument) => string;
 }) {
     const status = customerStatus(project);
     const percent = Number(project.project_progress_percent);
@@ -241,6 +262,43 @@ export default function SharedProjectView({
                     </div>
                 )}
             </CustomerSection>
+
+            {documents && documents.length > 0 && documentHref && (
+                <CustomerSection
+                    index={3}
+                    id="documents"
+                    title="เอกสาร"
+                    description="กดเปิดเอกสาร แล้วพิมพ์หรือบันทึกเป็น PDF เก็บไว้ได้"
+                >
+                    <ul className="grid gap-2">
+                        {documents.map((document) => (
+                            <li key={`${document.type}:${document.id}`}>
+                                <a
+                                    href={documentHref(document)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="flex min-h-14 items-center gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2 transition hover:border-blue-300"
+                                >
+                                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                                        <FileText size={18} aria-hidden="true" />
+                                    </span>
+                                    <span className="grid min-w-0 flex-1 gap-0.5">
+                                        <span className="text-sm font-medium wrap-break-word text-gray-900">
+                                            {DOCUMENT_LABEL[document.type]} {document.number}
+                                            {document.revision > 0 ? ` Rev.${document.revision}` : ""}
+                                        </span>
+                                        <span className="text-xs text-gray-500 tabular-nums">
+                                            {document.date ? formatDateOnly(document.date) : "-"} · {formatAmount(document.total)}{" "}
+                                            {document.currency === "THB" ? "บาท" : document.currency}
+                                        </span>
+                                    </span>
+                                    {document.is_cancelled && <StatusPill tone="neutral">ยกเลิกแล้ว</StatusPill>}
+                                </a>
+                            </li>
+                        ))}
+                    </ul>
+                </CustomerSection>
+            )}
 
             <p className="text-center text-xs text-gray-400">
                 ข้อมูลอัปเดตตามที่ทีมงานบันทึกในระบบ · รีเฟรชหน้าเพื่อดูล่าสุด

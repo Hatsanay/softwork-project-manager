@@ -188,6 +188,8 @@ function stateFromDetail(detail: InvoiceDetail): FormState {
             qti_discount_type: item.invi_discount_type,
             qti_discount_value: blankIfZero(item.invi_discount_value),
             baht_price: null,
+            is_starting_price: false,
+            price_note: null,
         })),
         inv_adjust_reason_code: invoice.inv_adjust_reason_code ?? "",
         inv_adjust_reason: invoice.inv_adjust_reason ?? "",
@@ -731,7 +733,7 @@ export default function ManualInvoiceForm({ options, detail, debitReference }: M
                                             inv_discount_type: event.target.value as FormState["inv_discount_type"],
                                         })
                                     }
-                                    className={`${inputClass(false, "tight")} w-20`}
+                                    className={`${inputClass(false, "tight")} w-20! shrink-0`}
                                 >
                                     <option value="amount">฿</option>
                                     <option value="percent">%</option>

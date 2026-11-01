@@ -450,6 +450,7 @@
             "project_id": "string",
             "project_name": "string",
             "project_progress_percent": "string",
+            "project_share_documents": "number",
             "project_share_enabled": "number",
             "project_share_token": "string",
             "project_start_date": "string",

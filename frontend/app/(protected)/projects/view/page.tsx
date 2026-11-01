@@ -403,6 +403,22 @@ export default function ViewProjectPage() {
         }
     }
 
+    async function handleToggleShareDocuments() {
+        if (!project) return;
+        const next = !project.project_share_documents;
+        const res = await fetch(`${api}/projects/${id}/share/documents`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", ...authHeader() },
+            body: JSON.stringify({ project_share_documents: next }),
+        });
+        if (res.ok) {
+            setProject({ ...project, project_share_documents: next ? 1 : 0 });
+            toast.success(next ? "ลูกค้าเห็นเอกสารในลิงก์แล้ว" : "ซ่อนเอกสารจากลิงก์แล้ว");
+        } else {
+            toast.error("อัปเดตไม่สำเร็จ กรุณาลองใหม่");
+        }
+    }
+
     async function handleToggleTaskWeight() {
         if (!project) return;
         const next = !project.project_use_task_weight;
@@ -608,6 +624,8 @@ export default function ViewProjectPage() {
             {canManageShareLink && (
                 <ShareLinkCard
                     isEnabled={Boolean(project.project_share_enabled)}
+                    isDocumentsShared={Boolean(project.project_share_documents)}
+                    onToggleDocuments={handleToggleShareDocuments}
                     shareUrl={shareUrl}
                     copied={Boolean(copyFeedback)}
                     isRegenerating={isRegeneratingLink}

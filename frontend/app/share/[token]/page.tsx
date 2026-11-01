@@ -8,7 +8,14 @@ import { useParams } from "next/navigation";
 import { Link2Off } from "lucide-react";
 import { CustomerLoading, CustomerNotice } from "@/components/customer/customer-shell";
 import { api } from "@/app/constans";
-import SharedProjectView, { ShareShell, type SharedProject, type SharedTask, type ShareShop, type TimelineEntry } from "./share-view";
+import SharedProjectView, {
+    ShareShell,
+    type SharedDocument,
+    type SharedProject,
+    type SharedTask,
+    type ShareShop,
+    type TimelineEntry,
+} from "./share-view";
 
 export default function SharedProjectPage() {
     const params = useParams<{ token: string }>();
@@ -17,6 +24,7 @@ export default function SharedProjectPage() {
     const [tasks, setTasks] = useState<SharedTask[]>([]);
     const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
     const [shop, setShop] = useState<ShareShop | null>(null);
+    const [documents, setDocuments] = useState<SharedDocument[] | null>(null);
     const [notFound, setNotFound] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -35,6 +43,7 @@ export default function SharedProjectPage() {
                 setTasks(data.tasks ?? []);
                 setTimeline(data.timeline ?? []);
                 setShop(data.shop ?? null);
+                setDocuments(data.documents ?? null);
             })
             .catch(() => {
                 if (!isLeftPage) setNotFound(true);
@@ -61,5 +70,14 @@ export default function SharedProjectPage() {
         );
     }
 
-    return <SharedProjectView project={project} tasks={tasks} timeline={timeline} shop={shop} />;
+    return (
+        <SharedProjectView
+            project={project}
+            tasks={tasks}
+            timeline={timeline}
+            shop={shop}
+            documents={documents}
+            documentHref={(document) => `/share/${token}/document?type=${document.type}&id=${encodeURIComponent(document.id)}`}
+        />
+    );
 }

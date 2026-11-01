@@ -351,6 +351,20 @@ async function sendShareLinkEmail(req, res, next) {
     }
 }
 
+/** แสดงเอกสารในลิงก์ติดตามงาน (2026-11-01) · ค่าเริ่มปิด เปิดเมื่อลูกค้าขอ */
+async function toggleShareDocuments(req, res, next) {
+    try {
+        const { project_share_documents } = req.body;
+        await pool.query("UPDATE tb_projects SET project_share_documents = ? WHERE project_id = ?", [
+            !!project_share_documents,
+            req.params.id,
+        ]);
+        res.json({ message: "อัปเดตสำเร็จ" });
+    } catch (err) {
+        next(err);
+    }
+}
+
 async function toggleTaskWeight(req, res, next) {
     try {
         const { project_use_task_weight } = req.body;
@@ -523,7 +537,7 @@ async function removeMember(req, res, next) {
 
 module.exports = {
     getAll, getOne, create, taskCatalog, nextSteps, update, remove, cancel, reactivate,
-    regenerateShareLink, toggleShareEnabled, toggleTaskWeight, sendShareLinkEmail,
+    regenerateShareLink, toggleShareEnabled, toggleShareDocuments, toggleTaskWeight, sendShareLinkEmail,
     getMembers, addMember, updateMemberPositions, removeMember,
     getMyPermissions,
 };

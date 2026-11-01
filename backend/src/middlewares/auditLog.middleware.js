@@ -72,6 +72,7 @@ const ENTITIES = [
     { re: /^\/projects\/([^/]+)\/chat$/, type: "project_chat", table: "tb_project_chat_messages", pk: "message_id", id: "response:message_id", project: "1", label: { POST: "ส่งข้อความแชทโปรเจกต์" } },
     { re: /^\/projects\/([^/]+)\/share\/regenerate$/, type: "project", table: "tb_projects", pk: "project_id", id: "1", project: "1", label: { PUT: "สร้างลิงก์ลูกค้าใหม่ (ลิงก์เก่าใช้ไม่ได้)" } },
     { re: /^\/projects\/([^/]+)\/share\/toggle$/, type: "project", table: "tb_projects", pk: "project_id", id: "1", project: "1", label: { PUT: "เปิด/ปิดลิงก์ลูกค้า" } },
+    { re: /^\/projects\/([^/]+)\/share\/documents$/, type: "project", table: "tb_projects", pk: "project_id", id: "1", project: "1", label: { PUT: "เปิด/ปิดเอกสารในลิงก์ติดตามงาน" } },
     { re: /^\/projects\/([^/]+)\/share\/send-email$/, type: "project", table: "tb_projects", pk: "project_id", id: "1", project: "1", label: { POST: "ส่งลิงก์ลูกค้าทางอีเมล" } },
     { re: /^\/projects\/([^/]+)\/task-weight\/toggle$/, type: "project", table: "tb_projects", pk: "project_id", id: "1", project: "1", label: { PUT: "เปิด/ปิดน้ำหนักงาน" } },
     { re: /^\/projects\/([^/]+)\/cancel$/, type: "project", table: "tb_projects", pk: "project_id", id: "1", project: "1", label: { PUT: "ยกเลิกโปรเจกต์" } },
@@ -271,6 +272,7 @@ const ENTITIES = [
     { re: /^\/service-requests\/settings$/, type: "service_request", label: { PUT: "ตั้งผู้รับคำขอบริการเริ่มต้น" } },
     { re: /^\/service-requests\/([^/]+)\/client$/, type: "service_request", id: "1", label: { PUT: "ผูกลูกค้ากับคำขอบริการ" } },
     { re: /^\/service-requests\/([^/]+)\/items$/, type: "service_request", id: "1", label: { PUT: "ปรับรายการในคำขอบริการ" } },
+    { re: /^\/service-requests\/([^/]+)\/prices$/, type: "service_request", id: "1", label: { PUT: "ยืนยันราคาเริ่มต้นในคำขอบริการ" } },
     { re: /^\/service-requests\/([^/]+)\/reject$/, type: "service_request", id: "1", label: { POST: "ปฏิเสธคำขอบริการ" } },
     { re: /^\/service-requests\/([^/]+)\/close$/, type: "service_request", id: "1", label: { POST: "ปิดคำขอบริการ (ไม่ได้งาน)" } },
     { re: /^\/service-requests\/([^/]+)\/confirm$/, type: "service_request", id: "1", label: { POST: "ยืนยันคำขอบริการ" } },
@@ -290,6 +292,7 @@ const ENTITIES = [
     { re: /^\/requirement-questions\/([^/]+)\/move$/, type: "requirement_question", id: "1", label: { POST: "ย้ายคำถามความต้องการไปกลุ่มอื่น" } },
     { re: /^\/order\/[^/]+\/requests$/, type: "service_request", id: "response:svr_id", label: { POST: "ลูกค้าส่งคำขอบริการ" } },
     { re: /^\/order\/requests\/[^/]+\/accept$/, type: "service_request", label: { POST: "ลูกค้ายอมรับใบเสนอราคาในลิงก์" } },
+    { re: /^\/order\/requests\/[^/]+\/price-response$/, type: "service_request", label: { POST: "ลูกค้าตอบราคาที่ทีมปรับ (ราคาเริ่มต้น)" } },
 ];
 
 // GET ที่บันทึกด้วย (เปิดดูข้อมูลสำคัญ) — นอกนั้น GET ไม่บันทึก ยกเว้นถูกปฏิเสธ/error (ปริมาณมหาศาลและไม่เปลี่ยนข้อมูล)

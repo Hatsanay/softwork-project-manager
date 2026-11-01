@@ -16,6 +16,9 @@ export type ItemForm = {
     qti_discount_value: string;
     // ราคาบาทของสินค้าตอนเพิ่ม (ไม่ส่งไป API) — ใช้แปลงราคาใหม่เมื่อเปลี่ยนอัตราแลกเปลี่ยน
     baht_price: string | null;
+    // สินค้าราคาเริ่มต้น (ไม่ส่งไป API): เตือนใต้แถวให้ตรวจราคาจริงก่อนส่ง · price_note = ราคาขึ้นกับอะไร
+    is_starting_price: boolean;
+    price_note: string | null;
 };
 
 export type MilestoneForm = {
@@ -70,6 +73,8 @@ export function emptyItem(type: ItemType): ItemForm {
         qti_discount_type: "amount",
         qti_discount_value: "",
         baht_price: null,
+        is_starting_price: false,
+        price_note: null,
     };
 }
 
@@ -144,6 +149,8 @@ export function formFromDetail(detail: QuotationDetail): QuotationForm {
             qti_discount_type: item.qti_discount_type,
             qti_discount_value: blankIfZero(item.qti_discount_value),
             baht_price: item.product_price,
+            is_starting_price: item.product_price_mode === "from",
+            price_note: item.product_price_note,
         })),
         // เก็บเงินครั้งเดียว: backend เก็บงวด "ชำระเต็มจำนวน 100%" ไว้ให้ใบแจ้งหนี้อ้าง — ไม่ใช่งวดที่ผู้ใช้กรอก จึงไม่โหลดเข้าฟอร์ม
         milestones: (detail.quotation.qt_payment_mode === "milestones" ? detail.milestones : []).map((milestone) => ({

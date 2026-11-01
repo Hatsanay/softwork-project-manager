@@ -76,7 +76,7 @@ async function findPackage(conn, packageId) {
     }
     const [items] = await conn.query(
         `SELECT i.pki_id, i.pki_order, i.pki_type, i.pki_product_id, i.pki_description, i.pki_quantity, i.pki_unit, i.pki_unit_price,
-                p.product_name, p.product_code, p.product_price, p.product_unit, p.product_status
+                p.product_name, p.product_code, p.product_price, p.product_unit, p.product_status, p.product_price_mode, p.product_price_note
          FROM tb_product_package_items i
          LEFT JOIN tb_products p ON p.product_id = i.pki_product_id
          WHERE i.pki_package_id = ?

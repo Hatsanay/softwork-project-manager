@@ -66,7 +66,7 @@ async function vatRateToday(conn, shop) {
 }
 
 const PRODUCT_COLUMNS = `p.product_id, p.product_name, p.product_description, p.product_unit, p.product_price, p.product_image_url,
-    p.product_category_id, p.product_price_mode, p.product_percent`;
+    p.product_category_id, p.product_price_mode, p.product_percent, p.product_price_note, p.product_is_public`;
 
 /**
  * ใส่แถวในชุด + กติกางานเพิ่มของชุด · ชุดที่มีสินค้าข้างในถูกปิดใช้งาน = ใช้ไม่ได้ (ราคาไม่ครบ) ไม่คืนมา
@@ -77,7 +77,7 @@ async function attachPackageItems(conn, packages) {
     if (packageIds.length === 0) return [];
     const [itemRows] = await conn.query(
         `SELECT i.pki_package_id, i.pki_order, i.pki_product_id, i.pki_description, i.pki_quantity, i.pki_unit, i.pki_unit_price,
-                p.product_status, p.product_price, p.product_unit
+                p.product_status, p.product_price, p.product_unit, p.product_price_mode, p.product_price_note
          FROM tb_product_package_items i LEFT JOIN tb_products p ON p.product_id = i.pki_product_id
          WHERE i.pki_package_id IN (?) AND i.pki_type = 'item'
          ORDER BY i.pki_package_id, i.pki_order`,
@@ -95,6 +95,9 @@ async function attachPackageItems(conn, packages) {
             unit: row.pki_unit ?? row.product_unit,
             quantity: row.pki_quantity,
             unit_price: row.pki_product_id ? row.product_price : row.pki_unit_price,
+            // ราคาเริ่มต้น (2026-11-01): ราคาในชุดเป็นราคาต่ำสุด ทีมตรวจราคาจริงก่อนออกใบ
+            needs_price: row.product_price_mode === "from",
+            price_note: row.product_price_mode === "from" ? row.product_price_note : null,
         });
         itemsByPackage.set(row.pki_package_id, list);
     }
@@ -111,7 +114,10 @@ async function attachPackageItems(conn, packages) {
  * สินค้า/ชุดที่ลูกค้าเลือกเองได้ในลิงก์นี้ · ชุดที่มีสินค้าข้างในถูกปิดใช้งาน = ไม่แสดงทั้งชุด
  * linkId ว่าง = ทุกหมวด (ตัวคิดราคาภายใน) · excludeKeys = รายการที่ทีมเลือกให้แล้ว ("p:<id>" / "k:<id>") ไม่แสดงซ้ำ
  */
-async function loadCatalog(conn, linkId, { excludeKeys = new Set() } = {}) {
+/**
+ * includeHidden: ตัวคิดราคาของทีม (2026-11-01 · ทีมเลือกให้ลูกค้าได้อิสระ) = รวมที่ไม่แสดงบนหน้าร้าน (มี is_public บอก)
+ */
+async function loadCatalog(conn, linkId, { excludeKeys = new Set(), includeHidden = false } = {}) {
     const [scopeRows] = await conn.query("SELECT olc_category_id FROM tb_order_link_categories WHERE olc_link_id = ?", [linkId]);
     const scope = scopeRows.map((row) => row.olc_category_id);
     const inScope = (alias) => (scope.length > 0 ? `AND ${alias} IN (?)` : "");
@@ -124,23 +130,25 @@ async function loadCatalog(conn, linkId, { excludeKeys = new Set() } = {}) {
     const [products] = await conn.query(
         `SELECT ${PRODUCT_COLUMNS}
          FROM tb_products p LEFT JOIN tb_product_categories c ON c.pc_id = p.product_category_id
-         WHERE p.product_status = 'active' AND p.product_is_public = 1
+         WHERE p.product_status = 'active' ${includeHidden ? "" : "AND p.product_is_public = 1"}
            AND (p.product_category_id IS NULL OR c.pc_status = 'active') ${inScope("p.product_category_id")}
          ORDER BY p.product_name`,
         scopeParams,
     );
     const [packages] = await conn.query(
-        `SELECT g.pkg_id, g.pkg_name, g.pkg_description, g.pkg_image_url, g.pkg_category_id
+        `SELECT g.pkg_id, g.pkg_name, g.pkg_description, g.pkg_image_url, g.pkg_category_id, g.pkg_is_public
          FROM tb_product_packages g LEFT JOIN tb_product_categories c ON c.pc_id = g.pkg_category_id
-         WHERE g.pkg_status = 'active' AND g.pkg_is_public = 1
+         WHERE g.pkg_status = 'active' ${includeHidden ? "" : "AND g.pkg_is_public = 1"}
            AND (g.pkg_category_id IS NULL OR c.pc_status = 'active') ${inScope("g.pkg_category_id")}
          ORDER BY g.pkg_name`,
         scopeParams,
     );
     return {
         categories: categories.map((row) => ({ ...row, pc_is_single_choice: Boolean(row.pc_is_single_choice) })),
-        products: products.filter((row) => !excludeKeys.has(`p:${row.product_id}`)),
-        packages: (await attachPackageItems(conn, packages)).filter((row) => !excludeKeys.has(`k:${row.pkg_id}`)),
+        products: products.filter((row) => !excludeKeys.has(`p:${row.product_id}`)).map((row) => ({ ...row, product_is_public: Boolean(row.product_is_public) })),
+        packages: (await attachPackageItems(conn, packages))
+            .filter((row) => !excludeKeys.has(`k:${row.pkg_id}`))
+            .map((row) => ({ ...row, pkg_is_public: Boolean(row.pkg_is_public) })),
     };
 }
 
@@ -391,9 +399,12 @@ function fileError(question, questionFiles) {
     return null;
 }
 
-/** แถวของสินค้า · แบบ % = จำนวน 1 ราคาว่าง (ยอดคิดจากแถวอื่นทุกครั้ง ไม่เก็บซ้ำ) */
+/** แถวของสินค้า · แบบ % = จำนวน 1 ราคาว่าง (ยอดคิดจากแถวอื่นทุกครั้ง ไม่เก็บซ้ำ) · ราคาเริ่มต้น = จำว่าทีมต้องตรวจราคา */
 function productRow(product, quantity) {
-    const base = { type: "item", product_id: product.product_id, package_id: null, name: product.product_name, unit: product.product_unit };
+    const base = {
+        type: "item", product_id: product.product_id, package_id: null, name: product.product_name, unit: product.product_unit,
+        needs_price: product.product_price_mode === "from",
+    };
     if (product.product_price_mode === "percent") return { ...base, unit_price: null, quantity: "1.00", percent: product.product_percent };
     return { ...base, unit_price: product.product_price, quantity: `${quantity}.00`, percent: null };
 }
@@ -401,10 +412,10 @@ function productRow(product, quantity) {
 /** แถวของชุด: หัวข้อ (จำนวนชุด) + รายการในชุดคูณจำนวนชุด */
 function packageRows(productPackage, quantity) {
     return [
-        { type: "heading", product_id: null, package_id: productPackage.pkg_id, name: productPackage.pkg_name, unit: "ชุด", unit_price: null, quantity: `${quantity}.00`, percent: null },
+        { type: "heading", product_id: null, package_id: productPackage.pkg_id, name: productPackage.pkg_name, unit: "ชุด", unit_price: null, quantity: `${quantity}.00`, percent: null, needs_price: false },
         ...productPackage.items.map((packageItem) => ({
             type: "item", product_id: packageItem.product_id, package_id: productPackage.pkg_id, name: packageItem.name, unit: packageItem.unit,
-            unit_price: packageItem.unit_price, quantity: multiplyQuantity(packageItem.quantity, quantity), percent: null,
+            unit_price: packageItem.unit_price, quantity: multiplyQuantity(packageItem.quantity, quantity), percent: null, needs_price: packageItem.needs_price,
         })),
     ];
 }
@@ -562,11 +573,13 @@ async function submit(conn, code, input, { files = [], savedPaths = [] } = {}) {
     );
     await conn.query(
         `INSERT INTO tb_service_request_items
-            (svi_request_id, svi_order, svi_type, svi_product_id, svi_package_id, svi_name, svi_unit, svi_unit_price, svi_quantity, svi_is_preset, svi_percent)
+            (svi_request_id, svi_order, svi_type, svi_product_id, svi_package_id, svi_name, svi_unit, svi_unit_price, svi_quantity, svi_is_preset, svi_percent,
+             svi_needs_price)
          VALUES ?`,
         [
             rows.map((row, index) => [
                 requestId, index + 1, row.type, row.product_id, row.package_id, row.name, row.unit, row.unit_price, row.quantity, row.is_preset ? 1 : 0, row.percent,
+                row.needs_price ? 1 : 0,
             ]),
         ],
     );
@@ -623,6 +636,7 @@ async function findAnswers(conn, requestId) {
         [answers.map((answer) => answer.sva_id)],
     );
     return answers.map((answer) => ({
+        question_id: answer.sva_question_id,
         group_name: answer.sva_group_name,
         question: answer.sva_question_text,
         type: answer.sva_type,
@@ -694,7 +708,9 @@ const PREPARING_STATUSES = new Set(["draft", "pending_approval", "approved"]);
  * started ทีมยืนยันแล้วเริ่มงาน (ไม่ออกใบ) · expired ใบหมดอายุ · contact ทีมจะติดต่อกลับ (ปฏิเสธ/ยกเลิก) · closed
  */
 async function progressOf(conn, request) {
-    if (request.svr_status === "submitted") return { stage: "submitted" };
+    // ลูกค้าไม่ตกลงราคา = กลับไปที่ทีม (ทีมติดต่อกลับ) · รอลูกค้ายืนยันราคาที่ทีมปรับขึ้น (ราคาเริ่มต้น 2026-11-01)
+    if (request.svr_status === "submitted") return { stage: "submitted", price_declined: request.svr_price_response === "declined" };
+    if (request.svr_status === "awaiting_customer") return { stage: "price_confirm" };
     if (request.svr_status === "rejected") return { stage: "contact" };
     if (request.svr_status === "closed") return { stage: "closed" };
     // Fastwork: ใบเสนอราคาเป็นเอกสารภายใน ลูกค้าไม่เห็น · ชำระและยืนยันบน Fastwork
@@ -758,12 +774,56 @@ async function acceptByCustomer(conn, accessToken, input) {
     return { svr_id: request.svr_id };
 }
 
+/**
+ * ลูกค้าตอบราคาที่ทีมปรับขึ้น (ราคาเริ่มต้น 2026-11-01 · ข้อ 2.7)
+ * ตกลง = เปิดโปรเจกต์ + งานจากรายการ (ผู้รับคำขอเป็น PM เหมือนลูกค้ายอมรับใบ) · ไม่ตกลง = กลับไปที่ทีม พร้อมข้อความ
+ * กดตกลงซ้ำ = ตอบสถานะเดิม · ทีมแก้ราคาระหว่างนั้น (สถานะกลับไปรอตรวจ) = ตอบไม่ได้ ให้โหลดหน้าใหม่
+ */
+async function respondToPrice(conn, accessToken, input) {
+    const value = String(accessToken ?? "").trim().toLowerCase();
+    if (!/^[0-9a-f]{32}$/.test(value)) throw new AppError(404, "SERVICE_REQUEST_NOT_FOUND", "ไม่พบคำขอนี้");
+    const [[request]] = await conn.query(
+        `SELECT svr_id, svr_status, svr_client_id, svr_assignee_id, svr_price_response FROM tb_service_requests
+         WHERE svr_access_token = ? FOR UPDATE`,
+        [value],
+    );
+    if (!request) throw new AppError(404, "SERVICE_REQUEST_NOT_FOUND", "ไม่พบคำขอนี้");
+    if (request.svr_status === "converted" && request.svr_price_response === "accepted" && input.response === "accepted") return;
+    if (request.svr_status !== "awaiting_customer") {
+        throw new AppError(409, "PRICE_RESPONSE_NOT_READY", "ทีมงานกำลังปรับรายการอยู่ กรุณาโหลดหน้าใหม่");
+    }
+    const respondedAt = nowBangkokText();
+    if (input.response === "declined") {
+        await conn.query(
+            `UPDATE tb_service_requests SET svr_status = 'submitted', svr_price_response = 'declined', svr_price_response_at = ?,
+                svr_price_response_note = ?, svr_version = svr_version + 1
+             WHERE svr_id = ?`,
+            [respondedAt, input.note, request.svr_id],
+        );
+        return;
+    }
+    const serviceRequestService = require("./service-request.service");
+    const items = (await serviceRequestService.findItems(conn, [request.svr_id])).get(request.svr_id) ?? [];
+    await conn.query(
+        "UPDATE tb_service_requests SET svr_price_response = 'accepted', svr_price_response_at = ?, svr_price_response_note = ? WHERE svr_id = ?",
+        [respondedAt, input.note, request.svr_id],
+    );
+    await serviceRequestService.openProjectFromRequest(
+        conn,
+        { user_id: request.svr_assignee_id },
+        request.svr_id,
+        request.svr_client_id,
+        serviceRequestService.orderedRows(items),
+        `ลูกค้ายืนยันราคาเมื่อ ${respondedAt.slice(0, 16)}`,
+    );
+}
+
 /** แคตตาล็อกสำหรับตัวคิดราคาภายใน (S-5) — ชุดเดียวกับที่ลูกค้าเห็นในลิงก์ (ทุกหมวด) + ชุดคำถาม */
 async function internalCatalog(conn) {
     const shopInfo = await findShop(conn);
     return {
         vat_rate: await vatRateToday(conn, shopInfo),
-        catalog: await loadCatalog(conn, null),
+        catalog: await loadCatalog(conn, null, { includeHidden: true }),
         questionnaire: await requirementService.listGroups(conn, { activeOnly: true }),
     };
 }
@@ -775,7 +835,7 @@ async function findRequestByToken(conn, accessToken) {
     if (!/^[0-9a-f]{32}$/.test(value)) throw new AppError(404, "SERVICE_REQUEST_NOT_FOUND", "ไม่พบคำขอนี้");
     const [[request]] = await conn.query(
         `SELECT r.svr_id, r.svr_status, r.svr_contact_name, r.svr_vat_rate, r.svr_note, r.svr_quotation_id, r.svr_project_id,
-                r.svr_accepted_name, DATE_FORMAT(r.svr_accepted_at, '%Y-%m-%d %H:%i') AS svr_accepted_at,
+                r.svr_price_response, r.svr_price_response_note, r.svr_accepted_name, DATE_FORMAT(r.svr_accepted_at, '%Y-%m-%d %H:%i') AS svr_accepted_at,
                 DATE_FORMAT(r.svr_submitted_at, '%Y-%m-%d %H:%i') AS svr_submitted_at, l.ol_kind
          FROM tb_service_requests r JOIN tb_order_links l ON l.ol_id = r.svr_link_id
          WHERE r.svr_access_token = ?`,
@@ -788,9 +848,11 @@ async function findRequestByToken(conn, accessToken) {
 async function requestStatus(conn, accessToken) {
     const request = await findRequestByToken(conn, accessToken);
     const [items] = await conn.query(
-        `SELECT svi_type AS type, svi_package_id AS package_id, svi_name AS name, svi_unit AS unit, svi_unit_price AS unit_price, svi_quantity AS quantity,
-                svi_percent AS percent, svi_is_preset AS is_preset
-         FROM tb_service_request_items WHERE svi_request_id = ? AND svi_added_by_staff = 0 ORDER BY svi_order`,
+        `SELECT i.svi_type AS type, i.svi_package_id AS package_id, i.svi_product_id AS product_id, i.svi_name AS name, i.svi_unit AS unit,
+                i.svi_unit_price AS unit_price, i.svi_quantity AS quantity, i.svi_percent AS percent, i.svi_is_preset AS is_preset,
+                i.svi_needs_price AS needs_price, p.product_price_note AS price_note
+         FROM tb_service_request_items i LEFT JOIN tb_products p ON p.product_id = i.svi_product_id
+         WHERE i.svi_request_id = ? AND i.svi_added_by_staff = 0 ORDER BY i.svi_order`,
         [request.svr_id],
     );
     const lines = items.filter((row) => row.type === "item").map((row) => (row.percent ? { percent: row.percent } : { unitPrice: row.unit_price, quantity: row.quantity }));
@@ -799,13 +861,16 @@ async function requestStatus(conn, accessToken) {
     const base = fixedSubtotal(lines);
     for (const row of items) {
         row.is_preset = Boolean(row.is_preset);
+        row.needs_price = Boolean(row.needs_price);
         if (row.percent) row.unit_price = formatHundredths(percentAmount(base, row.percent));
     }
     const shopInfo = await findShop(conn);
+    const progress = await progressOf(conn, request);
     return {
         shop: { name: shopInfo.name, logo_url: shopInfo.logo_url },
         answers: await findAnswers(conn, request.svr_id),
-        progress: await progressOf(conn, request),
+        progress,
+        price_check: await priceCheckOf(conn, request, items, progress),
         request: {
             number: request.svr_id,
             kind: request.ol_kind,
@@ -817,6 +882,70 @@ async function requestStatus(conn, accessToken) {
         items,
         totals: { subtotal: text(totals.subtotal), vat: text(totals.vat), total: text(totals.total) },
     };
+}
+
+/**
+ * ราคาเริ่มต้นในหน้าสถานะ (2026-11-01 · ข้อ 2.6): is_estimate = ยอดที่ลูกค้าเห็นตอนเลือกเป็นยอดเบื้องต้น
+ * pending = ทีมยังตรวจราคาอยู่ (ชื่อรายการ) · adjustments = รายการที่ราคาต่างจากตอนเลือก (หลังทีมตรวจเสร็จเท่านั้น ไม่โชว์ระหว่างแก้)
+ * ใบเสนอราคาที่ส่งแล้ว: เทียบกับราคาในใบ (ใบคือราคาจริงที่ลูกค้ายอมรับ) · ไม่ออกใบ: เทียบกับราคาที่ทีมยืนยันในคำขอ
+ * confirmed_totals = ยอดหลังทีมปรับ (รอลูกค้ายืนยันราคา / เปิดงานแล้ว / Fastwork)
+ */
+async function priceCheckOf(conn, request, customerItems, progress) {
+    const isEstimate = customerItems.some((row) => row.needs_price);
+    const serviceRequestService = require("./service-request.service");
+    const allItems = (await serviceRequestService.findItems(conn, [request.svr_id])).get(request.svr_id) ?? [];
+    if (request.svr_status === "submitted") {
+        const pending = allItems.filter((row) => row.svi_needs_price && !row.svi_is_removed && !row.svi_added_by_staff && !row.svi_price_confirmed_at);
+        return { is_estimate: isEstimate, pending: pending.map((row) => row.svi_name), adjustments: [], confirmed_totals: null };
+    }
+    if (["rejected", "closed"].includes(request.svr_status)) return { is_estimate: isEstimate, pending: [], adjustments: [], confirmed_totals: null };
+
+    let realPrices = new Map(allItems.map((row) => [row.svi_id, row.svi_is_removed ? null : row.svi_adjusted_unit_price ?? row.svi_unit_price]));
+    if (["quotation", "accepted"].includes(progress.stage) && request.svr_quotation_id) {
+        realPrices = await quotationPricesOf(conn, request.svr_quotation_id, allItems);
+    }
+    const adjustments = [];
+    for (const row of allItems) {
+        if (row.svi_type !== "item" || row.svi_added_by_staff || row.svi_percent) continue;
+        const realPrice = realPrices.get(row.svi_id);
+        if (realPrice === null || realPrice === undefined) continue;
+        if (parseHundredths(realPrice, "ราคา") === parseHundredths(row.svi_unit_price, "ราคา")) continue;
+        adjustments.push({ name: row.svi_name, seen_price: row.svi_unit_price, real_price: text(parseHundredths(realPrice, "ราคา")), note: row.price_note });
+    }
+    const confirmedTotals = cartTotals({
+        lines: serviceRequestService
+            .effectiveRows(allItems)
+            .filter((row) => row.svi_type === "item")
+            .map((row) => ({ unitPrice: row.unit_price, quantity: row.quantity })),
+        vatRate: request.svr_vat_rate,
+    });
+    return {
+        is_estimate: isEstimate,
+        pending: [],
+        adjustments,
+        confirmed_totals: { subtotal: text(confirmedTotals.subtotal), vat: text(confirmedTotals.vat), total: text(confirmedTotals.total) },
+    };
+}
+
+/** ราคาต่อหน่วยในใบล่าสุดของแต่ละแถวคำขอ (จับคู่สินค้า + ชุดตามลำดับ) · แถวที่ไม่อยู่ในใบ = ไม่มีราคา */
+async function quotationPricesOf(conn, quotationId, requestItems) {
+    const quotation = await latestQuotation(conn, quotationId);
+    const prices = new Map();
+    if (!quotation) return prices;
+    const [quotationItems] = await conn.query(
+        `SELECT qti_product_id, qti_package_id, qti_unit_price FROM tb_quotation_items
+         WHERE qti_quotation_id = ? AND qti_type = 'item' ORDER BY qti_order, qti_id`,
+        [quotation.qt_id],
+    );
+    const unused = [...quotationItems];
+    for (const row of requestItems) {
+        if (row.svi_type !== "item" || row.svi_is_removed || !row.svi_product_id) continue;
+        const index = unused.findIndex((item) => item.qti_product_id === row.svi_product_id && item.qti_package_id === row.svi_package_id);
+        if (index < 0) continue;
+        prices.set(row.svi_id, unused[index].qti_unit_price);
+        unused.splice(index, 1);
+    }
+    return prices;
 }
 
 // ─── ใบเสนอราคาแบบเอกสาร A4 ให้ลูกค้าเปิด/บันทึก PDF (2026-10-30 · docs/plans/2026-10-30-quote-pdf-mobile-refactor.md ส่วน A) ───
@@ -962,4 +1091,4 @@ async function quotationDocument(conn, accessToken) {
     };
 }
 
-module.exports = { shop, submit, requestStatus, quotationDocument, acceptByCustomer, loadCatalog, findLinkByCode, findAnswers, latestQuotation, internalCatalog };
+module.exports = { shop, submit, requestStatus, quotationDocument, acceptByCustomer, respondToPrice, loadCatalog, findLinkByCode, findAnswers, latestQuotation, internalCatalog };

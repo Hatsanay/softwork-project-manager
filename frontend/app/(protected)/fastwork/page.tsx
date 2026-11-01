@@ -21,6 +21,7 @@ import { formatAmount } from "@/lib/shared/money.mjs";
 import { formatDateOnly } from "@/app/function";
 import type { FastworkNextStep, FastworkOverview } from "./_types";
 import FastworkSettingsSheet from "./_components/settings-sheet";
+import DocumentsBackfillCard from "./_components/documents-backfill-card";
 import { FASTWORK_MESSAGES } from "./_messages";
 import { NEXT_STEP } from "./_next-step";
 
@@ -227,6 +228,9 @@ export default function FastworkPage() {
                 <p>{FASTWORK_MESSAGES.profit}</p>
             </HowItWorks>
 
+            {/* เอกสารงาน Fastwork (2026-11-01): ออกย้อนหลังให้งานเดิม · ขึ้นเฉพาะตอนมีงานที่ขาดเอกสาร */}
+            {canManage && <DocumentsBackfillCard onDone={load} />}
+
             {/* เริ่มรับงาน (ปรับ 2026-10-31): เลือกทางตามสถานการณ์ · ราคาและการจ่ายเงินอยู่บน Fastwork เสมอ */}
             {(canManage || hasBit(BITS.manageServiceRequests)) && (
                 <section aria-labelledby="start-job-title" className={`grid gap-3 p-4 sm:p-5 ${CARD_CLASS}`}>
@@ -235,7 +239,7 @@ export default function FastworkPage() {
                             เริ่มรับงาน Fastwork
                         </h2>
                         <p className="text-sm text-gray-500">
-                            เลือกทางตามสถานการณ์ · ทุกทางจบที่ผู้ซื้อจ่ายบน Fastwork แล้วค่อยบันทึกงานในระบบ (Fastwork ออกใบเสร็จให้ผู้ซื้อเอง ไม่ต้องออกใบในระบบ)
+                            เลือกทางตามสถานการณ์ · ทุกทางจบที่ผู้ซื้อจ่ายบน Fastwork แล้วค่อยบันทึกงานในระบบ (ระบบออกใบเสนอราคา ใบแจ้งหนี้ ใบเสร็จ ให้เองเป็นหลักฐาน · ส่งผู้ซื้อเมื่อขอผ่านลิงก์ติดตามงาน)
                         </p>
                     </div>
                     <ul className="grid gap-3 lg:grid-cols-3">

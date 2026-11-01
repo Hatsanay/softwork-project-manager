@@ -15,8 +15,12 @@ export type CatalogProduct = {
     product_image_url: string | null;
     product_category_id: string | null;
     // percent = งานเพิ่มคิดเป็น % ของยอดรายการอื่น (เช่น งานด่วน +30%) · ไม่ใช้ product_price
-    product_price_mode: "fixed" | "percent";
+    // from = ราคาเริ่มต้น (2026-11-01): ราคาต่ำสุด ทีมยืนยันราคาจริงก่อนออกใบ · product_price_note = ราคาขึ้นกับอะไร
+    product_price_mode: "fixed" | "percent" | "from";
     product_percent: string | null;
+    product_price_note: string | null;
+    // ตัวคิดราคาของทีมเห็นรายการที่ไม่อยู่บนหน้าร้านด้วย (2026-11-01) · หน้าร้านของลูกค้า = true เสมอ
+    product_is_public?: boolean;
 };
 
 export type CatalogPackage = {
@@ -25,7 +29,9 @@ export type CatalogPackage = {
     pkg_description: string | null;
     pkg_image_url: string | null;
     pkg_category_id: string | null;
-    items: { product_id: string | null; name: string; unit: string | null; quantity: string; unit_price: string }[];
+    pkg_is_public?: boolean;
+    // needs_price = แถวราคาเริ่มต้น (ราคาในชุดเป็นราคาต่ำสุด)
+    items: { product_id: string | null; name: string; unit: string | null; quantity: string; unit_price: string; needs_price: boolean; price_note: string | null }[];
     // included = งานเพิ่มนี้มีในแพ็กแล้ว · not_available = ใช้กับแพ็กนี้ไม่ได้
     addon_rules: { product_id: string; rule: "included" | "not_available" }[];
 };
@@ -129,7 +135,8 @@ export type ShopResponse = {
 export type Cart = Record<string, number>;
 
 // ขั้นที่ลูกค้าเห็น (S-4) — ดูความหมายที่ progressOf ใน order-public.service.js
-export type RequestStage = "submitted" | "preparing" | "quotation" | "accepted" | "started" | "expired" | "contact" | "closed" | "fastwork_confirmed";
+// price_confirm = ทีมปรับราคาขึ้น รอลูกค้ายืนยัน (ราคาเริ่มต้น 2026-11-01)
+export type RequestStage = "submitted" | "preparing" | "quotation" | "accepted" | "started" | "expired" | "contact" | "closed" | "fastwork_confirmed" | "price_confirm";
 
 export type CustomerQuotation = {
     number: string;
@@ -154,6 +161,8 @@ export type RequestProgress = {
     share_token?: string | null;
     accepted_name?: string | null;
     accepted_at?: string | null;
+    // ลูกค้าไม่ตกลงราคาที่ปรับ → กลับไปรอทีมติดต่อ
+    price_declined?: boolean;
 };
 
 export type RequestStatusResponse = {
@@ -175,8 +184,17 @@ export type RequestStatusResponse = {
         quantity: string;
         percent: string | null;
         is_preset: boolean;
+        needs_price: boolean;
+        price_note: string | null;
     }[];
     totals: { subtotal: string; vat: string; total: string };
+    // ราคาเริ่มต้น (2026-11-01): ยอดเบื้องต้น · ทีมยังตรวจราคา (ชื่อรายการ) · ราคาที่ปรับจากที่เลือก · ยอดหลังทีมปรับ
+    price_check: {
+        is_estimate: boolean;
+        pending: string[];
+        adjustments: { name: string; seen_price: string; real_price: string; note: string | null }[];
+        confirmed_totals: { subtotal: string; vat: string; total: string } | null;
+    };
     answers: RequestAnswer[];
     progress: RequestProgress;
 };

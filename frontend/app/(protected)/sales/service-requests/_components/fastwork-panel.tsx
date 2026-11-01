@@ -5,6 +5,7 @@
 // งานเดิม: "ลูกค้ายืนยันบน Fastwork แล้ว" → งวดเพิ่มต่อท้ายงวดเดิม + งานจากรายการ · ผู้ซื้อไม่จ้าง = ปิดคำขอ
 import { useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
 import StatusBanner from "@/components/ui/guidance/status-banner";
@@ -37,6 +38,7 @@ export default function FastworkPanel({
     isIssuing,
     onClose,
     onAccepted,
+    withPriceCheck,
 }: {
     request: ServiceRequestRow;
     plan: FastworkPlan;
@@ -45,7 +47,10 @@ export default function FastworkPanel({
     isIssuing: boolean;
     onClose: () => void;
     onAccepted: () => Promise<void>;
+    // ราคาเริ่มต้น (2026-11-01): ถามราคาจริงก่อนรับงาน/บันทึกงวดเพิ่ม (ยอดงวดคิดจากราคาที่ยืนยันแล้ว)
+    withPriceCheck: (nextLabel: string, run: () => void) => void;
 }) {
+    const router = useRouter();
     const hasBit = usePermission();
     const [isAccepting, setIsAccepting] = useState(false);
     const isExisting = plan.mode === "existing";
@@ -91,15 +96,23 @@ export default function FastworkPanel({
                     ปิดคำขอ (ไม่ได้งาน)
                 </button>
                 {isExisting ? (
-                    <button type="button" className={buttonClass("primary", "md")} disabled={!plan.can_take || isEditingItems} onClick={() => setIsAccepting(true)}>
+                    <button
+                        type="button"
+                        className={buttonClass("primary", "md")}
+                        disabled={!plan.can_take || isEditingItems}
+                        onClick={() => withPriceCheck("บันทึกงวดเพิ่ม", () => setIsAccepting(true))}
+                    >
                         ลูกค้ายืนยันบน Fastwork แล้ว
                     </button>
-                ) : plan.can_take && !isEditingItems ? (
-                    <Link href={`/fastwork/new?request=${encodeURIComponent(request.svr_id)}`} className={buttonClass("primary", "md")}>
-                        รับงานจากคำขอนี้
-                    </Link>
                 ) : (
-                    <button type="button" className={buttonClass("primary", "md")} disabled>
+                    <button
+                        type="button"
+                        className={buttonClass("primary", "md")}
+                        disabled={!plan.can_take || isEditingItems}
+                        onClick={() =>
+                            withPriceCheck("รับงาน", () => router.push(`/fastwork/new?request=${encodeURIComponent(request.svr_id)}`))
+                        }
+                    >
                         รับงานจากคำขอนี้
                     </button>
                 )}

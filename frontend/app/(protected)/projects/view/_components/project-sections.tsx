@@ -174,6 +174,9 @@ export function ProjectHeader({
 
 type ShareLinkCardProps = {
     isEnabled: boolean;
+    // เอกสารในลิงก์ (2026-11-01): ค่าเริ่มปิด เปิดเมื่อลูกค้าขอดูใบเสนอราคา/ใบแจ้งหนี้/ใบเสร็จ
+    isDocumentsShared: boolean;
+    onToggleDocuments: () => void;
     shareUrl: string;
     copied: boolean;
     isRegenerating: boolean;
@@ -185,6 +188,8 @@ type ShareLinkCardProps = {
 
 export function ShareLinkCard({
     isEnabled,
+    isDocumentsShared,
+    onToggleDocuments,
     shareUrl,
     copied,
     isRegenerating,
@@ -239,6 +244,17 @@ export function ShareLinkCard({
                     ปิดอยู่ · ลูกค้าที่เปิดลิงก์จะเห็นว่าลิงก์ถูกปิด จนกว่าจะเปิดใช้งานอีกครั้ง
                 </p>
             )}
+            <Switch
+                id="share-documents"
+                label="แสดงเอกสารในลิงก์นี้"
+                description={
+                    isDocumentsShared
+                        ? "ลูกค้าเปิดใบเสนอราคา ใบแจ้งหนี้ ใบเสร็จ ของโปรเจกต์นี้ แล้วพิมพ์หรือบันทึก PDF ได้ (ไม่เห็นบันทึกภายใน)"
+                        : "ปิดอยู่ (ค่าเริ่มต้น) · เปิดเมื่อลูกค้าขอเอกสาร แล้วกดคัดลอกลิงก์ส่งให้ · หรือพิมพ์/บันทึก PDF จากหน้าเอกสารแล้วส่งทางอื่น"
+                }
+                checked={isDocumentsShared}
+                onChange={onToggleDocuments}
+            />
         </SectionCard>
     );
 }

@@ -537,7 +537,7 @@ async function getQuotationDetail(conn, quotationId, actor) {
     if (!quotation) throw notFound();
 
     const [items] = await conn.query(
-        `SELECT i.*, pr.product_name, pr.product_code, pr.product_price, pr.product_status
+        `SELECT i.*, pr.product_name, pr.product_code, pr.product_price, pr.product_status, pr.product_price_mode, pr.product_price_note
          FROM tb_quotation_items i LEFT JOIN tb_products pr ON pr.product_id = i.qti_product_id
          WHERE i.qti_quotation_id = ? ORDER BY i.qti_order, i.qti_id`,
         [quotationId],

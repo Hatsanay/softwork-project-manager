@@ -20,7 +20,7 @@ import { LINK_KIND_LABEL, type ServiceRequestRow, type ServiceRequestStatus } fr
 import { REQUEST_STATUS, requestStatusOf } from "./_status";
 
 type Filter = "all" | ServiceRequestStatus;
-const FILTERS: Filter[] = ["submitted", "converted", "rejected", "closed", "all"];
+const FILTERS: Filter[] = ["submitted", "awaiting_customer", "converted", "rejected", "closed", "all"];
 
 export default function ServiceRequestsPage() {
     return (
@@ -126,6 +126,9 @@ function ServiceRequestsContent() {
                                         <div className="flex flex-wrap items-center gap-2">
                                             <StatusPill tone={status.tone}>{status.label}</StatusPill>
                                             <StatusPill tone="neutral">{LINK_KIND_LABEL[row.ol_kind]}</StatusPill>
+                                            {(row.price_pending_count ?? 0) > 0 && (
+                                                <StatusPill tone="wait">รอกรอกราคา {row.price_pending_count}</StatusPill>
+                                            )}
                                             <span className="font-medium wrap-break-word text-gray-900">
                                                 {row.svr_company_name || row.client_name || row.svr_contact_name || "-"}
                                             </span>

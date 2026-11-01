@@ -49,7 +49,10 @@ async function loadPresetChoices(search: string): Promise<{ options: SelectOptio
         ...packages.map((row) => ({ value: `k:${row.pkg_id}`, label: `ชุด: ${row.pkg_name}` })),
         ...products.map((row) => ({
             value: `p:${row.product_id}`,
-            label: row.product_price_mode === "percent" ? `${row.product_name} · +${Number(row.product_percent)}%` : `${row.product_name} · ${formatAmount(row.product_price)}`,
+            label:
+                row.product_price_mode === "percent"
+                    ? `${row.product_name} · +${Number(row.product_percent)}%`
+                    : `${row.product_name} · ${row.product_price_mode === "from" ? "เริ่มต้น " : ""}${formatAmount(row.product_price)}`,
         })),
     ];
     return { options, rows };

@@ -61,11 +61,11 @@ async function salesSummary(conn, range) {
     const [[billed]] = await conn.query(
         `SELECT COUNT(*) AS invoice_count, COALESCE(SUM(inv_after_discount_thb), 0) AS billed_thb,
                 COALESCE(SUM(inv_total_thb), 0) AS billed_with_vat_thb
-         FROM tb_invoices WHERE inv_status = 'issued' AND inv_issue_date BETWEEN ? AND ?`,
+         FROM tb_invoices WHERE inv_status = 'issued' AND inv_fastwork_payout_id IS NULL AND inv_issue_date BETWEEN ? AND ?`,
         [from, to],
     );
     const [[received]] = await conn.query(
-        `SELECT ${RECEIVED_COLUMNS} FROM tb_receipts r WHERE r.rc_status = 'issued' AND r.rc_receipt_date BETWEEN ? AND ?`,
+        `SELECT ${RECEIVED_COLUMNS} FROM tb_receipts r WHERE r.rc_status = 'issued' AND r.rc_fastwork_payout_id IS NULL AND r.rc_receipt_date BETWEEN ? AND ?`,
         [from, to],
     );
     // ใบลดหนี้ที่ออกในช่วง (ขั้น N-1) — ลดยอดขายของช่วงที่ออกใบลดหนี้ · คืนเงินลูกค้าตามวันที่คืน
@@ -95,7 +95,8 @@ async function salesSummary(conn, range) {
             COALESCE(SUM(CASE WHEN qt_status = 'accepted' AND DATE(qt_responded_at) BETWEEN ? AND ? THEN qt_after_discount_thb END), 0) AS accepted_thb,
             SUM(qt_status = 'declined' AND DATE(qt_responded_at) BETWEEN ? AND ?) AS declined_count,
             SUM(qt_status = 'expired' AND qt_valid_until BETWEEN ? AND ?) AS expired_count
-         FROM tb_quotations`,
+         FROM tb_quotations
+         WHERE NOT EXISTS (SELECT 1 FROM tb_projects fp WHERE fp.project_id = qt_project_id AND fp.project_channel = 'fastwork') -- ใบที่ระบบออกให้งาน Fastwork ไม่นับในผลการเสนอราคา`,
         [from, to, from, to, from, to, from, to],
     );
     const [topClients] = await conn.query(
@@ -104,7 +105,7 @@ async function salesSummary(conn, range) {
                 (SELECT COALESCE(SUM(cn.cn_base_thb), 0) FROM tb_credit_notes cn
                  WHERE cn.cn_client_id = c.client_id AND cn.cn_status = 'issued' AND cn.cn_issue_date BETWEEN ? AND ?) AS credited_thb,
                 (SELECT COALESCE(SUM(${invoiceService.outstandingThbSql("o")}), 0)
-                 FROM tb_invoices o WHERE o.inv_client_id = c.client_id AND o.inv_status = 'issued'
+                 FROM tb_invoices o WHERE o.inv_client_id = c.client_id AND o.inv_status = 'issued' AND o.inv_fastwork_payout_id IS NULL
                    AND ${invoiceService.outstandingSql("o")} > 0) AS outstanding_thb
          FROM tb_invoices i JOIN tb_clients c ON c.client_id = i.inv_client_id
          WHERE i.inv_status = 'issued' AND i.inv_issue_date BETWEEN ? AND ?
@@ -212,7 +213,7 @@ async function monthlySales(conn, monthCount = 12) {
 
     const [billedRows] = await conn.query(
         `SELECT DATE_FORMAT(inv_issue_date, '%Y-%m') AS month, SUM(inv_after_discount_thb) AS billed_thb
-         FROM tb_invoices WHERE inv_status = 'issued' AND inv_issue_date BETWEEN ? AND ?
+         FROM tb_invoices WHERE inv_status = 'issued' AND inv_fastwork_payout_id IS NULL AND inv_issue_date BETWEEN ? AND ?
          GROUP BY month`,
         [from, today],
     );
@@ -224,7 +225,7 @@ async function monthlySales(conn, monthCount = 12) {
     );
     const [receivedRows] = await conn.query(
         `SELECT DATE_FORMAT(r.rc_receipt_date, '%Y-%m') AS month, ${RECEIVED_COLUMNS}
-         FROM tb_receipts r WHERE r.rc_status = 'issued' AND r.rc_receipt_date BETWEEN ? AND ?
+         FROM tb_receipts r WHERE r.rc_status = 'issued' AND r.rc_fastwork_payout_id IS NULL AND r.rc_receipt_date BETWEEN ? AND ?
          GROUP BY month`,
         [from, today],
     );

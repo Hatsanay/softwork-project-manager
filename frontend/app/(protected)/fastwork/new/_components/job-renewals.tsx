@@ -2,7 +2,7 @@
 
 // ตั้งต่ออายุบริการตอนรับงาน Fastwork (2026-10-31 · แผนบริการรายรอบข้อ 5.1 ข้อ 2)
 // เสนอจากสินค้าที่เลือก: สินค้ารายรอบ (จำนวน = รอบที่จ่ายแล้ว) · แพ็กที่รวมรอบแรกของบริการไว้ (ครบหลังรอบแรก)
-// ติ๊กออกได้ · ใส่ชื่อที่จำง่าย · แก้วันครบได้ · ราคาต่อรอบตามสินค้า (แก้ทีหลังที่หน้าต่ออายุบริการ)
+// ติ๊กออกได้ · ใส่ชื่อที่จำง่าย · แก้วันครบได้ · แก้ราคาต่อรอบได้ (ราคาเริ่มต้น 2026-11-01: เช่น โดเมน .co.th แพงกว่าราคาเริ่มต้น)
 import { useEffect, useState } from "react";
 import { inputClass } from "@/components/ui/form-field";
 import FieldHint from "@/components/ui/guidance/field-hint";
@@ -16,13 +16,15 @@ type RenewalOptions = {
     packages: { pkg_id: string; pkg_renewal_product_id: string }[];
 };
 
-type Override = { isSkipped?: boolean; label?: string; dueDate?: string };
+type Override = { isSkipped?: boolean; label?: string; dueDate?: string; price?: string };
 
 export type JobRenewal = {
     key: string;
     productId: string;
     name: string;
+    // ราคาต่อรอบที่จะตั้ง (แก้ได้) · basePrice = ราคาของสินค้า
     price: string;
+    basePrice: string;
     cycleMonths: number;
     dueDate: string;
     label: string;
@@ -75,7 +77,8 @@ export function jobRenewalsOf(
             key: row.key,
             productId: product.product_id,
             name: product.product_name,
-            price: product.product_price,
+            price: override.price ?? product.product_price,
+            basePrice: product.product_price,
             cycleMonths: product.product_renewal_months,
             dueDate: override.dueDate ?? dueDate,
             label: override.label ?? "",
@@ -111,13 +114,26 @@ export default function JobRenewals({
                             <span className="grid gap-0.5">
                                 <span className="text-sm text-gray-900">{renewal.name}</span>
                                 <span className="text-xs text-gray-500">
-                                    {formatAmount(renewal.price)} บาท/{cycleUnit(renewal.cycleMonths)}
+                                    ราคาตั้งต้น {formatAmount(renewal.basePrice)} บาท/{cycleUnit(renewal.cycleMonths)}
                                     {renewal.isIncludedInPackage ? " · รอบแรกรวมในแพ็กแล้ว" : ""}
                                 </span>
                             </span>
                         </label>
                         {!renewal.isSkipped && (
-                            <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="grid gap-3 sm:grid-cols-3">
+                                <label
+                                    className="grid gap-1 text-sm text-gray-800"
+                                    htmlFor={`renew_price_${renewal.key}`}
+                                >
+                                    ราคาต่อรอบ (บาท)
+                                    <input
+                                        id={`renew_price_${renewal.key}`}
+                                        inputMode="decimal"
+                                        value={renewal.price}
+                                        onChange={(event) => onChange(renewal.key, { price: event.target.value })}
+                                        className={`${inputClass(false)} text-right tabular-nums`}
+                                    />
+                                </label>
                                 <label
                                     className="grid gap-1 text-sm text-gray-800"
                                     htmlFor={`renew_label_${renewal.key}`}

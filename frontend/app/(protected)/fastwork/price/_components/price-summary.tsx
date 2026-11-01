@@ -3,7 +3,6 @@
 // สรุปราคาของตัวคิดราคา Fastwork (ปรับหน้า 2026-10-30): รายการในตะกร้า · ราคาเสนอ → หักค่าธรรมเนียม → เงินเข้าจริง (บนลงล่าง ตัวเลขละความหมาย)
 // ปุ่มสร้างงาน · คัดลอกคำถาม · คัดลอกขอบเขตงาน · มือถือมีแถบล่างบอกราคาเสนอ/เงินเข้าจริง กดไปดูสรุป
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { ClipboardCopy, FileText, ListPlus, Trash2, X } from "lucide-react";
 import FieldHint from "@/components/ui/guidance/field-hint";
 import { buttonClass } from "@/components/ui/button";
@@ -31,7 +30,7 @@ export default function PriceSummary({
     settings,
     payout,
     questionCount,
-    newJobHref,
+    onNewJob,
     onAddToJob,
     onRemove,
     onClear,
@@ -45,7 +44,8 @@ export default function PriceSummary({
     settings: FastworkSettings;
     payout: Payout;
     questionCount: number;
-    newJobHref: string;
+    // ผ่านการตรวจราคาเริ่มต้นก่อน (หน้าแม่) แล้วค่อยไปหน้ารับงาน
+    onNewJob: () => void;
     // ลูกค้าจ้างเพิ่มในงานที่กำลังทำอยู่: ต่องวดใหม่ท้ายงานเดิม (แทนการสร้างงานใหม่)
     onAddToJob: () => void;
     onRemove: (key: string) => void;
@@ -151,9 +151,9 @@ export default function PriceSummary({
                         สร้างงาน Fastwork จากตะกร้านี้
                     </button>
                 ) : (
-                    <Link href={newJobHref} className={`${buttonClass("primary", "md")} min-h-11 justify-center`}>
+                    <button type="button" className={`${buttonClass("primary", "md")} min-h-11 justify-center`} onClick={onNewJob}>
                         สร้างงาน Fastwork จากตะกร้านี้
-                    </Link>
+                    </button>
                 )}
                 <button
                     type="button"

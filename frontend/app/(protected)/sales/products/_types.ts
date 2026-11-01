@@ -17,8 +17,10 @@ export type Product = {
     product_is_public: number | boolean;
     product_image_url: string | null;
     // งานเพิ่มแบบ % ของยอดรายการอื่น (2026-10-25)
-    product_price_mode: "fixed" | "percent";
+    // ราคาเริ่มต้น (2026-11-01): from = ราคาต่ำสุด ทีมกรอกราคาจริงก่อนออกใบ · product_price_note = ราคาขึ้นกับอะไร
+    product_price_mode: "fixed" | "percent" | "from";
     product_percent: string | null;
+    product_price_note: string | null;
     // บริการรายรอบ: ต่ออายุทุกกี่เดือน · null = ไม่ใช่รายรอบ (2026-10-31)
     product_renewal_months: number | null;
     product_created_at: string;

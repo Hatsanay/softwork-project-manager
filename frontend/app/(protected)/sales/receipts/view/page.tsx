@@ -102,6 +102,11 @@ export default function ReceiptViewPage() {
             />
 
             <StatusGuide receipt={receipt} hasWithholding={hasWithholding} />
+            {receipt.rc_fastwork_payout_id && (
+                <StatusBanner tone="info" title="เอกสารงาน Fastwork">
+                    ระบบออกจากเงินงวดที่ลูกค้าจ่ายผ่าน Fastwork · เก็บเป็นหลักฐาน รายได้นับจากเงินที่ Fastwork โอน (ไม่นับซ้ำ) · ยกเลิกที่หน้า Fastwork &gt; เงินจาก Fastwork
+                </StatusBanner>
+            )}
 
             <div className="flex flex-wrap gap-2">
                 <a

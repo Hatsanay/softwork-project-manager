@@ -126,7 +126,12 @@ export default function ItemsEditor({
                                     />
                                     {controls}
                                 </div>
-                                {rowErrors.length > 0 && (
+                                {item.is_starting_price && (
+                                <p className="text-xs text-amber-600 @2xl:ml-18">
+                                    ราคาเริ่มต้น{item.price_note ? ` · ราคาขึ้นกับ${item.price_note}` : ""} · ตรวจราคาจริงก่อนส่ง
+                                </p>
+                            )}
+                            {rowErrors.length > 0 && (
                                     <p role="alert" className="text-xs text-red-600">
                                         {rowErrors.join(" · ")}
                                     </p>
@@ -197,7 +202,7 @@ export default function ItemsEditor({
                                                         .value as ItemForm["qti_discount_type"],
                                                 })
                                             }
-                                            className={`${inputClass(false, "tight")} w-20`}
+                                            className={`${inputClass(false, "tight")} w-20! shrink-0`}
                                         >
                                             <option value="amount">฿</option>
                                             <option value="percent">%</option>
@@ -216,6 +221,11 @@ export default function ItemsEditor({
                                     {QUOTATION_MESSAGES.belowList(formatAmount(line.belowListBy, currencyDecimals))}{" "}
                                     (ราคาตั้งต้น {formatAmount(item.qti_list_price || "0", currencyDecimals)})
                                     ผู้อนุมัติจะเห็น
+                                </p>
+                            )}
+                            {item.is_starting_price && (
+                                <p className="text-xs text-amber-600 @2xl:ml-18">
+                                    ราคาเริ่มต้น{item.price_note ? ` · ราคาขึ้นกับ${item.price_note}` : ""} · ตรวจราคาจริงก่อนส่ง
                                 </p>
                             )}
                             {rowErrors.length > 0 && (

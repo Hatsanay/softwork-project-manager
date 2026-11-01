@@ -4,6 +4,7 @@
 // บนลงล่าง: สถานะ → ลูกค้า → สิ่งที่เลือก (ปรับได้) → ความต้องการ → ปุ่มยืนยัน/ปฏิเสธ
 // ยืนยัน (ลูกค้าตรง): ติ๊ก "ออกใบเสนอราคา" (ค่าเริ่มต้น) = ร่างใบเสนอราคา · ไม่ติ๊ก = เปิดโปรเจกต์ + งานทันที
 // คำขอจากลิงก์ Fastwork (S-5): ใบเสนอราคาภายใน → รับงานจากคำขอ / ลูกค้ายืนยันบน Fastwork (งานเดิม) · ปิดได้เมื่อผู้ซื้อไม่จ้าง
+// ราคาเริ่มต้น (2026-11-01): แถวรอกรอกราคา → หน้าต่างตรวจราคาก่อนทุกปุ่มที่ส่งราคาออกไป · เปิดงานตรงแล้วราคาสูงขึ้น = ถามลูกค้าก่อน
 import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -13,6 +14,7 @@ import PageHeader from "@/components/ui/page-header";
 import SectionCard from "@/components/ui/section-card";
 import StatusBanner from "@/components/ui/guidance/status-banner";
 import FieldHint from "@/components/ui/guidance/field-hint";
+import FormField, { inputClass } from "@/components/ui/form-field";
 import ReasonDialog from "@/components/ui/reason-dialog";
 import StatusPill from "@/components/ui/status-pill";
 import Switch from "@/components/ui/switch";
@@ -30,6 +32,7 @@ import { requestStatusOf } from "../_status";
 import ClientPanel from "../_components/client-panel";
 import ItemsEditor from "../_components/items-editor";
 import FastworkPanel from "../_components/fastwork-panel";
+import PriceCheckSheet from "../_components/price-check-sheet";
 
 type Totals = { subtotal: string; vat: string; total: string };
 type Detail = {
@@ -40,7 +43,13 @@ type Detail = {
     answers: RequestAnswer[];
     client_matches: ClientMatch[];
     fastwork_plan: FastworkPlan | null;
+    // ราคาเริ่มต้น: แถวที่ยังไม่ตรวจราคา · แถวของลูกค้าที่ราคาสูงขึ้นจากที่เห็นตอนเลือก
+    price_pending_ids: number[];
+    raised_price_ids: number[];
 };
+
+// ขั้นที่รอหน้าต่างตรวจราคา · stopIfRaised = เปิดงานตรง: ราคาสูงขึ้นหลังตรวจ ให้เลือกก่อนว่าจะถามลูกค้าไหม
+type PendingAction = { nextLabel: string; stopIfRaised: boolean; run: (version: number) => Promise<void> | void };
 
 export default function ServiceRequestViewPage() {
     return (
@@ -71,6 +80,9 @@ function ServiceRequestView() {
     const [isEditingItems, setIsEditingItems] = useState(false);
     const [isChangingClient, setIsChangingClient] = useState(false);
     const [createQuotation, setCreateQuotation] = useState(true);
+    const [askCustomerPrice, setAskCustomerPrice] = useState(true);
+    const [priceSkipReason, setPriceSkipReason] = useState("");
+    const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
     const [isConfirming, setIsConfirming] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
     const [finishing, setFinishing] = useState<"reject" | "close" | null>(null);
@@ -130,7 +142,20 @@ function ServiceRequestView() {
 
     const { request, items, totals, submitted_totals: submittedTotals, answers, client_matches: clientMatches } = detail;
     const status = requestStatusOf(request);
-    const isOpen = request.svr_status === "submitted";
+    // รอลูกค้ายืนยันราคา: ทีมยังแก้รายการ/ราคา/ปฏิเสธได้ (แก้ = ลูกค้าต้องยืนยันใหม่) แต่ยืนยันซ้ำไม่ได้
+    const isOpen = request.svr_status === "submitted" || request.svr_status === "awaiting_customer";
+    const canConfirm = request.svr_status === "submitted";
+    const pendingPriceRows = items.filter((row) => detail.price_pending_ids.includes(row.svi_id));
+    const hasRaisedPrice = detail.raised_price_ids.length > 0;
+
+    /** ปุ่มที่ส่งราคาออกไป: ยังมีแถวราคาเริ่มต้นที่ไม่ตรวจ = ถามในหน้าต่างก่อน แล้วทำต่อด้วยเวอร์ชันใหม่ */
+    function withPriceCheck(action: PendingAction) {
+        if (pendingPriceRows.length > 0) {
+            setPendingAction(action);
+            return;
+        }
+        void action.run(request.svr_version);
+    }
     const isFastwork = request.ol_kind === "fastwork";
     const isAdjusted = totals.total !== submittedTotals.total || items.some((row) => row.svi_added_by_staff || row.svi_is_removed);
 
@@ -150,17 +175,30 @@ function ServiceRequestView() {
         return true;
     }
 
-    async function confirmRequest(withQuotation: boolean) {
+    async function confirmRequest(withQuotation: boolean, version: number) {
         setActionError(null);
         setIsConfirming(true);
-        const { data, error } = await apiFetch<{ qt_id?: string; project_id?: string }>(`/service-requests/${encodeURIComponent(requestId)}/confirm`, {
-            method: "POST",
-            body: { svr_version: request.svr_version, create_quotation: withQuotation },
-        });
+        const { data, error } = await apiFetch<{ qt_id?: string; project_id?: string; awaiting_customer?: boolean }>(
+            `/service-requests/${encodeURIComponent(requestId)}/confirm`,
+            {
+                method: "POST",
+                body: {
+                    svr_version: version,
+                    create_quotation: withQuotation,
+                    ask_customer_price: askCustomerPrice,
+                    price_skip_reason: askCustomerPrice ? null : priceSkipReason,
+                },
+            },
+        );
         setIsConfirming(false);
         if (error) {
-            setActionError(error.fields.client_id ?? error.fields.items ?? error.message);
+            setActionError(error.fields.client_id ?? error.fields.items ?? error.fields.price_skip_reason ?? error.message);
             if (error.status === 409) await load();
+            return;
+        }
+        if (data.awaiting_customer) {
+            toast.success("ส่งราคาใหม่ให้ลูกค้ายืนยันแล้ว · ลูกค้ากดยืนยันในหน้าสถานะคำขอ แล้วระบบเปิดโปรเจกต์ให้");
+            await load();
             return;
         }
         if (data.qt_id) {
@@ -218,6 +256,22 @@ function ServiceRequestView() {
                             เปิดโปรเจกต์ {request.project_name}
                         </Link>
                     ) : null}
+                </StatusBanner>
+            )}
+            {request.svr_status === "awaiting_customer" && (
+                <StatusBanner tone="wait" title="รอลูกค้ายืนยันราคาใหม่">
+                    ลูกค้าเห็นราคาที่ปรับในหน้าสถานะคำขอ · กดยืนยันแล้วระบบเปิดโปรเจกต์ให้ · แก้ราคาตอนนี้ได้ (ลูกค้าต้องยืนยันใหม่)
+                </StatusBanner>
+            )}
+            {request.svr_status === "submitted" && request.svr_price_response === "declined" && (
+                <StatusBanner tone="warn" title="ลูกค้าไม่ตกลงราคาที่ปรับ">
+                    {request.svr_price_response_note ? `ข้อความจากลูกค้า: ${request.svr_price_response_note} · ` : ""}
+                    ติดต่อลูกค้าแล้วปรับราคา หรือเปิดงานโดยไม่ให้ลูกค้ายืนยัน (บอกเหตุผล)
+                </StatusBanner>
+            )}
+            {request.svr_price_skip_reason && request.svr_status === "converted" && (
+                <StatusBanner tone="info" title="เปิดงานโดยไม่ให้ลูกค้ายืนยันราคาใหม่">
+                    เหตุผล: {request.svr_price_skip_reason}
                 </StatusBanner>
             )}
             {(request.svr_status === "rejected" || request.svr_status === "closed") && (
@@ -321,7 +375,16 @@ function ServiceRequestView() {
                                                     {isChanged && ` · ลูกค้าเลือก ${formatAmount(item.svi_unit_price ?? "0")} × ${formatQuantity(item.svi_quantity)}`}
                                                     {item.svi_added_by_staff && " · เพิ่มโดยทีมงาน"}
                                                     {item.svi_is_removed && " · เอาออกแล้ว"}
+                                                    {item.svi_needs_price && item.svi_price_confirmed_at && ` · ยืนยันราคาแล้ว (${item.price_confirmed_by_name ?? "-"})`}
                                                 </span>
+                                                {detail.price_pending_ids.includes(item.svi_id) && (
+                                                    <span className="mt-1 flex flex-wrap items-center gap-1.5 no-underline">
+                                                        <StatusPill tone="wait">รอกรอกราคา</StatusPill>
+                                                        <span className="text-xs text-gray-500">
+                                                            ราคาเริ่มต้น{item.price_note ? ` · ขึ้นกับ${item.price_note}` : ""}
+                                                        </span>
+                                                    </span>
+                                                )}
                                             </span>
                                             <span className="shrink-0 tabular-nums">{item.svi_is_removed ? "-" : formatAmount(lineAmount(unitPrice, quantity))}</span>
                                         </li>
@@ -340,10 +403,18 @@ function ServiceRequestView() {
                                     </div>
                                 )}
                                 <div className="flex justify-between gap-3 border-t border-gray-200 pt-1.5">
-                                    <span className="font-medium text-gray-900">= {isAdjusted ? "ยอดหลังปรับ" : "ยอดประมาณการ"}</span>
+                                    <span className="font-medium text-gray-900">
+                                        = {pendingPriceRows.length > 0 ? "ยอดเบื้องต้น" : isAdjusted ? "ยอดหลังปรับ" : "ยอดประมาณการ"}
+                                    </span>
                                     <span className="text-base font-medium text-gray-900 tabular-nums">{formatAmount(totals.total)}</span>
                                 </div>
-                                <FieldHint>{isFastwork ? "ใช้ยอดนี้ส่งราคาบน Fastwork · ราคาที่ตกลงจริงบันทึกเป็นงวดงานตอนรับงาน" : "ราคาสุดท้ายยืนยันในใบเสนอราคา"}</FieldHint>
+                                <FieldHint>
+                                    {pendingPriceRows.length > 0
+                                        ? `มี ${pendingPriceRows.length} รายการราคาเริ่มต้น · ระบบถามราคาจริงก่อนสร้างใบหรือรับงาน (หรือแก้ราคาในปรับรายการ)`
+                                        : isFastwork
+                                          ? "ใช้ยอดนี้ส่งราคาบน Fastwork · ราคาที่ตกลงจริงบันทึกเป็นงวดงานตอนรับงาน"
+                                          : "ราคาสุดท้ายยืนยันในใบเสนอราคา"}
+                                </FieldHint>
                             </div>
                         </>
                     )}
@@ -366,14 +437,17 @@ function ServiceRequestView() {
                         plan={detail.fastwork_plan}
                         isEditingItems={isEditingItems}
                         isIssuing={isConfirming}
-                        onIssueQuotation={() => confirmRequest(true)}
+                        onIssueQuotation={() =>
+                            withPriceCheck({ nextLabel: "ออกใบภายใน", stopIfRaised: false, run: (version) => confirmRequest(true, version) })
+                        }
+                        withPriceCheck={(nextLabel, run) => withPriceCheck({ nextLabel, stopIfRaised: false, run: () => run() })}
                         onClose={() => setFinishing("close")}
                         onAccepted={load}
                     />
                 </SectionCard>
             )}
 
-            {isOpen && !isFastwork && (
+            {canConfirm && !isFastwork && (
                 <SectionCard title="ยืนยันคำขอ" icon={CircleCheck}>
                     {actionError && (
                         <StatusBanner tone="error" title="ทำรายการไม่สำเร็จ">
@@ -391,16 +465,70 @@ function ServiceRequestView() {
                         checked={createQuotation}
                         onChange={setCreateQuotation}
                     />
+                    {!createQuotation && hasRaisedPrice && (
+                        <div className="grid gap-3 rounded-xl bg-amber-50 p-3 ring-1 ring-amber-200">
+                            <Switch
+                                id="ask_customer_price"
+                                label="ให้ลูกค้ายืนยันราคาใหม่ก่อนเริ่มงาน"
+                                description={
+                                    askCustomerPrice
+                                        ? "มีรายการที่ราคาสูงกว่าที่ลูกค้าเห็นตอนเลือก · ลูกค้ากดยืนยันในหน้าสถานะคำขอ แล้วระบบเปิดโปรเจกต์ให้"
+                                        : "เปิดโปรเจกต์ทันที · บันทึกเหตุผลไว้ในคำขอ"
+                                }
+                                checked={askCustomerPrice}
+                                onChange={setAskCustomerPrice}
+                            />
+                            {!askCustomerPrice && (
+                                <FormField label="เหตุผลที่ไม่ให้ลูกค้ายืนยัน" htmlFor="price_skip_reason" required>
+                                    <input
+                                        id="price_skip_reason"
+                                        value={priceSkipReason}
+                                        maxLength={300}
+                                        placeholder="เช่น ลูกค้าตกลงทางโทรศัพท์แล้ว"
+                                        onChange={(event) => setPriceSkipReason(event.target.value)}
+                                        className={inputClass(false)}
+                                    />
+                                </FormField>
+                            )}
+                        </div>
+                    )}
                     {!request.svr_client_id && <FieldHint error="ผูกลูกค้าก่อนยืนยัน" />}
                     <div className="flex flex-wrap justify-end gap-2">
                         <button type="button" className={buttonClass("ghost", "md")} onClick={() => setFinishing("reject")}>
                             ปฏิเสธ
                         </button>
-                        <button type="button" className={buttonClass("primary", "md")} disabled={!request.svr_client_id || isConfirming || isEditingItems} onClick={() => confirmRequest(createQuotation)}>
+                        <button type="button" className={buttonClass("primary", "md")} disabled={!request.svr_client_id || isConfirming || isEditingItems} onClick={() =>
+                                withPriceCheck({
+                                    nextLabel: createQuotation ? "สร้างใบเสนอราคา" : "เปิดโปรเจกต์",
+                                    stopIfRaised: !createQuotation,
+                                    run: (version) => confirmRequest(createQuotation, version),
+                                })
+                            }
+                        >
                             {isConfirming ? "กำลังดำเนินการ..." : createQuotation ? "ยืนยันและสร้างใบเสนอราคา" : "ยืนยันและเปิดโปรเจกต์"}
                         </button>
                     </div>
                 </SectionCard>
+            )}
+
+            {pendingAction && (
+                <PriceCheckSheet<Detail>
+                    requestId={requestId}
+                    version={request.svr_version}
+                    rows={pendingPriceRows}
+                    nextLabel={pendingAction.nextLabel}
+                    onClose={() => setPendingAction(null)}
+                    onConfirmed={async (updated) => {
+                        setDetail(updated);
+                        setPendingAction(null);
+                        // เปิดงานตรงแล้วราคาสูงขึ้น: ให้ทีมเลือกก่อนว่าจะถามลูกค้าไหม (ช่องติ๊กขึ้นในส่วนยืนยันคำขอ)
+                        if (pendingAction.stopIfRaised && updated.raised_price_ids.length > 0) {
+                            toast.info("ราคาสูงกว่าที่ลูกค้าเห็น · เลือกว่าจะให้ลูกค้ายืนยันราคาใหม่ไหม แล้วกดยืนยันอีกครั้ง");
+                            return;
+                        }
+                        await pendingAction.run(updated.request.svr_version);
+                    }}
+                />
             )}
 
             <ReasonDialog
