@@ -195,7 +195,8 @@ export default function PriceSummary({
 }
 
 /** แถบล่างจอมือถือ: ราคาเสนอ + เงินเข้าจริง · กดดูสรุปเต็ม (จอใหญ่ใช้แผงขวาที่ติดจอแทน) */
-export function PriceMobileBar({ itemCount, offer, net }: { itemCount: number; offer: string; net: string }) {
+/** net = null: โหมดลูกค้าตรงของตัวคิดราคา (ไม่มีค่าธรรมเนียม · แสดงยอดรวมอย่างเดียว) */
+export function PriceMobileBar({ itemCount, offer, net }: { itemCount: number; offer: string; net: string | null }) {
     // เลื่อนถึงแผงสรุปแล้ว ซ่อนแถบ (ตัวเลขซ้ำกัน และไม่บังปุ่ม/ท้ายหน้า)
     const [isSummaryInView, setIsSummaryInView] = useState(false);
     useEffect(() => {
@@ -213,12 +214,23 @@ export function PriceMobileBar({ itemCount, offer, net }: { itemCount: number; o
             className={`fixed inset-x-4 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-30 flex items-center gap-3 p-3 shadow-float lg:hidden ${CARD_CLASS}`}
         >
             <div className="grid min-w-0 flex-1 text-sm">
-                <span className="truncate text-gray-600">
-                    {itemCount} รายการ · เสนอ <span className="text-gray-900 tabular-nums">{formatAmount(offer)}</span>
-                </span>
-                <span className="truncate font-medium text-gray-900">
-                    เข้าจริง <span className="text-blue-700 tabular-nums">{formatAmount(net)}</span> บาท
-                </span>
+                {net === null ? (
+                    <>
+                        <span className="truncate text-gray-600">{itemCount} รายการ</span>
+                        <span className="truncate font-medium text-gray-900">
+                            รวม <span className="text-blue-700 tabular-nums">{formatAmount(offer)}</span> บาท
+                        </span>
+                    </>
+                ) : (
+                    <>
+                        <span className="truncate text-gray-600">
+                            {itemCount} รายการ · เสนอ <span className="text-gray-900 tabular-nums">{formatAmount(offer)}</span>
+                        </span>
+                        <span className="truncate font-medium text-gray-900">
+                            เข้าจริง <span className="text-blue-700 tabular-nums">{formatAmount(net)}</span> บาท
+                        </span>
+                    </>
+                )}
             </div>
             <a href={`#${SUMMARY_ID}`} className={`${buttonClass("primary", "md")} min-h-11 shrink-0`}>
                 ดูสรุป

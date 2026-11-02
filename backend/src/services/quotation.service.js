@@ -623,7 +623,7 @@ async function fastworkSourceOf(conn, quotation) {
 }
 
 function fastworkInternalError() {
-    return new AppError(409, "QUOTATION_FASTWORK_INTERNAL", "ใบนี้เป็นเอกสารภายในของงาน Fastwork · ส่งราคาและรับเงินบน Fastwork แล้วรับงานจากหน้าคำขอบริการ");
+    return new AppError(409, "QUOTATION_FASTWORK_INTERNAL", "ใบนี้เป็นใบเสนอราคาของงาน Fastwork · ส่งราคาและรับเงินบน Fastwork แล้วรับงานจากหน้าคำขอบริการ");
 }
 
 async function buildActions(conn, quotation, chain, actor, approval, fastworkSource = null) {

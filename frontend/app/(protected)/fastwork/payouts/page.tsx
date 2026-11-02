@@ -101,7 +101,7 @@ function PayoutsContent() {
 
     const header = (
         <PageHeader
-            eyebrow="Fastwork · ขั้นที่ 4-5"
+            eyebrow="Fastwork · รับเงิน"
             title="เงินจาก Fastwork"
             description="บันทึกเมื่อลูกค้ายืนยันงวด (รอโอน) แล้วยืนยันเมื่อเงินเข้าบัญชีจริง"
             actions={

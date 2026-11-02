@@ -282,7 +282,8 @@ export default function ProjectsPage() {
                                     {reactivatingId === row.project_id ? "กำลังกู้คืน..." : "กู้คืน"}
                                 </button>
                             )
-                            : hasBit(BITS.cancelProject) && (
+                            : hasBit(BITS.cancelProject) && row.project_status !== "completed" && (
+                                // งานเสร็จแล้วยกเลิกไม่ได้ (กู้คืนจะกลับเป็นวางแผน สถานะเสร็จหาย · backend ตอบ 409 PROJECT_COMPLETED)
                                 <button
                                     type="button"
                                     onClick={() => setCancelTarget(row)}

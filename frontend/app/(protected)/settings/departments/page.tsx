@@ -42,6 +42,7 @@ export default function DepartmentSettingsPage() {
         {
             key: "dep_code",
             mobile: "meta",
+            mobileLabel: "รหัส",
             header: "รหัสแผนก",
             render: (value) => <span className="tracking-wider tabular-nums">{value}</span>,
         },
@@ -49,6 +50,7 @@ export default function DepartmentSettingsPage() {
         {
             key: "branch_name_th",
             mobile: "meta",
+            mobileLabel: "สาขา",
             header: "สาขา",
             render: (value, row) => (
                 <span>

@@ -28,7 +28,7 @@ export type MenuKey = "dashboard" | "projects" | "sales" | "purchasing" | "peopl
 
 // เมนูตาม app/components/bit.tsx (เฉพาะที่แสดงในแถบเมนู)
 const MENU: { key: MenuKey; label: string; icon: LucideIcon; children?: string[] }[] = [
-    { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { key: "dashboard", label: "หน้าแรก", icon: LayoutDashboard },
     { key: "projects", label: "โปรเจกต์", icon: FolderKanban },
     {
         key: "sales",

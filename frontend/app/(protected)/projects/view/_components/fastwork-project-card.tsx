@@ -3,10 +3,14 @@
 // การ์ดงาน Fastwork ในหน้าโปรเจกต์ (2026-10-24 · P-1) — ขึ้นเฉพาะโปรเจกต์ช่องทาง Fastwork
 // งวดงาน + สถานะ (ยังไม่ส่ง → ส่งงานแล้ว → รอโอน → เงินเข้าแล้ว) · สมาชิกกด "ส่งงานแล้ว" ได้
 // ยอดเงินเฉพาะผู้จัดการ Fastwork/ผู้ดูใบแจ้งหนี้ (backend ตัดให้) · ผู้จัดการบันทึกเงินของงวดได้จากการ์ดนี้
+// ทำจบในหน้าโปรเจกต์ (2026-11-01): ลูกค้ายืนยันงวด → แผงบันทึกเงิน (ติ๊กเงินเข้าแล้วได้เลย) · รอโอน → เงินเข้าแล้ว · ตัดงวดที่ลูกค้าไม่จ่าย
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { BriefcaseBusiness, ExternalLink, Link2 } from "lucide-react";
+import { BriefcaseBusiness, ExternalLink, Link2, Scissors } from "lucide-react";
+import ReasonDialog from "@/components/ui/reason-dialog";
+import PayoutSheet from "../../../fastwork/_components/payout-sheet";
+import ReceiveSheet from "../../../fastwork/_components/receive-sheet";
 import SectionCard from "@/components/ui/section-card";
 import StatusPill, { type PillTone } from "@/components/ui/status-pill";
 import FieldHint from "@/components/ui/guidance/field-hint";
@@ -15,8 +19,8 @@ import { buttonClass } from "@/components/ui/button";
 import { usePermission, BITS } from "@/app/components/permission-provider";
 import { apiFetch, type ApiError } from "@/lib/api";
 import { formatAmount } from "@/lib/shared/money.mjs";
-import { formatDateOnly } from "@/app/function";
-import type { FastworkMilestoneState, ProjectFastwork } from "../../../fastwork/_types";
+import { bangkokDateTimeToIso, formatDateOnly } from "@/app/function";
+import type { FastworkMilestone, FastworkMilestoneState, FastworkPayout, ProjectFastwork } from "../../../fastwork/_types";
 import { FASTWORK_MESSAGES } from "../../../fastwork/_messages";
 
 const STATE: Record<FastworkMilestoneState, { label: string; tone: PillTone }> = {
@@ -24,15 +28,29 @@ const STATE: Record<FastworkMilestoneState, { label: string; tone: PillTone }> =
     delivered: { label: "ส่งงานแล้ว รอลูกค้ายืนยัน", tone: "info" },
     pending: { label: "ลูกค้ายืนยันแล้ว รอโอน", tone: "wait" },
     received: { label: "เงินเข้าแล้ว", tone: "success" },
+    cut: { label: "ตัดงวดแล้ว (ไม่ได้เงิน)", tone: "neutral" },
 };
 
-export default function FastworkProjectCard({ projectId, isMember }: { projectId: string; isMember: boolean }) {
+export default function FastworkProjectCard({
+    projectId,
+    isMember,
+    onChanged,
+}: {
+    projectId: string;
+    isMember: boolean;
+    // งวด/เงินเปลี่ยน → หน้าโปรเจกต์โหลด "ต่อไปต้องทำ" และการเงินใหม่
+    onChanged?: () => void;
+}) {
     const hasBit = usePermission();
     const canManage = hasBit(BITS.manageFastwork);
     const canCreateLink = hasBit(BITS.manageServiceRequests);
     const [data, setData] = useState<ProjectFastwork | null>(null);
     const [loadError, setLoadError] = useState<ApiError | null>(null);
     const [workingId, setWorkingId] = useState<number | null>(null);
+    const [recordingMilestone, setRecordingMilestone] = useState<FastworkMilestone | null>(null);
+    const [receivingPayout, setReceivingPayout] = useState<FastworkPayout | null>(null);
+    const [cuttingMilestone, setCuttingMilestone] = useState<FastworkMilestone | null>(null);
+    const [cutError, setCutError] = useState<string | null>(null);
 
     const load = useCallback(async () => {
         const { data: loaded, error } = await apiFetch<ProjectFastwork>(`/fastwork/projects/${projectId}`);
@@ -64,7 +82,38 @@ export default function FastworkProjectCard({ projectId, isMember }: { projectId
             return;
         }
         toast.success(delivered ? "บันทึกว่าส่งงานงวดนี้แล้ว" : "ยกเลิกการส่งงานแล้ว");
+        await reloadAll();
+    }
+
+    async function reloadAll() {
         await load();
+        onChanged?.();
+    }
+
+    async function cutMilestone(reason: string) {
+        if (!cuttingMilestone) return;
+        setWorkingId(cuttingMilestone.fwm_id);
+        const { error } = await apiFetch(`/fastwork/projects/${projectId}/milestones/${cuttingMilestone.fwm_id}/cut`, { method: "POST", body: { reason } });
+        setWorkingId(null);
+        if (error) {
+            setCutError(error.message);
+            return;
+        }
+        setCuttingMilestone(null);
+        toast.success("ตัดงวดแล้ว · ไม่นับในราคางานและการปิดงาน");
+        await reloadAll();
+    }
+
+    async function restoreMilestone(milestoneId: number) {
+        setWorkingId(milestoneId);
+        const { error } = await apiFetch(`/fastwork/projects/${projectId}/milestones/${milestoneId}/restore`, { method: "POST" });
+        setWorkingId(null);
+        if (error) {
+            toast.error(error.message);
+            return;
+        }
+        toast.success("ยกเลิกการตัดงวดแล้ว");
+        await reloadAll();
     }
 
     const fastwork = data?.fastwork;
@@ -117,10 +166,13 @@ export default function FastworkProjectCard({ projectId, isMember }: { projectId
                         {fastwork.milestones.map((milestone) => {
                             const state = STATE[milestone.state];
                             const canRecord = canManage && (milestone.state === "open" || milestone.state === "delivered");
+                            const pendingPayout =
+                                milestone.state === "pending" ? (fastwork.payouts.find((payout) => payout.fwp_id === milestone.payout_id) ?? null) : null;
+                            const isCut = milestone.state === "cut";
                             return (
                                 <li key={milestone.fwm_id} className="grid gap-2 rounded-xl border border-gray-200 p-3 sm:grid-cols-[1fr_auto] sm:items-center">
                                     <div className="grid min-w-0 gap-0.5">
-                                        <span className="text-sm font-medium wrap-break-word text-gray-900">
+                                        <span className={`text-sm font-medium wrap-break-word ${isCut ? "text-gray-500 line-through" : "text-gray-900"}`}>
                                             งวด {milestone.fwm_order} · {milestone.fwm_name}
                                             {milestone.fwm_amount ? (
                                                 <span className="font-normal text-gray-600 tabular-nums"> · {formatAmount(milestone.fwm_amount)} บาท</span>
@@ -128,8 +180,11 @@ export default function FastworkProjectCard({ projectId, isMember }: { projectId
                                         </span>
                                         <span className="text-xs text-gray-500">
                                             {milestone.fwm_due_date ? `ครบกำหนด ${formatDateOnly(milestone.fwm_due_date)}` : "ไม่ได้กำหนดวันส่ง"}
-                                            {milestone.fwm_delivered_at ? ` · ส่งงานเมื่อ ${formatDateOnly(milestone.fwm_delivered_at)}` : ""}
+                                            {milestone.fwm_delivered_at ? ` · ส่งงานเมื่อ ${formatDateOnly(bangkokDateTimeToIso(milestone.fwm_delivered_at))}` : ""}
                                         </span>
+                                        {isCut && milestone.fwm_cancel_reason && (
+                                            <span className="text-xs text-gray-600">เหตุผลที่ตัด: {milestone.fwm_cancel_reason}</span>
+                                        )}
                                     </div>
                                     <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                                         <StatusPill tone={state.tone}>{state.label}</StatusPill>
@@ -154,12 +209,38 @@ export default function FastworkProjectCard({ projectId, isMember }: { projectId
                                             </button>
                                         )}
                                         {canRecord && (
-                                            <Link
-                                                href={`/fastwork/payouts?new=1&project=${projectId}&milestone=${milestone.fwm_id}`}
-                                                className={buttonClass("primary", "sm")}
+                                            <button type="button" className={buttonClass("primary", "sm")} onClick={() => setRecordingMilestone(milestone)}>
+                                                ลูกค้ายืนยันงวดแล้ว
+                                            </button>
+                                        )}
+                                        {canManage && pendingPayout && (
+                                            <button type="button" className={buttonClass("primary", "sm")} onClick={() => setReceivingPayout(pendingPayout)}>
+                                                เงินเข้าแล้ว
+                                            </button>
+                                        )}
+                                        {canRecord && (
+                                            <button
+                                                type="button"
+                                                className={buttonClass("ghost", "sm")}
+                                                disabled={workingId === milestone.fwm_id}
+                                                onClick={() => {
+                                                    setCutError(null);
+                                                    setCuttingMilestone(milestone);
+                                                }}
                                             >
-                                                บันทึกเงิน
-                                            </Link>
+                                                <Scissors size={14} />
+                                                ตัดงวด
+                                            </button>
+                                        )}
+                                        {canManage && isCut && (
+                                            <button
+                                                type="button"
+                                                className={buttonClass("ghost", "sm")}
+                                                disabled={workingId === milestone.fwm_id}
+                                                onClick={() => restoreMilestone(milestone.fwm_id)}
+                                            >
+                                                ยกเลิกการตัด
+                                            </button>
                                         )}
                                     </div>
                                 </li>
@@ -180,9 +261,39 @@ export default function FastworkProjectCard({ projectId, isMember }: { projectId
                             <FieldHint>ลูกค้าเลือกสิ่งที่ต้องการ ตอบคำถาม แนบไฟล์ · คำตอบเข้าการ์ด &quot;ความต้องการจากลูกค้า&quot; · ส่วนที่เพิ่มส่งราคาและรับเงินบน Fastwork</FieldHint>
                         </div>
                     )}
+                    {canManage && (
+                        <FieldHint>
+                            ลูกค้ายืนยันงวดบน Fastwork แล้วกด &quot;ลูกค้ายืนยันงวดแล้ว&quot; · เงินเข้าบัญชีแล้วติ๊ก &quot;เงินเข้าแล้ว&quot; ในแผงได้เลย ·
+                            ลูกค้าไม่จ่ายงวดไหน กด &quot;ตัดงวด&quot; พร้อมเหตุผล (งวดที่ตัดไม่นับในราคางานและการปิดงาน)
+                        </FieldHint>
+                    )}
                     <FieldHint>{FASTWORK_MESSAGES.profit}</FieldHint>
                 </div>
             )}
+
+            {recordingMilestone && (
+                <PayoutSheet
+                    defaultProjectId={projectId}
+                    defaultMilestoneId={String(recordingMilestone.fwm_id)}
+                    onClose={() => setRecordingMilestone(null)}
+                    onSaved={reloadAll}
+                />
+            )}
+            {receivingPayout && (
+                <ReceiveSheet key={receivingPayout.fwp_id} payout={receivingPayout} onClose={() => setReceivingPayout(null)} onSaved={reloadAll} />
+            )}
+            <ReasonDialog
+                open={cuttingMilestone !== null}
+                title={`ตัดงวด "${cuttingMilestone?.fwm_name ?? ""}"`}
+                description="ใช้เมื่อลูกค้ายกเลิกบางส่วนหรือไม่จ่ายงวดนี้ · งวดที่ตัดไม่นับในราคางาน ขั้นถัดไป และการปิดงาน · ยกเลิกการตัดได้ภายหลัง"
+                reasonLabel="เหตุผลที่ตัดงวด"
+                reasonHint="เช่น ลูกค้าขอจบงานแค่ส่วนออกแบบ"
+                confirmLabel="ตัดงวด"
+                loading={workingId !== null}
+                errorMessage={cutError}
+                onConfirm={cutMilestone}
+                onCancel={() => setCuttingMilestone(null)}
+            />
         </SectionCard>
     );
 }

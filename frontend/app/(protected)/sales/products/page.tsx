@@ -28,6 +28,14 @@ export default function ProductsPage() {
     // จากแผ่นแก้สินค้า/ชุด → แท็บคำถาม: เลื่อนไปกลุ่มนั้น หรือเปิดแผ่นเพิ่มกลุ่มที่ผูกรายการนั้นไว้แล้ว (Q-2)
     const [questionsTarget, setQuestionsTarget] = useState<QuestionsTarget | null>(null);
 
+    // แท็บคำถาม → กดชื่อสินค้า/ชุดใน "ถามเมื่อเลือก" เปิดแผงแก้รายการนั้น (2026-11-01)
+    const [openItem, setOpenItem] = useState<{ kind: "product" | "package"; id: string } | null>(null);
+    function openItemEditor(link: { kind: "product" | "package"; id: string }) {
+        setOpenItem({ kind: link.kind, id: link.id });
+        setActiveTab(link.kind === "product" ? "products" : "packages");
+        window.scrollTo({ top: 0 });
+    }
+
     function openQuestions(target: QuestionsTarget) {
         setQuestionsTarget(target);
         setActiveTab("questions");
@@ -75,12 +83,12 @@ export default function ProductsPage() {
             />
 
             <div role="tabpanel" id={`products-panel-${activeTab}`} aria-labelledby={`products-tab-${activeTab}`}>
-                {activeTab === "products" && <ProductsTab categories={categories} canEdit={canEdit} onOpenQuestions={openQuestions} />}
+                {activeTab === "products" && <ProductsTab categories={categories} canEdit={canEdit} onOpenQuestions={openQuestions} openProductId={openItem?.kind === "product" ? openItem.id : null} />}
                 {activeTab === "categories" && (
                     <CategoriesTab categories={categories} canEdit={canEdit} onSaved={reloadCategories} />
                 )}
-                {activeTab === "packages" && <PackagesTab categories={categories} canEdit={canEdit} onOpenQuestions={openQuestions} />}
-                {activeTab === "questions" && <QuestionsTab canEdit={canEdit} target={questionsTarget} />}
+                {activeTab === "packages" && <PackagesTab categories={categories} canEdit={canEdit} onOpenQuestions={openQuestions} openPackageId={openItem?.kind === "package" ? openItem.id : null} />}
+                {activeTab === "questions" && <QuestionsTab canEdit={canEdit} target={questionsTarget} onOpenItem={openItemEditor} />}
             </div>
         </div>
     );

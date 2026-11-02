@@ -26,6 +26,8 @@ function registerFastworkRoutes(router) {
     router.put("/V1/fastwork/settings", requireAuth, canManage, fastworkController.updateSettings);
 
     router.post("/V1/fastwork/projects", requireAuth, canManage, fastworkController.createProject);
+    // ทีมและส่วนแบ่งของงานล่าสุด สำหรับเติมในฟอร์มรับงาน (2026-11-01)
+    router.get("/V1/fastwork/share-defaults", requireAuth, canManage, canManageShares, fastworkController.shareDefaults);
     // ตัวคิดราคาภายใน (S-5): สินค้าหน้าร้าน + ชุดคำถาม
     router.get("/V1/fastwork/price-catalog", requireAuth, canManage, fastworkController.priceCatalog);
     router.get("/V1/fastwork/documents/missing", requireAuth, canManage, fastworkController.missingDocuments);
@@ -40,6 +42,10 @@ function registerFastworkRoutes(router) {
         requireRealMember,
         fastworkController.setDelivered,
     );
+
+    // ตัดงวดที่ลูกค้าไม่จ่าย / ยกเลิกการตัด (2026-11-01)
+    router.post("/V1/fastwork/projects/:id/milestones/:milestoneId/cut", requireAuth, canManage, fastworkController.cutMilestone);
+    router.post("/V1/fastwork/projects/:id/milestones/:milestoneId/restore", requireAuth, canManage, fastworkController.restoreMilestone);
 
     router.get("/V1/fastwork/payouts", requireAuth, canManage, fastworkController.listPayouts);
     router.post("/V1/fastwork/payouts", requireAuth, canManage, fastworkController.createPayout);

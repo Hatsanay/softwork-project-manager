@@ -19,14 +19,20 @@ const LEVEL_DOT: Record<NextStepItem["level"], string> = {
     info: "bg-gray-300",
 };
 
-export default function ProjectTodoCard({ todo }: { todo: ProjectTodo }) {
+export default function ProjectTodoCard({
+    todo,
+    title = "สิ่งที่ต้องทำในโปรเจกต์",
+}: {
+    todo: ProjectTodo;
+    title?: string;
+}) {
     const hiddenCount = todo.total - todo.items.length;
     return (
         <section aria-labelledby="project-todo-title" className={`grid gap-3 p-5 sm:p-6 ${CARD_CLASS}`}>
             <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                 <h2 id="project-todo-title" className="flex items-center gap-2 text-base font-medium text-gray-900">
                     <Compass size={18} className="text-blue-600" aria-hidden="true" />
-                    สิ่งที่ต้องทำในโปรเจกต์
+                    {title}
                 </h2>
                 <span className="text-sm text-gray-500">
                     {todo.total > 0 ? `${todo.total} เรื่องที่คุณทำได้` : "ไม่มีเรื่องค้าง"}

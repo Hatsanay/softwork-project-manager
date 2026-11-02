@@ -4,6 +4,7 @@
 // เนื้อหาเอกสาร · ความคืบหน้าอนุมัติ · revision ทั้งสาย
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import CopyCustomerLinkButton from "@/components/feature/copy-customer-link-button";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -186,8 +187,8 @@ export default function QuotationViewPage() {
             />
 
             {detail.fastwork_internal && (
-                <StatusBanner tone="info" title="เอกสารภายในของงาน Fastwork (ไม่ส่งลูกค้า)">
-                    ใช้เป็นตัวเลขอ้างอิงตอนส่งราคาบน Fastwork · ส่งลูกค้า บันทึกตอบรับ และออกใบแจ้งหนี้จากใบนี้ไม่ได้ (เงินเข้าบันทึกที่หน้า Fastwork)
+                <StatusBanner tone="info" title="ใบเสนอราคาของงาน Fastwork">
+                    ราคาและการจ่ายเงินอยู่บน Fastwork · ใบแจ้งหนี้และใบเสร็จ ระบบออกให้ตอนบันทึกเงินงวดที่หน้า Fastwork · ผู้ซื้อขอเอกสาร: เปิด &quot;แสดงเอกสารในลิงก์นี้&quot; ในหน้าโปรเจกต์ หรือพิมพ์/บันทึก PDF แล้วส่งทางอื่น
                     {detail.fastwork_internal.request_id && (
                         <>
                             {" · "}
@@ -231,6 +232,10 @@ export default function QuotationViewPage() {
                         ? "ดูตัวอย่างหน้าพิมพ์"
                         : "พิมพ์ / บันทึก PDF"}
                 </a>
+                {/* ลิงก์ให้ลูกค้าเปิดเอง (2026-11-01): ใบที่ออกเลขแล้วและผูกโปรเจกต์ */}
+                {quotation.qt_project_id && quotation.qt_number && ["approved", "sent", "accepted"].includes(quotation.qt_status) && (
+                    <CopyCustomerLinkButton projectId={quotation.qt_project_id} type="quotation" documentId={quotation.qt_id} />
+                )}
                 {actions.can_edit && (
                     <Link
                         href={`/sales/quotations/edit?id=${quotation.qt_id}`}
@@ -829,13 +834,12 @@ function StatusGuide({ detail }: { detail: QuotationDetail }) {
                                 className="py-2 text-blue-600 hover:underline"
                             >
                                 {quotation.project_name}
-                            </Link>{" "}
-                            ·{" "}
+                            </Link>
                         </>
                     ) : (
-                        "ไม่ได้ผูกโปรเจกต์ · "
+                        "ไม่ได้ผูกโปรเจกต์"
                     )}
-                    งานเพิ่ม/ลดภายหลังให้ใช้ &quot;คัดลอกเป็นใบใหม่&quot;
+                    {/* งานเพิ่ม/ลด = คัดลอกเป็นใบใหม่ บอกใต้ปุ่มแล้ว ไม่ซ้ำที่นี่ (usability R2-2) */}
                 </StatusBanner>
             );
         case "declined":

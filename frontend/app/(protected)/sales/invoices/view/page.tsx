@@ -4,6 +4,7 @@
 // เนื้อหาเอกสาร · ยอดหลังหัก ณ ที่จ่าย · บัญชีรับเงิน + QR พร้อมเพย์ · งวดที่เรียกเก็บ · การอนุมัติ (ใบสร้างเอง)
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import CopyCustomerLinkButton from "@/components/feature/copy-customer-link-button";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -247,6 +248,10 @@ export default function InvoiceViewPage() {
                     <Printer size={16} />
                     {invoice.inv_status === "issued" ? "พิมพ์ / บันทึก PDF" : "ดูตัวอย่างหน้าพิมพ์"}
                 </a>
+                {/* ลิงก์ให้ลูกค้าเปิดเอง (2026-11-01): ใบที่ออกแล้วและผูกโปรเจกต์ */}
+                {invoice.inv_project_id && invoice.inv_status === "issued" && (
+                    <CopyCustomerLinkButton projectId={invoice.inv_project_id} type="invoice" documentId={invoice.inv_id} />
+                )}
                 {actions.can_edit && (
                     <Link href={`/sales/invoices/edit?id=${invoice.inv_id}`} className={buttonClass("secondary", "md")}>
                         <Pencil size={16} />
@@ -1237,14 +1242,14 @@ function StatusGuide({ detail }: { detail: InvoiceDetail }) {
             if (invoice.payment_state === "credited") {
                 return (
                     <StatusBanner tone="done" title="ปิดยอดด้วยใบลดหนี้">
-                        ใบลดหนี้ลดยอดจนลูกค้าไม่ต้องจ่ายแล้ว · ยกเลิกใบนี้ไม่ได้จนกว่าจะยกเลิกใบลดหนี้
+                        ใบลดหนี้ลดยอดจนลูกค้าไม่ต้องจ่ายแล้ว
                     </StatusBanner>
                 );
             }
             if (invoice.payment_state === "paid") {
                 return (
                     <StatusBanner tone="done" title="ชำระครบแล้ว">
-                        รับเงินครบตามใบเสร็จในส่วน &quot;การชำระเงิน&quot; · ยกเลิกใบนี้ไม่ได้จนกว่าจะยกเลิกใบเสร็จ
+                        รับเงินครบตามใบเสร็จในส่วน &quot;การชำระเงิน&quot;
                     </StatusBanner>
                 );
             }
@@ -1260,7 +1265,9 @@ function StatusGuide({ detail }: { detail: InvoiceDetail }) {
                 <StatusBanner tone="done" title={`ออกแล้ว · ครบกำหนด ${formatDateOnly(invoice.inv_due_date)}`}>
                     {invoice.inv_sent_at
                         ? `บันทึกว่าส่งลูกค้าแล้ว ${formatDate(invoice.inv_sent_at)}`
-                        : 'กด "พิมพ์ / บันทึก PDF" ส่งให้ลูกค้า แล้วกด "บันทึกว่าส่งลูกค้าแล้ว"'}
+                        : detail.actions.can_send
+                          ? 'กด "พิมพ์ / บันทึก PDF" ส่งให้ลูกค้า แล้วกด "บันทึกว่าส่งลูกค้าแล้ว"'
+                          : 'กด "พิมพ์ / บันทึก PDF" ส่งให้ลูกค้า'}
                     {invoice.inv_issued_by_name ? ` · ผู้ออก ${invoice.inv_issued_by_name}` : ""}
                 </StatusBanner>
             );

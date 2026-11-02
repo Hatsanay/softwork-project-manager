@@ -242,7 +242,7 @@ function ProjectSharesContent() {
                             </button>
                             <button type="button" className={buttonClass("primary", "md")} onClick={() => setIsSettling(true)}>
                                 <Lock size={16} />
-                                ปิดยอด
+                                {detail.project.project_channel === "fastwork" ? "ปิดงานและปิดยอด" : "ปิดยอด"}
                             </button>
                         </div>
                     )

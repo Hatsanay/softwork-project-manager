@@ -560,6 +560,9 @@
         ],
         "tb_fastwork_milestones": [
             "fwm_amount",
+            "fwm_cancel_reason",
+            "fwm_cancelled_at",
+            "fwm_cancelled_by",
             "fwm_created_at",
             "fwm_created_by",
             "fwm_delivered_at",

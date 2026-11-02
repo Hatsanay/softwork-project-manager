@@ -7,7 +7,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CalendarCheck, CalendarClock, ChevronRight, CreditCard, ReceiptText, type LucideIcon } from "lucide-react";
 import StatusPill from "@/components/ui/status-pill";
-import StatusBanner from "@/components/ui/guidance/status-banner";
+import PageHeader from "@/components/ui/page-header";
+import NotEmployeeBanner from "../_components/not-employee-banner";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { CARD_CLASS } from "@/components/ui/card";
 import { formatDateOnly } from "@/app/function";
@@ -67,10 +68,11 @@ export default function MyPeoplePage() {
     if (!employee) {
         return (
             <div className="grid w-full gap-6">
-                <MyHero name={null} subtitle="บัญชีนี้ยังไม่ได้ผูกกับทะเบียนพนักงาน" photoUrl={null} />
-                <StatusBanner tone="info" title="ยังไม่ใช่พนักงานในระบบ">
+                {/* ยังไม่ผูกพนักงาน: หัวเรื่องธรรมดา ไม่ใช้การ์ดรูปที่ว่างเปล่า (usability U-3) */}
+                <PageHeader eyebrow="บุคคล" title="ภาพรวมของฉัน" />
+                <NotEmployeeBanner title="ยังไม่ใช่พนักงานในระบบ">
                     ลงเวลา ขอลา และดูสลิปได้เมื่อฝ่ายบุคคลผูกบัญชีนี้กับทะเบียนพนักงานแล้ว
-                </StatusBanner>
+                </NotEmployeeBanner>
             </div>
         );
     }
@@ -105,7 +107,7 @@ function MyHero({
     initialSource,
     children,
 }: {
-    name: string | null;
+    name: string;
     subtitle: string;
     photoUrl: string | null;
     initialSource?: string;
@@ -119,12 +121,12 @@ function MyHero({
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={uploadedFileUrl(photoUrl)} alt="" className="h-full w-full object-cover" />
                     ) : (
-                        nameInitial(initialSource ?? name ?? "")
+                        nameInitial(initialSource ?? name)
                     )}
                 </span>
                 <div className="grid min-w-0 gap-0.5">
                     <HeroEyebrow>ภาพรวมของฉัน</HeroEyebrow>
-                    <h1 className="truncate text-2xl font-medium text-gray-900 sm:text-3xl">{name ? `คุณ${name}` : "บุคคล"}</h1>
+                    <h1 className="truncate text-2xl font-medium text-gray-900 sm:text-3xl">คุณ{name}</h1>
                     <p className="truncate text-sm text-gray-500">{subtitle}</p>
                 </div>
             </div>

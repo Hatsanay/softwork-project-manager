@@ -238,7 +238,8 @@ function ApprovalRulesEditor({ documentType, approval, roles, canEdit, onSaved }
 
                                     <div className="grid gap-1.5">
                                         <p className="text-sm font-medium text-gray-700">
-                                            role ที่อนุมัติชั้นนี้ได้<span className="ml-0.5 text-red-600">*</span>
+                                            กลุ่มสิทธิ์ที่อนุมัติชั้นนี้ได้
+                                            <span className="ml-0.5 text-red-600">*</span>
                                         </p>
                                         <div className="flex flex-wrap gap-2">
                                             {roles.map((role) => {

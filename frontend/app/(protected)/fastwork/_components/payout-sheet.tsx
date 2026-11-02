@@ -113,7 +113,8 @@ export default function PayoutSheet({
             apiFetch<{ bank_accounts: BankAccountChoice[] }>("/company"),
         ]).then(([overview, loadedSettings, company]) => {
             if (isClosed) return;
-            setProjects(overview.data?.projects ?? []);
+            // งานที่จบแล้ว (แท็บจบแล้วในหน้า Fastwork) ไม่ต้องบันทึกเงินเพิ่ม
+            setProjects((overview.data?.projects ?? []).filter((project) => project.next_step !== "done"));
             settingsRef.current = loadedSettings.data;
             const accounts = (company.data?.bank_accounts ?? []).filter((account) => account.ba_status === "active" && account.ba_currency === "THB");
             setBankAccounts(accounts);

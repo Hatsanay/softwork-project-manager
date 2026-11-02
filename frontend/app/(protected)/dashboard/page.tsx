@@ -114,7 +114,8 @@ function actionItemsOf(
         add(steps.milestones_awaiting_record, {
             key: "fw-record",
             label: "งวด Fastwork รอบันทึกเงิน",
-            href: "/fastwork/payouts?new=1",
+            // บันทึกเงินทำในการ์ดงวดของหน้าโปรเจกต์ (2026-11-01) · หน้า Fastwork รวมเรื่องที่ต้องทำพร้อมปุ่มไปงานนั้น
+            href: "/fastwork",
             icon: FileClock,
             tone: "wait",
         });

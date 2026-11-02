@@ -11,7 +11,12 @@ import { buttonClass } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
 
 type MissingRow = { project_id: string; needs_quotation: boolean; missing_payouts: number };
-type BackfillResult = { projects: number; quotations: number; payouts: number; failed: { project_id: string; message: string }[] };
+type BackfillResult = {
+    projects: number;
+    quotations: number;
+    payouts: number;
+    failed: { project_id: string; message: string }[];
+};
 
 export default function DocumentsBackfillCard({ onDone }: { onDone: () => Promise<void> | void }) {
     const [missing, setMissing] = useState<MissingRow[] | null>(null);
@@ -46,7 +51,9 @@ export default function DocumentsBackfillCard({ onDone }: { onDone: () => Promis
         if (data.failed.length > 0) {
             toast.error(`ออกไม่สำเร็จ ${data.failed.length} งาน: ${data.failed.map((row) => row.message).join(" · ")}`);
         } else {
-            toast.success(`ออกเอกสารแล้ว ${data.projects} งาน (ใบเสนอราคา ${data.quotations} ใบ · เงินงวด ${data.payouts} รายการ)`);
+            toast.success(
+                `ออกเอกสารแล้ว ${data.projects} งาน (ใบเสนอราคา ${data.quotations} ใบ · เงินงวด ${data.payouts} รายการ)`,
+            );
         }
         const { data: refreshed } = await apiFetch<{ data: MissingRow[] }>("/fastwork/documents/missing");
         setMissing(refreshed?.data ?? []);
@@ -54,15 +61,21 @@ export default function DocumentsBackfillCard({ onDone }: { onDone: () => Promis
     }
 
     return (
-        <section className={`flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5 ${CARD_CLASS}`} aria-label="เอกสารย้อนหลัง">
+        <section
+            className={`flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5 ${CARD_CLASS}`}
+            aria-label="เอกสารย้อนหลัง"
+        >
             <div className="flex min-w-0 flex-1 basis-64 items-start gap-3">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
                     <FileStack size={19} aria-hidden="true" />
                 </span>
                 <div className="grid gap-0.5">
-                    <h2 className="text-base font-medium text-gray-900">งานเดิมที่ยังไม่มีเอกสาร {missing.length} งาน</h2>
+                    <h2 className="text-base font-medium text-gray-900">
+                        งานเดิมที่ยังไม่มีเอกสาร {missing.length} งาน
+                    </h2>
                     <p className="text-sm text-gray-500">
-                        ใบเสนอราคา {quotationCount} งาน · ใบแจ้งหนี้และใบเสร็จของเงินงวด {payoutCount} รายการ · ลงวันที่ตามวันรับงานและวันที่ลูกค้ายืนยันงวดจริง
+                        ใบเสนอราคา {quotationCount} งาน · ใบแจ้งหนี้และใบเสร็จของเงินงวด {payoutCount} รายการ ·
+                        ลงวันที่ตามวันรับงานและวันที่ลูกค้ายืนยันงวดจริง
                     </p>
                 </div>
             </div>

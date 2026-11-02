@@ -1063,6 +1063,7 @@
         "request": "GET /V1/share/:token",
         "status": 200,
         "body": {
+            "documents": "null",
             "project": {
                 "client_name": "string",
                 "project_description": "null",

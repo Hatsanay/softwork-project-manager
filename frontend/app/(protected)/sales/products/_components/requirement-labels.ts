@@ -52,6 +52,29 @@ function shortList(names: string[]) {
     return `${names.slice(0, MAX_LISTED_NAMES).join(", ")} และอีก ${names.length - MAX_LISTED_NAMES} รายการ`;
 }
 
+export type ItemLink = { kind: "product" | "package"; id: string; name: string };
+
+/**
+ * สินค้า/ชุดที่เลือกข้อนี้ เป็นลิงก์ (กดแล้วเปิดแผงแก้รายการนั้น · 2026-11-01) · ไม่ใช่ข้อแม่ของกลุ่มถามตามสินค้าที่เลือก = null
+ * แสดงไม่เกิน MAX_LISTED_NAMES · ที่เหลือนับเป็น more
+ */
+export function questionItemLinks(question: RequirementQuestion, group: RequirementGroup, items: LinkableItems) {
+    if (group.rqg_trigger !== "selection" || question.rqq_parent_id) return null;
+    const links: ItemLink[] = [
+        ...[...new Set(question.product_ids)].map((id) => ({
+            kind: "product" as const,
+            id,
+            name: items.products.find((row) => row.product_id === id)?.product_name ?? "สินค้าที่ปิดใช้งานอยู่",
+        })),
+        ...[...new Set(question.package_ids)].map((id) => ({
+            kind: "package" as const,
+            id,
+            name: items.packages.find((row) => row.pkg_id === id)?.pkg_name ?? "ชุดที่ถูกลบ",
+        })),
+    ];
+    return { links: links.slice(0, MAX_LISTED_NAMES), more: Math.max(0, links.length - MAX_LISTED_NAMES) };
+}
+
 function itemNames(productIds: string[], packageIds: string[], items: LinkableItems) {
     const productNames = [...new Set(productIds)].map(
         (id) => items.products.find((row) => row.product_id === id)?.product_name ?? "สินค้าที่ปิดใช้งานอยู่",

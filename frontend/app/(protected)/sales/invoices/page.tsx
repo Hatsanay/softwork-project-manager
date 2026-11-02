@@ -13,6 +13,7 @@ import { buttonClass } from "@/components/ui/button";
 import { usePermission, BITS } from "@/app/components/permission-provider";
 import { formatDateOnly } from "@/app/function";
 import { apiFetch } from "@/lib/api";
+import type { LoadError } from "@/components/ui/guidance/load-error-banner";
 import { formatAmount } from "@/lib/shared/money.mjs";
 import { INVOICE_MESSAGES, PAYMENT_STATE_PILLS, STATUS_LABELS } from "./_messages";
 import type { InvoiceListRow } from "./_types";
@@ -38,28 +39,42 @@ const EMPTY_MESSAGES: Partial<Record<TabKey, string>> = {
     paid: "ยังไม่มีใบที่ชำระครบ",
 };
 
+// ช่องทาง (2026-11-01): เอกสารงาน Fastwork = ระบบออกจากเงินงวด Fastwork (เอกสารประกอบ ไม่นับรายได้ซ้ำ)
+type ChannelKey = "all" | "direct" | "fastwork";
+const CHANNELS: { value: ChannelKey; label: string }[] = [
+    { value: "all", label: "ทุกช่องทาง" },
+    { value: "direct", label: "ลูกค้าตรง" },
+    { value: "fastwork", label: "งาน Fastwork" },
+];
+
 export default function InvoicesPage() {
     const router = useRouter();
     const hasBit = usePermission();
     const canCreate = hasBit(BITS.createInvoice);
     const [tab, setTab] = useState<TabKey>("all");
     const [search, setSearch] = useState("");
+    const [channel, setChannel] = useState<ChannelKey>("all");
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
     const [rows, setRows] = useState<InvoiceListRow[]>([]);
     const [total, setTotal] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
+    // โหลดไม่สำเร็จ = บอกเหตุผล + ลองใหม่ แทนรายการว่าง (usability R2-1)
+    const [loadError, setLoadError] = useState<LoadError | null>(null);
+    const [reloadCount, setReloadCount] = useState(0);
 
     useEffect(() => {
         let isLeftPage = false;
         const query = new URLSearchParams({
             tab,
             search,
+            ...(channel === "all" ? {} : { channel }),
             limit: String(pageSize),
             offset: String((page - 1) * pageSize),
         });
-        apiFetch<{ data: InvoiceListRow[]; total: number }>(`/invoices?${query}`).then(({ data }) => {
+        apiFetch<{ data: InvoiceListRow[]; total: number }>(`/invoices?${query}`).then(({ data, error }) => {
             if (isLeftPage) return;
+            setLoadError(error);
             setRows(data?.data ?? []);
             setTotal(data?.total ?? 0);
             setIsLoading(false);
@@ -67,7 +82,7 @@ export default function InvoicesPage() {
         return () => {
             isLeftPage = true;
         };
-    }, [tab, search, page, pageSize]);
+    }, [tab, search, channel, page, pageSize, reloadCount]);
 
     const columns: Column<InvoiceListRow>[] = [
         {
@@ -82,6 +97,7 @@ export default function InvoicesPage() {
                     <span className="flex flex-wrap items-center gap-1.5 text-xs text-gray-500 tabular-nums">
                         {invoiceNumberLabel(row)}
                         {row.inv_doc_type === "debit_note" && <StatusPill tone="info">ใบเพิ่มหนี้</StatusPill>}
+                        {row.inv_fastwork_payout_id && <StatusPill tone="neutral">งาน Fastwork</StatusPill>}
                     </span>
                     <span className="font-medium text-gray-800 hover:text-blue-600">{row.inv_title}</span>
                 </button>
@@ -97,9 +113,11 @@ export default function InvoicesPage() {
                     <span className="text-xs text-gray-500">
                         {row.inv_doc_type === "debit_note"
                             ? `เพิ่มหนี้จาก ${row.reference_number ?? "-"}`
-                            : row.qt_number
-                              ? `ใบเสนอราคา ${row.qt_number}`
-                              : "สร้างเอง"}
+                            : row.inv_fastwork_payout_id
+                              ? "ออกจากเงินงวด Fastwork"
+                              : row.qt_number
+                                ? `ใบเสนอราคา ${row.qt_number}`
+                                : "สร้างเอง"}
                     </span>
                 </div>
             ),
@@ -197,7 +215,18 @@ export default function InvoicesPage() {
                 }}
                 options={TABS}
             />
+            <Segmented<ChannelKey>
+                label="กรองตามช่องทาง"
+                value={channel}
+                onChange={(value) => {
+                    setChannel(value);
+                    setPage(1);
+                }}
+                options={CHANNELS}
+            />
             <DataTable
+                loadError={loadError}
+                onRetry={() => setReloadCount((count) => count + 1)}
                 columns={columns}
                 data={rows}
                 rowKey="inv_id"

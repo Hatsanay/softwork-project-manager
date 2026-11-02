@@ -11,6 +11,7 @@ import StatusPill from "@/components/ui/status-pill";
 import FormField, { inputClass } from "@/components/ui/form-field";
 import { formatDateOnly } from "@/app/function";
 import { apiFetch } from "@/lib/api";
+import type { LoadError } from "@/components/ui/guidance/load-error-banner";
 import { formatAmount } from "@/lib/shared/money.mjs";
 import { PAYMENT_MESSAGES, WHT_FORM_SHORT } from "../payments/_messages";
 import type { CertificateListRow } from "../payments/_types";
@@ -26,22 +27,28 @@ export default function CertificatesPage() {
     const [rows, setRows] = useState<CertificateListRow[]>([]);
     const [total, setTotal] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
+    // โหลดไม่สำเร็จ = บอกเหตุผล + ลองใหม่ แทนรายการว่าง (usability R2-1)
+    const [loadError, setLoadError] = useState<LoadError | null>(null);
+    const [reloadCount, setReloadCount] = useState(0);
 
     useEffect(() => {
         let isLeftPage = false;
         const query = new URLSearchParams({ search, limit: String(pageSize), offset: String((page - 1) * pageSize) });
         if (form !== "all") query.set("form", form);
         if (month) query.set("month", month);
-        apiFetch<{ data: CertificateListRow[]; total: number }>(`/wht-certificates?${query}`).then(({ data }) => {
-            if (isLeftPage) return;
-            setRows(data?.data ?? []);
-            setTotal(data?.total ?? 0);
-            setIsLoading(false);
-        });
+        apiFetch<{ data: CertificateListRow[]; total: number }>(`/wht-certificates?${query}`).then(
+            ({ data, error }) => {
+                if (isLeftPage) return;
+                setLoadError(error);
+                setRows(data?.data ?? []);
+                setTotal(data?.total ?? 0);
+                setIsLoading(false);
+            },
+        );
         return () => {
             isLeftPage = true;
         };
-    }, [form, month, search, page, pageSize]);
+    }, [form, month, search, page, pageSize, reloadCount]);
 
     const columns: Column<CertificateListRow>[] = [
         {
@@ -134,6 +141,8 @@ export default function CertificatesPage() {
                 </FormField>
             </div>
             <DataTable
+                loadError={loadError}
+                onRetry={() => setReloadCount((count) => count + 1)}
                 columns={columns}
                 data={rows}
                 rowKey="wt_id"

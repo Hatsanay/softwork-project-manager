@@ -3,9 +3,12 @@ const pool = require("../config/db");
 const { validate } = require("../utils/validate");
 const { withTransaction } = require("../utils/with-transaction");
 const { hasBit } = require("../shared/permissions.mjs");
+const { AppError } = require("../utils/app-error");
+const { projectSharesSchema } = require("../shared/schemas/profit-share.mjs");
 const {
     fastworkAddMilestonesSchema,
     fastworkCancelSchema,
+    fastworkMilestoneCutSchema,
     fastworkPayoutSchema,
     fastworkProjectSchema,
     fastworkProjectUpdateSchema,
@@ -13,9 +16,13 @@ const {
     fastworkSettingsSchema,
 } = require("../shared/schemas/fastwork.mjs");
 const fastworkService = require("../services/fastwork.service");
+const profitShareService = require("../services/profit-share.service");
+const projectNextStepsService = require("../services/project-next-steps.service");
 const { recomputeProjectProgress } = require("../utils/projectProgress");
 
 const PAYOUT_STATUSES = new Set(["pending", "received", "cancelled"]);
+// สิ่งที่ต้องทำตอนนี้ในหน้า Fastwork (2026-11-01)
+const FASTWORK_TODO_LIMIT = 30;
 
 const numericId = (value) => {
     const id = Number(value);
@@ -34,9 +41,14 @@ function handle(work) {
 }
 
 module.exports = {
-    overview: handle((req) =>
-        fastworkService.overview(pool, { canSeeMoney: hasBit(req.user.role_permission, "manageFastwork") }),
-    ),
+    // ภาพรวม + สิ่งที่ต้องทำของงาน Fastwork (กฎเดียวกับ "ต่อไปต้องทำ" ของโปรเจกต์ · เห็นเฉพาะเรื่องที่สิทธิ์ตัวเองกดได้)
+    overview: handle(async (req) => {
+        const overview = await fastworkService.overview(pool, { canSeeMoney: hasBit(req.user.role_permission, "manageFastwork") });
+        const todo = await projectNextStepsService.todoForUser(pool, req.user, FASTWORK_TODO_LIMIT, { channel: "fastwork" });
+        return { ...overview, todo };
+    }),
+    // ทีมและส่วนแบ่งของงานล่าสุด (เติมให้ในฟอร์มรับงาน)
+    shareDefaults: handle(() => profitShareService.latestFastworkShares(pool)),
     getSettings: handle(() => fastworkService.getSettings(pool)),
     updateSettings: handle((req) => {
         const settings = validate(fastworkSettingsSchema, req.body);
@@ -64,7 +76,12 @@ module.exports = {
     createProject: async (req, res, next) => {
         try {
             const project = validate(fastworkProjectSchema, req.body);
-            res.status(201).json(await withTransaction((conn) => fastworkService.createProject(conn, req.user, project)));
+            // ทีมและส่วนแบ่งตอนรับงาน (2026-11-01): กติกาเดียวกับหน้าส่วนแบ่ง · ตั้งได้เฉพาะผู้มีสิทธิ์จัดการส่วนแบ่ง
+            const { shares } = validate(projectSharesSchema, { shares: project.shares });
+            if (shares.length > 0 && !hasBit(req.user.role_permission, "manageProfitShares")) {
+                throw new AppError(403, "FORBIDDEN", "ตั้งส่วนแบ่งได้เฉพาะผู้มีสิทธิ์จัดการส่วนแบ่งกำไร · เอาส่วนทีมและส่วนแบ่งออก แล้วให้ผู้มีสิทธิ์ตั้งทีหลัง");
+            }
+            res.status(201).json(await withTransaction((conn) => fastworkService.createProject(conn, req.user, { ...project, shares })));
         } catch (err) {
             next(err);
         }
@@ -84,6 +101,14 @@ module.exports = {
         withTransaction((conn) =>
             fastworkService.setDelivered(conn, req.user, req.params.id, numericId(req.params.milestoneId), req.body?.delivered !== false),
         ),
+    ),
+    // ตัดงวด / ยกเลิกการตัด (2026-11-01)
+    cutMilestone: handle((req) => {
+        const { reason } = validate(fastworkMilestoneCutSchema, req.body);
+        return withTransaction((conn) => fastworkService.setMilestoneCut(conn, req.user, req.params.id, numericId(req.params.milestoneId), reason));
+    }),
+    restoreMilestone: handle((req) =>
+        withTransaction((conn) => fastworkService.setMilestoneCut(conn, req.user, req.params.id, numericId(req.params.milestoneId), null)),
     ),
     projectFastwork: handle(async (req) => {
         const fastwork = await fastworkService.projectFastwork(pool, req.params.id);

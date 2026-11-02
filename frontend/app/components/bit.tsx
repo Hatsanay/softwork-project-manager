@@ -9,7 +9,7 @@ export type MenuItem = {
 // ─── Sidebar menu structure ───────────────────────────────────────────────────
 // แต่ละเมนูผูกกับบิตสิทธิ์ด้วย key (ไม่ใช่ลำดับ) — key ต้องมีอยู่ใน PERMISSION_GROUPS (backend/test/permission-order.test.js คุม)
 export const MENU_DEFS: MenuItem[] = [
-    { key: "dashboard", label: "Dashboard", href: "/dashboard" },
+    { key: "dashboard", label: "หน้าแรก", href: "/dashboard" },
     {
         key: "usersManagement", label: "จัดการข้อมูลผู้ใช้งาน", href: "/users",
         children: [
@@ -70,6 +70,9 @@ export const MENU_DEFS: MenuItem[] = [
         children: [
             { key: "manageServiceRequests", label: "คำขอบริการ", href: "/sales/service-requests" },
             { key: "manageServiceRequests", label: "ลิงก์เลือกบริการ", href: "/sales/order-links" },
+            // ตัวคิดราคา (2026-11-01): ลูกค้าตรง = สร้างใบเสนอราคา · Fastwork = จัดการ Fastwork (เมนูซ่อนที่ href เดียวกัน)
+            { key: "createQuotation", label: "ตัวคิดราคา", href: "/sales/price-calculator" },
+            { key: "manageFastwork", label: "ตัวคิดราคา", href: "/sales/price-calculator", hidden: true },
             { key: "viewQuotations", label: "ใบเสนอราคา", href: "/sales/quotations" },
             { key: "viewInvoices", label: "ใบแจ้งหนี้", href: "/sales/invoices" },
             { key: "viewInvoices", label: "ใบวางบิล", href: "/sales/billing-notes" },
@@ -161,9 +164,9 @@ export type PermGroup = {
 
 export const PERMISSION_GROUPS: PermGroup[] = [
     {
-        groupLabel: "Dashboard",
+        groupLabel: "หน้าแรก",
         bits: [
-            { key: "dashboard", label: "Dashboard", href: "/dashboard" },
+            { key: "dashboard", label: "หน้าแรก", href: "/dashboard" },
         ],
     },
     {
@@ -232,11 +235,11 @@ export const PERMISSION_GROUPS: PermGroup[] = [
             { key: "productManagement", label: "จัดการสินค้า/บริการ (เพิ่ม/แก้/ลบ/ปิดใช้งาน สินค้า หมวดหมู่ และชุดรายการ)", href: "/sales/products" },
             { key: "viewQuotations",   label: "ดูใบเสนอราคา (ทุกใบ ทุกสาขา)",                                         href: "/sales/quotations" },
             { key: "createQuotation",  label: "สร้าง/แก้ใบเสนอราคา (ร่าง คัดลอก ส่งขออนุมัติ ส่งลูกค้า revision)",       href: "/sales/quotations/new" },
-            { key: "approveQuotation", label: "อนุมัติ/ตีกลับใบเสนอราคา (ต้องมี role อยู่ในชั้นที่รออยู่ด้วย)",            href: "/sales/quotations/approve" },
+            { key: "approveQuotation", label: "อนุมัติ/ตีกลับใบเสนอราคา (ต้องอยู่ในกลุ่มสิทธิ์ของชั้นที่รออยู่ด้วย)",            href: "/sales/quotations/approve" },
             { key: "cancelQuotation",  label: "ยกเลิกใบเสนอราคา",                                                    href: "/sales/quotations/cancel" },
             { key: "viewInvoices",     label: "ดูใบแจ้งหนี้และใบวางบิล (ทุกใบ ทุกสาขา)",                                href: "/sales/invoices" },
             { key: "createInvoice",    label: "สร้าง/ออกใบแจ้งหนี้และใบวางบิล (ร่าง ออกจากงวดใบเสนอราคา ส่งลูกค้า)",       href: "/sales/invoices/new" },
-            { key: "approveInvoice",   label: "อนุมัติ/ตีกลับใบแจ้งหนี้ที่สร้างเอง (ต้องมี role อยู่ในชั้นที่รออยู่ด้วย)",       href: "/sales/invoices/approve" },
+            { key: "approveInvoice",   label: "อนุมัติ/ตีกลับใบแจ้งหนี้ที่สร้างเอง (ต้องอยู่ในกลุ่มสิทธิ์ของชั้นที่รออยู่ด้วย)",       href: "/sales/invoices/approve" },
             { key: "cancelInvoice",    label: "ยกเลิกใบแจ้งหนี้และใบวางบิล",                                           href: "/sales/invoices/cancel" },
             { key: "viewReceipts",     label: "ดูใบเสร็จรับเงิน ไฟล์ 50 ทวิ และรายงานลูกหนี้คงค้าง",                         href: "/sales/receipts" },
             { key: "createReceipt",    label: "บันทึกรับเงิน/ออกใบเสร็จ และแนบ/แก้ข้อมูล 50 ทวิ",                             href: "/sales/receipts/new" },
@@ -251,7 +254,7 @@ export const PERMISSION_GROUPS: PermGroup[] = [
             { key: "manageVendors",  label: "จัดการผู้ขาย (เพิ่ม/แก้/ปิดใช้งาน รวมเลขบัญชีธนาคารของผู้ขาย)",                  href: "/purchasing/vendors" },
             { key: "viewExpenses",   label: "ดูค่าใช้จ่าย ใบเบิกเงิน ใบสำคัญจ่าย 50 ทวิ และเจ้าหนี้คงค้าง (ทุกใบ)",                href: "/purchasing/expenses" },
             { key: "createExpense",  label: "บันทึกค่าใช้จ่าย/บิลผู้ขาย และแนบไฟล์ (เบิกเงินของตัวเองทำได้ทุกคนไม่ต้องมีสิทธิ์นี้)", href: "/purchasing/expenses/new" },
-            { key: "approveExpense", label: "อนุมัติ/ตีกลับค่าใช้จ่ายและใบเบิกเงิน (ต้องมี role อยู่ในชั้นที่รออยู่ด้วย)",            href: "/purchasing/expenses/approve" },
+            { key: "approveExpense", label: "อนุมัติ/ตีกลับค่าใช้จ่ายและใบเบิกเงิน (ต้องอยู่ในกลุ่มสิทธิ์ของชั้นที่รออยู่ด้วย)",            href: "/purchasing/expenses/approve" },
             { key: "makePayment",    label: "ทำจ่ายเงิน และออกหนังสือรับรองหัก ณ ที่จ่าย (50 ทวิ)",                              href: "/purchasing/payments/new" },
             { key: "cancelPayment",  label: "ยกเลิกใบสำคัญจ่าย (50 ทวิ ของใบนั้นยกเลิกด้วย)",                                   href: "/purchasing/payments/cancel" },
         ],
@@ -263,7 +266,7 @@ export const PERMISSION_GROUPS: PermGroup[] = [
             { key: "manageEmployees",  label: "จัดการพนักงาน (ทะเบียน ค่าจ้าง เลขประจำตัวประชาชน บัญชีรับเงินเดือน · เห็นเงินเดือนทุกคน)", href: "/people/employees" },
             { key: "viewPayroll",      label: "ดูรอบเงินเดือน สลิปของทุกคน และรายงานเงินเดือน/ภาษี",                                  href: "/people/payroll" },
             { key: "runPayroll",       label: "สร้าง/คิด/แก้รอบเงินเดือน และบันทึกจ่ายเงินเดือน",                                       href: "/people/payroll/new" },
-            { key: "approvePayroll",   label: "อนุมัติ/ตีกลับรอบเงินเดือน (ต้องมี role อยู่ในชั้นที่รออยู่ด้วย)",                          href: "/people/payroll/approve" },
+            { key: "approvePayroll",   label: "อนุมัติ/ตีกลับรอบเงินเดือน (ต้องอยู่ในกลุ่มสิทธิ์ของชั้นที่รออยู่ด้วย)",                          href: "/people/payroll/approve" },
             { key: "approveTimesheet", label: "อนุมัติลงเวลา (ขอแก้เวลา · ดูลงเวลาพนักงานทุกคน · ลงชั่วโมงต่อโปรเจกต์ของทุกคนเมื่อเปิดใช้)", href: "/people/attendance-board" },
             { key: "approveLeave",     label: "อนุมัติ/ไม่อนุมัติใบลาของทุกคน และเห็นเหตุผล/ไฟล์แนบของใบลา",                              href: "/people/leave/approve" },
             { key: "manageHrSettings", label: "ตั้งค่าบุคคล (อัตราประกันสังคม ภาษีเงินได้ วันหยุดบริษัท ประเภทลา เวลาทำงาน)",                  href: "/people/settings" },

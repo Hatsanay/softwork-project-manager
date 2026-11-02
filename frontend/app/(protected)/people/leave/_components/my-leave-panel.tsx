@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import StatusBanner from "@/components/ui/guidance/status-banner";
+import NotEmployeeBanner from "../../_components/not-employee-banner";
 import HowItWorks from "@/components/ui/guidance/how-it-works";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { PageSkeleton } from "@/components/ui/skeleton";
@@ -57,11 +58,7 @@ export default function MyLeavePanel() {
         );
     if (!data || (year !== null && data.year !== year)) return <PageSkeleton />;
     if (!data.employee)
-        return (
-            <StatusBanner tone="info" title="ยังขอลาไม่ได้">
-                {LEAVE_MESSAGES.notEmployee}
-            </StatusBanner>
-        );
+        return <NotEmployeeBanner title="ยังขอลาไม่ได้">{LEAVE_MESSAGES.notEmployee}</NotEmployeeBanner>;
 
     const reload = () => load(data.year);
 

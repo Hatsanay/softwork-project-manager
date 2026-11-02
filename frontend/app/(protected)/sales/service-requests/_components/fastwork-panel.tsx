@@ -59,7 +59,7 @@ export default function FastworkPanel({
     return (
         <div className="grid gap-3">
             <ol className="grid gap-1.5 rounded-xl bg-gray-50 p-3 text-sm text-gray-700">
-                <li>1. ตรวจและปรับรายการด้านบน · ออกใบเสนอราคาภายในไว้อ้างอิงได้ (ไม่ส่งลูกค้า)</li>
+                <li>1. ตรวจและปรับรายการด้านบน · ออกใบเสนอราคาไว้อ้างอิงได้ (ไม่บังคับ · ส่งผู้ซื้อได้เมื่อขอ)</li>
                 <li>2. ส่งราคาบน Fastwork ด้วยยอดหลังปรับ · การคุยและการจ่ายเงินอยู่บน Fastwork ทั้งหมด</li>
                 <li>
                     3. ผู้ซื้อจ่ายแล้ว กด {isExisting ? `"ลูกค้ายืนยันบน Fastwork แล้ว" (งวดเพิ่มในงาน ${request.link_project_name ?? ""})` : '"รับงานจากคำขอนี้" (เปิดงาน Fastwork ใหม่)'}
@@ -68,7 +68,7 @@ export default function FastworkPanel({
 
             {plan.quotation ? (
                 <p className="text-sm text-gray-700">
-                    ใบเสนอราคาภายใน{" "}
+                    ใบเสนอราคา{" "}
                     <Link href={`/sales/quotations/view?id=${plan.quotation.qt_id}`} className="-my-2 inline-block py-2 text-blue-600 hover:underline">
                         {plan.quotation.qt_number}
                     </Link>{" "}
@@ -78,7 +78,7 @@ export default function FastworkPanel({
                 canIssueQuotation && (
                     <div className="grid gap-1">
                         <button type="button" className={buttonClass("secondary", "md", "justify-self-start")} disabled={isIssuing || isEditingItems} onClick={onIssueQuotation}>
-                            {isIssuing ? "กำลังสร้าง..." : "ออกใบเสนอราคาภายใน"}
+                            {isIssuing ? "กำลังสร้าง..." : "ออกใบเสนอราคา"}
                         </button>
                         <FieldHint>ไม่บังคับ · ไม่ได้ผูกลูกค้า = สร้างลูกค้าจากชื่อผู้ซื้อให้ · แบ่งงวดในใบได้ แล้วงวดจะเติมให้ตอนรับงาน</FieldHint>
                     </div>
@@ -232,7 +232,7 @@ function AcceptOnFastworkSheet({ request, plan, onClose, onSaved }: { request: S
                     รวมงวดเพิ่ม <span className="font-medium text-gray-900 tabular-nums">{total === null ? "-" : formatAmount(total)}</span> บาท
                 </span>
             </div>
-            <FieldHint>บันทึกแล้ว: งวดเพิ่มต่อท้ายงวดเดิม · สร้างงานจากรายการในคำขอ · ใบภายในที่อนุมัติแล้วผูกกับงานนี้</FieldHint>
+            <FieldHint>บันทึกแล้ว: งวดเพิ่มต่อท้ายงวดเดิม · สร้างงานจากรายการในคำขอ · ใบเสนอราคาที่อนุมัติแล้วผูกกับงานนี้</FieldHint>
             <SheetButtons isSaving={isSaving} submitLabel="บันทึกงวดเพิ่ม" onClose={onClose} />
         </SheetFrame>
     );

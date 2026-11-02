@@ -501,7 +501,8 @@ const LIST_TABS = {
  * @param {import("mysql2/promise").Pool} conn
  * @param {{ tab?: string, search?: string, clientId?: string, invoiceId?: string, limit?: number, offset?: number }} options
  */
-async function listReceipts(conn, { tab = "all", search = "", clientId, invoiceId, limit = 20, offset = 0 }) {
+// channel (2026-11-01): fastwork = ใบที่ระบบออกจากเงินงาน Fastwork · direct = ใบอื่นทั้งหมด · ว่าง = ทั้งหมด
+async function listReceipts(conn, { tab = "all", search = "", clientId, invoiceId, channel, limit = 20, offset = 0 }) {
     const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), MAX_LIST_LIMIT);
     const safeOffset = Math.max(Number(offset) || 0, 0);
     const conditions = [LIST_TABS[tab] ?? LIST_TABS.all];
@@ -525,6 +526,8 @@ async function listReceipts(conn, { tab = "all", search = "", clientId, invoiceI
         );
         params.push(invoiceId);
     }
+    if (channel === "fastwork") conditions.push("r.rc_fastwork_payout_id IS NOT NULL");
+    if (channel === "direct") conditions.push("r.rc_fastwork_payout_id IS NULL");
     const where = conditions.join(" AND ");
 
     const [[{ total }]] = await conn.query(
@@ -532,7 +535,7 @@ async function listReceipts(conn, { tab = "all", search = "", clientId, invoiceI
         params,
     );
     const [rows] = await conn.query(
-        `SELECT r.rc_id, r.rc_number, r.rc_status, r.rc_method, r.rc_currency, r.rc_allocated_total, r.rc_received_amount,
+        `SELECT r.rc_id, r.rc_number, r.rc_status, r.rc_method, r.rc_currency, r.rc_allocated_total, r.rc_received_amount, r.rc_fastwork_payout_id,
                 r.rc_wht_amount, r.rc_wht_file_path IS NOT NULL AS has_wht_file, r.rc_client_id, ${DATE_COLUMNS},
                 c.client_name, c.client_company,
                 (SELECT COUNT(*) FROM tb_receipt_allocations a WHERE a.rca_receipt_id = r.rc_id) AS invoice_count
@@ -574,7 +577,7 @@ async function getReceiptDetail(conn, receiptId, actor) {
     if (!receipt) throw notFound();
 
     const [allocations] = await conn.query(
-        `SELECT a.rca_order, a.rca_amount, a.rca_vat_amount, a.rca_amount_thb, a.rca_credited_before, i.inv_id, i.inv_number, i.inv_title, i.inv_status,
+        `SELECT a.rca_order, a.rca_amount, a.rca_vat_amount, a.rca_amount_thb, a.rca_credited_before, i.inv_id, i.inv_number, i.inv_title, i.inv_status, i.inv_project_id,
                 i.inv_total, i.inv_paid_amount, i.inv_credited_amount, i.inv_refunded_amount, ${INVOICE_DATE_COLUMNS}
          FROM tb_receipt_allocations a JOIN tb_invoices i ON i.inv_id = a.rca_invoice_id
          WHERE a.rca_receipt_id = ?

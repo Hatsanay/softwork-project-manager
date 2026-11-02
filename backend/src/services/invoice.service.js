@@ -1000,7 +1000,8 @@ const LIST_TABS = {
  * @param {{ tab?: string, search?: string, clientId?: string, quotationId?: string, limit?: number, offset?: number }} options
  * @param {{ user_id: string, user_role_id: string | null, role_permission: string }} actor
  */
-async function listInvoices(conn, { tab = "all", search = "", clientId, quotationId, limit = 20, offset = 0 }, actor) {
+// channel (2026-11-01): fastwork = ใบที่ระบบออกจากเงินงาน Fastwork · direct = ใบอื่นทั้งหมด · ว่าง = ทั้งหมด
+async function listInvoices(conn, { tab = "all", search = "", clientId, quotationId, channel, limit = 20, offset = 0 }, actor) {
     const today = todayBangkok();
     const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), MAX_LIST_LIMIT);
     const safeOffset = Math.max(Number(offset) || 0, 0);
@@ -1023,9 +1024,11 @@ async function listInvoices(conn, { tab = "all", search = "", clientId, quotatio
         conditions.push("i.inv_quotation_id = ?");
         params.push(quotationId);
     }
+    if (channel === "fastwork") conditions.push("i.inv_fastwork_payout_id IS NOT NULL");
+    if (channel === "direct") conditions.push("i.inv_fastwork_payout_id IS NULL");
 
     const [rows] = await conn.query(
-        `SELECT i.inv_id, i.inv_number, i.inv_status, i.inv_source, i.inv_doc_type, ref.inv_number AS reference_number, i.inv_title, i.inv_currency, i.inv_total, i.inv_total_thb,
+        `SELECT i.inv_id, i.inv_number, i.inv_status, i.inv_source, i.inv_doc_type, i.inv_fastwork_payout_id, ref.inv_number AS reference_number, i.inv_title, i.inv_currency, i.inv_total, i.inv_total_thb,
                 i.inv_paid_amount, i.inv_credited_amount, i.inv_refunded_amount, i.inv_wht_amount, i.inv_client_id,
                 c.client_name, c.client_company,
                 i.inv_quotation_id, q.qt_number, i.inv_created_by, CONCAT(u.user_fname, ' ', u.user_lname) AS created_by_name,
@@ -1388,7 +1391,9 @@ function buildActions(invoice, actor, approval, billingNote, creditNotes = [], d
         can_approve: Boolean(approval?.canApprove),
         can_return:
             status === "pending_approval" && hasBit(actor.role_permission, "approveInvoice") && isInCurrentLevel,
-        can_send: canCreate && status === "issued" && !invoice.inv_sent_at,
+        // ชำระครบแล้ว หรือใบที่ระบบออกจากเงินงวด Fastwork = ไม่ต้องบันทึกว่าส่ง (usability R2-3)
+        can_send:
+            canCreate && status === "issued" && !invoice.inv_sent_at && balance.outstanding > 0n && !invoice.inv_fastwork_payout_id,
         can_cancel: canCancelNow,
         can_reissue: canCancelNow && canCreate,
         cancel_blocked_reason: canCancelPermission ? cancelBlockedReason : null,

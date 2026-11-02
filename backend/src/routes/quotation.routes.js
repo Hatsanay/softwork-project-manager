@@ -6,6 +6,7 @@
 const { requireAuth } = require("../middlewares/auth.middleware");
 const { requirePermission } = require("../middlewares/permission.middleware");
 const quotationController = require("../controllers/quotation.controller");
+const priceCalculatorController = require("../controllers/price-calculator.controller");
 
 /**
  * @param {import("express").Router} router
@@ -19,6 +20,10 @@ function registerQuotationRoutes(router) {
     router.get("/V1/quotations", requireAuth, canView, quotationController.list);
     router.get("/V1/quotations/:id", requireAuth, canView, quotationController.getOne);
     router.post("/V1/quotations", requireAuth, canCreate, quotationController.create);
+    // ตัวคิดราคา (2026-11-01): แค็ตตาล็อก (ลูกค้าตรง หรือ Fastwork) · ออกร่างใบจากตะกร้า
+    router.get("/V1/price-calculator/catalog", requireAuth, requirePermission(["createQuotation", "manageFastwork"]), priceCalculatorController.catalog);
+    router.get("/V1/price-calculator/client-projects", requireAuth, canCreate, priceCalculatorController.clientProjects);
+    router.post("/V1/quotations/from-cart", requireAuth, canCreate, priceCalculatorController.createQuotationFromCart);
     router.put("/V1/quotations/:id", requireAuth, canCreate, quotationController.update);
     router.delete("/V1/quotations/:id", requireAuth, canCreate, quotationController.remove);
 

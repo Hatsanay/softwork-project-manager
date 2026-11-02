@@ -72,6 +72,7 @@ export default function ClientsPage() {
         {
             key: "client_contact_name",
             mobile: "meta",
+            mobileLabel: "ผู้ติดต่อ",
             header: "ติดต่อ",
             render: (_, row) => (
                 <div className="grid gap-0.5 text-sm">

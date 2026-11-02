@@ -12,6 +12,7 @@ import { buttonClass } from "@/components/ui/button";
 import { usePermission, BITS } from "@/app/components/permission-provider";
 import { formatDateOnly } from "@/app/function";
 import { apiFetch } from "@/lib/api";
+import type { LoadError } from "@/components/ui/guidance/load-error-banner";
 import { formatAmount, parseHundredths } from "@/lib/shared/money.mjs";
 import { METHOD_LABELS, PAYMENT_MESSAGES } from "./_messages";
 import type { PaymentListRow } from "./_types";
@@ -35,6 +36,9 @@ export default function PaymentsPage() {
     const [rows, setRows] = useState<PaymentListRow[]>([]);
     const [total, setTotal] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
+    // โหลดไม่สำเร็จ = บอกเหตุผล + ลองใหม่ แทนรายการว่าง (usability R2-1)
+    const [loadError, setLoadError] = useState<LoadError | null>(null);
+    const [reloadCount, setReloadCount] = useState(0);
 
     useEffect(() => {
         let isLeftPage = false;
@@ -44,8 +48,9 @@ export default function PaymentsPage() {
             limit: String(pageSize),
             offset: String((page - 1) * pageSize),
         });
-        apiFetch<{ data: PaymentListRow[]; total: number }>(`/payments?${query}`).then(({ data }) => {
+        apiFetch<{ data: PaymentListRow[]; total: number }>(`/payments?${query}`).then(({ data, error }) => {
             if (isLeftPage) return;
+            setLoadError(error);
             setRows(data?.data ?? []);
             setTotal(data?.total ?? 0);
             setIsLoading(false);
@@ -53,7 +58,7 @@ export default function PaymentsPage() {
         return () => {
             isLeftPage = true;
         };
-    }, [tab, search, page, pageSize]);
+    }, [tab, search, page, pageSize, reloadCount]);
 
     const columns: Column<PaymentListRow>[] = [
         {
@@ -146,6 +151,8 @@ export default function PaymentsPage() {
                 options={TABS}
             />
             <DataTable
+                loadError={loadError}
+                onRetry={() => setReloadCount((count) => count + 1)}
                 columns={columns}
                 data={rows}
                 rowKey="pv_id"

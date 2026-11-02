@@ -99,6 +99,7 @@ export default function VendorsPage() {
         {
             key: "vd_tax_id",
             mobile: "meta",
+            mobileLabel: "เลขผู้เสียภาษี",
             header: "ภาษี",
             render: (_, row) => (
                 <div className="grid gap-0.5 text-sm">
@@ -113,6 +114,7 @@ export default function VendorsPage() {
         {
             key: "vd_bank_account_no",
             mobile: "meta",
+            mobileLabel: "บัญชีรับเงิน",
             header: "บัญชีรับเงิน",
             render: (_, row) =>
                 row.vd_bank_account_no ? (

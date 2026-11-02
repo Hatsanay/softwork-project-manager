@@ -72,11 +72,17 @@ function SharedDocument() {
         if (!quotation.qt_company_snapshot || !quotation.qt_client_snapshot) return null;
         return (
             <QuotationDocument
-                data={{ ...detail, company: quotation.qt_company_snapshot, client: quotation.qt_client_snapshot, isFastworkInternal: false }}
+                data={{
+                    ...detail,
+                    company: quotation.qt_company_snapshot,
+                    client: quotation.qt_client_snapshot,
+                    isFastworkInternal: false,
+                }}
                 renderSignature={() => null}
                 toolbarNote={
                     <span>
-                        กด &quot;พิมพ์ / บันทึก PDF&quot; แล้วเลือก &quot;บันทึกเป็น PDF&quot; · กระดาษ A4 · ปิด &quot;ส่วนหัวและส่วนท้าย&quot;
+                        กด &quot;พิมพ์ / บันทึก PDF&quot; แล้วเลือก &quot;บันทึกเป็น PDF&quot; · กระดาษ A4 · ปิด
+                        &quot;ส่วนหัวและส่วนท้าย&quot;
                     </span>
                 }
             />

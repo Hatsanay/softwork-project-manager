@@ -45,7 +45,7 @@ export default function RoleSettingsPage() {
     const hasBit = usePermission();
 
     const columns: Column<Role>[] = [
-        { key: "role_id", mobile: "meta", mobileLabel: "รหัส", header: "รหัสสิทธิ์",        className: "w-16" },
+        { key: "role_id", mobile: "hidden", header: "รหัสสิทธิ์",        className: "w-16" },
         { key: "role_name", mobile: "title", header: "ชื่อสิทธิ์" },
         { key: "role_department_name", mobile: "meta", header: "แผนก", render: (v) => (v as string) || "-" },
         { key: "by_fullname", mobile: "hidden", header: "สร้างโดย" },
@@ -117,7 +117,7 @@ export default function RoleSettingsPage() {
             <PageHeader
                 eyebrow="ตั้งค่าระบบ"
                 title="จัดการสิทธิ์"
-                description="กำหนดว่าผู้ใช้แต่ละกลุ่มเข้าเมนูและทำอะไรได้บ้าง · สร้าง/แก้ได้เฉพาะสิทธิ์ที่ไม่เกินของคุณ · role ระบบได้สิทธิ์ครบเสมอ"
+                description="กำหนดว่าผู้ใช้แต่ละกลุ่มเข้าเมนูและทำอะไรได้บ้าง · สร้าง/แก้ได้เฉพาะสิทธิ์ที่ไม่เกินของคุณ · สิทธิ์ของระบบได้ครบทุกข้อเสมอ"
                 actions={
                     hasBit(BITS.createRole) && (
                         <Button onClick={() => router.push("/settings/roles/create")}>

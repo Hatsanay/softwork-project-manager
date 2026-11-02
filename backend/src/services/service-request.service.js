@@ -273,7 +273,7 @@ async function fastworkPlanOf(conn, request, items, totals) {
     const isOpen = ["submitted", "converted"].includes(request.svr_status) && !request.svr_project_id;
     let blockedReason = null;
     if (quotation && PENDING_QUOTATION_STATUSES.has(quotation.qt_status)) {
-        blockedReason = `ใบเสนอราคาภายใน ${quotation.qt_number} ยังไม่อนุมัติ · อนุมัติก่อน หรือยกเลิกใบแล้วรับงานจากรายการในคำขอ`;
+        blockedReason = `ใบเสนอราคา ${quotation.qt_number} ยังไม่อนุมัติ · อนุมัติก่อน หรือยกเลิกใบแล้วรับงานจากรายการในคำขอ`;
     }
     return {
         mode: request.ol_project_id ? "existing" : "new",
@@ -535,7 +535,7 @@ async function confirm(conn, actor, requestId, input) {
             qt_client_id: request.svr_client_id,
             qt_branch_id: await headOfficeBranchId(conn),
             qt_title: title,
-            qt_internal_note: isFastwork ? `${sourceNote} · เอกสารภายในของงาน Fastwork (ไม่ส่งลูกค้า)` : sourceNote,
+            qt_internal_note: isFastwork ? `${sourceNote} · ใบเสนอราคาของงาน Fastwork (ส่งผู้ซื้อได้เมื่อขอ)` : sourceNote,
             items: rows.map((row) =>
                 row.svi_type === "heading"
                     ? { qti_type: "heading", qti_package_id: row.svi_package_id, qti_description: row.svi_name }
@@ -637,12 +637,12 @@ async function attachFastworkRequest(conn, actor, requestId, projectId, { isNewP
     const { latestQuotation } = require("./order-public.service");
     const quotation = request.svr_quotation_id ? await latestQuotation(conn, request.svr_quotation_id, { forUpdate: true }) : null;
     if (quotation && PENDING_QUOTATION_STATUSES.has(quotation.qt_status)) {
-        throw new AppError(409, "QUOTATION_NOT_APPROVED", `ใบเสนอราคาภายใน ${quotation.qt_number} ยังไม่อนุมัติ · อนุมัติก่อน หรือยกเลิกใบแล้วรับงานจากรายการในคำขอ`);
+        throw new AppError(409, "QUOTATION_NOT_APPROVED", `ใบเสนอราคา ${quotation.qt_number} ยังไม่อนุมัติ · อนุมัติก่อน หรือยกเลิกใบแล้วรับงานจากรายการในคำขอ`);
     }
     if (quotation && USABLE_QUOTATION_STATUSES.has(quotation.qt_status)) {
         const [[quotationClient]] = await conn.query("SELECT qt_client_id FROM tb_quotations WHERE qt_id = ?", [quotation.qt_id]);
         if (quotationClient.qt_client_id !== project.client_id) {
-            throw validationError({ client_id: "ใช้ลูกค้าเดียวกับใบเสนอราคาภายในของคำขอนี้" });
+            throw validationError({ client_id: "ใช้ลูกค้าเดียวกับใบเสนอราคาของคำขอนี้" });
         }
         await acceptQuotation(
             conn,

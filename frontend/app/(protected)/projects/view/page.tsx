@@ -54,6 +54,8 @@ export default function ViewProjectPage() {
 
     const [currentUserId, setCurrentUserId] = useState("");
     const [project, setProject] = useState<ProjectDetail | null>(null);
+    // งวด/เงิน Fastwork เปลี่ยนในการ์ดงวด → โหลด "ต่อไปต้องทำ" และการเงินใหม่
+    const [fastworkVersion, setFastworkVersion] = useState(0);
     const [permission, setPermission] = useState("");
     const [tasks, setTasks] = useState<Task[]>([]);
     const [members, setMembers] = useState<Member[]>([]);
@@ -477,6 +479,9 @@ export default function ViewProjectPage() {
     }
     if (!project) return <PageSkeleton />;
 
+    // โปรเจกต์ภายใน = ไม่มีลูกค้าและไม่ใช่ Fastwork · ไม่มีรายได้ จึงไม่มีกำไร/ส่วนแบ่ง (usability R2-6)
+    const isInternalProject = !project.client_name && project.project_channel !== "fastwork";
+
     const shareUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/share/${project.project_share_token}`;
 
     // ตารางหลักโชว์แค่ task ระดับบนสุด — ต้องกดเข้าไปดูรายละเอียดถึงจะเห็น subtask
@@ -504,7 +509,8 @@ export default function ViewProjectPage() {
             mobile: "badge",
             header: "ปัญหา",
             render: (_v, row) => {
-                if (!row.open_issue_count && !row.subtask_open_issue_count) return <span className="text-gray-300">-</span>;
+                // 0 = ไม่แสดงบนการ์ดมือถือ ("-" ลอยๆ ไม่มีป้ายอ่านไม่ออก · usability R2-8) · ตารางจอใหญ่ยังมี "-" ใต้หัวคอลัมน์
+                if (!row.open_issue_count && !row.subtask_open_issue_count) return <span className="hidden text-gray-300 sm:inline">-</span>;
                 return (
                     <div className="flex items-center gap-1">
                         <IssueCountBadge count={row.open_issue_count} color="red" />
@@ -518,7 +524,7 @@ export default function ViewProjectPage() {
             mobile: "badge",
             header: "แชท",
             render: (_v, row) => {
-                if (!row.unread_chat_count) return <span className="text-gray-300">-</span>;
+                if (!row.unread_chat_count) return <span className="hidden text-gray-300 sm:inline">-</span>;
                 return <ChatUnreadBadge count={row.unread_chat_count} />;
             },
         },
@@ -617,7 +623,7 @@ export default function ViewProjectPage() {
             {/* ต่อไปต้องทำ (2026-10-31) — โหลดใหม่เมื่องานเปลี่ยน (จำนวน/สถานะ/วันครบ) */}
             <NextStepsCard
                 projectId={id}
-                refreshKey={tasks.map((task) => `${task.task_status}${task.task_due_date ?? ""}`).join("|")}
+                refreshKey={`${fastworkVersion}:${tasks.map((task) => `${task.task_status}${task.task_due_date ?? ""}`).join("|")}`}
             />
 
             {/* ลิงก์สำหรับลูกค้า */}
@@ -637,16 +643,22 @@ export default function ViewProjectPage() {
             )}
 
             {/* งาน Fastwork (P-1) — งวดงานและการส่งงาน · สมาชิกตัวจริงกดส่งงานได้ */}
-            {project.project_channel === "fastwork" && <FastworkProjectCard projectId={id} isMember={Boolean(permission)} />}
+            {project.project_channel === "fastwork" && (
+                <FastworkProjectCard
+                    projectId={id}
+                    isMember={Boolean(permission)}
+                    onChanged={() => setFastworkVersion((version) => version + 1)}
+                />
+            )}
 
             {/* ความต้องการจากลูกค้า (S-4) — จากลิงก์เลือกบริการ · ไม่มีคำขอ = ไม่แสดง */}
             <CustomerRequirementsCard projectId={id} />
 
-            {/* การเงิน — เฉพาะผู้มีสิทธิ์ดูใบแจ้งหนี้ (ช่วง 1D) */}
-            <ProjectFinanceCard projectId={id} />
+            {/* การเงิน — เฉพาะผู้มีสิทธิ์ดูใบแจ้งหนี้ (ช่วง 1D) · โปรเจกต์ภายในแสดงแค่ต้นทุน */}
+            <ProjectFinanceCard key={fastworkVersion} projectId={id} isInternal={isInternalProject} />
 
-            {/* ส่วนแบ่งกำไร (P-2) — เฉพาะผู้จัดการส่วนแบ่ง */}
-            <ProfitShareLinkCard projectId={id} />
+            {/* ส่วนแบ่งกำไร (P-2) — เฉพาะผู้จัดการส่วนแบ่ง · โปรเจกต์ภายในไม่มีรายได้ให้แบ่ง (usability R2-6) */}
+            {!isInternalProject && <ProfitShareLinkCard projectId={id} />}
 
             {/* ภาพรวม Agile — เฉพาะโปรเจกต์ agile */}
             {project.project_type === "agile" && (

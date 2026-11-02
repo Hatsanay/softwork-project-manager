@@ -172,7 +172,7 @@ async function remove(req, res, next) {
             return res.status(404).json({ message: "ไม่พบสิทธิ์นี้ อาจถูกลบไปแล้ว" });
         }
         if (role.role_type === SYSTEM_ROLE_TYPE) {
-            return res.status(400).json({ message: "ไม่สามารถลบ system role ได้" });
+            return res.status(400).json({ message: "ลบสิทธิ์ของระบบไม่ได้" });
         }
 
         const rolePermission = await findRolePermission(req.params.id);

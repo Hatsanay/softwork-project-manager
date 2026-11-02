@@ -113,6 +113,7 @@ const ENTITIES = [
     { re: /^\/quotations\/([^/]+)\/copy$/, type: "quotation", table: "tb_quotations", pk: "qt_id", id: "response:qt_id", label: { POST: "คัดลอกเป็นใบเสนอราคาใหม่" } },
     { re: /^\/quotations\/([^/]+)$/, type: "quotation", table: "tb_quotations", pk: "qt_id", id: "1", label: { PUT: "แก้ร่างใบเสนอราคา", DELETE: "ลบร่างใบเสนอราคา" } },
     { re: /^\/quotations$/, type: "quotation", table: "tb_quotations", pk: "qt_id", id: "response:qt_id", label: { POST: "สร้างร่างใบเสนอราคา" } },
+    { re: /^\/quotations\/from-cart$/, type: "quotation", table: "tb_quotations", pk: "qt_id", id: "response:qt_id", label: { POST: "ออกใบเสนอราคาจากตัวคิดราคา" } },
 
     // ใบแจ้งหนี้ (2026-10-14 ช่วง 1B) — รายการ/งวดที่ผูกบันทึกพร้อมหัวเอกสาร diff ดูที่หัวเอกสาร
     { re: /^\/invoices\/([^/]+)\/issue$/, type: "invoice", table: "tb_invoices", pk: "inv_id", id: "1", label: { POST: "ออกใบแจ้งหนี้" } },
@@ -250,6 +251,8 @@ const ENTITIES = [
     { re: /^\/fastwork\/projects\/([^/]+)$/, type: "project", table: "tb_projects", pk: "project_id", id: "1", project: "1", label: { PUT: "แก้งวดงาน Fastwork" } },
     { re: /^\/fastwork\/projects\/([^/]+)\/milestones$/, type: "project", id: "1", project: "1", label: { POST: "เพิ่มงวดงาน Fastwork (ลูกค้าจ้างเพิ่ม)" } },
     { re: /^\/fastwork\/projects\/([^/]+)\/milestones\/[^/]+\/delivered$/, type: "project", id: "1", project: "1", label: { POST: "ส่งงานงวด Fastwork" } },
+    { re: /^\/fastwork\/projects\/([^/]+)\/milestones\/[^/]+\/cut$/, type: "project", id: "1", project: "1", label: { POST: "ตัดงวด Fastwork (ไม่ได้เงิน)" } },
+    { re: /^\/fastwork\/projects\/([^/]+)\/milestones\/[^/]+\/restore$/, type: "project", id: "1", project: "1", label: { POST: "ยกเลิกการตัดงวด Fastwork" } },
     { re: /^\/fastwork\/payouts$/, type: "fastwork_payout", id: "response:fwp_id", label: { POST: "บันทึกเงินจาก Fastwork" } },
     { re: /^\/fastwork\/payouts\/([^/]+)\/receive$/, type: "fastwork_payout", id: "1", label: { POST: "ยืนยันเงินเข้าจาก Fastwork" } },
     { re: /^\/fastwork\/payouts\/([^/]+)\/cancel$/, type: "fastwork_payout", id: "1", label: { POST: "ยกเลิกรายการเงิน Fastwork" } },

@@ -88,7 +88,7 @@ export default function QuotationDocument({
     renderSignature: (signer: "creator" | "approver") => React.ReactNode;
     toolbarNote: React.ReactNode;
 }) {
-    const { quotation, currency, items, milestones, company, client, isFastworkInternal } = data;
+    const { quotation, currency, items, milestones, company, client } = data;
     const [screenZoom, setScreenZoom] = useState(1);
 
     // ทั้งระบบตัดส่วนที่ล้นแนวนอน (overflow-x-clip) มือถือจึงเลื่อนดู A4 ไม่ได้ · ย่อทั้งใบให้พอดีจอแทน (ถ่างนิ้วซูมได้) · ตอนพิมพ์ใช้ขนาดจริง
@@ -195,13 +195,7 @@ export default function QuotationDocument({
                             </span>
                         </div>
                     )}
-                    {/* ใบภายในของงาน Fastwork (S-5): พิมพ์ได้ แต่ไม่ใช่ใบที่ส่งลูกค้า */}
-                    {isFastworkInternal && (
-                        <div className="pointer-events-none absolute top-40 right-16 -rotate-12 rounded-lg border-4 border-gray-500/70 px-6 py-2 text-center text-[20pt] font-medium text-gray-500/80">
-                            เอกสารภายใน
-                            <span className="block text-[10pt]">งาน Fastwork · ไม่ส่งลูกค้า</span>
-                        </div>
-                    )}
+                    {/* ใบของงาน Fastwork ไม่มีตราประทับ "เอกสารภายใน" แล้ว (2026-11-01): ส่งผู้ซื้อได้เมื่อขอ */}
                     {quotation.qt_status === "cancelled" && (
                         <div className="pointer-events-none absolute top-40 right-16 -rotate-12 rounded-lg border-4 border-red-600/70 px-6 py-2 text-[28pt] font-medium text-red-600/70">
                             {labels.cancelledStamp}

@@ -10,6 +10,7 @@ import StatusPill from "@/components/ui/status-pill";
 import FieldHint from "@/components/ui/guidance/field-hint";
 import { formatDateOnly } from "@/app/function";
 import { apiFetch } from "@/lib/api";
+import type { LoadError } from "@/components/ui/guidance/load-error-banner";
 import { formatAmount } from "@/lib/shared/money.mjs";
 import { CREDIT_NOTE_MESSAGES, STATUS_LABELS, creditNoteNumberLabel } from "./_messages";
 import type { CreditNoteListRow } from "./_types";
@@ -35,6 +36,9 @@ export default function CreditNotesPage() {
     const [rows, setRows] = useState<CreditNoteListRow[]>([]);
     const [total, setTotal] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
+    // โหลดไม่สำเร็จ = บอกเหตุผล + ลองใหม่ แทนรายการว่าง (usability R2-1)
+    const [loadError, setLoadError] = useState<LoadError | null>(null);
+    const [reloadCount, setReloadCount] = useState(0);
 
     useEffect(() => {
         let isLeftPage = false;
@@ -44,8 +48,9 @@ export default function CreditNotesPage() {
             limit: String(pageSize),
             offset: String((page - 1) * pageSize),
         });
-        apiFetch<{ data: CreditNoteListRow[]; total: number }>(`/credit-notes?${query}`).then(({ data }) => {
+        apiFetch<{ data: CreditNoteListRow[]; total: number }>(`/credit-notes?${query}`).then(({ data, error }) => {
             if (isLeftPage) return;
+            setLoadError(error);
             setRows(data?.data ?? []);
             setTotal(data?.total ?? 0);
             setIsLoading(false);
@@ -53,7 +58,7 @@ export default function CreditNotesPage() {
         return () => {
             isLeftPage = true;
         };
-    }, [tab, search, page, pageSize]);
+    }, [tab, search, page, pageSize, reloadCount]);
 
     const columns: Column<CreditNoteListRow>[] = [
         {
@@ -128,6 +133,8 @@ export default function CreditNotesPage() {
                 options={TABS}
             />
             <DataTable
+                loadError={loadError}
+                onRetry={() => setReloadCount((count) => count + 1)}
                 columns={columns}
                 data={rows}
                 rowKey="cn_id"

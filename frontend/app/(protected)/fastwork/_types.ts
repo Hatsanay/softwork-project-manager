@@ -1,8 +1,10 @@
 // งาน Fastwork (2026-10-24 · P-1) — ตรงกับคำตอบของ backend/src/services/fastwork.service.js
+import type { ProjectTodo } from "@/app/(protected)/dashboard/_components/project-todo-card";
 
 export type FastworkNextStep = "work" | "record" | "receive" | "close" | "pay" | "done";
 export type FastworkPayoutStatus = "pending" | "received" | "cancelled";
-export type FastworkMilestoneState = "open" | "delivered" | "pending" | "received";
+// cut = ตัดงวดแล้ว ลูกค้าไม่จ่าย (2026-11-01)
+export type FastworkMilestoneState = "open" | "delivered" | "pending" | "received" | "cut";
 
 export type FastworkSettings = {
     cs_fastwork_fee_rate: string;
@@ -33,11 +35,15 @@ export type FastworkOverview = {
         client_name: string | null;
         project_due_date: string | null;
         milestone_count: number;
+        // ส่งงานแล้ว (รวมที่ลูกค้ายืนยัน/เงินเข้าแล้ว) · ไม่นับงวดที่ตัด
+        delivered_count: number;
         received_count: number;
         next_step: FastworkNextStep;
         next_milestone: { fwm_name: string; fwm_due_date: string | null } | null;
         contract_amount: string | null;
     }[];
+    // สิ่งที่ต้องทำของงาน Fastwork (กฎเดียวกับ "ต่อไปต้องทำ" ของโปรเจกต์ · 2026-11-01)
+    todo: ProjectTodo;
 };
 
 export type FastworkMilestone = {
@@ -48,6 +54,8 @@ export type FastworkMilestone = {
     fwm_amount?: string;
     fwm_due_date: string | null;
     fwm_delivered_at: string | null;
+    fwm_cancelled_at: string | null;
+    fwm_cancel_reason: string | null;
     state: FastworkMilestoneState;
     payout_id: number | null;
 };

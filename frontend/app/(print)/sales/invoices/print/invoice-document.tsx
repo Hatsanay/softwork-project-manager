@@ -17,7 +17,6 @@ import { formatDocumentDate } from "../../quotations/print/labels";
 import { INVOICE_PRINT_LABELS, type InvoicePrintLabels } from "./labels";
 import { percentLabel } from "@/app/(protected)/sales/invoices/_format";
 
-
 function branchLabel(code: string | null, name: string | null, labels: InvoicePrintLabels) {
     if (!code) return "";
     return code === "00000" ? labels.headOffice : `${labels.branch} ${code}${name ? ` ${name}` : ""}`;
@@ -99,7 +98,11 @@ export default function InvoiceDocument({
             rows.push({ kind: "heading", key: String(item.invi_id), item });
         } else if (item.invi_type === "note") {
             rows.push({ kind: "note", key: String(item.invi_id), item });
-        } else if (currentHeading && parseHundredths(item.invi_amount, "ยอด") === 0n && parseHundredths(item.invi_unit_price ?? "0", "ราคา") === 0n) {
+        } else if (
+            currentHeading &&
+            parseHundredths(item.invi_amount, "ยอด") === 0n &&
+            parseHundredths(item.invi_unit_price ?? "0", "ราคา") === 0n
+        ) {
             rows.push({ kind: "included", key: String(item.invi_id), item });
         } else {
             itemNumber += 1;

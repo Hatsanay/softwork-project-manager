@@ -161,7 +161,7 @@ const approvalLevelSchema = z.object({
     al_require_distinct: z.boolean(),
     role_ids: z
         .array(z.string().min(1), { error: "กรุณาเลือก role ผู้อนุมัติ" })
-        .min(1, "ทุกชั้นต้องมี role ผู้อนุมัติอย่างน้อย 1 role"),
+        .min(1, "ทุกชั้นต้องมีกลุ่มสิทธิ์ผู้อนุมัติอย่างน้อย 1 กลุ่ม"),
 });
 
 // ประเภทเอกสารที่มีกติกาอนุมัติของตัวเอง + สิทธิ์ที่ผู้อนุมัติต้องมี

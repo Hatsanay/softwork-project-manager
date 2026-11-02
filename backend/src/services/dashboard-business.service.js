@@ -96,7 +96,9 @@ async function businessSummary(conn, rolePermission) {
 
     if (FASTWORK_HUB_BITS.some(can)) {
         const overview = await fastworkService.overview(conn, { canSeeMoney: can("manageFastwork") });
-        result.fastwork = { steps: overview.steps, projects: overview.projects.slice(0, FASTWORK_PROJECT_LIMIT), project_count: overview.projects.length };
+        // งานที่จบแล้ว (หน้า Fastwork แท็บจบแล้ว) ไม่ขึ้นบนแดชบอร์ด
+        const openProjects = overview.projects.filter((project) => project.next_step !== "done");
+        result.fastwork = { steps: overview.steps, projects: openProjects.slice(0, FASTWORK_PROJECT_LIMIT), project_count: openProjects.length };
     }
 
     // บริการรายรอบ (2026-10-31): ต่ออายุใกล้ครบ/เลยกำหนด ตามช่องทางที่มีสิทธิ์

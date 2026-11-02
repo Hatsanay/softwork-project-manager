@@ -67,6 +67,29 @@ export function offerText(
     return parts.join("\n");
 }
 
+/**
+ * รายการและราคาสำหรับส่งแชตลูกค้าตรง (ก่อนออกใบเสนอราคา · 2026-11-01) · ยอดบนลงล่าง: รวม → VAT → ยอดรวม
+ * ราคาเบื้องต้น: ยอดจริงตามใบเสนอราคา
+ */
+export function priceListText(
+    lines: { name: string; quantity: number; unit: string | null; packageItems: string[]; amount: bigint }[],
+    totals: { subtotal: bigint; vat: bigint; total: bigint; vatRate: string | null },
+    priceNotes: string[] = [],
+) {
+    const parts = ["รายการและราคา"];
+    for (const line of lines) {
+        const quantity = line.quantity > 1 ? ` × ${line.quantity}${line.unit ? ` ${line.unit}` : ""}` : "";
+        parts.push(`- ${line.name}${quantity}: ${formatAmount(line.amount)} บาท`);
+        for (const item of line.packageItems) parts.push(`   · ${item}`);
+    }
+    if (priceNotes.length > 0)
+        parts.push("", "ราคาที่ขึ้นกับรายละเอียดของคุณ", ...priceNotes.map((note) => `- ${note}`));
+    parts.push("", `รวม ${formatAmount(totals.subtotal)} บาท`);
+    if (totals.vatRate) parts.push(`VAT ${Number(totals.vatRate)}% ${formatAmount(totals.vat)} บาท`);
+    parts.push(`ยอดรวม ${formatAmount(totals.total)} บาท`, "(ยอดสุดท้ายตามใบเสนอราคา)");
+    return parts.join("\n");
+}
+
 function choicesText(question: RequirementQuestion) {
     if (!question.rqq_options?.length) return null;
     const choices = question.rqq_allow_other

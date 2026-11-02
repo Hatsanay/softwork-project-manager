@@ -12,6 +12,7 @@ import StatusBanner from "@/components/ui/guidance/status-banner";
 import FormField, { inputClass } from "@/components/ui/form-field";
 import { buttonClass } from "@/components/ui/button";
 import { formatAmount, formatHundredths, formatQuantity } from "@/lib/shared/money.mjs";
+import { formatBangkokDateTime } from "@/app/function";
 import { lineAmount } from "@/lib/shared/order-cart-math.mjs";
 import { orderAcceptSchema } from "@/lib/shared/schemas/order-link.mjs";
 import type { ApiError } from "@/lib/api";
@@ -144,7 +145,7 @@ export default function OrderStatusPage() {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <p className="flex flex-wrap gap-2 text-xs text-gray-600">
                         <span className="hero-tile px-3 py-1 tabular-nums">เลขคำขอ {data.request.number}</span>
-                        <span className="hero-tile px-3 py-1 tabular-nums">ส่งเมื่อ {data.request.submitted_at}</span>
+                        <span className="hero-tile px-3 py-1 tabular-nums">ส่งเมื่อ {formatBangkokDateTime(data.request.submitted_at)}</span>
                     </p>
                     {progress.stage === "quotation" && (
                         <a href="#quotation" className={buttonClass("primary", "md", "min-h-11")}>

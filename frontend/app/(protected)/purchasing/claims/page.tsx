@@ -14,6 +14,7 @@ import { buttonClass } from "@/components/ui/button";
 import { usePermission, BITS } from "@/app/components/permission-provider";
 import { formatDateOnly } from "@/app/function";
 import { apiFetch } from "@/lib/api";
+import type { LoadError } from "@/components/ui/guidance/load-error-banner";
 import { formatAmount } from "@/lib/shared/money.mjs";
 import { STATUS_LABELS, expenseNumberLabel } from "../expenses/_messages";
 import type { ExpenseListRow } from "../expenses/_types";
@@ -50,6 +51,9 @@ export default function ClaimsPage() {
     const [rows, setRows] = useState<ExpenseListRow[]>([]);
     const [total, setTotal] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
+    // โหลดไม่สำเร็จ = บอกเหตุผล + ลองใหม่ แทนรายการว่าง (usability R2-1)
+    const [loadError, setLoadError] = useState<LoadError | null>(null);
+    const [reloadCount, setReloadCount] = useState(0);
 
     const tabs =
         canApprove && scope === "all"
@@ -65,8 +69,9 @@ export default function ClaimsPage() {
             limit: String(pageSize),
             offset: String((page - 1) * pageSize),
         });
-        apiFetch<{ data: ExpenseListRow[]; total: number }>(`/claims?${query}`).then(({ data }) => {
+        apiFetch<{ data: ExpenseListRow[]; total: number }>(`/claims?${query}`).then(({ data, error }) => {
             if (isLeftPage) return;
+            setLoadError(error);
             setRows(data?.data ?? []);
             setTotal(data?.total ?? 0);
             setIsLoading(false);
@@ -74,7 +79,7 @@ export default function ClaimsPage() {
         return () => {
             isLeftPage = true;
         };
-    }, [scope, tab, search, page, pageSize]);
+    }, [scope, tab, search, page, pageSize, reloadCount]);
 
     const columns: Column<ExpenseListRow>[] = [
         {
@@ -188,6 +193,8 @@ export default function ClaimsPage() {
                 options={tabs}
             />
             <DataTable
+                loadError={loadError}
+                onRetry={() => setReloadCount((count) => count + 1)}
                 columns={columns}
                 data={rows}
                 rowKey="ex_id"

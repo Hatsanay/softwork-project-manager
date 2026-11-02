@@ -18,6 +18,7 @@ import { apiFetch, type ApiError } from "@/lib/api";
 import { formatAmount } from "@/lib/shared/money.mjs";
 import { LINK_KIND_LABEL, type ServiceRequestRow, type ServiceRequestStatus } from "../order-links/_types";
 import { REQUEST_STATUS, requestStatusOf } from "./_status";
+import { formatBangkokDateTime } from "@/app/function";
 
 type Filter = "all" | ServiceRequestStatus;
 const FILTERS: Filter[] = ["submitted", "awaiting_customer", "converted", "rejected", "closed", "all"];
@@ -134,7 +135,7 @@ function ServiceRequestsContent() {
                                             </span>
                                         </div>
                                         <span className="text-xs text-gray-500">
-                                            {[row.svr_id, row.svr_submitted_at, row.svr_contact_phone, row.ol_name, `ผู้รับ ${row.assignee_name ?? "-"}`]
+                                            {[row.svr_id, formatBangkokDateTime(row.svr_submitted_at), row.svr_contact_phone, row.ol_name, `ผู้รับ ${row.assignee_name ?? "-"}`]
                                                 .filter(Boolean)
                                                 .join(" · ")}
                                         </span>

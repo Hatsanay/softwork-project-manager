@@ -12,6 +12,7 @@ import { buttonClass } from "@/components/ui/button";
 import { usePermission, BITS } from "@/app/components/permission-provider";
 import { formatDateOnly } from "@/app/function";
 import { apiFetch } from "@/lib/api";
+import type { LoadError } from "@/components/ui/guidance/load-error-banner";
 import { formatAmount, parseHundredths } from "@/lib/shared/money.mjs";
 import { METHOD_LABELS, RECEIPT_MESSAGES, STATUS_LABELS } from "./_messages";
 import type { ReceiptListRow } from "./_types";
@@ -30,28 +31,42 @@ const EMPTY_MESSAGES: Record<TabKey, string> = {
     cancelled: "ไม่มีใบเสร็จที่ยกเลิก",
 };
 
+// ช่องทาง (2026-11-01): เอกสารงาน Fastwork = ระบบออกจากเงินงวด Fastwork (เอกสารประกอบ ไม่นับรายได้ซ้ำ)
+type ChannelKey = "all" | "direct" | "fastwork";
+const CHANNELS: { value: ChannelKey; label: string }[] = [
+    { value: "all", label: "ทุกช่องทาง" },
+    { value: "direct", label: "ลูกค้าตรง" },
+    { value: "fastwork", label: "งาน Fastwork" },
+];
+
 export default function ReceiptsPage() {
     const router = useRouter();
     const hasBit = usePermission();
     const canCreate = hasBit(BITS.createReceipt);
     const [tab, setTab] = useState<TabKey>("all");
     const [search, setSearch] = useState("");
+    const [channel, setChannel] = useState<ChannelKey>("all");
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
     const [rows, setRows] = useState<ReceiptListRow[]>([]);
     const [total, setTotal] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
+    // โหลดไม่สำเร็จ = บอกเหตุผล + ลองใหม่ แทนรายการว่าง (usability R2-1)
+    const [loadError, setLoadError] = useState<LoadError | null>(null);
+    const [reloadCount, setReloadCount] = useState(0);
 
     useEffect(() => {
         let isLeftPage = false;
         const query = new URLSearchParams({
             tab,
             search,
+            ...(channel === "all" ? {} : { channel }),
             limit: String(pageSize),
             offset: String((page - 1) * pageSize),
         });
-        apiFetch<{ data: ReceiptListRow[]; total: number }>(`/receipts?${query}`).then(({ data }) => {
+        apiFetch<{ data: ReceiptListRow[]; total: number }>(`/receipts?${query}`).then(({ data, error }) => {
             if (isLeftPage) return;
+            setLoadError(error);
             setRows(data?.data ?? []);
             setTotal(data?.total ?? 0);
             setIsLoading(false);
@@ -59,7 +74,7 @@ export default function ReceiptsPage() {
         return () => {
             isLeftPage = true;
         };
-    }, [tab, search, page, pageSize]);
+    }, [tab, search, channel, page, pageSize, reloadCount]);
 
     const columns: Column<ReceiptListRow>[] = [
         {
@@ -72,6 +87,7 @@ export default function ReceiptsPage() {
                     onClick={() => router.push(`/sales/receipts/view?id=${row.rc_id}`)}
                 >
                     <span className="text-xs text-gray-500 tabular-nums">{row.rc_number}</span>
+                    {row.rc_fastwork_payout_id && <StatusPill tone="neutral">งาน Fastwork</StatusPill>}
                     <span className="font-medium text-gray-800 hover:text-blue-600">
                         {row.client_company || row.client_name}
                     </span>
@@ -156,7 +172,18 @@ export default function ReceiptsPage() {
                 }}
                 options={TABS}
             />
+            <Segmented<ChannelKey>
+                label="กรองตามช่องทาง"
+                value={channel}
+                onChange={(value) => {
+                    setChannel(value);
+                    setPage(1);
+                }}
+                options={CHANNELS}
+            />
             <DataTable
+                loadError={loadError}
+                onRetry={() => setReloadCount((count) => count + 1)}
                 columns={columns}
                 data={rows}
                 rowKey="rc_id"

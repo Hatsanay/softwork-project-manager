@@ -334,6 +334,7 @@ export default function ReportsPage() {
     return (
         <div className="grid grid-cols-1 gap-6">
             <PageHeader
+                eyebrow="รายงาน"
                 title="รายงานขาย"
                 description="ยอดขาย = ยอดก่อน VAT ของใบแจ้งหนี้ที่ออกในช่วง (ไม่นับใบที่ยกเลิก) · รับชำระ = ตามวันที่ในใบเสร็จ · ทุกยอดเป็นบาท · สกุลต่างประเทศคิดตามอัตราของเอกสาร"
             />
@@ -375,7 +376,12 @@ export default function ReportsPage() {
                         <SummaryCard
                             label="ยอดขาย (ออกบิล ก่อน VAT)"
                             value={formatAmount(summary.billed.amount_thb)}
-                            detail={`${summary.billed.invoice_count} ใบ · รวม VAT ${formatAmount(summary.billed.amount_with_vat_thb)}`}
+                            // ไม่มี VAT ในช่วง (เช่นยังไม่จด VAT) ยอดรวม VAT = ยอดเดียวกัน ไม่โชว์ซ้ำ (usability U-5)
+                            detail={
+                                summary.billed.amount_with_vat_thb === summary.billed.amount_thb
+                                    ? `${summary.billed.invoice_count} ใบ`
+                                    : `${summary.billed.invoice_count} ใบ · รวม VAT ${formatAmount(summary.billed.amount_with_vat_thb)}`
+                            }
                         />
                     ) : (
                         // มีใบลดหนี้ในช่วง: ยอดขายสุทธิ = ออกบิล − ลดหนี้ (แสดงทั้งสองตัวในรายละเอียด)

@@ -13,6 +13,7 @@
     "seed:demo": "node scripts/seed-demo.js",
     "mock:export": "node scripts/mock-data/export.js",
     "mock:export:pre": "node scripts/mock-data/export.js --set pre-incorporation",
+    "check:fastwork-settlements": "node scripts/check-fastwork-settlements.js",
     "mock:verify": "node scripts/mock-data/verify.js",
     "mock:verify:pre": "node scripts/mock-data/verify.js --set pre-incorporation"
   },

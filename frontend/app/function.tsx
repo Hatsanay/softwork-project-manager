@@ -36,3 +36,14 @@ export function toDateInputValue(value: unknown): string {
     const dd = String(bangkok.getDate()).padStart(2, "0");
     return `${yyyy}-${mm}-${dd}`;
 }
+
+// วันเวลาไทยจาก API แบบ "YYYY-MM-DD HH:mm" (DATE_FORMAT ฝั่ง MySQL ไม่มีโซน) → ระบุ +07:00 ก่อนแปลง
+// ไม่งั้นเครื่องที่ตั้งโซนอื่นจะอ่านเป็นเวลาท้องถิ่นแล้วเลื่อน (usability R2-4)
+export function bangkokDateTimeToIso(value: string | null | undefined): string | null {
+    if (!value) return null;
+    return `${value.replace(" ", "T")}:00+07:00`;
+}
+
+export function formatBangkokDateTime(value: string | null | undefined): string {
+    return formatDate(bangkokDateTimeToIso(value));
+}

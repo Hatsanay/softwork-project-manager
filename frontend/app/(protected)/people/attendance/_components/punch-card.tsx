@@ -248,7 +248,17 @@ function LocationLine({
     let tone = "text-gray-600";
     if (location.kind === "locating") text = "กำลังหาตำแหน่ง...";
     else if (location.kind === "denied") {
-        text = <>ไม่ได้รับอนุญาตให้ใช้ตำแหน่ง · {ATTENDANCE_MESSAGES.gpsDenied}</>;
+        // หัวข้อแดงบรรทัดเดียว + วิธีเปิดเป็นข้อๆ สีปกติ (เดิมเป็นตัวแดงยาวในคอลัมน์แคบ · usability R2-8)
+        text = (
+            <>
+                <span className="font-medium">ไม่ได้รับอนุญาตให้ใช้ตำแหน่ง · เปิดให้เว็บนี้ใช้ตำแหน่ง</span>
+                <ol className="mt-1.5 grid list-decimal gap-1 pl-4 text-gray-600">
+                    {ATTENDANCE_MESSAGES.gpsDeniedSteps.map((step) => (
+                        <li key={step}>{step}</li>
+                    ))}
+                </ol>
+            </>
+        );
         tone = "text-red-600";
     } else if (location.kind === "unavailable") {
         text = location.reason === "insecure" ? ATTENDANCE_MESSAGES.gpsInsecure : "หาตำแหน่งไม่สำเร็จ · ออกไปที่โล่งหรือเปิด GPS แล้วกด หาตำแหน่งใหม่";
@@ -262,8 +272,12 @@ function LocationLine({
         tone = "text-amber-700";
     }
 
+    // หาตำแหน่งไม่ได้ = ข้อความยาว ให้ปุ่มลงไปอยู่บรรทัดล่าง ไม่แย่งความกว้าง
+    const isProblem = location.kind === "denied" || location.kind === "unavailable";
     return (
-        <div className="flex flex-wrap items-start justify-between gap-2 rounded-xl bg-gray-50 px-3 py-2.5">
+        <div
+            className={`rounded-xl bg-gray-50 px-3 py-2.5 ${isProblem ? "grid justify-items-start gap-2" : "flex flex-wrap items-start justify-between gap-2"}`}
+        >
             <span className={`flex min-w-0 flex-1 items-start gap-2 text-sm ${tone}`}>
                 <MapPin size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
                 <span className="min-w-0">{text}</span>

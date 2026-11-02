@@ -90,9 +90,11 @@ type ProductsTabProps = {
     canEdit: boolean;
     // ไปแก้คำถามลูกค้าของรายการนี้ในแท็บคำถาม (Q-2)
     onOpenQuestions: (target: QuestionsTarget) => void;
+    // มาจากแท็บคำถาม (กดชื่อสินค้า): เปิดแผงแก้สินค้านี้ทันที
+    openProductId?: string | null;
 };
 
-export default function ProductsTab({ categories, canEdit, onOpenQuestions }: ProductsTabProps) {
+export default function ProductsTab({ categories, canEdit, onOpenQuestions, openProductId = null }: ProductsTabProps) {
     const messages = PRODUCT_MESSAGES.products;
     const [products, setProducts] = useState<Product[]>([]);
     const [total, setTotal] = useState(0);
@@ -170,6 +172,23 @@ export default function ProductsTab({ categories, canEdit, onOpenQuestions }: Pr
         editor.openEdit(product.product_id, productForm);
         setOpenedFormJson(JSON.stringify(productForm));
     }
+
+    // มาจากแท็บคำถาม: โหลดสินค้านั้นแล้วเปิดแผงแก้ (ครั้งเดียวต่อรหัส)
+    const [openedFromQuestions, setOpenedFromQuestions] = useState<string | null>(null);
+    useEffect(() => {
+        if (!openProductId || openedFromQuestions === openProductId) return;
+        let isLeftPage = false;
+        apiFetch<Product>(`/products/${encodeURIComponent(openProductId)}`).then(({ data }) => {
+            if (isLeftPage || !data) return;
+            setOpenedFromQuestions(openProductId);
+            openEdit(data);
+        });
+        return () => {
+            isLeftPage = true;
+        };
+        // openEdit อ่าน state ล่าสุดตอนเรียก ไม่ต้องอยู่ใน deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [openProductId, openedFromQuestions]);
 
     async function handleSubmit(event: React.FormEvent) {
         event.preventDefault();

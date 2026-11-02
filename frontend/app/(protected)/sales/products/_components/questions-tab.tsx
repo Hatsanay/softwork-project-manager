@@ -20,7 +20,7 @@ import MoveQuestionSheet from "./move-question-sheet";
 import RequirementGroupCard from "./requirement-group-card";
 import RequirementGroupSheet from "./requirement-group-sheet";
 import RequirementQuestionSheet from "./requirement-question-sheet";
-import { groupAudienceText, questionItemsText, type LinkableItems } from "./requirement-labels";
+import { groupAudienceText, questionItemLinks, type ItemLink, type LinkableItems } from "./requirement-labels";
 import { questionnaireWarnings, warningCount } from "./requirement-warnings";
 import type { QuestionsTarget } from "./item-questions-panel";
 import type { ScenarioLink } from "./requirement-scenario";
@@ -55,9 +55,12 @@ type SheetState =
 export default function QuestionsTab({
     canEdit,
     target = null,
+    onOpenItem,
 }: {
     canEdit: boolean;
     target?: QuestionsTarget | null;
+    // กดชื่อสินค้า/ชุดใน "ถามเมื่อเลือก" → แท็บสินค้า/ชุด เปิดแผงแก้รายการนั้น
+    onOpenItem: (link: ItemLink) => void;
 }) {
     const [groups, setGroups] = useState<RequirementGroup[] | null>(null);
     const [items, setItems] = useState<LinkableItems>({ packages: [], products: [] });
@@ -266,7 +269,8 @@ export default function QuestionsTab({
                         key={group.rqg_id}
                         group={group}
                         description={groupAudienceText(group, items)}
-                        itemsTextOf={(question) => questionItemsText(question, group, items)}
+                        itemLinksOf={(question) => questionItemLinks(question, group, items)}
+                        onOpenItem={onOpenItem}
                         warnings={warnings.get(group.rqg_id)}
                         canEdit={canEdit}
                         isFirst={index === 0}

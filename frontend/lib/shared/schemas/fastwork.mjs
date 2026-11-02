@@ -58,6 +58,8 @@ export const fastworkProjectSchema = z
         // รับงานต่ออายุจากหน้าต่ออายุบริการ (2026-10-31) · บันทึกรอบ + ขยับวันครบตอนสร้างงาน
         renewal_id: optionalText("รายการต่ออายุ", 18),
         renewal_version: integerInRange("เวอร์ชัน", 0, 2_000_000_000).nullish(),
+        // ทีมและส่วนแบ่ง (2026-11-01) · ตรวจละเอียดด้วย projectSharesSchema ใน controller (กติกาเดียวกับหน้าส่วนแบ่ง) · ว่าง = ตั้งทีหลัง
+        shares: z.array(z.unknown()).default([]),
     })
     .superRefine((project, context) => {
         if (!project.client_id && !project.client_name) {
@@ -73,6 +75,9 @@ export const fastworkProjectSchema = z
             context.addIssue({ code: "custom", path: ["tasks"], message: "รับงานจากคำขอ ระบบสร้างงานจากรายการในคำขอให้แล้ว · ไม่ต้องเลือกสินค้าเพิ่ม" });
         }
     });
+
+/** ตัดงวด (ลูกค้าไม่จ่าย/ยกเลิกบางส่วน · 2026-11-01) */
+export const fastworkMilestoneCutSchema = z.object({ reason: requiredText("เหตุผลที่ตัดงวด", 300) });
 
 /** แก้ข้อมูล Fastwork ของโปรเจกต์ + งวดงานทั้งชุด */
 export const fastworkProjectUpdateSchema = z.object({

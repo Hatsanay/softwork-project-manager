@@ -29,6 +29,8 @@ export type DueStatus = {
 };
 
 export type InvoiceListRow = DueStatus & {
+    // ระบบออกจากเงินงวด Fastwork (2026-11-01)
+    inv_fastwork_payout_id: number | null;
     payment_state: PaymentState;
     outstanding_amount: string;
     inv_id: string;

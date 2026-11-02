@@ -277,3 +277,14 @@ test("แดชบอร์ด: สิ่งที่ต้องทำรวม
         assert.ok(entry.action);
     }
 });
+
+test("ยกเลิกโปรเจกต์ที่เสร็จแล้วไม่ได้ (กู้คืนจะกลับเป็นวางแผน สถานะเสร็จหาย) · โปรเจกต์ที่ยังไม่เสร็จยกเลิกได้", async () => {
+    const created = expectStatus(await admin("POST", "/V1/projects", { project_name: "งานที่ส่งแล้ว", client_id: clientId }), 201);
+    const projectId = created.project_id ?? created.data?.project_id;
+    await api.pool.query("UPDATE tb_projects SET project_status = 'completed' WHERE project_id = ?", [projectId]);
+    const blocked = expectStatus(await admin("PUT", `/V1/projects/${projectId}/cancel`, {}), 409);
+    assert.equal(blocked.code, "PROJECT_COMPLETED");
+
+    await api.pool.query("UPDATE tb_projects SET project_status = 'in_progress' WHERE project_id = ?", [projectId]);
+    expectStatus(await admin("PUT", `/V1/projects/${projectId}/cancel`, {}), 200);
+});

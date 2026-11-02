@@ -302,7 +302,7 @@ function SceneSettings(t: number) {
                                         }
                                     />
                                     <div className="grid gap-1">
-                                        <span className="text-gray-700">role ที่อนุมัติชั้นนี้ได้</span>
+                                        <span className="text-gray-700">กลุ่มสิทธิ์ที่อนุมัติชั้นนี้ได้</span>
                                         <div className="flex flex-wrap gap-1.5">
                                             {ROLES.map((role) => (
                                                 <RoleChip

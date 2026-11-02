@@ -982,7 +982,7 @@ function StatusGuide({ detail, config }: { detail: ExpenseDetail; config: (typeo
             if (expense.payment_state === "paid") {
                 return (
                     <StatusBanner tone="done" title="จ่ายครบแล้ว">
-                        ยกเลิกรายการนี้ไม่ได้จนกว่าจะยกเลิกใบสำคัญจ่าย
+                        ดูใบสำคัญจ่ายในส่วน &quot;{detail.expense.ex_kind === "claim" ? "การรับเงินคืน" : "การจ่ายเงิน"}&quot;
                     </StatusBanner>
                 );
             }

@@ -91,7 +91,7 @@ function buildApprovalWarnings(levels, permissionLabel = "อนุมัติ�
     levels.forEach((level, index) => {
         if (level.eligible_users.length === 0) {
             warnings.push(
-                `ชั้น ${level.al_level} ยังไม่มีผู้ใช้ที่อนุมัติได้ (ไม่มีผู้ใช้ที่เปิดใช้งานใน role ที่เลือก หรือ role นั้นยังไม่ได้ติ๊กสิทธิ์ "${permissionLabel}") · ใบที่ต้องผ่านชั้นนี้จะค้าง`,
+                `ชั้น ${level.al_level} ยังไม่มีผู้ใช้ที่อนุมัติได้ (ไม่มีผู้ใช้ที่เปิดใช้งานในกลุ่มสิทธิ์ที่เลือก หรือกลุ่มนั้นยังไม่ได้ติ๊กสิทธิ์ "${permissionLabel}") · ใบที่ต้องผ่านชั้นนี้จะค้าง`,
             );
             return;
         }
@@ -130,10 +130,10 @@ async function saveApprovalRules(conn, documentType, levels) {
     levels.forEach((level, index) => {
         const hasMissingRole = level.role_ids.some((roleId) => !existingRoleIds.has(roleId));
         if (hasMissingRole)
-            fields[`levels.${index}.role_ids`] = "มี role ที่ถูกลบไปแล้ว กรุณาโหลดหน้าใหม่แล้วเลือกใหม่";
+            fields[`levels.${index}.role_ids`] = "มีกลุ่มสิทธิ์ที่ถูกลบไปแล้ว กรุณาโหลดหน้าใหม่แล้วเลือกใหม่";
     });
     if (Object.keys(fields).length > 0) {
-        throw new AppError(400, "VALIDATION", "มี role ที่ถูกลบไปแล้ว กรุณาโหลดหน้าใหม่", fields);
+        throw new AppError(400, "VALIDATION", "มีกลุ่มสิทธิ์ที่ถูกลบไปแล้ว กรุณาโหลดหน้าใหม่", fields);
     }
 
     // ล็อกกติกาเดิมก่อนลบ — สองคนบันทึกพร้อมกัน คนหลังรอคนแรกเสร็จ ได้ชุดของคนหลังครบทั้งชุด ไม่ปนกัน

@@ -95,7 +95,7 @@ export default function CapitalPage() {
 
     const header = (
         <PageHeader
-            eyebrow="Fastwork · ขั้นที่ 10"
+            eyebrow="Fastwork · รายงาน"
             title="เงินทุนสะสม"
             description={CAPITAL_MESSAGES.description}
             actions={

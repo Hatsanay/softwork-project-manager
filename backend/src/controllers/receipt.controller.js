@@ -22,6 +22,7 @@ async function list(req, res, next) {
             search: String(req.query.search ?? ""),
             clientId: req.query.client_id ? String(req.query.client_id) : undefined,
             invoiceId: req.query.invoice_id ? String(req.query.invoice_id) : undefined,
+            channel: req.query.channel ? String(req.query.channel) : undefined,
             limit: req.query.limit,
             offset: req.query.offset,
         });

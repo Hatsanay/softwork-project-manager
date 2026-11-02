@@ -7,6 +7,7 @@ import Link from "next/link";
 import { Clock3, House, PencilLine } from "lucide-react";
 import PageHeader from "@/components/ui/page-header";
 import StatusBanner from "@/components/ui/guidance/status-banner";
+import NotEmployeeBanner from "../_components/not-employee-banner";
 import HowItWorks from "@/components/ui/guidance/how-it-works";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { buttonClass } from "@/components/ui/button";
@@ -97,9 +98,7 @@ export default function AttendancePage() {
         return (
             <div className="grid w-full gap-6">
                 {header}
-                <StatusBanner tone="info" title="ยังลงเวลาไม่ได้">
-                    {ATTENDANCE_MESSAGES.notEmployee}
-                </StatusBanner>
+                <NotEmployeeBanner title="ยังลงเวลาไม่ได้">{ATTENDANCE_MESSAGES.notEmployee}</NotEmployeeBanner>
             </div>
         );
     }

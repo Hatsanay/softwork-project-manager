@@ -249,8 +249,12 @@ async function remove(req, res, next) {
 // สิทธิ์ระดับระบบ ไม่ต้องเป็นสมาชิกโปรเจกต์นั้นก็ยกเลิกได้ (ต่างจาก editProjectInfo ที่ต้องเป็นสมาชิก)
 async function cancel(req, res, next) {
     try {
-        const [rows] = await pool.query("SELECT project_id FROM tb_projects WHERE project_id = ?", [req.params.id]);
+        const [rows] = await pool.query("SELECT project_id, project_status FROM tb_projects WHERE project_id = ?", [req.params.id]);
         if (!rows[0]) return res.status(404).json({ message: "ไม่พบโปรเจกต์นี้" });
+        // งานที่เสร็จแล้วยกเลิกไม่ได้: กู้คืนจะกลับเป็น "วางแผน" ทำให้สถานะเสร็จหาย (2026-11-01 usability U-1)
+        if (rows[0].project_status === "completed") {
+            return res.status(409).json({ code: "PROJECT_COMPLETED", message: "โปรเจกต์ที่เสร็จแล้วยกเลิกไม่ได้" });
+        }
 
         await withTransaction(async (conn) => {
             await conn.query("UPDATE tb_projects SET project_status = 'cancelled' WHERE project_id = ?", [req.params.id]);

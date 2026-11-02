@@ -170,6 +170,9 @@ export function SettleSheet({ detail, onClose, onSaved }: { detail: ProjectShare
     const [isSaving, setIsSaving] = useState(false);
     const { profit, estimate } = detail;
     const isBlocked = profit.pending_payouts > 0;
+    // งาน Fastwork (2026-11-01): ปิดยอด = ปิดงาน · ต้องเงินเข้าครบทุกงวด (งวดที่ลูกค้าไม่จ่ายให้ตัดงวดก่อน)
+    const isFastwork = detail.project.project_channel === "fastwork";
+    const hasUnpaidMilestones = isFastwork && Number(detail.expected.remaining_revenue) > 0 && !isBlocked;
 
     async function submit(event: React.FormEvent) {
         event.preventDefault();
@@ -184,13 +187,19 @@ export function SettleSheet({ detail, onClose, onSaved }: { detail: ProjectShare
         const isSaved = await sendRequest(`/profit-shares/projects/${detail.project.project_id}/settle`, checked.data, setErrors, setBannerError);
         setIsSaving(false);
         if (!isSaved) return;
-        toast.success("ปิดยอดส่วนแบ่งแล้ว");
+        toast.success(isFastwork ? "ปิดงานและปิดยอดแล้ว · บันทึกจ่ายทีละคนได้เลย" : "ปิดยอดส่วนแบ่งแล้ว");
         await onSaved();
         onClose();
     }
 
     return (
-        <SheetFrame titleId="settle-title" title="ปิดยอดส่วนแบ่ง" subtitle={detail.project.project_name} onClose={onClose} onSubmit={submit}>
+        <SheetFrame
+            titleId="settle-title"
+            title={isFastwork ? "ปิดงานและปิดยอดส่วนแบ่ง" : "ปิดยอดส่วนแบ่ง"}
+            subtitle={detail.project.project_name}
+            onClose={onClose}
+            onSubmit={submit}
+        >
             {bannerError && (
                 <StatusBanner tone="error" title="ปิดยอดไม่สำเร็จ">
                     {bannerError}
@@ -200,6 +209,14 @@ export function SettleSheet({ detail, onClose, onSaved }: { detail: ProjectShare
                 <StatusBanner tone="warn" title={`ยังมีเงิน Fastwork รอโอน ${profit.pending_payouts} รายการ`}>
                     ยืนยันเงินเข้า (หรือยกเลิกรายการ) ในหน้าเงินจาก Fastwork ก่อน แล้วค่อยปิดยอด
                 </StatusBanner>
+            )}
+            {hasUnpaidMilestones && (
+                <StatusBanner tone="warn" title="บางงวดเงินยังไม่เข้า">
+                    บันทึกเงินให้ครบ หรือกด &quot;ตัดงวด&quot; งวดที่ลูกค้าไม่จ่ายในหน้าโปรเจกต์ ก่อนปิดงาน
+                </StatusBanner>
+            )}
+            {isFastwork && !isBlocked && !hasUnpaidMilestones && (
+                <FieldHint>ปิดยอดแล้วระบบเปลี่ยนงานเป็น &quot;เสร็จแล้ว&quot; ให้ · ยกเลิกการปิดยอดได้ถ้ายังไม่ได้จ่ายใคร (งานกลับมาเป็นกำลังทำ)</FieldHint>
             )}
             {Number(profit.pending_expense) > 0 && (
                 <StatusBanner tone="warn" title={`มีค่าใช้จ่ายที่ยังไม่อนุมัติ ${formatAmount(profit.pending_expense)} บาท`}>

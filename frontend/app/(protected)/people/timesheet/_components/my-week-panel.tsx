@@ -9,6 +9,7 @@ import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ChevronLeft, ChevronRight, Copy, Send } from "lucide-react";
 import StatusBanner from "@/components/ui/guidance/status-banner";
+import NotEmployeeBanner from "../../_components/not-employee-banner";
 import FieldHint from "@/components/ui/guidance/field-hint";
 import HowItWorks from "@/components/ui/guidance/how-it-works";
 import StatusPill from "@/components/ui/status-pill";
@@ -116,9 +117,7 @@ export default function MyWeekPanel() {
     if (!data || (requestedWeek !== null && data.week_start !== requestedWeek)) return <PageSkeleton />;
     if (!data.employee || !data.week)
         return (
-            <StatusBanner tone="info" title="ยังลงเวลาไม่ได้">
-                {TIMESHEET_MESSAGES.notEmployee}
-            </StatusBanner>
+            <NotEmployeeBanner title="ยังลงเวลาไม่ได้">{TIMESHEET_MESSAGES.notEmployee}</NotEmployeeBanner>
         );
 
     const week = data.week;

@@ -69,7 +69,7 @@ function SharesContent() {
         };
     }, [canManage]);
 
-    const header = <PageHeader eyebrow="Fastwork · ขั้นที่ 2, 7-9" title="ส่วนแบ่งกำไร" description={SHARE_MESSAGES.description} />;
+    const header = <PageHeader eyebrow="Fastwork · ปิดงาน" title="ส่วนแบ่งกำไร" description={SHARE_MESSAGES.description} />;
     if (!canManage) {
         return (
             <div className="grid w-full grid-cols-1 gap-6">

@@ -16,6 +16,7 @@ import StatusPill from "@/components/ui/status-pill";
 import { buttonClass } from "@/components/ui/button";
 import { formatDateOnly } from "@/app/function";
 import { apiFetch, uploadedFileUrl } from "@/lib/api";
+import type { LoadError } from "@/components/ui/guidance/load-error-banner";
 import { EMPLOYEE_MESSAGES, EMPLOYMENT_STATUS } from "../_messages";
 import type { CardQueueRow, EmployeeFormOptions, EmployeeListRow } from "../_types";
 import CardQueue, { type CardQueueKind } from "./_components/card-queue";
@@ -90,6 +91,9 @@ function EmployeesContent() {
     const [rows, setRows] = useState<EmployeeListRow[]>([]);
     const [total, setTotal] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
+    // โหลดไม่สำเร็จ = บอกเหตุผล + ลองใหม่ แทนรายการว่าง (usability R2-1)
+    const [loadError, setLoadError] = useState<LoadError | null>(null);
+    const [reloadCount, setReloadCount] = useState(0);
 
     const loadCardQueues = useCallback(async () => {
         setCardQueues(await fetchCardQueues());
@@ -119,8 +123,9 @@ function EmployeesContent() {
             offset: String((page - 1) * pageSize),
         });
         if (departmentId !== ALL_DEPARTMENTS) query.set("department_id", departmentId);
-        apiFetch<{ data: EmployeeListRow[]; total: number }>(`/employees?${query}`).then(({ data }) => {
+        apiFetch<{ data: EmployeeListRow[]; total: number }>(`/employees?${query}`).then(({ data, error }) => {
             if (isLeftPage) return;
+            setLoadError(error);
             setRows(data?.data ?? []);
             setTotal(data?.total ?? 0);
             setIsLoading(false);
@@ -128,7 +133,7 @@ function EmployeesContent() {
         return () => {
             isLeftPage = true;
         };
-    }, [tab, search, page, pageSize, departmentId]);
+    }, [tab, search, page, pageSize, departmentId, reloadCount]);
 
     // เปลี่ยนสถานะ/คิว = เปลี่ยน URL (กดย้อนกลับได้ · ส่งลิงก์ให้คนอื่นได้)
     function changeTab(nextTab: Tab) {
@@ -189,6 +194,7 @@ function EmployeesContent() {
         {
             key: "user_username",
             mobile: "meta",
+            mobileLabel: "บัญชีเข้าระบบ / เลขบัตรประชาชน",
             header: "บัญชี / เลขประจำตัว",
             render: (_, row) => (
                 <div className="grid gap-0.5 text-sm">
@@ -308,6 +314,8 @@ function EmployeesContent() {
                         )}
                     </div>
                     <DataTable
+                        loadError={loadError}
+                        onRetry={() => setReloadCount((count) => count + 1)}
                         columns={columns}
                         data={rows}
                         rowKey="emp_id"

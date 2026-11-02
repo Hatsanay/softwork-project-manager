@@ -7,11 +7,12 @@
 // ?name=&amount=&cart= = มาจากตัวคิดราคา: เติมชื่องาน งวดเดียวเท่ายอดตะกร้า และสินค้าที่จะสร้างเป็นงาน (2026-10-31)
 // ?renewal=<RNW> (2026-10-31) = รับงานต่ออายุ: เติมชื่องาน ลูกค้า งวดเดียวเท่าราคาต่อรอบ · บันทึกแล้วรอบนี้ผูกงาน + วันครบขยับ
 // ไม่ได้รับจากคำขอ: เลือกสินค้า/ชุดรายการ → สร้างงานและงานย่อยพร้อมโปรเจกต์ (คำขอสร้างงานจากรายการให้เองอยู่แล้ว)
+// ทีมและส่วนแบ่ง (2026-11-01): ผู้มีสิทธิ์ส่วนแบ่งตั้งได้ในฟอร์มนี้ เติมจากงานล่าสุด · บันทึกครั้งเดียวได้ครบ
 import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { ListTree, Plus, RefreshCw, Trash2, UserRoundCheck } from "lucide-react";
+import { HandCoins, ListTree, Plus, RefreshCw, Trash2, UserRoundCheck } from "lucide-react";
 import PageHeader from "@/components/ui/page-header";
 import SectionCard from "@/components/ui/section-card";
 import FormField, { inputClass } from "@/components/ui/form-field";
@@ -30,6 +31,8 @@ import { FASTWORK_MESSAGES } from "../_messages";
 import CatalogTaskPicker, { tasksFromSelection, useTaskCatalog } from "@/components/feature/catalog-task-picker";
 import { selectionFromParam, type CatalogSelection } from "@/lib/catalog-tasks";
 import JobRenewals, { jobRenewalsOf, useRenewalOptions } from "./_components/job-renewals";
+import JobSharesSection, { rowsFromDefaults, sharesPayload, type JobShareRow, type ShareDefaults } from "./_components/job-shares-section";
+import type { FastworkSettings } from "../_types";
 import { cycleUnit } from "@/lib/shared/renewal-math.mjs";
 import { thaiShortDate } from "@/lib/shared/thai-date.mjs";
 
@@ -114,6 +117,28 @@ function NewFastworkJob() {
     const renewalOptions = useRenewalOptions(isPlainJob && hasBit(BITS.manageFastwork));
     const [renewalOverrides, setRenewalOverrides] = useState<Record<string, { isSkipped?: boolean; label?: string; dueDate?: string }>>({});
     const jobRenewals = jobRenewalsOf(selection, renewalOptions, form.project_start_date, renewalOverrides);
+    // ทีมและส่วนแบ่ง: เฉพาะผู้มีสิทธิ์จัดการส่วนแบ่ง · เติมจากงานล่าสุดครั้งเดียวตอนเปิดฟอร์ม
+    const canManageShares = hasBit(BITS.manageProfitShares) && hasBit(BITS.manageFastwork);
+    const canPickVendors = [BITS.manageVendors, BITS.viewExpenses, BITS.createExpense, BITS.makePayment].some((bit) => hasBit(bit));
+    const [shareRows, setShareRows] = useState<JobShareRow[]>([]);
+    const [shareDefaults, setShareDefaults] = useState<ShareDefaults | null>(null);
+    const [feeSettings, setFeeSettings] = useState<FastworkSettings | null>(null);
+    useEffect(() => {
+        if (!canManageShares) return;
+        let isLeftPage = false;
+        Promise.all([apiFetch<ShareDefaults>("/fastwork/share-defaults"), apiFetch<FastworkSettings>("/fastwork/settings")]).then(
+            ([defaults, settings]) => {
+                if (isLeftPage) return;
+                setFeeSettings(settings.data);
+                if (!defaults.data) return;
+                setShareDefaults(defaults.data);
+                setShareRows(rowsFromDefaults(defaults.data));
+            },
+        );
+        return () => {
+            isLeftPage = true;
+        };
+    }, [canManageShares]);
 
     // รับงานจากคำขอ: เติมจากคำขอ (ลูกค้าที่ผูกไว้/ชื่อผู้ซื้อ · งวดจากใบภายใน หรือ 1 งวด = ยอด)
     useEffect(() => {
@@ -222,6 +247,7 @@ function NewFastworkJob() {
                           rnw_cycle_months: renewal.cycleMonths,
                           rnw_next_due_date: renewal.dueDate,
                       })),
+            shares: canManageShares ? sharesPayload(shareRows) : [],
         };
         const checked = fastworkProjectSchema.safeParse(payload);
         if (!checked.success) {
@@ -230,7 +256,7 @@ function NewFastworkJob() {
         }
         setErrors({});
         setIsSaving(true);
-        const { data, error } = await apiFetch<{ project_id: string; task_count: number; renewal_count: number }>("/fastwork/projects", {
+        const { data, error } = await apiFetch<{ project_id: string; task_count: number; renewal_count: number; share_count: number }>("/fastwork/projects", {
             method: "POST",
             body: checked.data,
         });
@@ -240,7 +266,7 @@ function NewFastworkJob() {
             if (Object.keys(error.fields).length === 0) setBannerError(error.message);
             return;
         }
-        let doneMessage = "สร้างงาน Fastwork แล้ว · เพิ่มสมาชิกทีมได้ในหน้าโปรเจกต์";
+        let doneMessage = data.share_count > 0 ? `สร้างงาน Fastwork แล้ว · ตั้งส่วนแบ่ง ${data.share_count} คน` : "สร้างงาน Fastwork แล้ว · เพิ่มสมาชิกทีมได้ในหน้าโปรเจกต์";
         if (requestId) doneMessage = "รับงานแล้ว · สร้างงานจากรายการในคำขอให้แล้ว";
         else if (data.task_count > 0) doneMessage = `สร้างงาน Fastwork แล้ว · เพิ่ม ${data.task_count} งานจากสินค้าที่เลือก`;
         if (data.renewal_count > 0) doneMessage += ` · ตั้งต่ออายุ ${data.renewal_count} รายการ`;
@@ -249,7 +275,7 @@ function NewFastworkJob() {
         router.push(`/projects/view?id=${data.project_id}`);
     }
 
-    const header = <PageHeader eyebrow="Fastwork · ขั้นที่ 1" title="รับงานใหม่จาก Fastwork" description="สร้างโปรเจกต์จากงานที่รับบน Fastwork โดยไม่ต้องทำใบเสนอราคา" />;
+    const header = <PageHeader eyebrow="Fastwork · รับงาน" title="รับงานใหม่จาก Fastwork" description="สร้างโปรเจกต์จากงานที่รับบน Fastwork โดยไม่ต้องทำใบเสนอราคา" />;
     if (!hasBit(BITS.manageFastwork)) {
         return (
             <div className="grid w-full grid-cols-1 gap-6">
@@ -320,7 +346,7 @@ function NewFastworkJob() {
                         </span>
                         <span>
                             ลูกค้าจ้างเพิ่มในงานที่ยังไม่จบ: ใช้{" "}
-                            <Link href="/fastwork/price" className="-my-2.5 inline-block py-2.5 text-blue-600 hover:underline">
+                            <Link href="/sales/price-calculator?mode=fastwork" className="-my-2.5 inline-block py-2.5 text-blue-600 hover:underline">
                                 ตัวคิดราคา
                             </Link>{" "}
                             › &quot;เพิ่มเป็นงวดของงานเดิม&quot; · งานจบแล้วค่อยรับเป็นงานใหม่ที่นี่
@@ -332,7 +358,7 @@ function NewFastworkJob() {
             {requestId && plan && (
                 <StatusBanner tone="info" title={`รับงานจากคำขอ ${requestId}`}>
                     {plan.quotation
-                        ? `งวดเติมจากใบเสนอราคาภายใน ${plan.quotation.qt_number} · บันทึกแล้วใบนี้ผูกกับงานและสร้างงานย่อยจากรายการในใบ`
+                        ? `งวดเติมจากใบเสนอราคา ${plan.quotation.qt_number} · บันทึกแล้วใบนี้ผูกกับงานและสร้างงานย่อยจากรายการในใบ`
                         : "งวดเติมจากยอดในคำขอ · บันทึกแล้วสร้างงานย่อยจากรายการที่ลูกค้าเลือก"}
                     {" · แก้ชื่องานและงวดให้ตรงกับที่ตกลงบน Fastwork ก่อนบันทึก"}
                 </StatusBanner>
@@ -376,7 +402,7 @@ function NewFastworkJob() {
                                     <FieldHint>
                                         {renewalSource
                                             ? "ลูกค้าเดียวกับรายการต่ออายุ (เปลี่ยนไม่ได้)"
-                                            : "ลูกค้าเดียวกับใบเสนอราคาภายในของคำขอ (เปลี่ยนไม่ได้)"}
+                                            : "ลูกค้าเดียวกับใบเสนอราคาของคำขอ (เปลี่ยนไม่ได้)"}
                                     </FieldHint>
                                 )}
                             </>
@@ -588,6 +614,24 @@ function NewFastworkJob() {
                     </span>
                 </div>
             </SectionCard>
+
+            {canManageShares && (
+                <SectionCard
+                    icon={HandCoins}
+                    title="ทีมและส่วนแบ่ง"
+                    description="ใครได้ส่วนแบ่งกำไรเท่าไร ที่เหลือเข้าเงินทุน · ตั้งตอนนี้จะได้ไม่ลืม แก้ได้ที่หน้าส่วนแบ่งจนกว่าจะปิดงาน"
+                >
+                    <JobSharesSection
+                        rows={shareRows}
+                        onChange={setShareRows}
+                        defaults={shareDefaults}
+                        contractTotal={total}
+                        settings={feeSettings}
+                        canPickVendors={canPickVendors}
+                        errors={errors}
+                    />
+                </SectionCard>
+            )}
 
             <div className="flex flex-wrap justify-end gap-2">
                 <button type="button" className={buttonClass("secondary", "md")} onClick={() => router.push("/fastwork")}>

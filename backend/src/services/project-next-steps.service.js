@@ -372,7 +372,8 @@ function stepsOf(facts, can, today) {
             }),
         );
     }
-    const isReadyToComplete = !isClosed && isWorkDone && (!hasMoneyFlow || isMoneyCollected);
+    // งาน Fastwork ปิดงานพร้อมปิดยอดส่วนแบ่ง (2026-11-01 · F-3) จึงไม่มีปุ่มปิดโปรเจกต์แยก
+    const isReadyToComplete = !isClosed && !fastworkStep && isWorkDone && (!hasMoneyFlow || isMoneyCollected);
     if (isReadyToComplete) {
         items.push(
             item(
@@ -389,11 +390,23 @@ function stepsOf(facts, can, today) {
             ),
         );
     }
-    if (can.shares && shares.isConfigured && !isShareSettled && isMoneyCollected) {
+    const sharesHref = `/fastwork/shares/project?id=${encodeURIComponent(projectId)}`;
+    if (can.shares && fastworkStep && isActive && !shares.isConfigured && !isShareSettled) {
         items.push(
-            item("shares_close", "todo", "เงินเข้าครบ พร้อมปิดยอดส่วนแบ่ง", {
-                reason: "ปิดยอดแล้วล็อกตัวเลขของแต่ละคน แล้วบันทึกจ่ายได้",
-                action: { label: "ปิดยอด", href: `/fastwork/shares/project?id=${encodeURIComponent(projectId)}` },
+            item("shares_unset", "todo", "ยังไม่ได้ตั้งส่วนแบ่งกำไร", {
+                reason: "ตั้งว่าใครได้เท่าไร ที่เหลือเข้าเงินทุน · ต้องตั้งก่อนปิดงาน",
+                action: { label: "ตั้งส่วนแบ่ง", href: sharesHref },
+            }),
+        );
+    }
+    if (can.shares && shares.isConfigured && !isShareSettled && isMoneyCollected) {
+        // งาน Fastwork: ปิดยอด = ปิดงาน (ระบบเปลี่ยนโปรเจกต์เป็นเสร็จแล้วให้)
+        items.push(
+            item("shares_close", "todo", fastworkStep ? "เงินเข้าครบ ปิดงานและปิดยอดส่วนแบ่งได้" : "เงินเข้าครบ พร้อมปิดยอดส่วนแบ่ง", {
+                reason: fastworkStep
+                    ? "ตรวจตัวเลขแล้วปิดยอด ระบบล็อกส่วนแบ่งของแต่ละคนและปิดงานให้ จากนั้นบันทึกจ่ายทีละคน"
+                    : "ปิดยอดแล้วล็อกตัวเลขของแต่ละคน แล้วบันทึกจ่ายได้",
+                action: { label: fastworkStep ? "ปิดงาน" : "ปิดยอด", href: sharesHref },
             }),
         );
     }
@@ -401,7 +414,7 @@ function stepsOf(facts, can, today) {
         items.push(
             item("shares_pay", "todo", `ค้างจ่ายส่วนแบ่ง ${shares.unpaidLines} คน`, {
                 reason: "ปิดยอดแล้ว · โอนแล้วบันทึกจ่ายทีละคน",
-                action: { label: "บันทึกจ่าย", href: `/fastwork/shares/project?id=${encodeURIComponent(projectId)}` },
+                action: { label: "บันทึกจ่าย", href: sharesHref },
                 count: shares.unpaidLines,
             }),
         );
@@ -671,16 +684,19 @@ async function nextStepsForUser(conn, user, projectIds) {
  * โปรเจกต์ที่เห็น = เดียวกับรายการโปรเจกต์ (ดูทุกโปรเจกต์ หรือเป็นสมาชิก) ไม่รวมที่ยกเลิก
  * @returns {Promise<{ items: object[], total: number, waiting_count: number }>}
  */
-async function todoForUser(conn, user, limit) {
+async function todoForUser(conn, user, limit, { channel = null } = {}) {
     const seesAll = hasBit(user.role_permission, "viewAllProjects");
     const canSeeOwn = seesAll || hasBit(user.role_permission, "viewOwnProjects");
     if (!canSeeOwn) return { items: [], total: 0, waiting_count: 0 };
+    // channel = 'fastwork' สำหรับหน้า Fastwork (2026-11-01) · null = ทุกโปรเจกต์ (แดชบอร์ด)
+    const channelFilter = channel ? "AND p.project_channel = ?" : "";
+    const channelParams = channel ? [channel] : [];
     const [projects] = seesAll
-        ? await conn.query("SELECT project_id FROM tb_projects WHERE project_status <> 'cancelled'")
+        ? await conn.query(`SELECT p.project_id FROM tb_projects p WHERE p.project_status <> 'cancelled' ${channelFilter}`, channelParams)
         : await conn.query(
               `SELECT p.project_id FROM tb_projects p JOIN tb_project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?
-               WHERE p.project_status <> 'cancelled'`,
-              [user.user_id],
+               WHERE p.project_status <> 'cancelled' ${channelFilter}`,
+              [user.user_id, ...channelParams],
           );
     const stepsById = await nextStepsForUser(
         conn,

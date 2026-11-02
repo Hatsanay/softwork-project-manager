@@ -8,6 +8,8 @@ export type ReceiptMethod = "transfer" | "cheque" | "cash" | "other";
 
 export type ReceiptListRow = {
     rc_id: string;
+    // ระบบออกจากเงินงวด Fastwork (2026-11-01)
+    rc_fastwork_payout_id: number | null;
     rc_number: string;
     rc_status: ReceiptStatus;
     rc_method: ReceiptMethod;
@@ -27,6 +29,7 @@ export type ReceivableInvoice = {
     inv_id: string;
     inv_number: string;
     inv_title: string;
+    inv_project_id?: string | null;
     inv_client_id: string;
     inv_branch_id: string;
     inv_language: "th" | "en";
@@ -115,6 +118,8 @@ export type Receipt = {
 
 export type ReceiptAllocation = {
     rca_order: number;
+    // โปรเจกต์ของใบแจ้งหนี้ (ปุ่มคัดลอกลิงก์ให้ลูกค้า 2026-11-01)
+    inv_project_id?: string | null;
     rca_amount: string;
     rca_vat_amount: string;
     rca_amount_thb: string;

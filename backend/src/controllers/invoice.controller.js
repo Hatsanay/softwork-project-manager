@@ -24,6 +24,7 @@ async function list(req, res, next) {
                 search: String(req.query.search ?? ""),
                 clientId: req.query.client_id ? String(req.query.client_id) : undefined,
                 quotationId: req.query.quotation_id ? String(req.query.quotation_id) : undefined,
+                channel: req.query.channel ? String(req.query.channel) : undefined,
                 limit: req.query.limit,
                 offset: req.query.offset,
             },

@@ -18,14 +18,16 @@ import StatusPill from "@/components/ui/status-pill";
 import { buttonClass } from "@/components/ui/button";
 import { OTHER_OPTION, QUESTION_TYPE_LABEL } from "@/lib/shared/requirement-answers.mjs";
 import type { RequirementGroup, RequirementQuestion } from "@/app/order/_types";
-import { questionConditionText } from "./requirement-labels";
+import { questionConditionText, type ItemLink } from "./requirement-labels";
 import type { GroupWarnings } from "./requirement-warnings";
 
 type GroupCardProps = {
     group: RequirementGroup;
     description: string;
     // "ถามเมื่อเลือก: ..." ของข้อแม่ (สินค้าเลือกคำถาม 2026-11-01)
-    itemsTextOf: (question: RequirementQuestion) => string | null;
+    itemLinksOf: (question: RequirementQuestion) => { links: ItemLink[]; more: number } | null;
+    // กดชื่อสินค้า/ชุด → เปิดแผงแก้รายการนั้น
+    onOpenItem: (link: ItemLink) => void;
     warnings: GroupWarnings | undefined;
     canEdit: boolean;
     isFirst: boolean;
@@ -108,7 +110,8 @@ export default function RequirementGroupCard(props: GroupCardProps) {
                                 question={question}
                                 number={index + 1}
                                 condition={questionConditionText(question, group.questions)}
-                                itemsText={props.itemsTextOf(question)}
+                                itemLinks={props.itemLinksOf(question)}
+                                onOpenItem={props.onOpenItem}
                                 warnings={warnings?.questions.get(question.rqq_id) ?? []}
                                 isFirst={index === 0}
                                 isLast={index === group.questions.length - 1}
@@ -144,7 +147,8 @@ type QuestionRowProps = {
     question: RequirementQuestion;
     number: number;
     condition: string | null;
-    itemsText: string | null;
+    itemLinks: { links: ItemLink[]; more: number } | null;
+    onOpenItem: (link: ItemLink) => void;
     warnings: string[];
     isFirst: boolean;
     isLast: boolean;
@@ -160,7 +164,8 @@ function QuestionRow({
     question,
     number,
     condition,
-    itemsText,
+    itemLinks,
+    onOpenItem,
     warnings,
     isFirst,
     isLast,
@@ -185,7 +190,29 @@ function QuestionRow({
                         {question.rqq_is_required && <span className="ml-0.5 text-red-600">*</span>}
                     </span>
                     {condition && <span className="text-xs text-blue-600">{condition}</span>}
-                    {itemsText && <span className="text-xs text-gray-500">{itemsText}</span>}
+                    {itemLinks && (
+                        <span className="flex flex-wrap items-center gap-x-1 text-xs text-gray-500">
+                            {itemLinks.links.length === 0 ? (
+                                "ยังไม่มีสินค้าหรือชุดเลือกข้อนี้"
+                            ) : (
+                                <>
+                                    ถามเมื่อเลือก:
+                                    {itemLinks.links.map((link, index) => (
+                                        <button
+                                            key={`${link.kind}:${link.id}`}
+                                            type="button"
+                                            className="-my-2 min-h-8 py-2 text-blue-600 hover:underline"
+                                            onClick={() => onOpenItem(link)}
+                                        >
+                                            {link.name}
+                                            {index < itemLinks.links.length - 1 ? "," : ""}
+                                        </button>
+                                    ))}
+                                    {itemLinks.more > 0 && <span>และอีก {itemLinks.more} รายการ</span>}
+                                </>
+                            )}
+                        </span>
+                    )}
                     <span className="flex flex-wrap items-center gap-1.5">
                         <StatusPill tone="neutral">{QUESTION_TYPE_LABEL[question.rqq_type]}</StatusPill>
                         {question.rqq_type === "file" && question.rqq_file_kind === "design" && (

@@ -81,6 +81,9 @@ test("บันทึกเงินงวด = ใบแจ้งหนี้ +
     const [invoice] = documents.invoices;
     assert.deepEqual([invoice.inv_status, invoice.inv_total, invoice.inv_fastwork_payout_id], ["issued", "3000.00", payout.fwp_id]);
     assert.match(invoice.inv_number, /^IV-\d{8}-\d{6}$/);
+    // ใบจากเงินงวดชำระครบแล้ว ไม่มีปุ่ม "บันทึกว่าส่งลูกค้าแล้ว" (usability R2-3)
+    const invoiceDetail = expectStatus(await api.callApi("GET", `/V1/invoices/${invoice.inv_id}`), 200);
+    assert.equal(invoiceDetail.actions.can_send, false);
     const [receipt] = documents.receipts;
     assert.deepEqual([receipt.rc_status, receipt.rc_received_amount, receipt.rc_receipt_date], ["issued", "3000.00", today()]);
 
@@ -139,4 +142,14 @@ test("ออกเอกสารย้อนหลังให้งานเ�
     const again = expectStatus(await api.callApi("POST", "/V1/fastwork/documents/backfill"), 200);
     assert.deepEqual([again.projects, again.payouts], [0, 0]);
     assert.equal((await documentsOf(projectId)).invoices.filter((row) => row.inv_status === "issued").length, 2);
+});
+
+test("ตัวกรองช่องทางในรายการใบแจ้งหนี้/ใบเสร็จ: งาน Fastwork เห็นเฉพาะใบที่ระบบออก · ลูกค้าตรงไม่มีใบของงาน Fastwork", async () => {
+    const fastworkInvoices = expectStatus(await api.callApi("GET", "/V1/invoices?channel=fastwork&limit=50"), 200);
+    assert.ok(fastworkInvoices.data.length > 0);
+    assert.ok(fastworkInvoices.data.every((row) => row.inv_fastwork_payout_id !== null));
+    const directInvoices = expectStatus(await api.callApi("GET", "/V1/invoices?channel=direct&limit=50"), 200);
+    assert.ok(directInvoices.data.every((row) => row.inv_fastwork_payout_id === null));
+    const fastworkReceipts = expectStatus(await api.callApi("GET", "/V1/receipts?channel=fastwork&limit=50"), 200);
+    assert.ok(fastworkReceipts.data.length > 0 && fastworkReceipts.data.every((row) => row.rc_fastwork_payout_id !== null));
 });

@@ -83,7 +83,7 @@ export function evaluateApproval({
     const hasRole = (level) => level.roles.some((role) => role.role_id === actor.role_id);
 
     if (!hasRole(firstLevel)) {
-        return blocked(`ชั้น ${firstLevel.level} ต้องให้ผู้ที่มี role ${roleNames(firstLevel)} อนุมัติ`);
+        return blocked(`ชั้น ${firstLevel.level} ต้องให้ผู้ที่อยู่ในกลุ่มสิทธิ์ ${roleNames(firstLevel)} อนุมัติ`);
     }
     if (firstLevel.require_distinct && approverIds.has(actor.user_id)) {
         return blocked(

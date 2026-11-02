@@ -11,6 +11,7 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import StatusBanner from "@/components/ui/guidance/status-banner";
 import { buttonClass } from "@/components/ui/button";
 import { formatQuantity } from "@/lib/shared/money.mjs";
+import { formatBangkokDateTime } from "@/app/function";
 import { usePermission, BITS } from "@/app/components/permission-provider";
 import { apiFetch, apiFetchBlob } from "@/lib/api";
 import AnswersList from "@/app/order/_components/answers-list";
@@ -112,7 +113,7 @@ export default function CustomerRequirementsCard({ projectId }: { projectId: str
                                 {request.svr_contact_name ? ` · ${request.svr_contact_name}` : ""}
                                 {request.svr_company_name ? ` (${request.svr_company_name})` : ""}
                             </span>
-                            <span className="text-xs text-gray-500">ส่งเมื่อ {request.svr_submitted_at}</span>
+                            <span className="text-xs text-gray-500">ส่งเมื่อ {formatBangkokDateTime(request.svr_submitted_at)}</span>
                         </summary>
                         <div className="mt-3 grid gap-4">
                             <div className="grid gap-1.5">

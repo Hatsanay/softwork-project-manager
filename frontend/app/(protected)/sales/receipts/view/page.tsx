@@ -4,6 +4,7 @@
 // ส่วนต่างอัตรา (สกุลต่างประเทศ) · ยกเลิกพร้อมเหตุผล · ปุ่มที่ทำไม่ได้ซ่อน (ไม่ใช้ tooltip)
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import CopyCustomerLinkButton from "@/components/feature/copy-customer-link-button";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { FileUp, Paperclip, Printer, Trash2, XCircle } from "lucide-react";
@@ -91,6 +92,7 @@ export default function ReceiptViewPage() {
     const isForeign = code !== "THB";
     const hasWithholding = parseHundredths(receipt.rc_wht_amount, "หัก ณ ที่จ่าย") > 0n;
     const hasFee = parseHundredths(receipt.rc_fee_amount, "ค่าธรรมเนียม") > 0n;
+    const receiptProjectId = allocations.find((row) => row.inv_project_id)?.inv_project_id ?? null;
 
     return (
         <div className="grid w-full grid-cols-1 gap-6">
@@ -118,6 +120,10 @@ export default function ReceiptViewPage() {
                     <Printer size={16} />
                     พิมพ์ / บันทึก PDF
                 </a>
+                {/* ลิงก์ให้ลูกค้าเปิดเอง (2026-11-01): โปรเจกต์ของใบแจ้งหนี้ที่ใบเสร็จนี้ตัด */}
+                {receiptProjectId && receipt.rc_status === "issued" && (
+                    <CopyCustomerLinkButton projectId={receiptProjectId} type="receipt" documentId={receipt.rc_id} />
+                )}
                 {actions.can_cancel && (
                     <button type="button" className={buttonClass("ghost", "md")} onClick={() => setIsCancelOpen(true)}>
                         <XCircle size={16} />
@@ -332,6 +338,9 @@ function WhtCertificateCard({ detail, onChanged }: { detail: ReceiptDetail; onCh
     const [isRemoveOpen, setIsRemoveOpen] = useState(false);
     const [fileError, setFileError] = useState<string | null>(null);
     const hasWithholding = parseHundredths(receipt.rc_wht_amount, "หัก ณ ที่จ่าย") > 0n;
+    // ลูกค้าไม่ได้หัก = ไม่มี 50 ทวิ ไม่ต้องโชว์ช่องกรอก (usability R2-7) · ใบเก่าที่กรอก/แนบไว้แล้วยังเห็นและแก้ได้
+    const showsCertificate =
+        hasWithholding || Boolean(receipt.rc_wht_certificate_no || receipt.rc_wht_certificate_date || receipt.has_wht_file);
     const isChanged =
         certificateNo !== (receipt.rc_wht_certificate_no ?? "") ||
         certificateDate !== (receipt.rc_wht_certificate_date ?? "") ||
@@ -410,41 +419,47 @@ function WhtCertificateCard({ detail, onChanged }: { detail: ReceiptDetail; onCh
     return (
         <section className={`grid gap-3 p-5 text-sm ${CARD_CLASS}`}>
             <div className="grid gap-0.5">
-                <h2 className="text-base font-medium text-gray-900">หัก ณ ที่จ่าย (50 ทวิ)</h2>
+                <h2 className="text-base font-medium text-gray-900">
+                    {showsCertificate ? "หัก ณ ที่จ่าย (50 ทวิ)" : "บันทึกภายใน"}
+                </h2>
                 <p className="text-gray-600 tabular-nums">
                     {hasWithholding
                         ? `ลูกค้าหักไว้ ${formatAmount(receipt.rc_wht_amount, currency.cur_decimals)} ${currency.cur_code}`
-                        : "ใบนี้ลูกค้าไม่ได้หัก ณ ที่จ่าย"}
+                        : "ใบนี้ลูกค้าไม่ได้หัก ณ ที่จ่าย จึงไม่มี 50 ทวิ"}
                 </p>
             </div>
 
             {actions.can_edit_details ? (
                 <div className="grid gap-3">
-                    <FormField
-                        label="เลขที่ใน 50 ทวิ"
-                        htmlFor="rc_wht_certificate_no"
-                        error={fieldErrors.rc_wht_certificate_no}
-                    >
-                        <input
-                            id="rc_wht_certificate_no"
-                            value={certificateNo}
-                            onChange={(event) => setCertificateNo(event.target.value)}
-                            className={inputClass(Boolean(fieldErrors.rc_wht_certificate_no))}
-                        />
-                    </FormField>
-                    <FormField
-                        label="วันที่ใน 50 ทวิ"
-                        htmlFor="rc_wht_certificate_date"
-                        error={fieldErrors.rc_wht_certificate_date}
-                    >
-                        <input
-                            id="rc_wht_certificate_date"
-                            type="date"
-                            value={certificateDate}
-                            onChange={(event) => setCertificateDate(event.target.value)}
-                            className={inputClass(Boolean(fieldErrors.rc_wht_certificate_date))}
-                        />
-                    </FormField>
+                    {showsCertificate && (
+                        <>
+                            <FormField
+                                label="เลขที่ใน 50 ทวิ"
+                                htmlFor="rc_wht_certificate_no"
+                                error={fieldErrors.rc_wht_certificate_no}
+                            >
+                                <input
+                                    id="rc_wht_certificate_no"
+                                    value={certificateNo}
+                                    onChange={(event) => setCertificateNo(event.target.value)}
+                                    className={inputClass(Boolean(fieldErrors.rc_wht_certificate_no))}
+                                />
+                            </FormField>
+                            <FormField
+                                label="วันที่ใน 50 ทวิ"
+                                htmlFor="rc_wht_certificate_date"
+                                error={fieldErrors.rc_wht_certificate_date}
+                            >
+                                <input
+                                    id="rc_wht_certificate_date"
+                                    type="date"
+                                    value={certificateDate}
+                                    onChange={(event) => setCertificateDate(event.target.value)}
+                                    className={inputClass(Boolean(fieldErrors.rc_wht_certificate_date))}
+                                />
+                            </FormField>
+                        </>
+                    )}
                     <FormField
                         label="บันทึกภายใน"
                         htmlFor="rc_internal_note"
@@ -472,11 +487,17 @@ function WhtCertificateCard({ detail, onChanged }: { detail: ReceiptDetail; onCh
                 </div>
             ) : (
                 <dl className="grid gap-1">
-                    <dt className="text-xs text-gray-500">เลขที่ / วันที่ใน 50 ทวิ</dt>
-                    <dd>
-                        {receipt.rc_wht_certificate_no ?? "-"}
-                        {receipt.rc_wht_certificate_date ? ` · ${formatDateOnly(receipt.rc_wht_certificate_date)}` : ""}
-                    </dd>
+                    {showsCertificate && (
+                        <>
+                            <dt className="text-xs text-gray-500">เลขที่ / วันที่ใน 50 ทวิ</dt>
+                            <dd>
+                                {receipt.rc_wht_certificate_no ?? "-"}
+                                {receipt.rc_wht_certificate_date
+                                    ? ` · ${formatDateOnly(receipt.rc_wht_certificate_date)}`
+                                    : ""}
+                            </dd>
+                        </>
+                    )}
                     {receipt.rc_internal_note && (
                         <>
                             <dt className="text-xs text-gray-500">บันทึกภายใน</dt>
@@ -486,59 +507,61 @@ function WhtCertificateCard({ detail, onChanged }: { detail: ReceiptDetail; onCh
                 </dl>
             )}
 
-            <div className="grid gap-2 rounded-xl bg-gray-50 p-3">
-                {receipt.has_wht_file ? (
-                    <button
-                        type="button"
-                        className="-my-2 flex items-center gap-2 py-2 text-left text-blue-600 hover:underline"
-                        onClick={openFile}
-                    >
-                        <Paperclip size={16} className="shrink-0" />
-                        <span className="min-w-0 wrap-break-word">{receipt.rc_wht_file_name}</span>
-                    </button>
-                ) : (
-                    <p className="text-gray-500">ยังไม่ได้แนบไฟล์ 50 ทวิ</p>
-                )}
-                {receipt.rc_wht_file_uploaded_at && (
-                    <p className="text-xs text-gray-500">แนบเมื่อ {formatDate(receipt.rc_wht_file_uploaded_at)}</p>
-                )}
-                {actions.can_manage_file && (
-                    <div className="flex flex-wrap gap-2">
-                        <input
-                            ref={fileInput}
-                            type="file"
-                            accept="application/pdf,image/jpeg,image/png"
-                            className="hidden"
-                            onChange={(event) => {
-                                const file = event.target.files?.[0];
-                                if (file) uploadFile(file);
-                            }}
-                        />
+            {showsCertificate && (
+                <div className="grid gap-2 rounded-xl bg-gray-50 p-3">
+                    {receipt.has_wht_file ? (
                         <button
                             type="button"
-                            className={buttonClass("secondary", "sm")}
-                            disabled={isSaving}
-                            onClick={() => fileInput.current?.click()}
+                            className="-my-2 flex items-center gap-2 py-2 text-left text-blue-600 hover:underline"
+                            onClick={openFile}
                         >
-                            <FileUp size={14} />
-                            {receipt.has_wht_file ? "เปลี่ยนไฟล์" : "แนบไฟล์"}
+                            <Paperclip size={16} className="shrink-0" />
+                            <span className="min-w-0 wrap-break-word">{receipt.rc_wht_file_name}</span>
                         </button>
-                        {receipt.has_wht_file && (
+                    ) : (
+                        <p className="text-gray-500">ยังไม่ได้แนบไฟล์ 50 ทวิ</p>
+                    )}
+                    {receipt.rc_wht_file_uploaded_at && (
+                        <p className="text-xs text-gray-500">แนบเมื่อ {formatDate(receipt.rc_wht_file_uploaded_at)}</p>
+                    )}
+                    {actions.can_manage_file && (
+                        <div className="flex flex-wrap gap-2">
+                            <input
+                                ref={fileInput}
+                                type="file"
+                                accept="application/pdf,image/jpeg,image/png"
+                                className="hidden"
+                                onChange={(event) => {
+                                    const file = event.target.files?.[0];
+                                    if (file) uploadFile(file);
+                                }}
+                            />
                             <button
                                 type="button"
-                                className={buttonClass("ghost", "sm")}
+                                className={buttonClass("secondary", "sm")}
                                 disabled={isSaving}
-                                onClick={() => setIsRemoveOpen(true)}
+                                onClick={() => fileInput.current?.click()}
                             >
-                                <Trash2 size={14} />
-                                ลบไฟล์
+                                <FileUp size={14} />
+                                {receipt.has_wht_file ? "เปลี่ยนไฟล์" : "แนบไฟล์"}
                             </button>
-                        )}
-                    </div>
-                )}
-                {fileError && <p className="text-xs text-red-600">{fileError}</p>}
-                <FieldHint>{RECEIPT_MESSAGES.whtCertificate}</FieldHint>
-            </div>
+                            {receipt.has_wht_file && (
+                                <button
+                                    type="button"
+                                    className={buttonClass("ghost", "sm")}
+                                    disabled={isSaving}
+                                    onClick={() => setIsRemoveOpen(true)}
+                                >
+                                    <Trash2 size={14} />
+                                    ลบไฟล์
+                                </button>
+                            )}
+                        </div>
+                    )}
+                    {fileError && <p className="text-xs text-red-600">{fileError}</p>}
+                    <FieldHint>{RECEIPT_MESSAGES.whtCertificate}</FieldHint>
+                </div>
+            )}
 
             <ConfirmDialog
                 open={isRemoveOpen}

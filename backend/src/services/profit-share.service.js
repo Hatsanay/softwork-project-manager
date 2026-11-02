@@ -168,7 +168,8 @@ async function expectedOf(conn, projectId, profit, shares) {
         const settings = await fastworkService.getSettings(conn);
         const payoutById = new Map(fastwork.payouts.map((payout) => [payout.fwp_id, payout]));
         for (const milestone of fastwork.milestones) {
-            if (milestone.state === "received") continue;
+            // เงินเข้าแล้ว = นับในกำไรแล้ว · ตัดงวด = ไม่ได้เงิน
+            if (milestone.state === "received" || milestone.state === "cut") continue;
             const pendingPayout = milestone.state === "pending" ? payoutById.get(milestone.payout_id) : null;
             if (pendingPayout) {
                 remainingGross += money(pendingPayout.fwp_gross);
@@ -265,6 +266,40 @@ async function projectShares(conn, projectId) {
         members,
         today: todayBangkok(),
     };
+}
+
+/**
+ * ทีมและส่วนแบ่งของงาน Fastwork ล่าสุดที่ตั้งไว้ (เติมให้ในฟอร์มรับงาน · 2026-11-01)
+ * งานล่าสุด = สร้างล่าสุด ไม่นับงานที่ยกเลิก · ผู้รับที่ปิดใช้งานแล้วไม่เติม แต่บอกชื่อใน skipped
+ */
+async function latestFastworkShares(conn) {
+    const [[source]] = await conn.query(
+        `SELECT p.project_id, p.project_name FROM tb_projects p
+         WHERE p.project_channel = 'fastwork' AND p.project_status <> 'cancelled'
+           AND EXISTS (SELECT 1 FROM tb_project_shares s WHERE s.shr_project_id = p.project_id)
+         ORDER BY p.project_created_at DESC, p.project_id DESC LIMIT 1`,
+    );
+    if (!source) return { source: null, shares: [], skipped: [] };
+    const shares = [];
+    const skipped = [];
+    for (const share of await findShares(conn, source.project_id)) {
+        const type = share.shr_user_id ? "user" : "vendor";
+        const id = share.shr_user_id ?? share.shr_vendor_id;
+        if (!(await isActiveRecipient(conn, type, id))) {
+            skipped.push(share.recipient_name ?? "-");
+            continue;
+        }
+        shares.push({
+            recipient_type: type,
+            recipient_id: id,
+            recipient_name: share.recipient_name,
+            kind: share.shr_kind,
+            percent: share.shr_percent,
+            amount: share.shr_amount,
+            note: share.shr_note,
+        });
+    }
+    return { source, shares, skipped };
 }
 
 // ─── ตั้งส่วนแบ่ง / เบิกล่วงหน้า ───────────────────────────────────────────────────────────────
@@ -398,6 +433,22 @@ async function settle(conn, user, projectId, input) {
     if (profit.pendingPayouts > 0) {
         throw new AppError(409, "PAYOUTS_PENDING", `ยังมีเงิน Fastwork รอโอน ${profit.pendingPayouts} รายการ · ยืนยันเงินเข้า (หรือยกเลิก) ก่อนปิดยอด`);
     }
+    // งาน Fastwork (F-1 · 2026-11-01): ปิดยอดเมื่อทุกงวดเงินเข้าแล้ว (งวดที่ลูกค้าไม่จ่ายให้ตัดงวดก่อน) · กันล็อกกำไรก่อนเงินเข้า
+    const fastwork = await fastworkService.projectFastwork(conn, projectId);
+    if (fastwork) {
+        const notReceived = fastwork.milestones.filter((milestone) => milestone.state !== "received" && milestone.state !== "cut");
+        if (fastwork.milestones.every((milestone) => milestone.state === "cut")) {
+            throw new AppError(409, "MILESTONES_NOT_RECEIVED", "งานนี้ยังไม่มีงวดที่เงินเข้า · ปิดยอดไม่ได้");
+        }
+        if (notReceived.length > 0) {
+            const names = notReceived.map((milestone) => `"${milestone.fwm_name}"`).join(", ");
+            throw new AppError(
+                409,
+                "MILESTONES_NOT_RECEIVED",
+                `งวด ${names} เงินยังไม่เข้า · บันทึกเงินให้ครบ หรือตัดงวดที่ลูกค้าไม่จ่ายในหน้าโปรเจกต์ ก่อนปิดยอด`,
+            );
+        }
+    }
     if (money(input.expected_distributable) !== profit.distributable) {
         throw new AppError(409, "PROFIT_CHANGED", "กำไรที่แบ่งได้เปลี่ยนไประหว่างที่ดูอยู่ (มีเงินเข้า/ค่าใช้จ่ายใหม่) กรุณาโหลดหน้าใหม่แล้วตรวจอีกครั้ง");
     }
@@ -444,7 +495,11 @@ async function settle(conn, user, projectId, input) {
             ],
         );
     }
-    return { sst_id: result.insertId };
+    // ปิดยอด = ปิดงาน Fastwork (F-3): งานออกจากช่วงกำลังทำ · เหลือจ่ายส่วนแบ่ง · ยกเลิกการปิดยอดแล้วกลับมาเป็นกำลังทำ
+    if (fastwork) {
+        await conn.query("UPDATE tb_projects SET project_status = 'completed' WHERE project_id = ? AND project_status <> 'completed'", [projectId]);
+    }
+    return { sst_id: result.insertId, project_completed: Boolean(fastwork) };
 }
 
 /** ยกเลิกการปิดยอด — ได้เฉพาะเมื่อยังไม่ได้จ่าย/รับคืนจากใคร */
@@ -469,6 +524,11 @@ async function cancelSettlement(conn, user, settlementId, input) {
         `UPDATE tb_share_settlements SET sst_status = 'cancelled', sst_cancel_reason = ?, sst_cancelled_at = ?, sst_cancelled_by = ?,
                 sst_version = sst_version + 1 WHERE sst_id = ?`,
         [input.reason, nowBangkokText(), user.user_id, settlementId],
+    );
+    // งาน Fastwork ที่ปิดงานพร้อมปิดยอด → กลับมาเป็นกำลังทำ (แก้รายการเงิน/งวดต่อได้)
+    await conn.query(
+        "UPDATE tb_projects SET project_status = 'in_progress' WHERE project_id = ? AND project_channel = 'fastwork' AND project_status = 'completed'",
+        [settlement.sst_project_id],
     );
     return { sst_id: settlementId, project_id: settlement.sst_project_id };
 }
@@ -514,7 +574,7 @@ async function listProjects(conn) {
                 (SELECT COUNT(*) FROM tb_project_shares s WHERE s.shr_project_id = p.project_id) AS share_count,
                 st.sst_id, DATE_FORMAT(st.sst_settled_date, '%Y-%m-%d') AS sst_settled_date, st.sst_distributable, st.sst_company_amount,
                 (SELECT COUNT(*) FROM tb_share_settlement_lines l WHERE l.ssl_settlement_id = st.sst_id AND l.ssl_status = 'unpaid') AS unpaid_count,
-                (SELECT COUNT(*) FROM tb_fastwork_milestones m WHERE m.fwm_project_id = p.project_id) AS milestone_count,
+                (SELECT COUNT(*) FROM tb_fastwork_milestones m WHERE m.fwm_project_id = p.project_id AND m.fwm_cancelled_at IS NULL) AS milestone_count,
                 (SELECT COUNT(*) FROM tb_fastwork_payouts f WHERE f.fwp_project_id = p.project_id AND f.fwp_status = 'received') AS received_count,
                 (SELECT COUNT(*) FROM tb_fastwork_payouts f WHERE f.fwp_project_id = p.project_id AND f.fwp_status = 'pending') AS pending_count
          FROM tb_projects p
@@ -636,6 +696,7 @@ async function mine(conn, user) {
 }
 
 module.exports = {
+    latestFastworkShares,
     profitOf,
     projectShares,
     saveShares,

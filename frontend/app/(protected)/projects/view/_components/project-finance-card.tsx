@@ -126,12 +126,20 @@ function Stat({
 }
 
 // ต้นทุน + กำไรขั้นต้น (เป็นบาท) — แสดงเมื่อมีออกบิลหรือมีต้นทุน
-function ProfitSection({ profit }: { profit: ProjectProfit }) {
+// โปรเจกต์ภายใน (ไม่มีลูกค้า): ไม่มีรายได้ จึงแสดงแค่ต้นทุน ไม่โชว์กำไรติดลบตัวแดง (usability R2-6)
+function ProfitSection({ profit, isInternal }: { profit: ProjectProfit; isInternal: boolean }) {
     const isLoss = parseHundredths(profit.gross_profit_thb, "กำไร") < 0n;
     const hasLabor = !isZero(profit.labor_hours) || !isZero(profit.labor_pending_hours);
     return (
         <div className="grid gap-3 rounded-xl border border-gray-200 p-4">
-            <h3 className="text-sm font-medium text-gray-900">ต้นทุนและกำไรขั้นต้น (บาท)</h3>
+            <h3 className="text-sm font-medium text-gray-900">
+                {isInternal ? "ต้นทุนโปรเจกต์ (บาท)" : "ต้นทุนและกำไรขั้นต้น (บาท)"}
+            </h3>
+            {isInternal ? (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    <Stat label="ต้นทุนรวม" value={profit.cost_thb} />
+                </div>
+            ) : (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {profit.fastwork_received_thb !== null ? (
                     <Stat label="รายได้ Fastwork (ราคางวดที่เงินเข้าแล้ว)" value={profit.revenue_thb} />
@@ -159,6 +167,7 @@ function ProfitSection({ profit }: { profit: ProjectProfit }) {
                     </span>
                 </div>
             </div>
+            )}
             <ul className="grid gap-1 text-sm">
                 {profit.platform_fee_thb !== null && (
                     <li className="flex justify-between gap-3 text-gray-700">
@@ -242,7 +251,7 @@ function PercentBar({ label, percent, tone }: { label: string; percent: number |
     );
 }
 
-export default function ProjectFinanceCard({ projectId }: { projectId: string }) {
+export default function ProjectFinanceCard({ projectId, isInternal }: { projectId: string; isInternal: boolean }) {
     const hasBit = usePermission();
     const canView = hasBit(BITS.viewInvoices);
     const canCreateInvoice = hasBit(BITS.createInvoice);
@@ -279,12 +288,13 @@ export default function ProjectFinanceCard({ projectId }: { projectId: string })
                 (!isZero(finance.profit.cost_thb) ||
                     !isZero(finance.profit.billed_before_vat_thb) ||
                     !isZero(finance.profit.fastwork_received_thb ?? "0")) && (
-                <ProfitSection profit={finance.profit} />
+                <ProfitSection profit={finance.profit} isInternal={isInternal} />
             )}
             {finance && finance.channel !== "fastwork" && finance.quotations.length === 0 && finance.invoices.length === 0 && (
                 <p className="text-sm text-gray-500">
-                    โปรเจกต์นี้ยังไม่มีใบเสนอราคาที่ลูกค้าตอบรับหรือใบแจ้งหนี้
-                    ผูกได้ตอนบันทึกว่าลูกค้าตอบรับใบเสนอราคา
+                    {isInternal
+                        ? "โปรเจกต์ภายใน (ไม่มีลูกค้า) · แสดงเฉพาะต้นทุน ไม่มีรายได้และกำไร"
+                        : "โปรเจกต์นี้ยังไม่มีใบเสนอราคาที่ลูกค้าตอบรับหรือใบแจ้งหนี้ · ผูกได้ตอนบันทึกว่าลูกค้าตอบรับใบเสนอราคา"}
                 </p>
             )}
             {finance && (finance.quotations.length > 0 || finance.invoices.length > 0) && (

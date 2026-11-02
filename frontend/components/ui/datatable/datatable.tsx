@@ -9,6 +9,7 @@
 import { useState, useMemo } from "react";
 import { ChevronUp, ChevronDown, ChevronsUpDown, Search, ChevronLeft, ChevronRight, Inbox } from "lucide-react";
 import Skeleton from "@/components/ui/skeleton";
+import LoadErrorBanner, { type LoadError } from "@/components/ui/guidance/load-error-banner";
 
 export type Column<T> = {
     key: keyof T & string;
@@ -44,6 +45,9 @@ type Props<T extends Record<string, unknown>> = {
     actions?: (row: T) => React.ReactNode;
     // server-side props
     loading?: boolean;
+    // โหลดไม่สำเร็จ (ไม่มีสิทธิ์/เน็ตหลุด): แสดงเหตุผล + ลองใหม่ แทนตารางว่าง · ไม่ส่ง = แบบเดิม
+    loadError?: LoadError | null;
+    onRetry?: () => void;
     total?: number;
     page?: number;
     onPageChange?: (page: number) => void;
@@ -65,6 +69,8 @@ export default function DataTable<T extends Record<string, unknown>>({
     onSelectionChange,
     actions,
     loading = false,
+    loadError = null,
+    onRetry,
     total,
     page: controlledPage,
     onPageChange,
@@ -206,6 +212,9 @@ export default function DataTable<T extends Record<string, unknown>>({
     const badgeColumns = columnsAt("badge");
     const detailColumns = otherColumns.filter((col) => !col.mobile);
     const isCompactCard = otherColumns.some((col) => col.mobile);
+
+    // ไม่ให้เข้าใจผิดว่า "ไม่มีข้อมูล" ตอนที่จริงโหลดไม่ได้ (usability R2-1)
+    if (loadError) return <LoadErrorBanner error={loadError} onRetry={onRetry} />;
 
     return (
         <div className="flex w-full min-w-0 flex-col gap-3">

@@ -29,6 +29,7 @@ import type { RequestAnswer } from "@/app/order/_types";
 import { openOrDownloadBlob } from "@/lib/open-blob";
 import { LINK_KIND_LABEL, type ClientMatch, type FastworkPlan, type ServiceRequestItem, type ServiceRequestRow } from "../../order-links/_types";
 import { requestStatusOf } from "../_status";
+import { formatBangkokDateTime } from "@/app/function";
 import ClientPanel from "../_components/client-panel";
 import ItemsEditor from "../_components/items-editor";
 import FastworkPanel from "../_components/fastwork-panel";
@@ -112,7 +113,7 @@ function ServiceRequestView() {
         <PageHeader
             eyebrow="คำขอบริการ"
             title={detail ? detail.request.svr_company_name || detail.request.client_name || detail.request.svr_contact_name || requestId : "คำขอบริการ"}
-            description={detail ? `${detail.request.svr_id} · ส่งเมื่อ ${detail.request.svr_submitted_at}` : undefined}
+            description={detail ? `${detail.request.svr_id} · ส่งเมื่อ ${formatBangkokDateTime(detail.request.svr_submitted_at)}` : undefined}
             actions={
                 <Link href="/sales/service-requests" className={buttonClass("secondary", "md")}>
                     ทุกคำขอ
@@ -202,7 +203,7 @@ function ServiceRequestView() {
             return;
         }
         if (data.qt_id) {
-            toast.success(isFastwork ? "สร้างร่างใบเสนอราคาภายในแล้ว ตรวจงวดแล้วส่งอนุมัติ (ไม่ส่งลูกค้า)" : "สร้างร่างใบเสนอราคาแล้ว ตรวจงวดและเงื่อนไขแล้วส่งอนุมัติ");
+            toast.success(isFastwork ? "สร้างร่างใบเสนอราคา (Fastwork) แล้ว ตรวจงวดแล้วส่งอนุมัติ · ใช้เป็นราคาที่ส่งบน Fastwork" : "สร้างร่างใบเสนอราคาแล้ว ตรวจงวดและเงื่อนไขแล้วส่งอนุมัติ");
             router.push(`/sales/quotations/edit?id=${data.qt_id}`);
             return;
         }
@@ -301,7 +302,7 @@ function ServiceRequestView() {
                     ) : (
                         isOpen &&
                         (isFastwork ? (
-                            <FieldHint>ไม่บังคับ · ไม่ผูก = สร้างลูกค้าจากชื่อผู้ซื้อตอนออกใบภายในหรือรับงาน · ผูกลูกค้าเดิมถ้าเคยจ้างแล้ว</FieldHint>
+                            <FieldHint>ไม่บังคับ · ไม่ผูก = สร้างลูกค้าจากชื่อผู้ซื้อตอนออกใบเสนอราคาหรือรับงาน · ผูกลูกค้าเดิมถ้าเคยจ้างแล้ว</FieldHint>
                         ) : (
                             <StatusBanner tone="wait" title="ยังไม่ได้ผูกลูกค้า">
                                 ผูกลูกค้าเดิมหรือสร้างใหม่ก่อนยืนยัน
@@ -319,7 +320,7 @@ function ServiceRequestView() {
                         <InfoRow label="ที่อยู่ (ใบกำกับ)" value={request.svr_address} />
                         <InfoRow label="ลิงก์" value={request.ol_name} />
                         <InfoRow label="ลิงก์ของงาน" value={request.link_project_name} />
-                        <InfoRow label="ยินยอมข้อมูลส่วนบุคคล" value={request.svr_consent_at} />
+                        <InfoRow label="ยินยอมข้อมูลส่วนบุคคล" value={formatBangkokDateTime(request.svr_consent_at)} />
                     </dl>
                     {request.svr_note && <p className="rounded-xl bg-gray-50 p-3 text-sm whitespace-pre-line text-gray-700">{request.svr_note}</p>}
                 </SectionCard>
@@ -438,7 +439,7 @@ function ServiceRequestView() {
                         isEditingItems={isEditingItems}
                         isIssuing={isConfirming}
                         onIssueQuotation={() =>
-                            withPriceCheck({ nextLabel: "ออกใบภายใน", stopIfRaised: false, run: (version) => confirmRequest(true, version) })
+                            withPriceCheck({ nextLabel: "ออกใบเสนอราคา", stopIfRaised: false, run: (version) => confirmRequest(true, version) })
                         }
                         withPriceCheck={(nextLabel, run) => withPriceCheck({ nextLabel, stopIfRaised: false, run: () => run() })}
                         onClose={() => setFinishing("close")}

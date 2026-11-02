@@ -107,7 +107,7 @@ export default function EditRolePage() {
             <PageHeader
                 eyebrow="ตั้งค่าระบบ · จัดการสิทธิ์"
                 title="แก้ไขสิทธิ์"
-                description="เปลี่ยนสิทธิ์แล้วมีผลกับผู้ใช้ทุกคนใน role นี้ทันทีที่เปลี่ยนหน้า · แก้ได้เฉพาะ role ที่สิทธิ์ไม่เกินของคุณ"
+                description="เปลี่ยนสิทธิ์แล้วมีผลกับผู้ใช้ทุกคนในกลุ่มสิทธิ์นี้ทันทีที่เปลี่ยนหน้า · แก้ได้เฉพาะกลุ่มที่สิทธิ์ไม่เกินของคุณ"
             />
 
             <form onSubmit={handleSubmit} className="space-y-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-card sm:p-6">
@@ -134,7 +134,7 @@ export default function EditRolePage() {
 
                 {canEdit && isSystemRole && (
                     <div role="status" className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-600">
-                        <p className="font-medium">นี่คือ role ระบบ · ได้สิทธิ์ครบทุกข้อเสมอ</p>
+                        <p className="font-medium">นี่คือสิทธิ์ของระบบ · ได้ครบทุกข้อเสมอ</p>
                         <p>
                             แก้ได้เฉพาะชื่อและแผนก ส่วนสิทธิ์ล็อกไว้ เพื่อให้มีคนจัดการระบบได้เสมอ
                             และได้สิทธิ์ใหม่ที่ระบบเพิ่มในอนาคตโดยอัตโนมัติ

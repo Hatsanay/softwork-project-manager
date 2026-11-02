@@ -147,9 +147,11 @@ type PackagesTabProps = {
     canEdit: boolean;
     // ไปแก้คำถามลูกค้าของชุดนี้ในแท็บคำถาม (Q-2)
     onOpenQuestions: (target: QuestionsTarget) => void;
+    // มาจากแท็บคำถาม (กดชื่อชุด): เปิดแผงแก้ชุดนี้ทันที
+    openPackageId?: string | null;
 };
 
-export default function PackagesTab({ categories, canEdit, onOpenQuestions }: PackagesTabProps) {
+export default function PackagesTab({ categories, canEdit, onOpenQuestions, openPackageId = null }: PackagesTabProps) {
     const messages = PRODUCT_MESSAGES.packages;
     const [packages, setPackages] = useState<ProductPackageSummary[] | null>(null);
     const [reloadCount, setReloadCount] = useState(0);
@@ -204,6 +206,15 @@ export default function PackagesTab({ categories, canEdit, onOpenQuestions }: Pa
         editor.updateField("pkg_category_id", prefilled.pkg_category_id);
         setOpenedSnapshot(formSnapshot(prefilled));
     }
+
+    // มาจากแท็บคำถาม: เปิดแผงแก้ชุดนั้น (ครั้งเดียวต่อรหัส)
+    const [openedFromQuestions, setOpenedFromQuestions] = useState<string | null>(null);
+    useEffect(() => {
+        if (!openPackageId || openedFromQuestions === openPackageId) return;
+        void openEdit(openPackageId).then(() => setOpenedFromQuestions(openPackageId));
+        // openEdit อ่าน state ล่าสุดตอนเรียก ไม่ต้องอยู่ใน deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [openPackageId, openedFromQuestions]);
 
     async function openEdit(packageId: string) {
         setOpenError(null);

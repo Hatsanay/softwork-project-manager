@@ -12,6 +12,7 @@ import { buttonClass } from "@/components/ui/button";
 import { usePermission, BITS } from "@/app/components/permission-provider";
 import { formatDateOnly } from "@/app/function";
 import { apiFetch } from "@/lib/api";
+import type { LoadError } from "@/components/ui/guidance/load-error-banner";
 import { formatAmount } from "@/lib/shared/money.mjs";
 import { QUOTATION_MESSAGES, STATUS_LABELS } from "./_messages";
 import type { QuotationListRow } from "./_types";
@@ -58,6 +59,9 @@ export default function QuotationsPage() {
     const [rows, setRows] = useState<QuotationListRow[]>([]);
     const [total, setTotal] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
+    // โหลดไม่สำเร็จ = บอกเหตุผล + ลองใหม่ แทนรายการว่าง (usability R2-1)
+    const [loadError, setLoadError] = useState<LoadError | null>(null);
+    const [reloadCount, setReloadCount] = useState(0);
 
     useEffect(() => {
         let isLeftPage = false;
@@ -67,8 +71,9 @@ export default function QuotationsPage() {
             limit: String(pageSize),
             offset: String((page - 1) * pageSize),
         });
-        apiFetch<{ data: QuotationListRow[]; total: number }>(`/quotations?${query}`).then(({ data }) => {
+        apiFetch<{ data: QuotationListRow[]; total: number }>(`/quotations?${query}`).then(({ data, error }) => {
             if (isLeftPage) return;
+            setLoadError(error);
             setRows(data?.data ?? []);
             setTotal(data?.total ?? 0);
             setIsLoading(false);
@@ -76,7 +81,7 @@ export default function QuotationsPage() {
         return () => {
             isLeftPage = true;
         };
-    }, [tab, search, page, pageSize]);
+    }, [tab, search, page, pageSize, reloadCount]);
 
     const columns: Column<QuotationListRow>[] = [
         {
@@ -182,6 +187,8 @@ export default function QuotationsPage() {
                 options={TABS}
             />
             <DataTable
+                loadError={loadError}
+                onRetry={() => setReloadCount((count) => count + 1)}
                 columns={columns}
                 data={rows}
                 rowKey="qt_id"
