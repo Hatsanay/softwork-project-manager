@@ -86,7 +86,7 @@ export default function BotRateCheck({ currencies }: { currencies: Currency[] })
                                 setCurrencyCode(event.target.value);
                                 setResult(null);
                             }}
-                            className={`${inputClass()} w-48`}
+                            className={`${inputClass()} w-48!`}
                         >
                             {foreignCurrencies.map((currency) => (
                                 <option key={currency.cur_code} value={currency.cur_code}>

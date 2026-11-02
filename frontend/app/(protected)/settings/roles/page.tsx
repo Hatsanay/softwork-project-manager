@@ -14,6 +14,7 @@ import { usePermission, BITS } from "@/app/components/permission-provider";
 import { toast } from "sonner";
 import PageHeader from "@/components/ui/page-header";
 import { Plus } from "lucide-react";
+import { loadErrorOf, NETWORK_LOAD_ERROR, type LoadError } from "@/components/ui/guidance/load-error-banner";
 
 
 type Role = {
@@ -36,8 +37,8 @@ async function fetchRoles(params: { limit: number; offset: number; search: strin
     const res = await fetch(`${api}/roles?${query}`, {
         headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) return { data: [] as Role[], total: 0 };
-    return res.json() as Promise<{ data: Role[]; total: number }>;
+    if (!res.ok) return { data: [] as Role[], total: 0, loadError: await loadErrorOf(res) };
+    return { ...((await res.json()) as { data: Role[]; total: number }), loadError: null };
 }
 
 export default function RoleSettingsPage() {
@@ -56,6 +57,9 @@ export default function RoleSettingsPage() {
     const [roles, setRoles]   = useState<Role[]>([]);
     const [total, setTotal]   = useState(0);
     const [page, setPage]     = useState(1);
+    // โหลดไม่สำเร็จ = บอกเหตุผล + ลองใหม่ แทนรายการว่าง (usability R2-1 เก็บตก 2026-11-02)
+    const [loadError, setLoadError] = useState<LoadError | null>(null);
+    const [reloadCount, setReloadCount] = useState(0);
     const [search, setSearch] = useState("");
     const [pageSize, setPageSize] = useState(10);
 
@@ -96,11 +100,12 @@ export default function RoleSettingsPage() {
         const limit  = pageSize === -1 ? 99999 : pageSize;
         const offset = pageSize === -1 ? 0 : (page - 1) * pageSize;
         startTransition(async () => {
-            const result = await fetchRoles({ limit, offset, search });
+            const result = await fetchRoles({ limit, offset, search }).catch(() => ({ data: [], total: 0, loadError: NETWORK_LOAD_ERROR }));
+            setLoadError(result.loadError);
             setRoles(result.data);
             setTotal(result.total);
         });
-    }, [page, search, pageSize]);
+    }, [page, search, pageSize, reloadCount]);
 
     function handleSearch(val: string) {
         setSearch(val);
@@ -128,6 +133,8 @@ export default function RoleSettingsPage() {
                 }
             />
             <DataTable
+                loadError={loadError}
+                onRetry={() => setReloadCount((count) => count + 1)}
                 columns={columns}
                 data={roles}
                 rowKey="role_id"

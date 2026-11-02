@@ -200,6 +200,7 @@ export function ShareLinkCard({
 }: ShareLinkCardProps) {
     return (
         <SectionCard
+            id="project-share"
             icon={Link2}
             title="ลิงก์สำหรับลูกค้า"
             description="ลูกค้าดูความคืบหน้าผ่านลิงก์นี้ได้โดยไม่ต้องเข้าระบบ · สร้างลิงก์ใหม่แล้วลิงก์เดิมใช้ไม่ได้ทันที"
@@ -276,6 +277,7 @@ type AgileOverviewCardProps = {
 };
 
 export function AgileOverviewCard({ tasks, tab, onTabChange, onOpenTask }: AgileOverviewCardProps) {
+    // id: ปุ่มกระโดด "งาน" บนมือถือพามาที่นี่ก่อน (2026-11-02)
     const topLevel = tasks.filter((task) => task.task_parent_id === null);
     const subtasks = tasks.filter((task) => task.task_parent_id !== null);
     const claimed = (list: AgileTask[]) => list.filter((task) => task.assignees.length > 0).length;
@@ -301,6 +303,7 @@ export function AgileOverviewCard({ tasks, tab, onTabChange, onOpenTask }: Agile
 
     return (
         <SectionCard
+            id="project-agile"
             icon={Zap}
             title="ภาพรวม Agile"
             description={`งานทั้งหมด ${tasks.length} รายการ (Task ${topLevel.length} · Subtask ${subtasks.length}) · สมาชิกกดรับงานที่ยังไม่มีคนรับได้เอง`}
@@ -400,6 +403,7 @@ function statusLabel(value: string) {
 export function ProjectActivityCard({ activity }: { activity: ActivityEntry[] }) {
     return (
         <SectionCard
+            id="project-activity"
             icon={History}
             title="ประวัติกิจกรรม"
             description="การสร้าง แก้ไข มอบหมาย และเปลี่ยนสถานะงานในโปรเจกต์นี้"

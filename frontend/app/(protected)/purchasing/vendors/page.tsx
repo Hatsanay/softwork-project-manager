@@ -15,6 +15,7 @@ import { ActiveStatusPill } from "@/components/ui/status-pill";
 import { buttonClass } from "@/components/ui/button";
 import { usePermission, BITS } from "@/app/components/permission-provider";
 import { apiFetch } from "@/lib/api";
+import type { LoadError } from "@/components/ui/guidance/load-error-banner";
 import { VENDOR_MESSAGES, whtFormLabel } from "../_messages";
 import type { Vendor } from "../_types";
 
@@ -43,6 +44,8 @@ export default function VendorsPage() {
     const [total, setTotal] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
     const [reloadKey, setReloadKey] = useState(0);
+    // โหลดไม่สำเร็จ = บอกเหตุผล + ลองใหม่ แทนรายการว่าง (usability R2-1 เก็บตก 2026-11-02)
+    const [loadError, setLoadError] = useState<LoadError | null>(null);
     const [deleteTarget, setDeleteTarget] = useState<Vendor | null>(null);
     const [deleteError, setDeleteError] = useState<string | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
@@ -55,8 +58,9 @@ export default function VendorsPage() {
             offset: String((page - 1) * pageSize),
         });
         if (tab !== "all") query.set("status", tab);
-        apiFetch<{ data: Vendor[]; total: number }>(`/vendors?${query}`).then(({ data }) => {
+        apiFetch<{ data: Vendor[]; total: number }>(`/vendors?${query}`).then(({ data, error }) => {
             if (isLeftPage) return;
+            setLoadError(error);
             setRows(data?.data ?? []);
             setTotal(data?.total ?? 0);
             setIsLoading(false);
@@ -165,6 +169,8 @@ export default function VendorsPage() {
                 options={TABS}
             />
             <DataTable
+                loadError={loadError}
+                onRetry={() => setReloadKey((key) => key + 1)}
                 columns={columns}
                 data={rows}
                 rowKey="vd_id"

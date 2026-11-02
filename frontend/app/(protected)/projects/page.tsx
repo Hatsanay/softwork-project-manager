@@ -17,6 +17,7 @@ import PageHeader from "@/components/ui/page-header";
 import StatusPill, { type PillTone } from "@/components/ui/status-pill";
 import Segmented from "@/components/ui/segmented";
 import FieldHint from "@/components/ui/guidance/field-hint";
+import { loadErrorOf, NETWORK_LOAD_ERROR, type LoadError } from "@/components/ui/guidance/load-error-banner";
 
 // ต่อไปต้องทำ (2026-10-31): เรื่องที่เร่งที่สุดของแต่ละโปรเจกต์ · กฎอยู่ที่ backend (project-next-steps.service)
 type NextLevel = "urgent" | "todo" | "wait" | "info";
@@ -71,8 +72,8 @@ async function fetchProjects(params: { limit: number; offset: number; search: st
     if (params.cancelled) query.set("status", "cancelled");
     if (!params.cancelled && params.next !== "all") query.set("next", params.next);
     const res = await fetch(`${api}/projects?${query}`, { headers: authHeader() });
-    if (!res.ok) return { data: [] as Project[], total: 0, next_counts: null };
-    return res.json() as Promise<{ data: Project[]; total: number; next_counts: NextCounts | null }>;
+    if (!res.ok) return { data: [] as Project[], total: 0, next_counts: null, loadError: await loadErrorOf(res) };
+    return { ...((await res.json()) as { data: Project[]; total: number; next_counts: NextCounts | null }), loadError: null };
 }
 
 export default function ProjectsPage() {
@@ -80,6 +81,9 @@ export default function ProjectsPage() {
     const hasBit = usePermission();
 
     const [isPending, startTransition] = useTransition();
+    // โหลดไม่สำเร็จ = บอกเหตุผล + ลองใหม่ แทนรายการว่าง (usability R2-1 เก็บตก 2026-11-02)
+    const [loadError, setLoadError] = useState<LoadError | null>(null);
+    const [reloadCount, setReloadCount] = useState(0);
     const [projects, setProjects] = useState<Project[]>([]);
     const [total, setTotal] = useState(0);
     const [page, setPage] = useState(1);
@@ -97,7 +101,8 @@ export default function ProjectsPage() {
         const limit = pageSize === -1 ? 99999 : pageSize;
         const offset = pageSize === -1 ? 0 : (page - 1) * pageSize;
         startTransition(async () => {
-            const result = await fetchProjects({ limit, offset, search, cancelled: showCancelled, next: nextFilter });
+            const result = await fetchProjects({ limit, offset, search, cancelled: showCancelled, next: nextFilter }).catch(() => ({ data: [], total: 0, next_counts: null, loadError: NETWORK_LOAD_ERROR }));
+            setLoadError(result.loadError);
             setProjects(result.data);
             setTotal(result.total);
             setNextCounts(result.next_counts ?? null);
@@ -107,7 +112,7 @@ export default function ProjectsPage() {
     useEffect(() => {
         reload();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [page, search, pageSize, showCancelled, nextFilter]);
+    }, [page, search, pageSize, showCancelled, nextFilter, reloadCount]);
 
     function handleSearch(val: string) {
         setSearch(val);
@@ -248,6 +253,8 @@ export default function ProjectsPage() {
                 </div>
             )}
             <DataTable
+                loadError={loadError}
+                onRetry={() => setReloadCount((count) => count + 1)}
                 columns={columns}
                 data={projects}
                 rowKey="project_id"

@@ -126,6 +126,19 @@ export function normalizePermissionString(value) {
     return cleaned.padEnd(bitCount, "0").slice(0, bitCount);
 }
 
+// อ่านข้อมูลลูกค้า (รายการ + รายตัว · เบอร์ อีเมล เลขผู้เสียภาษี): สิทธิ์ใดสิทธิ์หนึ่งในงานขาย (2026-11-02 · docs/plans/2026-11-02-client-role-read-permission.md)
+// ช่องเลือกลูกค้าในฟอร์มขาย/โปรเจกต์ และหน้าพิมพ์เอกสาร ใช้ได้ตามเดิม · พนักงานที่ไม่มีงานขายอ่านไม่ได้
+export const CLIENT_READ_PERMISSIONS = [
+    "clientManagement", "createClient", "editClient", "deleteClient",
+    "viewQuotations", "createQuotation", "approveQuotation", "cancelQuotation",
+    "viewInvoices", "createInvoice", "approveInvoice", "cancelInvoice",
+    "viewReceipts", "createReceipt", "cancelReceipt",
+    "salesReports", "manageFastwork", "manageServiceRequests", "createProject",
+];
+
+// อ่านกลุ่มสิทธิ์ (รายการ + รายตัว): คนจัดการสิทธิ์หรือจัดการผู้ใช้ (เลือกสิทธิ์ให้ผู้ใช้)
+export const ROLE_READ_PERMISSIONS = ["roleManagement", "createRole", "editRole", "deleteRole", "usersManagement", "createUsers", "editUsers"];
+
 // role ระบบได้สิทธิ์ครบทุกข้อเสมอ ไม่ขึ้นกับสตริงที่เก็บในฐานข้อมูล (2026-10-12, risk-fixes R24)
 export const SYSTEM_ROLE_TYPE = "S";
 export const FULL_PERMISSION = "1".repeat(PERMISSION_KEYS.length);

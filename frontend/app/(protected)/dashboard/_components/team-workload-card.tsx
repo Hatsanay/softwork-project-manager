@@ -57,7 +57,7 @@ export default function TeamWorkloadCard() {
                         aria-label="โปรเจกต์"
                         value={projectId}
                         onChange={(event) => setProjectId(event.target.value)}
-                        className={`${inputClass(false, "sm")} w-48`}
+                        className={`${inputClass(false, "sm")} w-48!`}
                     >
                         <option value="all">ทุกโปรเจกต์</option>
                         {projectOptions.map((project) => (

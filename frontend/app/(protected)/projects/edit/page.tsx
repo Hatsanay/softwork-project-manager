@@ -11,6 +11,9 @@ import SearchableSelect from "@/components/ui/SearchableSelect";
 import PageHeader from "@/components/ui/page-header";
 import { buttonClass } from "@/components/ui/button";
 import { inputClass } from "@/components/ui/form-field";
+import FieldHint from "@/components/ui/guidance/field-hint";
+import { usePermission, BITS } from "@/app/components/permission-provider";
+import { CLIENT_READ_PERMISSIONS } from "@/lib/shared/permissions.mjs";
 
 type FormState = {
     project_name: string;
@@ -46,6 +49,10 @@ export default function EditProjectPage() {
     const [isPending, startTransition] = useTransition();
 
     const [form, setForm] = useState<FormState>(EMPTY_FORM);
+    // อ่านรายชื่อลูกค้าได้เฉพาะผู้มีสิทธิ์งานขาย (2026-11-02) · PM ที่ได้สิทธิ์จากตำแหน่งเห็นชื่อลูกค้าเดิมแต่เปลี่ยนไม่ได้
+    const hasBit = usePermission();
+    const canPickClient = CLIENT_READ_PERMISSIONS.some((key) => hasBit(BITS[key]));
+    const [currentClientName, setCurrentClientName] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [notFound, setNotFound] = useState(false);
 
@@ -55,6 +62,7 @@ export default function EditProjectPage() {
             const res = await fetch(`${api}/projects/${id}`, { headers: authHeader() });
             if (!res.ok) { setNotFound(true); return; }
             const data = await res.json();
+            setCurrentClientName(data.client_name ?? null);
             setForm({
                 project_name: data.project_name ?? "",
                 client_id: data.client_id ?? "",
@@ -115,13 +123,27 @@ export default function EditProjectPage() {
 
                 <div className="flex flex-col gap-1 col-span-full">
                     <label className="text-sm font-medium text-gray-700 mb-1">ลูกค้า</label>
-                    <SearchableSelect
-                        loadOptions={loadClientOptions}
-                        value={form.client_id}
-                        onChange={(v) => setField("client_id", v)}
-                        placeholder="เลือกลูกค้า (ไม่บังคับ)"
-                        disabled={isPending}
-                    />
+                    {canPickClient ? (
+                        <SearchableSelect
+                            loadOptions={async (search) => {
+                                const found = await loadClientOptions(search);
+                                // ลูกค้าปัจจุบันอยู่ในตัวเลือกเสมอ (ไม่งั้นช่องว่างทั้งที่มีค่า)
+                                const hasCurrent = found.some((option) => option.value === form.client_id);
+                                return form.client_id && currentClientName && !hasCurrent && !search
+                                    ? [{ value: form.client_id, label: currentClientName }, ...found]
+                                    : found;
+                            }}
+                            value={form.client_id}
+                            onChange={(v) => setField("client_id", v)}
+                            placeholder="เลือกลูกค้า (ไม่บังคับ)"
+                            disabled={isPending}
+                        />
+                    ) : (
+                        <>
+                            <div className={`${inputClass()} bg-gray-50 text-gray-700`}>{currentClientName ?? "ไม่มีลูกค้า"}</div>
+                            <FieldHint>เปลี่ยนลูกค้าได้เฉพาะผู้มีสิทธิ์งานขาย (ใบเสนอราคา ใบแจ้งหนี้ หรือจัดการลูกค้า)</FieldHint>
+                        </>
+                    )}
                 </div>
 
                 <div className="flex flex-col gap-1 col-span-full">

@@ -8,6 +8,21 @@ import { buttonClass } from "@/components/ui/button";
 
 export type LoadError = { status: number; message: string };
 
+// เน็ตหลุด/เซิร์ฟเวอร์ไม่ตอบ (fetch โยน error) · หน้าที่ยังใช้ fetch ตรงใช้ร่วมกัน
+export const NETWORK_LOAD_ERROR: LoadError = {
+    status: 0,
+    message: "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ · ตรวจอินเทอร์เน็ตแล้วกดลองใหม่",
+};
+
+/** คำตอบที่ไม่ ok → LoadError (ข้อความจาก backend ถ้ามี) · สำหรับหน้าที่ยังใช้ fetch ตรง ไม่ผ่าน apiFetch */
+export async function loadErrorOf(response: Response): Promise<LoadError> {
+    const body = (await response.json().catch(() => ({}))) as { message?: unknown };
+    return {
+        status: response.status,
+        message: typeof body.message === "string" ? body.message : "โหลดไม่สำเร็จ กรุณาลองใหม่",
+    };
+}
+
 type LoadErrorBannerProps = {
     error: LoadError;
     onRetry?: () => void;

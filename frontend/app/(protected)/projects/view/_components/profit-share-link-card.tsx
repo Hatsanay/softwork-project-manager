@@ -11,7 +11,7 @@ export default function ProfitShareLinkCard({ projectId }: { projectId: string }
     const hasBit = usePermission();
     if (!hasBit(BITS.manageProfitShares)) return null;
     return (
-        <section className={`flex flex-wrap items-center justify-between gap-3 p-4 sm:px-6 ${CARD_CLASS}`}>
+        <section id="project-shares" className={`flex scroll-mt-24 flex-wrap items-center justify-between gap-3 p-4 sm:px-6 ${CARD_CLASS}`}>
             <div className="flex min-w-0 flex-1 basis-64 items-start gap-3.5">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
                     <HandCoins size={19} />

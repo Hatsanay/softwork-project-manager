@@ -14,6 +14,7 @@ const dashboardController = require("../controllers/dashboard.controller");
 const shareController = require("../controllers/share.controller");
 const { requireAuth } = require("../middlewares/auth.middleware");
 const { requirePermission } = require("../middlewares/permission.middleware");
+const { CLIENT_READ_PERMISSIONS, ROLE_READ_PERMISSIONS } = require("../shared/permissions.mjs");
 const {
     requireProjectMember, requireProjectPermission, requireRealMember,
     requireTaskInProject, requireIssueInProject, requireMemberInProject,
@@ -98,8 +99,9 @@ router.put(
 // ─── roles ──────────────────────────────────────────────────────────────────
 // getRole ใช้ทั้งหน้า "จัดการสิทธิ์" และ dropdown เลือกสิทธิ์ตอนสร้าง/แก้ผู้ใช้
 // เลยล็อกแค่ requireAuth ไม่ล็อกด้วย roleManagement bit เพื่อไม่บล็อก dropdown นั้น
-router.get("/V1/roles", requireAuth, roleController.getAll);
-router.get("/V1/roles/:id", requireAuth, roleController.getOne);
+// อ่านกลุ่มสิทธิ์: เฉพาะคนจัดการสิทธิ์/ผู้ใช้ (2026-11-02 · เดิมแค่ login)
+router.get("/V1/roles", requireAuth, requirePermission(ROLE_READ_PERMISSIONS), roleController.getAll);
+router.get("/V1/roles/:id", requireAuth, requirePermission(ROLE_READ_PERMISSIONS), roleController.getOne);
 router.post("/V1/roles", requireAuth, requirePermission("createRole"), roleController.create);
 router.put("/V1/roles/:id", requireAuth, requirePermission("editRole"), roleController.update);
 router.delete("/V1/roles/:id", requireAuth, requirePermission("deleteRole"), roleController.remove);
@@ -132,8 +134,9 @@ router.get("/V1/error-logs", requireAuth, requirePermission("loginLogs"), logCon
 // ─── clients ────────────────────────────────────────────────────────────────
 // getAll/getOne ใช้ทั้งหน้า "จัดการลูกค้า" และ dropdown ตอนสร้าง/แก้โปรเจกต์ เลยล็อกแค่ requireAuth
 // เหมือน roles/departments/project-positions ส่วน create/edit/delete มีสิทธิ์แยกของตัวเอง
-router.get("/V1/clients", requireAuth, clientController.getAll);
-router.get("/V1/clients/:id", requireAuth, clientController.getOne);
+// อ่านลูกค้า: เฉพาะผู้มีสิทธิ์งานขาย (2026-11-02 · เดิมแค่ login · พนักงานทั่วไปเห็นเบอร์/อีเมล/เลขผู้เสียภาษีลูกค้าได้)
+router.get("/V1/clients", requireAuth, requirePermission(CLIENT_READ_PERMISSIONS), clientController.getAll);
+router.get("/V1/clients/:id", requireAuth, requirePermission(CLIENT_READ_PERMISSIONS), clientController.getOne);
 router.post("/V1/clients", requireAuth, requirePermission("createClient"), clientController.create);
 router.put("/V1/clients/:id", requireAuth, requirePermission("editClient"), clientController.update);
 router.delete("/V1/clients/:id", requireAuth, requirePermission("deleteClient"), clientController.remove);

@@ -16,6 +16,7 @@ import PageHeader from "@/components/ui/page-header";
 import PersonCell from "@/components/ui/person-cell";
 import StatusPill, { ActiveStatusPill } from "@/components/ui/status-pill";
 import { Plus } from "lucide-react";
+import { loadErrorOf, NETWORK_LOAD_ERROR, type LoadError } from "@/components/ui/guidance/load-error-banner";
 
 type User = {
     user_id: number;
@@ -47,8 +48,8 @@ async function fetchUsers(params: { limit: number; offset: number; search: strin
     const res = await window.fetch(`${api}/users?${query}`, {
         headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) return { data: [] as User[], total: 0 };
-    return res.json() as Promise<{ data: User[]; total: number }>;
+    if (!res.ok) return { data: [] as User[], total: 0, loadError: await loadErrorOf(res) };
+    return { ...((await res.json()) as { data: User[]; total: number }), loadError: null };
 }
 
 // ลบไม่สำเร็จ = คืนข้อความเหตุผลจาก backend (เช่น ผู้ใช้มีประวัติในระบบ ให้ยกเลิกใช้งานแทน)
@@ -110,6 +111,9 @@ export default function UsersPage() {
     ];
 
     const [isPending, startTransition] = useTransition();
+    // โหลดไม่สำเร็จ = บอกเหตุผล + ลองใหม่ แทนรายการว่าง (usability R2-1 เก็บตก 2026-11-02)
+    const [loadError, setLoadError] = useState<LoadError | null>(null);
+    const [reloadCount, setReloadCount] = useState(0);
     const [users, setUsers] = useState<User[]>([]);
     const [total, setTotal] = useState(0);
     const [page, setPage] = useState(1);
@@ -124,11 +128,12 @@ export default function UsersPage() {
         const limit = pageSize === -1 ? 99999 : pageSize;
         const offset = pageSize === -1 ? 0 : (page - 1) * pageSize;
         startTransition(async () => {
-            const result = await fetchUsers({ limit, offset, search });
+            const result = await fetchUsers({ limit, offset, search }).catch(() => ({ data: [], total: 0, loadError: NETWORK_LOAD_ERROR }));
+            setLoadError(result.loadError);
             setUsers(result.data);
             setTotal(result.total);
         });
-    }, [page, search, pageSize]);
+    }, [page, search, pageSize, reloadCount]);
 
     function handleSearch(val: string) {
         setSearch(val);
@@ -181,6 +186,8 @@ export default function UsersPage() {
             />
 
             <DataTable
+                loadError={loadError}
+                onRetry={() => setReloadCount((count) => count + 1)}
                 columns={columns}
                 data={users}
                 rowKey="user_id"

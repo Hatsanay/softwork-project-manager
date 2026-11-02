@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/app/constans";
 import formatDate, { formatDateOnly, toDateInputValue } from "@/app/function";
@@ -14,6 +14,7 @@ import ProjectFinanceCard from "./_components/project-finance-card";
 import FastworkProjectCard from "./_components/fastwork-project-card";
 import ProfitShareLinkCard from "./_components/profit-share-link-card";
 import NextStepsCard from "./_components/next-steps-card";
+import ProjectJumpBar from "./_components/project-jump-bar";
 import CustomerRequirementsCard from "./_components/customer-requirements-card";
 import ShareEmailModal from "./_components/share-email-modal";
 import ProjectChatModal from "./_components/project-chat-modal";
@@ -46,6 +47,15 @@ import type { TaskStatus, ProjectDetail, TaskAssignee, Task, MemberPosition, Mem
 import { readTaskView, saveTaskView, EMPTY_TASK_FORM, TASK_STATUS_LABEL, TASK_STATUS_OPTIONS, ACTION_LABEL, authHeader, decodeToken, hasProjectBit, IssueCountBadge, ChatUnreadBadge } from "./_lib/view-helpers";
 
 
+// ลำดับบนมือถือ (2026-11-02): งานขึ้นต่อจากต่อไปต้องทำ · ส่วนอื่นตามลำดับเดิม · จอใหญ่ไม่ใช้ order (ลำดับเดิม)
+const MOBILE_ORDER = {
+    header: "max-sm:order-1",
+    nextSteps: "max-sm:order-2 empty:hidden",
+    jumpBar: "max-sm:order-3",
+    tasks: "max-sm:order-4",
+    rest: "max-sm:order-5 empty:hidden",
+};
+
 export default function ViewProjectPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -56,6 +66,8 @@ export default function ViewProjectPage() {
     const [project, setProject] = useState<ProjectDetail | null>(null);
     // งวด/เงิน Fastwork เปลี่ยนในการ์ดงวด → โหลด "ต่อไปต้องทำ" และการเงินใหม่
     const [fastworkVersion, setFastworkVersion] = useState(0);
+    // ปุ่มกระโดดบนมือถือดูว่าส่วนไหนมีบนหน้า
+    const pageRef = useRef<HTMLDivElement>(null);
     const [permission, setPermission] = useState("");
     const [tasks, setTasks] = useState<Task[]>([]);
     const [members, setMembers] = useState<Member[]>([]);
@@ -564,7 +576,7 @@ export default function ViewProjectPage() {
                         value={status}
                         aria-label={`สถานะของ ${row.task_title}`}
                         onChange={(e) => handleStatusChange(row, e.target.value as TaskStatus)}
-                        className={`${inputClass(false, "sm")} w-36`}
+                        className={`${inputClass(false, "sm")} w-36!`}
                     >
                         {TASK_STATUS_OPTIONS.map((opt) => (
                             <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -608,8 +620,12 @@ export default function ViewProjectPage() {
     ];
 
     return (
-        <div className="grid w-full gap-6">
+        // มือถือ (2026-11-02 · docs/plans/2026-11-02-project-page-mobile.md): หัว → ต่อไปต้องทำ → ปุ่มกระโดด → งาน → ส่วนอื่น
+        // จัดด้วย order เฉพาะจอแคบ (จอใหญ่ลำดับเดิม) · กล่องที่การ์ดข้างในไม่แสดง (null) ซ่อนด้วย empty:hidden ไม่ให้เหลือช่องว่าง
+        // scroll-mt บนมือถือเผื่อแถบปุ่มกระโดด (ลิงก์ #project-... จากหน้าอื่นไม่จมใต้แถบ)
+        <div ref={pageRef} className="grid w-full grid-cols-1 gap-6 max-sm:[&_[id^=project-]]:scroll-mt-36">
             {/* หัวข้อ + ข้อมูลโปรเจกต์ (ส่วนแสดงผลอยู่ที่ _components/project-sections.tsx) */}
+            <div className={MOBILE_ORDER.header}>
             <ProjectHeader
                 project={project}
                 memberCount={members.length}
@@ -619,14 +635,21 @@ export default function ViewProjectPage() {
                 onEdit={() => router.push(`/projects/edit?id=${id}`)}
                 onDelete={() => setDeleteProjectConfirm(true)}
             />
+            </div>
 
             {/* ต่อไปต้องทำ (2026-10-31) — โหลดใหม่เมื่องานเปลี่ยน (จำนวน/สถานะ/วันครบ) */}
+            <div className={MOBILE_ORDER.nextSteps}>
             <NextStepsCard
                 projectId={id}
                 refreshKey={`${fastworkVersion}:${tasks.map((task) => `${task.task_status}${task.task_due_date ?? ""}`).join("|")}`}
             />
+            </div>
+
+            {/* ปุ่มกระโดดไปแต่ละส่วน (มือถือเท่านั้น) */}
+            <ProjectJumpBar containerRef={pageRef} className={MOBILE_ORDER.jumpBar} />
 
             {/* ลิงก์สำหรับลูกค้า */}
+            <div className={MOBILE_ORDER.rest}>
             {canManageShareLink && (
                 <ShareLinkCard
                     isEnabled={Boolean(project.project_share_enabled)}
@@ -641,8 +664,10 @@ export default function ViewProjectPage() {
                     onRegenerate={handleRegenerateLink}
                 />
             )}
+            </div>
 
             {/* งาน Fastwork (P-1) — งวดงานและการส่งงาน · สมาชิกตัวจริงกดส่งงานได้ */}
+            <div className={MOBILE_ORDER.rest}>
             {project.project_channel === "fastwork" && (
                 <FastworkProjectCard
                     projectId={id}
@@ -650,16 +675,25 @@ export default function ViewProjectPage() {
                     onChanged={() => setFastworkVersion((version) => version + 1)}
                 />
             )}
+            </div>
 
             {/* ความต้องการจากลูกค้า (S-4) — จากลิงก์เลือกบริการ · ไม่มีคำขอ = ไม่แสดง */}
+            <div className={MOBILE_ORDER.rest}>
             <CustomerRequirementsCard projectId={id} />
+            </div>
 
             {/* การเงิน — เฉพาะผู้มีสิทธิ์ดูใบแจ้งหนี้ (ช่วง 1D) · โปรเจกต์ภายในแสดงแค่ต้นทุน */}
+            <div className={MOBILE_ORDER.rest}>
             <ProjectFinanceCard key={fastworkVersion} projectId={id} isInternal={isInternalProject} />
+            </div>
 
             {/* ส่วนแบ่งกำไร (P-2) — เฉพาะผู้จัดการส่วนแบ่ง · โปรเจกต์ภายในไม่มีรายได้ให้แบ่ง (usability R2-6) */}
+            <div className={MOBILE_ORDER.rest}>
             {!isInternalProject && <ProfitShareLinkCard projectId={id} />}
+            </div>
 
+            {/* ภาพรวม Agile + งาน: มือถือขึ้นต่อจากต่อไปต้องทำ */}
+            <div className={`grid gap-6 ${MOBILE_ORDER.tasks}`}>
             {/* ภาพรวม Agile — เฉพาะโปรเจกต์ agile */}
             {project.project_type === "agile" && (
                 <AgileOverviewCard
@@ -732,9 +766,12 @@ export default function ViewProjectPage() {
                 </>
                 )}
             </TasksSectionCard>
+            </div>
 
             {/* สมาชิก */}
+            <div className={MOBILE_ORDER.rest}>
             <SectionCard
+                id="project-members"
                 icon={Users}
                 title="สมาชิกโปรเจกต์"
                 description="ตำแหน่งในโปรเจกต์กำหนดว่าแต่ละคนทำอะไรได้บ้าง (ตั้งตำแหน่งได้ที่ ตั้งค่าระบบ › ตำแหน่งในโปรเจกต์)"
@@ -760,9 +797,12 @@ export default function ViewProjectPage() {
                     )}
                 />
             </SectionCard>
+            </div>
 
             {/* ประวัติกิจกรรม */}
+            <div className={MOBILE_ORDER.rest}>
             <ProjectActivityCard activity={activity} />
+            </div>
 
             {/* Modal เพิ่ม/แก้ไข Task */}
             {taskModalOpen && project && id && (
