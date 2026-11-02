@@ -87,7 +87,13 @@ export default function ProductsPage() {
                 {activeTab === "categories" && (
                     <CategoriesTab categories={categories} canEdit={canEdit} onSaved={reloadCategories} />
                 )}
-                {activeTab === "packages" && <PackagesTab categories={categories} canEdit={canEdit} onOpenQuestions={openQuestions} openPackageId={openItem?.kind === "package" ? openItem.id : null} />}
+                {activeTab === "packages" && <PackagesTab
+                        categories={categories}
+                        canEdit={canEdit}
+                        onOpenQuestions={openQuestions}
+                        openPackageId={openItem?.kind === "package" ? openItem.id : null}
+                        onOpenProduct={(productId) => openItemEditor({ kind: "product", id: productId })}
+                    />}
                 {activeTab === "questions" && <QuestionsTab canEdit={canEdit} target={questionsTarget} onOpenItem={openItemEditor} />}
             </div>
         </div>

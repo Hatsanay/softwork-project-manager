@@ -149,9 +149,17 @@ type PackagesTabProps = {
     onOpenQuestions: (target: QuestionsTarget) => void;
     // มาจากแท็บคำถาม (กดชื่อชุด): เปิดแผงแก้ชุดนี้ทันที
     openPackageId?: string | null;
+    // กดชื่อสินค้าที่ขายคู่กับชุดนี้ → แท็บสินค้า เปิดแผงแก้สินค้านั้น (2026-11-02)
+    onOpenProduct?: (productId: string) => void;
 };
 
-export default function PackagesTab({ categories, canEdit, onOpenQuestions, openPackageId = null }: PackagesTabProps) {
+export default function PackagesTab({
+    categories,
+    canEdit,
+    onOpenQuestions,
+    openPackageId = null,
+    onOpenProduct,
+}: PackagesTabProps) {
     const messages = PRODUCT_MESSAGES.packages;
     const [packages, setPackages] = useState<ProductPackageSummary[] | null>(null);
     const [reloadCount, setReloadCount] = useState(0);
@@ -160,6 +168,8 @@ export default function PackagesTab({ categories, canEdit, onOpenQuestions, open
     const [showFilter, setShowFilter] = useState<ShowFilter>("all");
     const [activeProducts, setActiveProducts] = useState<ProductChoice[]>([]);
     const [referencedProducts, setReferencedProducts] = useState<ProductChoice[]>([]);
+    // สินค้าที่ตั้ง "แสดงเมื่อเลือกชุด" เป็นชุดนี้ (ตั้งจากฟอร์มสินค้า) · แสดงอ่านอย่างเดียว
+    const [onlyWithProducts, setOnlyWithProducts] = useState<ProductPackage["only_with_products"]>([]);
     const [savedCategoryId, setSavedCategoryId] = useState<string | null>(null);
     const [editingImageUrl, setEditingImageUrl] = useState<string | null>(null);
     const [openingId, setOpeningId] = useState<string | null>(null);
@@ -228,6 +238,7 @@ export default function PackagesTab({ categories, canEdit, onOpenQuestions, open
         await loadActiveProducts();
         setOpeningId(null);
         setReferencedProducts(productsReferencedBy(data));
+        setOnlyWithProducts(data.only_with_products ?? []);
         setSavedCategoryId(data.pkg_category_id);
         setEditingImageUrl(data.pkg_image_url);
         const packageForm = toForm(data);
@@ -286,6 +297,10 @@ export default function PackagesTab({ categories, canEdit, onOpenQuestions, open
     const hasNoCategory = (packages ?? []).some((row) => !row.pkg_category_id);
 
     const choices = mergeChoices(referencedProducts, activeProducts);
+    // กติกางานเพิ่มตั้งซ้อนกับสินค้าที่ขายคู่ชุดนี้ไม่ได้ (คู่ชุดกับสินค้ามีกติกาแบบเดียว)
+    const addonChoices = choices.filter(
+        (choice) => !onlyWithProducts.some((row) => row.product_id === choice.product_id),
+    );
     // งานเพิ่มแบบ % ใส่ในชุดไม่ได้ (backend ไม่รับ) ไม่ให้เลือกในแถว · กติกางานเพิ่มยังเลือกได้
     // บริการที่รวมรอบแรกในแพ็ก = สินค้าที่ตั้งรอบต่ออายุไว้ (2026-10-31)
     const renewalChoices = choices.filter((product) => Boolean(product.product_renewal_months));
@@ -545,10 +560,37 @@ export default function PackagesTab({ categories, canEdit, onOpenQuestions, open
                                 />
                                 <AddonRulesEditor
                                     rules={form.addon_rules}
-                                    products={choices}
+                                    products={addonChoices}
                                     error={fieldErrors.addon_rules}
                                     onChange={(rules) => editor.updateField("addon_rules", rules)}
                                 />
+                            </div>
+                        )}
+                        {editor.editingId && onlyWithProducts.length > 0 && (
+                            <div className="grid gap-1.5 rounded-xl border border-gray-200 p-3">
+                                <span className="text-sm font-medium text-gray-900">สินค้าที่ขายคู่กับชุดนี้</span>
+                                <ul className="flex flex-wrap gap-x-3 gap-y-1">
+                                    {onlyWithProducts.map((row) => (
+                                        <li key={row.product_id}>
+                                            <button
+                                                type="button"
+                                                className="-my-1 inline-flex min-h-9 items-center text-sm text-blue-600 hover:underline"
+                                                onClick={() =>
+                                                    onOpenProduct &&
+                                                    confirmDiscard(isDirty) &&
+                                                    onOpenProduct(row.product_id)
+                                                }
+                                            >
+                                                {row.product_name}
+                                                {row.product_status !== "active" ? " (ปิดใช้งาน)" : ""}
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                                <span className="text-xs text-gray-500">
+                                    ลูกค้าเห็นสินค้าเหล่านี้เมื่อเลือกชุดนี้ · ตั้งหรือเอาออกที่ช่อง
+                                    &quot;แสดงเมื่อเลือกชุด&quot; ในฟอร์มสินค้า (กดชื่อเพื่อเปิด)
+                                </span>
                             </div>
                         )}
                     </DrawerSection>

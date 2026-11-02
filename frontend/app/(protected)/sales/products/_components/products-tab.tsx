@@ -19,12 +19,13 @@ import { formatAmount } from "@/lib/shared/money.mjs";
 import { productSchema } from "@/lib/shared/schemas/product.mjs";
 import { RENEWAL_CYCLES, cycleLabel } from "@/lib/shared/renewal-math.mjs";
 import { PRODUCT_MESSAGES } from "../_messages";
-import type { ActiveStatus, Product, ProductCategory } from "../_types";
+import type { ActiveStatus, OnlyWithPackage, Product, ProductCategory } from "../_types";
 import CategorySelect from "./category-select";
 import CatalogImageField from "./catalog-image-field";
 import CategoryChips from "./category-chips";
 import EditorDrawer, { confirmDiscard, DrawerButtons, DrawerSection } from "@/components/ui/editor-drawer";
 import ItemQuestionsPanel, { type QuestionsTarget } from "./item-questions-panel";
+import OnlyWithPackagesField from "./only-with-packages-field";
 
 const EMPTY_FORM = {
     product_code: "",
@@ -40,9 +41,13 @@ const EMPTY_FORM = {
     product_price_note: "",
     // "" = ไม่ใช่บริการรายรอบ · ตัวเลข = ต่ออายุทุกกี่เดือน
     product_renewal_months: "",
+    // แสดงเมื่อเลือกชุด (2026-11-02) · ว่าง = แสดงตามปกติ
+    only_with_package_ids: [] as string[],
 };
 
 type ProductForm = typeof EMPTY_FORM;
+// ค่าคงที่ (ไม่สร้างอาร์เรย์ใหม่ทุกครั้ง) ให้ช่องเลือกชุดไม่โหลดซ้ำ
+const NO_PACKAGES: OnlyWithPackage[] = [];
 // ตัวกรอง "แสดง": สถานะ หรือ อยู่/ไม่อยู่บนหน้าร้าน (เลือกได้ทีละอย่าง พอสำหรับงานประจำ)
 type ShowFilter = "all" | "active" | "inactive" | "public" | "not_public";
 
@@ -71,6 +76,7 @@ function toForm(product: Product): ProductForm {
         product_percent: product.product_percent ?? "",
         product_price_note: product.product_price_note ?? "",
         product_renewal_months: product.product_renewal_months ? String(product.product_renewal_months) : "",
+        only_with_package_ids: (product.only_with_packages ?? []).map((row) => row.pkg_id),
     };
 }
 
@@ -270,6 +276,7 @@ export default function ProductsTab({ categories, canEdit, onOpenQuestions, open
                         </span>
                         {row.product_status !== "active" && <StatusPill tone="neutral">ปิดใช้งาน</StatusPill>}
                         {Boolean(row.product_is_public) && <StatusPill tone="info">หน้าร้าน</StatusPill>}
+                        {Number(row.only_with_count) > 0 && <StatusPill tone="neutral">เฉพาะชุด</StatusPill>}
                         {row.product_renewal_months && (
                             <StatusPill tone="neutral">รายรอบ · {cycleLabel(row.product_renewal_months)}</StatusPill>
                         )}
@@ -591,6 +598,12 @@ export default function ProductsTab({ categories, canEdit, onOpenQuestions, open
                             description={messages.isPublic}
                             checked={form.product_is_public}
                             onChange={(checked) => editor.updateField("product_is_public", checked)}
+                        />
+                        <OnlyWithPackagesField
+                            value={form.only_with_package_ids}
+                            initialPackages={editingProduct?.only_with_packages ?? NO_PACKAGES}
+                            error={fieldErrors.only_with_package_ids}
+                            onChange={(packageIds) => editor.updateField("only_with_package_ids", packageIds)}
                         />
                         {form.product_is_public && (
                             <div className="rounded-xl bg-gray-50 p-3">

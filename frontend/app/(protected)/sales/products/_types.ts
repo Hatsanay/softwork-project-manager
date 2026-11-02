@@ -23,9 +23,14 @@ export type Product = {
     product_price_note: string | null;
     // บริการรายรอบ: ต่ออายุทุกกี่เดือน · null = ไม่ใช่รายรอบ (2026-10-31)
     product_renewal_months: number | null;
+    // แสดงเมื่อเลือกชุด (2026-11-02) · ว่าง = แสดงตามปกติ
+    only_with_count: number;
+    only_with_packages: OnlyWithPackage[];
     product_created_at: string;
     product_updated_at: string;
 };
+
+export type OnlyWithPackage = { pkg_id: string; pkg_name: string; pkg_status: ActiveStatus };
 
 export type ProductCategory = {
     pc_id: string;
@@ -84,4 +89,6 @@ export type ProductPackage = {
     items: ProductPackageItem[];
     // กติกางานเพิ่มบนหน้าร้าน (2026-10-25)
     addon_rules: { product_id: string; rule: "included" | "not_available"; product_name: string }[];
+    // สินค้าที่ขายคู่กับชุดนี้ (ตั้งจากฟอร์มสินค้า · 2026-11-02) · อ่านอย่างเดียวในฟอร์มชุด
+    only_with_products: { product_id: string; product_name: string; product_status: ActiveStatus }[];
 };

@@ -7,6 +7,7 @@ const { validate } = require("../utils/validate");
 const { formatHundredths } = require("../shared/money.mjs");
 const { fixedSubtotal, multiplyQuantity, percentAmount } = require("../shared/order-cart-math.mjs");
 const { quotationDraftSchema } = require("../shared/schemas/quotation.mjs");
+const { isSupportedByCart, onlyWithText } = require("../shared/addon-rules.mjs");
 const quotationService = require("./quotation.service");
 
 function validationError(fields, message = "ข้อมูลบางช่องใช้ไม่ได้ กรุณาแก้ตามข้อความใต้ช่อง") {
@@ -40,6 +41,8 @@ const priceOf = (startingPrices, productId, isStartingPrice, fallback) =>
 function itemsFromCart(cartCatalog, lines, startingPrices) {
     const productsById = new Map(cartCatalog.products.map((row) => [row.product_id, row]));
     const packagesById = new Map(cartCatalog.packages.map((row) => [row.pkg_id, row]));
+    // แสดงเมื่อเลือกชุด (2026-11-02): สินค้าเฉพาะชุดต้องมีชุดที่รองรับในตะกร้า (กติกาเดียวกับหน้าร้าน)
+    const cartPackageIds = lines.filter((line) => line.kind === "package").map((line) => line.id);
     const packageItems = [];
     const productItems = [];
     const percentProducts = [];
@@ -64,6 +67,10 @@ function itemsFromCart(cartCatalog, lines, startingPrices) {
         }
         const product = productsById.get(line.id);
         if (!product) throw new AppError(409, "CART_ITEM_UNAVAILABLE", "บางรายการในตะกร้าปิดใช้งานหรือถูกลบแล้ว กรุณาโหลดหน้าใหม่");
+        const onlyWith = product.only_with_packages ?? [];
+        if (!isSupportedByCart(onlyWith.map((item) => item.id), cartPackageIds)) {
+            throw validationError({ lines: `"${product.product_name}" ${onlyWithText(onlyWith.map((item) => item.name))} · ใส่ชุดนั้นในตะกร้าก่อน` });
+        }
         if (product.product_price_mode === "percent") {
             percentProducts.push(product);
             continue;

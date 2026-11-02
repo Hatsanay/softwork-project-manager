@@ -21,6 +21,8 @@ export type CatalogProduct = {
     product_price_note: string | null;
     // ตัวคิดราคาของทีมเห็นรายการที่ไม่อยู่บนหน้าร้านด้วย (2026-11-01) · หน้าร้านของลูกค้า = true เสมอ
     product_is_public?: boolean;
+    // แสดงเมื่อเลือกชุด (2026-11-02) · ว่าง = แสดงตามปกติ · ชุดปิดหมด = [{ id: "" }] (ไม่มีตะกร้าไหนรองรับ)
+    only_with_packages?: { id: string; name: string }[];
 };
 
 export type CatalogPackage = {

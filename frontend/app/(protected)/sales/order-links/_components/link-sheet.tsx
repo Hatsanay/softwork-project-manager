@@ -22,6 +22,7 @@ import { SheetButtons, SheetFrame } from "../../../fastwork/_components/sheet-fr
 import type { OrderLink, OrderLinkKind, ServiceRequestSettings } from "../_types";
 import { LINK_KIND_LABEL } from "../_types";
 import LinkQuestionsSection, { type QuestionRules } from "./link-questions-section";
+import QuantityControl from "@/app/order/_components/quantity-control";
 
 type Category = { pc_id: string; pc_name: string; pc_status: "active" | "inactive" };
 
@@ -275,30 +276,47 @@ export default function LinkSheet({
                 </FormField>
             </div>
             <section className="grid gap-2 rounded-xl border border-gray-200 p-3" aria-labelledby="preset-title">
-                <h3 id="preset-title" className="flex items-center gap-1.5 text-sm font-medium text-gray-900">
-                    <Lock size={15} className="text-blue-600" aria-hidden="true" />
-                    รายการที่ทีมงานเลือกให้ (ไม่บังคับ)
-                </h3>
+                <div className="flex items-center justify-between gap-2">
+                    <h3 id="preset-title" className="flex items-center gap-1.5 text-sm font-medium text-gray-900">
+                        <Lock size={15} className="text-blue-600" aria-hidden="true" />
+                        รายการที่ทีมงานเลือกให้ (ไม่บังคับ)
+                    </h3>
+                    {presetRows.length > 0 && (
+                        <span className="text-xs text-gray-500 tabular-nums">
+                            {presetRows.length}/{MAX_PRESET_ITEMS} รายการ
+                        </span>
+                    )}
+                </div>
+                {/* แถวรายการ: ชื่อเต็มบรรทัดบน · จำนวน (− 1 +) และปุ่มเอาออกบรรทัดล่างบนมือถือ (เดิมช่องจำนวนกินทั้งแถว ชื่อถูกบีบเหลือตัวละบรรทัด) */}
                 {presetRows.length > 0 && (
                     <ul className="grid gap-2">
                         {presetRows.map((row, index) => (
-                            <li key={`${row.kind}:${row.id}`} className="flex items-center gap-2">
-                                <span className="min-w-0 flex-1 text-sm wrap-break-word text-gray-900">
-                                    {row.kind === "package" ? "ชุด: " : ""}
-                                    {row.name}
-                                </span>
-                                <input
-                                    aria-label={`จำนวน ${row.name}`}
-                                    inputMode="numeric"
-                                    value={row.quantity}
-                                    onChange={(event) =>
-                                        setPresetRows((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, quantity: event.target.value.replace(/\D/g, "").slice(0, String(MAX_SET_COUNT).length) } : item)))
-                                    }
-                                    className={`${inputClass(false, "sm")} w-16 text-center`}
-                                />
-                                <button type="button" aria-label={`เอา ${row.name} ออก`} className={buttonClass("ghost", "sm")} onClick={() => setPresetRows((current) => current.filter((_, itemIndex) => itemIndex !== index))}>
-                                    <Trash2 size={15} />
-                                </button>
+                            <li key={`${row.kind}:${row.id}`} className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-gray-50 p-3">
+                                <div className="grid min-w-0 flex-1 basis-48 gap-0.5">
+                                    <span className="text-sm font-medium wrap-break-word text-gray-900">{row.name}</span>
+                                    <span className="text-xs text-gray-500">{row.kind === "package" ? "ชุดบริการ" : "สินค้า/บริการ"}</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <QuantityControl
+                                        label={row.name}
+                                        quantity={Number(row.quantity) || 1}
+                                        onChange={(quantity) =>
+                                            setPresetRows((current) =>
+                                                current.map((item, itemIndex) =>
+                                                    itemIndex === index ? { ...item, quantity: String(Math.min(Math.max(quantity, 1), MAX_SET_COUNT)) } : item,
+                                                ),
+                                            )
+                                        }
+                                    />
+                                    <button
+                                        type="button"
+                                        aria-label={`เอา ${row.name} ออก`}
+                                        className={`${buttonClass("ghost", "sm")} min-h-10 min-w-10 justify-center`}
+                                        onClick={() => setPresetRows((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                                    >
+                                        <Trash2 size={16} />
+                                    </button>
+                                </div>
                             </li>
                         ))}
                     </ul>

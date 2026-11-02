@@ -42,6 +42,7 @@ import { toFieldErrors, type FieldErrors } from "@/lib/form-errors";
 import { formatAmount, formatHundredths, formatQuantity } from "@/lib/shared/money.mjs";
 import { cartTotals, fixedSubtotal, lineAmount, multiplyQuantity, percentAmount } from "@/lib/shared/order-cart-math.mjs";
 import { MAX_SET_COUNT, orderContactSchema } from "@/lib/shared/schemas/order-link.mjs";
+import { isSupportedByCart, onlyWithText } from "@/lib/shared/addon-rules.mjs";
 import { answerError, questionnaireSummary, visibleQuestionnaire } from "@/lib/shared/requirement-answers.mjs";
 import { todayBangkokText } from "@/app/(protected)/people/employees/_card-status";
 import { publicFetch } from "../_public-api";
@@ -336,11 +337,25 @@ export default function OrderShop({ code, data, onReload }: { code: string; data
                 delete next[`p:${rule.product_id}`];
                 message = `${message} · เอางานเพิ่มที่${rule.rule === "included" ? "มีในแพ็กแล้ว" : "ใช้กับแพ็กนี้ไม่ได้"}ออกให้`;
             }
+            // แพ็กใหม่มีงานเพิ่มเฉพาะชุด (2026-11-02): บอกว่ามีให้เลือกแล้ว
+            if (productPackage && catalog.products.some((row) => (row.only_with_packages ?? []).some((item) => item.id === productPackage.pkg_id))) {
+                message = `${message} · มีงานเพิ่มสำหรับ ${productPackage.pkg_name} ให้เลือกแล้ว`;
+            }
         }
         // งานเพิ่มแบบ % เลือกได้ครั้งเดียว
         const limit = product?.product_price_mode === "percent" ? 1 : MAX_SET_COUNT;
         if (quantity < 1) delete next[key];
         else next[key] = Math.min(quantity, limit);
+        // เอาแพ็กออก/เปลี่ยนแพ็ก (2026-11-02): งานเพิ่มเฉพาะชุดที่ไม่มีแพ็กรองรับแล้ว เอาออกพร้อมบอกเหตุผล
+        const nextPackageIds = [...presetPackages.map((row) => row.pkg_id), ...Object.keys(next).filter((itemKey) => itemKey.startsWith("k:")).map((itemKey) => itemKey.slice(2))];
+        for (const itemKey of Object.keys(next)) {
+            const cartProduct = itemKey.startsWith("p:") ? productsById.get(itemKey.slice(2)) : undefined;
+            const onlyWith = cartProduct?.only_with_packages ?? [];
+            if (!cartProduct || isSupportedByCart(onlyWith.map((item) => item.id), nextPackageIds)) continue;
+            delete next[itemKey];
+            const removedText = `เอา ${cartProduct.product_name} ออกแล้ว เพราะ${onlyWithText(onlyWith.map((item) => item.name))}`;
+            message = message ? `${message} · ${removedText}` : removedText;
+        }
         if (message) {
             setJustAdded(message);
             if (justAddedTimer.current) clearTimeout(justAddedTimer.current);
@@ -351,9 +366,16 @@ export default function OrderShop({ code, data, onReload }: { code: string; data
     }
 
     // ตะกร้าที่ยังมีของในร้าน (หลังโหลดราคาใหม่ ของที่ถูกเอาออกไม่ถูกส่ง)
+    // งานเพิ่มเฉพาะชุดที่ไม่มีแพ็กรองรับ (เช่น ตะกร้าที่จำไว้จากครั้งก่อน) ไม่นับ ไม่ส่ง (2026-11-02)
+    const cartPackageIds = [
+        ...presetPackages.map((row) => row.pkg_id),
+        ...Object.keys(cart).filter((key) => key.startsWith("k:") && packagesById.has(key.slice(2))).map((key) => key.slice(2)),
+    ];
+    const isProductSupported = (product: CatalogProduct) => isSupportedByCart((product.only_with_packages ?? []).map((item) => item.id), cartPackageIds);
     const cartEntries = Object.entries(cart).filter(([key]) => {
         const [kind, id] = key.split(":");
-        return kind === "p" ? productsById.has(id) : packagesById.has(id);
+        const product = productsById.get(id);
+        return kind === "p" ? Boolean(product) && isProductSupported(product as CatalogProduct) : packagesById.has(id);
     });
     const cartPackages = [...presetPackages, ...cartEntries.flatMap(([key]) => (key.startsWith("k:") ? [packagesById.get(key.slice(2)) as CatalogPackage] : []))];
     /** กติกาของงานเพิ่มจากแพ็กในตะกร้า (รายการล็อก + ที่ลูกค้าเลือก) */
@@ -379,13 +401,16 @@ export default function OrderShop({ code, data, onReload }: { code: string; data
     ];
     const totals = cartTotals({ lines: pricedLines, vatRate: data.vat_rate ?? null });
     const fixedBase = fixedSubtotal(pricedLines);
-    const itemCount = preset.reduce((sum, item) => sum + item.quantity, 0) + Object.values(cart).reduce((sum, quantity) => sum + quantity, 0);
+    const itemCount = preset.reduce((sum, item) => sum + item.quantity, 0) + cartEntries.reduce((sum, [, quantity]) => sum + quantity, 0);
 
     // หมวดเลือกได้อย่างเดียวที่ทีมเลือกให้แล้ว: ไม่แสดงรายการอื่นในหมวดนั้น
     const lockedCategoryIds = new Set(presetCategoryIds.filter((categoryId): categoryId is string => Boolean(categoryId) && singleChoiceIds.has(categoryId as string)));
     const isOffered = (categoryId: string | null) => !categoryId || !lockedCategoryIds.has(categoryId);
     const offeredPackages = catalog.packages.filter((row) => isOffered(row.pkg_category_id));
-    const offeredProducts = catalog.products.filter((row) => isOffered(row.product_category_id) && addonRuleOf(row.product_id)?.rule !== "not_available");
+    // งานเพิ่มเฉพาะชุด: ลูกค้าเห็นเมื่อมีแพ็กที่รองรับในตะกร้าแล้วเท่านั้น (2026-11-02)
+    const offeredProducts = catalog.products.filter(
+        (row) => isOffered(row.product_category_id) && addonRuleOf(row.product_id)?.rule !== "not_available" && isProductSupported(row),
+    );
 
     const visibleCategories = catalog.categories.filter(
         (category) => offeredProducts.some((row) => row.product_category_id === category.pc_id) || offeredPackages.some((row) => row.pkg_category_id === category.pc_id),
@@ -982,6 +1007,9 @@ function ProductCard({
                 <div className="grid gap-0.5">
                     <h3 className="text-sm font-medium wrap-break-word text-gray-900">{product.product_name}</h3>
                     {product.product_description && <p className="line-clamp-2 text-xs text-gray-500">{product.product_description}</p>}
+                    {(product.only_with_packages ?? []).length > 0 && (
+                        <p className="text-xs text-blue-700">{onlyWithText((product.only_with_packages ?? []).map((item) => item.name))}</p>
+                    )}
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     {isPercent ? (

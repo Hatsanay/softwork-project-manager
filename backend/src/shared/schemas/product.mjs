@@ -17,6 +17,8 @@ const optionalId = z
     .transform((value) => (value ? value : null));
 
 export const MAX_ADDON_RULES = 200;
+// แสดงเมื่อเลือกชุด (2026-11-02): ผูกได้ไม่เกินกี่ชุดต่อสินค้า
+export const MAX_ONLY_WITH_PACKAGES = 50;
 
 export const productSchema = z
     .object({
@@ -29,6 +31,13 @@ export const productSchema = z
         product_status: activeStatus,
         // แสดงบนหน้าร้านของลิงก์เลือกบริการ (2026-10-25)
         product_is_public: z.boolean().default(false),
+        // แสดงเมื่อเลือกชุด (2026-11-02 · docs/plans/2026-11-02-product-only-with-package.md) · [] = แสดงตามปกติ
+        // ไม่ส่งมา (undefined) = ไม่แตะของเดิม · กันหน้าเว็บเก่าที่เปิดค้างไว้ตอน deploy บันทึกแล้วล้างค่าทิ้ง
+        only_with_package_ids: z
+            .array(requiredText("ชุด", 18))
+            .max(MAX_ONLY_WITH_PACKAGES, `ผูกชุดได้ไม่เกิน ${MAX_ONLY_WITH_PACKAGES} ชุด`)
+            .optional()
+            .transform((ids) => (ids === undefined ? undefined : [...new Set(ids)])),
         // งานเพิ่มแบบ % ของยอดรายการอื่นก่อน VAT เช่น งานด่วน +30% (2026-10-25)
         // ราคาเริ่มต้น (2026-11-01 · docs/plans/2026-11-01-starting-price.md): ราคา = ราคาต่ำสุด · ทีมกรอกราคาจริงก่อนออกใบ
         product_price_mode: z.enum(["fixed", "percent", "from"], { error: "เลือกวิธีคิดราคา" }).default("fixed"),

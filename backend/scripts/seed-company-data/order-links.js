@@ -230,6 +230,21 @@ function scheduleOrderLinks({ on, ids, state, sales }) {
             { product_id: product("domain"), rule: "included" },
             { product_id: product("mobileDev"), rule: "not_available" },
         ]);
+        // แสดงเมื่อเลือกชุด (2026-11-02): ทำเว็บภาษาอังกฤษเพิ่ม ขายเฉพาะคนที่เลือกชุดเว็บไซต์องค์กร
+        ids.products.englishVersion = {
+            id: (
+                await as(SALES_MANAGER, "POST", "/V1/products", {
+                    product_code: "SV-EN",
+                    product_name: "ทำเว็บภาษาอังกฤษเพิ่ม (ทุกหน้า)",
+                    product_unit: "งาน",
+                    product_price: "18000",
+                    product_category_id: ids.categories[0],
+                    product_status: "active",
+                    product_is_public: true,
+                    only_with_package_ids: [ids.packages.corporateWebsite],
+                })
+            ).product_id,
+        };
         state.publicLink = await as(SALES_MANAGER, "POST", "/V1/order-links", {
             ol_kind: "public",
             ol_name: "หน้าเว็บบริษัท (ปุ่มขอใบเสนอราคา)",

@@ -65,6 +65,8 @@ async function vatRateToday(conn, shop) {
     return findVatRateOn(conn, today);
 }
 
+const { isSupportedByCart, onlyWithText } = require("../shared/addon-rules.mjs");
+
 const PRODUCT_COLUMNS = `p.product_id, p.product_name, p.product_description, p.product_unit, p.product_price, p.product_image_url,
     p.product_category_id, p.product_price_mode, p.product_percent, p.product_price_note, p.product_is_public`;
 
@@ -83,7 +85,11 @@ async function attachPackageItems(conn, packages) {
          ORDER BY i.pki_package_id, i.pki_order`,
         [packageIds],
     );
-    const [ruleRows] = await conn.query("SELECT par_package_id, par_product_id, par_rule FROM tb_package_addon_rules WHERE par_package_id IN (?)", [packageIds]);
+    // กติกาของชุด (มีในแพ็กแล้ว / ใช้ไม่ได้) · "ขายคู่กับชุดนี้" ส่งไปกับสินค้าแทน (only_with_packages)
+    const [ruleRows] = await conn.query(
+        "SELECT par_package_id, par_product_id, par_rule FROM tb_package_addon_rules WHERE par_package_id IN (?) AND par_rule <> 'only_with'",
+        [packageIds],
+    );
     const itemsByPackage = new Map();
     const brokenPackages = new Set();
     for (const row of itemRows) {
@@ -143,13 +149,42 @@ async function loadCatalog(conn, linkId, { excludeKeys = new Set(), includeHidde
          ORDER BY g.pkg_name`,
         scopeParams,
     );
+    const onlyWithByProduct = await onlyWithPackagesOf(
+        conn,
+        products.map((row) => row.product_id),
+    );
     return {
         categories: categories.map((row) => ({ ...row, pc_is_single_choice: Boolean(row.pc_is_single_choice) })),
-        products: products.filter((row) => !excludeKeys.has(`p:${row.product_id}`)).map((row) => ({ ...row, product_is_public: Boolean(row.product_is_public) })),
+        products: products
+            .filter((row) => !excludeKeys.has(`p:${row.product_id}`))
+            .map((row) => ({ ...row, product_is_public: Boolean(row.product_is_public), only_with_packages: onlyWithByProduct.get(row.product_id) ?? [] })),
         packages: (await attachPackageItems(conn, packages))
             .filter((row) => !excludeKeys.has(`k:${row.pkg_id}`))
             .map((row) => ({ ...row, pkg_is_public: Boolean(row.pkg_is_public) })),
     };
+}
+
+/**
+ * แสดงเมื่อเลือกชุด (2026-11-02): ชุดที่เปิดใช้งานซึ่งสินค้าแต่ละตัวขายคู่ → Map<product_id, { id, name }[]>
+ * ผูกไว้แต่ชุดปิดหมด = ได้รายการว่าง แต่ยังเป็นสินค้าเฉพาะชุด → ใส่ชุดว่างพิเศษ (id "") ให้ไม่มีตะกร้าไหนรองรับ
+ */
+async function onlyWithPackagesOf(conn, productIds) {
+    const result = new Map();
+    if (productIds.length === 0) return result;
+    const [rows] = await conn.query(
+        `SELECT r.par_product_id, k.pkg_id, k.pkg_name, k.pkg_status FROM tb_package_addon_rules r JOIN tb_product_packages k ON k.pkg_id = r.par_package_id
+         WHERE r.par_rule = 'only_with' AND r.par_product_id IN (?) ORDER BY k.pkg_name`,
+        [productIds],
+    );
+    for (const row of rows) {
+        const list = result.get(row.par_product_id) ?? [];
+        if (row.pkg_status === "active") list.push({ id: row.pkg_id, name: row.pkg_name });
+        result.set(row.par_product_id, list);
+    }
+    for (const [productId, list] of result) {
+        if (list.length === 0) result.set(productId, [{ id: "", name: "ชุดที่ปิดใช้งานแล้ว" }]);
+    }
+    return result;
 }
 
 /**
@@ -302,7 +337,16 @@ function chosenEntries(preset, catalog, customerItems) {
     for (const item of customerItems) {
         const product = item.kind === "product" ? productsById.get(item.id) : null;
         const productPackage = item.kind === "package" ? packagesById.get(item.id) : null;
-        if (product) entries.push({ kind: "product", id: product.product_id, name: product.product_name, category_id: product.product_category_id, is_preset: false });
+        if (product) {
+            entries.push({
+                kind: "product",
+                id: product.product_id,
+                name: product.product_name,
+                category_id: product.product_category_id,
+                only_with_packages: product.only_with_packages ?? [],
+                is_preset: false,
+            });
+        }
         if (productPackage) {
             entries.push({ kind: "package", id: productPackage.pkg_id, name: productPackage.pkg_name, category_id: productPackage.pkg_category_id, addon_rules: productPackage.addon_rules, is_preset: false });
         }
@@ -326,6 +370,11 @@ function cartRuleError(entries, singleChoiceCategories) {
             const rule = productPackage.addon_rules.find((item) => item.product_id === entry.id);
             if (rule?.rule === "included") return `"${entry.name}" มีใน ${productPackage.name} แล้ว ไม่ต้องเลือกเพิ่ม`;
             if (rule?.rule === "not_available") return `"${entry.name}" ใช้กับ ${productPackage.name} ไม่ได้`;
+        }
+        // แสดงเมื่อเลือกชุด (2026-11-02): ต้องมีชุดที่รองรับในตะกร้า (นับชุดที่ทีมล็อกไว้ด้วย)
+        const onlyWith = entry.only_with_packages ?? [];
+        if (!isSupportedByCart(onlyWith.map((item) => item.id), packages.map((item) => item.id))) {
+            return `"${entry.name}" ${onlyWithText(onlyWith.map((item) => item.name))} · เลือกชุดนั้นก่อน`;
         }
     }
     return null;

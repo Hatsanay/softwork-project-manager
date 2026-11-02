@@ -13,6 +13,7 @@ const PRODUCT_COLUMNS = `
     p.product_id, p.product_code, p.product_name, p.product_description, p.product_unit, p.product_price,
     p.product_category_id, c.pc_name AS category_name, p.product_status, p.product_is_public, p.product_image_url,
     p.product_price_mode, p.product_percent, p.product_price_note, p.product_renewal_months,
+    (SELECT COUNT(*) FROM tb_package_addon_rules r WHERE r.par_product_id = p.product_id AND r.par_rule = 'only_with') AS only_with_count,
     p.product_created_at, p.product_updated_at`;
 
 /**
@@ -51,7 +52,26 @@ async function listProducts(conn, { limit = 20, offset = 0, search = "", categor
         [...params, safeLimit, safeOffset],
     );
     const [[{ total }]] = await conn.query(`SELECT COUNT(*) AS total FROM tb_products p WHERE ${where}`, params);
-    return { data: rows, total };
+    // แสดงเมื่อเลือกชุด: แนบชุดที่ผูกไว้ (ฟอร์มแก้เปิดจากแถวในรายการ ต้องมีค่าครบ ไม่งั้นบันทึกแล้วล้างทิ้ง)
+    const onlyWithByProduct = await onlyWithPackagesOf(conn, rows.map((row) => row.product_id));
+    return { data: rows.map((row) => ({ ...row, only_with_packages: onlyWithByProduct.get(row.product_id) ?? [] })), total };
+}
+
+/** ชุดที่สินค้าแต่ละตัวขายคู่ (รวมชุดที่ปิดใช้งาน · ฟอร์มเตือนเอง) → Map<product_id, { pkg_id, pkg_name, pkg_status }[]> */
+async function onlyWithPackagesOf(conn, productIds) {
+    const result = new Map();
+    if (productIds.length === 0) return result;
+    const [rows] = await conn.query(
+        `SELECT r.par_product_id, k.pkg_id, k.pkg_name, k.pkg_status FROM tb_package_addon_rules r JOIN tb_product_packages k ON k.pkg_id = r.par_package_id
+         WHERE r.par_product_id IN (?) AND r.par_rule = 'only_with' ORDER BY k.pkg_name`,
+        [productIds],
+    );
+    for (const row of rows) {
+        const list = result.get(row.par_product_id) ?? [];
+        list.push({ pkg_id: row.pkg_id, pkg_name: row.pkg_name, pkg_status: row.pkg_status });
+        result.set(row.par_product_id, list);
+    }
+    return result;
 }
 
 /**
@@ -68,7 +88,37 @@ async function findProduct(conn, productId) {
     if (!product) {
         throw new AppError(404, "PRODUCT_NOT_FOUND", "ไม่พบสินค้านี้ อาจถูกลบไปแล้ว กรุณาโหลดหน้าใหม่");
     }
-    return product;
+    // แสดงเมื่อเลือกชุด (2026-11-02) · ชุดที่ปิดใช้งานยังคืนมา (หน้าฟอร์มเตือนว่าลูกค้าจะไม่เห็นผ่านชุดนั้น)
+    const onlyWith = await onlyWithPackagesOf(conn, [productId]);
+    return { ...product, only_with_packages: onlyWith.get(productId) ?? [] };
+}
+
+/**
+ * แสดงเมื่อเลือกชุด: แทนเฉพาะแถว only_with ของสินค้านี้ (กติกาที่ตั้งจากฟอร์มชุดไม่แตะ)
+ * ชุดที่ตั้งกติกาแบบอื่นกับสินค้านี้อยู่แล้ว = ชนกัน (คู่ชุดกับสินค้ามีกติกาได้แบบเดียว)
+ */
+async function saveOnlyWithPackages(conn, productId, packageIds) {
+    if (packageIds === undefined) return;
+    await conn.query("DELETE FROM tb_package_addon_rules WHERE par_product_id = ? AND par_rule = 'only_with'", [productId]);
+    if (packageIds.length === 0) return;
+    const [packages] = await conn.query("SELECT pkg_id FROM tb_product_packages WHERE pkg_id IN (?)", [packageIds]);
+    if (packages.length !== packageIds.length) {
+        throw new AppError(400, "VALIDATION", "บางชุดถูกลบไปแล้ว กรุณาเลือกใหม่", { only_with_package_ids: "บางชุดถูกลบไปแล้ว เลือกใหม่" });
+    }
+    const [conflicts] = await conn.query(
+        `SELECT k.pkg_name, r.par_rule FROM tb_package_addon_rules r JOIN tb_product_packages k ON k.pkg_id = r.par_package_id
+         WHERE r.par_product_id = ? AND r.par_package_id IN (?)`,
+        [productId, packageIds],
+    );
+    if (conflicts.length > 0) {
+        const ruleLabel = conflicts[0].par_rule === "included" ? "มีในแพ็กแล้ว" : "ใช้กับแพ็กนี้ไม่ได้";
+        throw new AppError(400, "VALIDATION", "ชุดที่เลือกมีกติกางานเพิ่มกับสินค้านี้อยู่แล้ว", {
+            only_with_package_ids: `ชุด "${conflicts[0].pkg_name}" ตั้งสินค้านี้เป็น "${ruleLabel}" ไว้แล้ว · เอากติกานั้นออกในหน้าชุดก่อน`,
+        });
+    }
+    await conn.query("INSERT INTO tb_package_addon_rules (par_package_id, par_product_id, par_rule) VALUES ?", [
+        packageIds.map((packageId) => [packageId, productId, "only_with"]),
+    ]);
 }
 
 async function assertCategoryExists(conn, categoryId, field) {
@@ -141,6 +191,7 @@ async function createProduct(conn, product) {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [productId, ...productValues(product)],
     );
+    await saveOnlyWithPackages(conn, productId, product.only_with_package_ids);
     return findProduct(conn, productId);
 }
 
@@ -163,6 +214,7 @@ async function updateProduct(conn, productId, product) {
          WHERE product_id = ?`,
         [...productValues(product), productId],
     );
+    await saveOnlyWithPackages(conn, productId, product.only_with_package_ids);
     return findProduct(conn, productId);
 }
 

@@ -17,7 +17,8 @@ import type { Catalog, CatalogPackage, CatalogProduct } from "@/app/order/_types
 const PACKAGE_PREVIEW_ITEMS = 4;
 const NO_CATEGORY = "none";
 
-export type AddonState = { rule: "included" | "not_available"; packageName: string } | null;
+// needs_package = สินค้าเฉพาะชุดที่ยังไม่มีชุดรองรับในตะกร้า (2026-11-02) · ใส่ตะกร้าไม่ได้จนกว่าจะเลือกชุด
+export type AddonState = { rule: "included" | "not_available" | "needs_package"; packageName: string } | null;
 
 export default function PriceCatalog({
     catalog,
@@ -276,18 +277,20 @@ function AddonRow({
         ? `+${Number(product.product_percent)}% ของยอด`
         : `${product.product_price_mode === "from" ? "เริ่มต้น " : ""}${formatAmount(product.product_price)} บาท${product.product_unit ? ` / ${product.product_unit}` : ""}`;
     const isIncluded = state?.rule === "included";
-    // กติกาหน้าร้านเป็นคำเตือน ทีมเลือกได้ (2026-11-01)
-    const warning = state
-        ? isIncluded
-            ? `มีใน ${state.packageName} แล้ว`
-            : `หน้าร้านซ่อนเมื่อเลือก ${state.packageName}`
-        : null;
+    const needsPackage = state?.rule === "needs_package";
+    // กติกาหน้าร้านเป็นคำเตือน ทีมเลือกได้ (2026-11-01) · สินค้าเฉพาะชุดต้องมีชุดก่อน (2026-11-02 · backend ตรวจตอนออกใบด้วย)
+    let warning: string | null = null;
+    if (state?.rule === "included") warning = `มีใน ${state.packageName} แล้ว`;
+    if (state?.rule === "not_available") warning = `หน้าร้านซ่อนเมื่อเลือก ${state.packageName}`;
+    if (needsPackage) warning = `${state.packageName} · ใส่ชุดนั้นในตะกร้าก่อน`;
     return (
         <li
             className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-gray-100 px-4 py-3 first:border-t-0 ${quantity > 0 ? "bg-blue-50/50" : ""}`}
         >
             <div className="grid min-w-0 gap-0.5">
-                <span className={`text-sm wrap-break-word ${isIncluded ? "text-gray-500" : "text-gray-900"}`}>
+                <span
+                    className={`text-sm wrap-break-word ${isIncluded || needsPackage ? "text-gray-500" : "text-gray-900"}`}
+                >
                     {product.product_name}
                 </span>
                 {product.product_description && (
@@ -302,12 +305,16 @@ function AddonRow({
                     </span>
                 )}
             </div>
-            <QuantityControl
-                quantity={quantity}
-                onChange={(next) => onChange(isPercent ? Math.min(next, 1) : next)}
-                label={product.product_name}
-                compact
-            />
+            {needsPackage && quantity === 0 ? (
+                <span className="text-xs text-gray-400">ต้องมีชุดก่อน</span>
+            ) : (
+                <QuantityControl
+                    quantity={quantity}
+                    onChange={(next) => onChange(isPercent ? Math.min(next, 1) : next)}
+                    label={product.product_name}
+                    compact
+                />
+            )}
         </li>
     );
 }

@@ -86,10 +86,16 @@ async function findPackage(conn, packageId) {
     const [addonRules] = await conn.query(
         `SELECT r.par_product_id AS product_id, r.par_rule AS rule, p.product_name
          FROM tb_package_addon_rules r JOIN tb_products p ON p.product_id = r.par_product_id
-         WHERE r.par_package_id = ? ORDER BY p.product_name`,
+         WHERE r.par_package_id = ? AND r.par_rule <> 'only_with' ORDER BY p.product_name`,
         [packageId],
     );
-    return { ...productPackage, items, addon_rules: addonRules };
+    // สินค้าที่ขายคู่กับชุดนี้ (ตั้งจากฟอร์มสินค้า · 2026-11-02) แสดงอ่านอย่างเดียวในฟอร์มชุด
+    const [onlyWithProducts] = await conn.query(
+        `SELECT p.product_id, p.product_name, p.product_status FROM tb_package_addon_rules r JOIN tb_products p ON p.product_id = r.par_product_id
+         WHERE r.par_package_id = ? AND r.par_rule = 'only_with' ORDER BY p.product_name`,
+        [packageId],
+    );
+    return { ...productPackage, items, addon_rules: addonRules, only_with_products: onlyWithProducts };
 }
 
 // สินค้าที่อ้างต้องยังมีอยู่ (อาจถูกลบไประหว่างที่เปิดหน้าค้างไว้)
@@ -113,10 +119,23 @@ async function assertProductsExist(conn, items) {
     }
 }
 
-/** กติกางานเพิ่ม: บันทึกทั้งชุดใหม่ · สินค้าที่ถูกลบไประหว่างเปิดหน้า = แจ้งให้เลือกใหม่ */
+/**
+ * กติกางานเพิ่ม: บันทึกทั้งชุดใหม่ · สินค้าที่ถูกลบไประหว่างเปิดหน้า = แจ้งให้เลือกใหม่
+ * แทนเฉพาะ "มีในแพ็กแล้ว / ใช้กับแพ็กนี้ไม่ได้" · "ขายคู่กับชุดนี้" ตั้งจากฟอร์มสินค้า ไม่ลบ (2026-11-02) และตั้งซ้อนคู่เดียวกันไม่ได้
+ */
 async function saveAddonRules(conn, packageId, rules) {
-    await conn.query("DELETE FROM tb_package_addon_rules WHERE par_package_id = ?", [packageId]);
+    await conn.query("DELETE FROM tb_package_addon_rules WHERE par_package_id = ? AND par_rule <> 'only_with'", [packageId]);
     if (rules.length === 0) return;
+    const [onlyWith] = await conn.query(
+        `SELECT p.product_name FROM tb_package_addon_rules r JOIN tb_products p ON p.product_id = r.par_product_id
+         WHERE r.par_package_id = ? AND r.par_rule = 'only_with' AND r.par_product_id IN (?)`,
+        [packageId, rules.map((rule) => rule.product_id)],
+    );
+    if (onlyWith.length > 0) {
+        throw new AppError(400, "VALIDATION", "งานเพิ่มบางรายการตั้งให้ขายคู่กับชุดนี้อยู่แล้ว", {
+            addon_rules: `"${onlyWith[0].product_name}" ตั้งให้แสดงเมื่อเลือกชุดนี้อยู่แล้ว (ในฟอร์มสินค้า) · ตั้งกติกาอื่นซ้อนไม่ได้`,
+        });
+    }
     const [rows] = await conn.query("SELECT product_id FROM tb_products WHERE product_id IN (?)", [rules.map((rule) => rule.product_id)]);
     if (rows.length !== rules.length) {
         throw new AppError(400, "VALIDATION", "งานเพิ่มบางรายการถูกลบไปแล้ว กรุณาเลือกใหม่", { addon_rules: "เลือกงานเพิ่มใหม่" });

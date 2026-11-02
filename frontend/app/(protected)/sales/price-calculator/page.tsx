@@ -34,6 +34,7 @@ import {
 import { suggestPayoutAmounts } from "@/lib/shared/fastwork-math.mjs";
 import { visibleQuestionnaire } from "@/lib/shared/requirement-answers.mjs";
 import { MAX_SET_COUNT } from "@/lib/shared/schemas/order-link.mjs";
+import { isSupportedByCart, onlyWithText } from "@/lib/shared/addon-rules.mjs";
 import type { Catalog, CatalogPackage, CatalogProduct, RequirementGroup } from "@/app/order/_types";
 import type { FastworkSettings } from "../../fastwork/_types";
 import PriceCatalog, { type AddonState } from "../../fastwork/price/_components/price-catalog";
@@ -210,6 +211,16 @@ function PriceCalculator() {
             const rule = productPackage.addon_rules.find((item) => item.product_id === productId);
             if (rule) return { rule: rule.rule, packageName: productPackage.pkg_name };
         }
+        // สินค้าเฉพาะชุด (2026-11-02): ยังไม่มีชุดที่รองรับในตะกร้า
+        const onlyWith = productsById.get(productId)?.only_with_packages ?? [];
+        if (
+            !isSupportedByCart(
+                onlyWith.map((item) => item.id),
+                chosenPackages.map((row) => row.pkg_id),
+            )
+        ) {
+            return { rule: "needs_package", packageName: onlyWithText(onlyWith.map((item) => item.name)) };
+        }
         return null;
     }
 
@@ -249,6 +260,26 @@ function PriceCalculator() {
         const limit = product?.product_price_mode === "percent" ? 1 : MAX_SET_COUNT;
         if (quantity < 1) delete next[key];
         else next[key] = Math.min(quantity, limit);
+        // เอาชุดออก (2026-11-02): สินค้าเฉพาะชุดที่ไม่มีชุดรองรับแล้ว เอาออกพร้อมบอก
+        const nextPackageIds = Object.keys(next)
+            .filter((itemKey) => itemKey.startsWith("k:"))
+            .map((itemKey) => itemKey.slice(2));
+        for (const itemKey of Object.keys(next)) {
+            const cartProduct = itemKey.startsWith("p:") ? productsById.get(itemKey.slice(2)) : undefined;
+            const onlyWith = cartProduct?.only_with_packages ?? [];
+            if (
+                !cartProduct ||
+                isSupportedByCart(
+                    onlyWith.map((item) => item.id),
+                    nextPackageIds,
+                )
+            )
+                continue;
+            delete next[itemKey];
+            notes.push(
+                `เอา ${cartProduct.product_name} ออกแล้ว เพราะ${onlyWithText(onlyWith.map((item) => item.name))}`,
+            );
+        }
         setQuantities(next);
         if (notes.length > 0) toast.info([...new Set(notes)].join(" · "));
     }
