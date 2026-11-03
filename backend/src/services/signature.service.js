@@ -2,11 +2,12 @@
 //
 // ใช้งานได้ทีละ 1 ฉบับต่อคน (แถวที่ sig_revoked_at ว่าง) · ตั้งใหม่ = ยกเลิกฉบับเดิมแล้วเพิ่มฉบับใหม่ใน transaction เดียว
 // ไม่ลบไฟล์/แถวเก่าเด็ดขาด — ใบเสนอราคาที่อนุมัติแล้วอ้างฉบับที่ใช้ตอนนั้น (qt_creator_signature_id / qt_approver_signature_id)
-// ไฟล์อยู่นอกโฟลเดอร์ /uploads ที่เปิดสาธารณะ — ส่งผ่าน GET /signatures/:id ที่ต้อง login เท่านั้น
+// ไฟล์อยู่นอกโฟลเดอร์ /uploads ที่เปิดสาธารณะ — ส่งผ่าน GET /signatures/:id ที่ต้อง login และเปิดได้ตาม canOpenSignature
 const fs = require("fs/promises");
 const path = require("path");
 const { AppError } = require("../utils/app-error");
 const { generateDailyId } = require("../utils/generateDailyId");
+const { hasBit } = require("../utils/permissions");
 
 const DEFAULT_STORAGE_DIR = path.join(__dirname, "..", "..", "storage", "signatures");
 const SIGNATURE_ID_PATTERN = /^SIG\d{15}$/;
@@ -89,19 +90,44 @@ async function revokeSignature(conn, userId, revokedBy) {
 }
 
 /**
- * อ่านไฟล์ลายเซ็นตาม id (รวมฉบับที่ยกเลิกแล้ว — เอกสารเก่ายังต้องแสดง)
- * @param {import("mysql2/promise").Pool} conn
- * @param {string} signatureId
- * @returns {Promise<Buffer>}
+ * ผู้ขอเปิดรูปลายเซ็นนี้ได้ไหม (2026-11-02 · docs/plans/2026-11-02-permission-audit.md A-3)
+ * เดิมแค่ login ก็เปิดได้ทุกรูป (เลข SIG เรียงตามวัน เดาได้) · ตอนนี้ได้เมื่อ
+ * - เป็นลายเซ็นของตัวเอง หรือมีสิทธิ์ดูผู้ใช้ (หน้าจัดการผู้ใช้แสดงลายเซ็น)
+ * - ลายเซ็นอยู่บนเอกสารที่ผู้ขอดูได้: ใบเสนอราคา (viewQuotations) · ใบแจ้งหนี้/ใบลดหนี้ (viewInvoices)
  */
-async function readSignatureFile(conn, signatureId) {
-    const notFound = new AppError(404, "SIGNATURE_NOT_FOUND", "ไม่พบลายเซ็นนี้");
-    if (!SIGNATURE_ID_PATTERN.test(signatureId)) throw notFound;
+async function canOpenSignature(conn, signature, user) {
+    if (signature.sig_user_id === user.user_id) return true;
+    if (hasBit(user.role_permission, "usersManagement")) return true;
+    if (hasBit(user.role_permission, "viewQuotations")) {
+        const [[quotation]] = await conn.query(
+            "SELECT 1 AS found FROM tb_quotations WHERE qt_creator_signature_id = ? OR qt_approver_signature_id = ? LIMIT 1",
+            [signature.sig_id, signature.sig_id],
+        );
+        if (quotation) return true;
+    }
+    if (hasBit(user.role_permission, "viewInvoices")) {
+        const [[invoiceOrCreditNote]] = await conn.query(
+            `SELECT 1 AS found FROM tb_invoices WHERE inv_issuer_signature_id = ?
+             UNION ALL SELECT 1 FROM tb_credit_notes WHERE cn_issuer_signature_id = ? LIMIT 1`,
+            [signature.sig_id, signature.sig_id],
+        );
+        if (invoiceOrCreditNote) return true;
+    }
+    return false;
+}
 
-    const [[signature]] = await conn.query("SELECT sig_file_path FROM tb_user_signatures WHERE sig_id = ?", [
-        signatureId,
-    ]);
-    if (!signature) throw notFound;
+const SIGNATURE_NOT_FOUND_MESSAGE = "ไม่พบลายเซ็นนี้";
+
+async function findSignatureRow(conn, signatureId) {
+    if (!SIGNATURE_ID_PATTERN.test(signatureId)) return null;
+    const [[signature]] = await conn.query(
+        "SELECT sig_id, sig_user_id, sig_file_path FROM tb_user_signatures WHERE sig_id = ?",
+        [signatureId],
+    );
+    return signature ?? null;
+}
+
+async function readFileOf(signature) {
     // path.basename กันชื่อไฟล์ในฐานข้อมูลที่พาออกนอกโฟลเดอร์ (../)
     try {
         return await fs.readFile(path.join(storageDir(), path.basename(signature.sig_file_path)));
@@ -110,4 +136,39 @@ async function readSignatureFile(conn, signatureId) {
     }
 }
 
-module.exports = { findActiveSignature, replaceSignature, revokeSignature, readSignatureFile };
+/**
+ * อ่านไฟล์ลายเซ็นให้ผู้ใช้ที่ขอ (GET /signatures/:id) · รวมฉบับที่ยกเลิกแล้ว (เอกสารเก่ายังต้องแสดง)
+ * ไม่มีสิทธิ์ตอบเหมือนไม่มีรูปนี้ ไม่บอกใบ้ว่าเลขนี้มีอยู่จริง
+ * @param {import("mysql2/promise").Pool} conn
+ * @param {string} signatureId
+ * @param {{ user_id: string, role_permission: string }} user ผู้ขอ
+ * @returns {Promise<Buffer>}
+ */
+async function readSignatureFile(conn, signatureId, user) {
+    const signature = await findSignatureRow(conn, signatureId);
+    if (!signature || !(await canOpenSignature(conn, signature, user))) {
+        throw new AppError(404, "SIGNATURE_NOT_FOUND", SIGNATURE_NOT_FOUND_MESSAGE);
+    }
+    return readFileOf(signature);
+}
+
+/**
+ * อ่านไฟล์ลายเซ็นที่อยู่บนเอกสาร โดยไม่ตรวจผู้ขอ · ใช้ได้เฉพาะเมื่อผู้เรียกตรวจแล้วว่าคนเปิดเห็นเอกสารนั้นได้
+ * (เช่น ใบเสนอราคาที่ลูกค้าเปิดจากลิงก์สถานะคำขอของตัวเอง)
+ * @param {import("mysql2/promise").Pool} conn
+ * @param {string} signatureId id ที่อ่านจากแถวเอกสาร ไม่ใช่ค่าที่ผู้ใช้ส่งมา
+ * @returns {Promise<Buffer>}
+ */
+async function readDocumentSignatureFile(conn, signatureId) {
+    const signature = await findSignatureRow(conn, signatureId);
+    if (!signature) throw new AppError(404, "SIGNATURE_NOT_FOUND", SIGNATURE_NOT_FOUND_MESSAGE);
+    return readFileOf(signature);
+}
+
+module.exports = {
+    findActiveSignature,
+    replaceSignature,
+    revokeSignature,
+    readSignatureFile,
+    readDocumentSignatureFile,
+};

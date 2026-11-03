@@ -69,9 +69,12 @@ test.before(async () => {
          VALUES (?, 'วิศวกรรม', 'BRA202601010000001', 'ENG', '00000ENG')`,
         [DEPARTMENT_ID],
     );
-    people.hr = await createPerson("pp.hr", ["dashboard", "manageEmployees"], 151);
+    // ฝ่ายบุคคลที่ทำเงินเดือนด้วย · จัดการพนักงานอย่างเดียวไม่เห็นเงินเดือน (A-4 · api-permission-audit.test.js)
+    people.hr = await createPerson("pp.hr", ["dashboard", "manageEmployees", "runPayroll"], 151);
     people.hrAdmin = await createPerson("pp.hradmin", ["dashboard", "manageHrSettings"], 152);
     people.staff = await createPerson("pp.staff", ["dashboard", "viewExpenses", "loginLogs"], 153);
+    // บัญชีที่ฝ่ายบุคคลผูกกับพนักงานได้: สิทธิ์ไม่เกินฝ่ายบุคคล (A-5)
+    people.linked = await createPerson("pp.linked", ["dashboard"], 154);
 });
 
 test.after(async () => {
@@ -268,7 +271,7 @@ test("พ้นสภาพ: ไม่ก่อนวันเริ่มงา
             people.hr,
             "POST",
             "/V1/employees",
-            employeeBody({ emp_code: "T001", emp_national_id: nationalId, emp_user_id: people.staff.userId }),
+            employeeBody({ emp_code: "T001", emp_national_id: nationalId, emp_user_id: people.linked.userId }),
         ),
         201,
     );
@@ -309,7 +312,7 @@ test("พ้นสภาพ: ไม่ก่อนวันเริ่มงา
 
     // คนเดิมกลับมาทำงาน: ฟอร์มหาแถวเดิมจากบัญชี (form-options ไม่ส่งเลขประจำตัว) หรือจากเลขประจำตัวทีละเลข
     const options = expectStatus(await as(people.hr, "GET", "/V1/employees/form-options"), 200);
-    const formerOfStaff = options.former_employees.find((row) => row.emp_user_id === people.staff.userId);
+    const formerOfStaff = options.former_employees.find((row) => row.emp_user_id === people.linked.userId);
     assert.equal(formerOfStaff?.emp_id, first.emp_id);
     assert.equal("emp_national_id" in formerOfStaff, false, "รายการพนักงานเดิมไม่ส่งเลขประจำตัว");
     const dashed = `${nationalId.slice(0, 1)}-${nationalId.slice(1, 5)}-${nationalId.slice(5)}`;
@@ -327,7 +330,7 @@ test("พ้นสภาพ: ไม่ก่อนวันเริ่มงา
             employeeBody({
                 emp_code: "T002",
                 emp_national_id: nationalId,
-                emp_user_id: people.staff.userId,
+                emp_user_id: people.linked.userId,
                 emp_hire_date: todayBangkok(),
             }),
         ),

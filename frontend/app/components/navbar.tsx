@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { LogOut, UserRound } from "lucide-react";
 import { logout } from "@/app/logout";
+import { clearLocalSession } from "@/lib/session";
 import { findBreadcrumbs } from "./bit";
 import { useSidebar } from "./sidebar-context";
 import NavbarView from "./navbar-view";
@@ -77,7 +78,8 @@ export default function Navbar({
                         <UserRound size={16} className="text-gray-400" />
                         โปรไฟล์ของฉัน
                     </Link>
-                    <form action={logout}>
+                    {/* ลบ token ในเบราว์เซอร์ด้วย ไม่ค้างไว้หลังออกจากระบบ (A-1) */}
+                    <form action={logout} onSubmit={clearLocalSession}>
                         <button
                             type="submit"
                             role="menuitem"

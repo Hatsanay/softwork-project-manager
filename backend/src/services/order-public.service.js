@@ -24,7 +24,7 @@ const { findCompany, findVatRateOn } = require("./company.service");
 const requirementService = require("./requirement.service");
 const { acceptQuotation } = require("./quotation-accept.service");
 const { openStateOf } = require("./order-link.service");
-const { readSignatureFile } = require("./signature.service");
+const { readDocumentSignatureFile } = require("./signature.service");
 
 const COMPANY_ROW_ID = 1;
 // ลิงก์หนึ่งรับคำขอได้ไม่เกินเท่านี้ต่อชั่วโมง (กันสแปมลิงก์สาธารณะ)
@@ -1011,7 +1011,8 @@ const DOCUMENT_UNAVAILABLE_MESSAGES = {
 async function signatureDataUrl(conn, signatureId) {
     if (!signatureId) return null;
     try {
-        const image = await readSignatureFile(conn, signatureId);
+        // id มาจากแถวใบเสนอราคาของคำขอนี้ (ตรวจ token ลูกค้าแล้ว) จึงไม่ตรวจผู้ขอซ้ำ (A-3)
+        const image = await readDocumentSignatureFile(conn, signatureId);
         return `data:image/png;base64,${image.toString("base64")}`;
     } catch {
         return null;

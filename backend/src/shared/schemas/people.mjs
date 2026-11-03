@@ -91,9 +91,12 @@ function checkEmployee(employee, context) {
 /** แก้ข้อมูลพนักงาน (เงินเดือนแก้ผ่านค่าจ้างตามวันที่มีผล ไม่ใช่ที่นี่) */
 export const employeeSchema = employeeFields.superRefine(checkEmployee);
 
-/** เพิ่มพนักงาน = ข้อมูลพนักงาน + เงินเดือนเริ่มต้น (มีผลวันเริ่มงาน) */
+/**
+ * เพิ่มพนักงาน = ข้อมูลพนักงาน + เงินเดือนเริ่มต้น (มีผลวันเริ่มงาน)
+ * เงินเดือนไม่ส่งมาได้: คนที่ไม่มีสิทธิ์ทำเงินเดือนสร้างพนักงานได้ แล้วคนทำเงินเดือนกรอกทีหลัง (A-4) · ผู้มีสิทธิ์ทำเงินเดือนต้องกรอก (ตรวจใน controller)
+ */
 export const employeeCreateSchema = employeeFields
-    .extend({ ecm_base_salary: monthlyAmount("เงินเดือนเริ่มต้น") })
+    .extend({ ecm_base_salary: monthlyAmount("เงินเดือนเริ่มต้น").optional() })
     .superRefine(checkEmployee);
 
 /** พ้นสภาพ — วันทำงานวันสุดท้าย (ตั้งล่วงหน้าได้) */

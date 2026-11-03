@@ -60,4 +60,21 @@ function combinePositionPermissions(permissions) {
     return combined;
 }
 
-module.exports = { PROJECT_PERMISSION_KEYS, PROJECT_BIT_INDEX, hasProjectBit, combinePositionPermissions };
+/**
+ * สิทธิ์ในโปรเจกต์ของ "เป้าหมาย" ไม่เกินของ "ผู้กระทำ" = ทุกบิตที่เป้าหมายมี ผู้กระทำต้องมีด้วย
+ * (2026-11-02 · docs/plans/2026-11-02-permission-audit.md A-2 · แนวเดียวกับ isPermissionWithin ของสิทธิ์ระบบ)
+ * กันผู้จัดการสมาชิกให้ตำแหน่งที่สูงกว่าตัวเอง (เช่น ลบโปรเจกต์ได้) กับตัวเองหรือคนอื่น
+ */
+function isProjectPermissionWithin(targetPermission, actorPermission) {
+    return PROJECT_PERMISSION_KEYS.every(
+        (key) => !hasProjectBit(targetPermission, key) || hasProjectBit(actorPermission, key),
+    );
+}
+
+module.exports = {
+    PROJECT_PERMISSION_KEYS,
+    PROJECT_BIT_INDEX,
+    hasProjectBit,
+    combinePositionPermissions,
+    isProjectPermissionWithin,
+};

@@ -8,6 +8,7 @@
 // - 401 (token หมดอายุ/ถูกออกจากระบบ) → ไปหน้า login แล้วกลับมาหน้าเดิมหลัง login
 // หน้าเดิมที่ยังใช้ fetch ตรงๆ ย้ายมาใช้ตัวนี้เมื่อแก้หน้านั้น
 import { api } from "@/app/constans";
+import { clearLocalSession } from "@/lib/session";
 
 export type ApiError = {
     status: number;
@@ -29,6 +30,8 @@ const UNKNOWN_ERROR_MESSAGE = "เกิดข้อผิดพลาด กร
 
 // โหลดหน้าใหม่ทั้งหน้า (ไม่ใช้ router) — ล้าง state ของผู้ใช้เดิมที่ค้างอยู่ในหน้าทิ้งทั้งหมด และเรียกจากนอก component ได้
 function goToLogin() {
+    // token หมดอายุ/ถูกยกเลิก (เปลี่ยนรหัสผ่านจากเครื่องอื่น · A-1) ไม่เก็บไว้ต่อ
+    clearLocalSession();
     const currentPath = window.location.pathname + window.location.search;
     // eslint-disable-next-line @next/next/no-location-assign-relative-destination
     window.location.href = `/login?redirect=${encodeURIComponent(currentPath)}`;

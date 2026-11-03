@@ -162,9 +162,12 @@ export type Employee = {
     code_history: EmployeeCodeHistory[];
     cards: EmployeeCard[];
     transfer_range: { minDate: string; maxDate: string; latestPeriod: string | null };
-    compensations: Compensation[];
+    // เงินเดือน/รายการประจำ: null = ผู้ดูไม่มีสิทธิ์เงินเดือน (A-4 · H3) · แก้ได้เมื่อ can_edit_pay (สิทธิ์ทำเงินเดือน)
+    can_see_pay: boolean;
+    can_edit_pay: boolean;
+    compensations: Compensation[] | null;
     current_compensation: Compensation | null;
-    recurring_items: RecurringItem[];
+    recurring_items: RecurringItem[] | null;
     today: string;
 };
 

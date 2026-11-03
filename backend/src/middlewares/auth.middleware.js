@@ -1,7 +1,7 @@
 const pool = require("../config/db");
 const accountLinkService = require("../services/account-link.service");
-const { verifyToken } = require("../utils/jwt");
-const { effectiveRolePermission } = require("../utils/permissions");
+const { verifyToken, tokenVersionOf } = require("../utils/jwt");
+const { effectiveRolePermission, SYSTEM_ROLE_TYPE } = require("../utils/permissions");
 
 // endpoint ที่ใช้ได้ระหว่างยังทำขั้นตอนเข้าระบบครั้งแรกไม่ครบ (2026-10-12, risk-fixes R23)
 // ตรงกับที่หน้า login (actions.ts) และ first-login-onboarding.tsx เรียก — เดิมบังคับแค่ที่หน้าเว็บ
@@ -43,7 +43,7 @@ async function requireAuth(req, res, next) {
         // JOIN เอา role_permission มาในคราวเดียว — requirePermission/requireProjectMember/controller ใช้ req.user.role_permission ต่อ
         // ไม่ต้อง query tb_roles ซ้ำอีกในแต่ละ request
         const [rows] = await pool.query(
-            `SELECT u.user_role_id, u.user_status, u.user_must_change_password, u.user_email,
+            `SELECT u.user_role_id, u.user_status, u.user_must_change_password, u.user_email, u.user_token_version,
                     r.role_permission, r.role_type
              FROM tb_users u
              LEFT JOIN tb_roles r ON r.role_id = u.user_role_id
@@ -53,6 +53,13 @@ async function requireAuth(req, res, next) {
         const user = rows[0];
         if (!user || user.user_status !== "active") {
             return res.status(401).json({ message: "บัญชีผู้ใช้งานถูกระงับหรือไม่พบผู้ใช้งาน" });
+        }
+        // token รุ่นเก่า: เปลี่ยน/รีเซ็ตรหัสผ่าน หรือสั่งออกจากระบบทุกเครื่องหลังออก token นี้ (2026-11-02 A-1)
+        if (tokenVersionOf(payload) !== Number(user.user_token_version)) {
+            return res.status(401).json({
+                code: "SESSION_REVOKED",
+                message: "เครื่องนี้ถูกออกจากระบบแล้ว (มีการเปลี่ยนรหัสผ่านหรือสั่งออกจากระบบทุกเครื่อง) · กรุณาเข้าสู่ระบบใหม่",
+            });
         }
         // พ้นสภาพพนักงานแล้วและติ๊กปิดการเข้าระบบ — token ที่ออกก่อนหน้าใช้ต่อไม่ได้ (docs/plans/2026-10-18-user-employee-link.md R2)
         const closedLastDay = await accountLinkService.findLoginClosure(pool, payload.user_id);
@@ -73,6 +80,8 @@ async function requireAuth(req, res, next) {
             user_id: payload.user_id,
             user_role_id: user.user_role_id,
             role_permission: user.user_role_id ? effectiveRolePermission(user.role_type, user.role_permission) : "",
+            // role ระบบ (แอดมิน) · ใช้ข้ามกติกา "ให้ตำแหน่งในโปรเจกต์ได้ไม่เกินตัวเอง" (A-2)
+            is_system_role: user.role_type === SYSTEM_ROLE_TYPE,
         };
         next();
     } catch (err) {

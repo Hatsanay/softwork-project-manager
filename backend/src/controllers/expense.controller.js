@@ -56,7 +56,7 @@ async function list(req, res, next) {
 
 async function projectOptions(req, res, next) {
     try {
-        res.json({ data: await expenseService.listProjectOptions(pool, String(req.query.search ?? "")) });
+        res.json({ data: await expenseService.listProjectOptions(pool, String(req.query.search ?? ""), req.user) });
     } catch (err) {
         next(err);
     }

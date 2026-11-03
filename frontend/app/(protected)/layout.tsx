@@ -6,6 +6,7 @@ import { PermissionProvider } from "@/app/components/permission-provider";
 import FirstLoginOnboarding from "@/app/components/first-login-onboarding";
 import { getUserProfile } from "@/app/login/actions";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
 export default async function ProtectedLayout({ children }: { children: React.ReactNode }) {
     const cookieStore = await cookies();
@@ -17,7 +18,11 @@ export default async function ProtectedLayout({ children }: { children: React.Re
         username,
         needsEmail,
         permission: currentPermission,
+        isSignedOut,
     } = await getUserProfile();
+
+    // token ถูกยกเลิก/หมดอายุ: ไปหน้า login เลย ไม่แสดงหน้าว่างที่เรียก API ไม่ได้ (A-1)
+    if (isSignedOut) redirect("/login");
 
     // ใช้สิทธิ์ล่าสุดจาก backend ทุกครั้งที่เปลี่ยนหน้า — ถ้าต่อ backend ไม่ได้ ถอยไปใช้ค่าที่จำไว้ตอน login
     // (เดิมใช้แต่ cookie: แอดมินเปลี่ยนสิทธิ์/ระบบเพิ่มเมนูใหม่ ผู้ใช้ต้อง login ใหม่ถึงจะเห็นเมนูถูก)

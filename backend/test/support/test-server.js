@@ -113,8 +113,9 @@ async function startTestServer(name) {
             body: { new_password: SEED_ADMIN.newPassword },
         });
         if (changed.status !== 200) throw new Error(`เปลี่ยนรหัสผ่าน admin ไม่สำเร็จ: ${JSON.stringify(changed.body)}`);
-        defaultToken = token;
-        return token;
+        // เปลี่ยนรหัสผ่านแล้ว token เดิมใช้ไม่ได้ (A-1) · ใช้ token ใหม่ที่ได้กลับมา
+        defaultToken = changed.body.token;
+        return defaultToken;
     }
 
     async function stop() {

@@ -138,7 +138,10 @@ async function listEmployees(conn, { limit = 25, offset = 0, search = "", status
  * @param {import("mysql2/promise").Pool | import("mysql2/promise").PoolConnection} conn
  * @param {string} employeeId
  */
-async function getEmployee(conn, employeeId) {
+/**
+ * @param {{ canSeePay?: boolean, canEditPay?: boolean }} [payAccess] ไม่เห็นเงินเดือน = compensations/recurring_items เป็น null (A-4)
+ */
+async function getEmployee(conn, employeeId, { canSeePay = false, canEditPay = false } = {}) {
     const today = todayBangkok();
     const [[employee]] = await conn.query(
         `SELECT e.*, ${DATE_COLUMNS},
@@ -155,8 +158,8 @@ async function getEmployee(conn, employeeId) {
         [today, today, employeeId],
     );
     if (!employee) throw notFound();
-    const compensations = await findCompensations(conn, employeeId);
-    const recurringItems = await findRecurringItems(conn, employeeId);
+    const compensations = canSeePay ? await findCompensations(conn, employeeId) : null;
+    const recurringItems = canSeePay ? await findRecurringItems(conn, employeeId) : null;
     // รหัสล็อกเมื่อเข้ารอบเงินเดือนแล้ว (แก้วันเริ่มงาน/แผนกในฟอร์มไม่ได้ · ย้ายแผนกยังทำได้)
     const latestPayrollPeriod = await employeeCodeService.latestPayrollPeriod(conn, employeeId);
     return {
@@ -172,9 +175,13 @@ async function getEmployee(conn, employeeId) {
         emp_attendance_required: employee.emp_attendance_required === 1,
         // กะทำงานตามวันที่มีผล (ลงเวลาเข้า-ออกงาน A-1)
         schedules: await attendanceSetupService.listEmployeeSchedules(conn, employeeId),
+        can_see_pay: canSeePay,
+        can_edit_pay: canEditPay,
         compensations,
-        current_compensation: compensationOn(compensations, today),
-        recurring_items: recurringItems.map((item) => ({ ...item, item_status: recurringItemStatus(item, today) })),
+        current_compensation: compensations ? compensationOn(compensations, today) : null,
+        recurring_items: recurringItems
+            ? recurringItems.map((item) => ({ ...item, item_status: recurringItemStatus(item, today) }))
+            : null,
         today,
     };
 }
@@ -292,6 +299,7 @@ async function findFormerByNationalId(conn, nationalIdText) {
  */
 async function createEmployee(conn, employee, actor) {
     await assertEmployeeReferences(conn, employee, null);
+    await accountLinkService.assertCanTouchAccount(conn, employee.emp_user_id, actor, "emp_user_id");
     const department = await employeeCodeService.findDepartment(conn, employee.emp_department_id, true);
     const code = await employeeCodeService.issueCodeForNewEmployee(conn, department, employee.emp_hire_date);
     const employeeId = await generateDailyId("tb_employees", "emp_id", "EMP");
@@ -309,11 +317,14 @@ async function createEmployee(conn, employee, actor) {
         actorId: actor.user_id,
     });
     await employeeCodeService.issueCard(conn, employeeId, "first_issue", { actorId: actor.user_id });
-    await conn.query(
-        `INSERT INTO tb_employee_compensations (ecm_employee_id, ecm_effective_from, ecm_base_salary, ecm_note, ecm_created_by)
-         VALUES (?, ?, ?, 'เงินเดือนเริ่มงาน', ?)`,
-        [employeeId, employee.emp_hire_date, employee.ecm_base_salary, actor.user_id],
-    );
+    // ไม่มีเงินเดือน = คนสร้างไม่มีสิทธิ์ทำเงินเดือน · คนทำเงินเดือนตั้งเงินเดือนเริ่มงานทีหลัง (รอบเงินเดือนกันไว้ไม่ให้ส่ง · A-4)
+    if (employee.ecm_base_salary) {
+        await conn.query(
+            `INSERT INTO tb_employee_compensations (ecm_employee_id, ecm_effective_from, ecm_base_salary, ecm_note, ecm_created_by)
+             VALUES (?, ?, ?, 'เงินเดือนเริ่มงาน', ?)`,
+            [employeeId, employee.emp_hire_date, employee.ecm_base_salary, actor.user_id],
+        );
+    }
     // บัญชีที่ผูก: ชื่อ เบอร์ สาขา ตามพนักงาน (ข้อมูลตัวจริงที่เดียว)
     await accountLinkService.syncAccountFromEmployee(conn, employeeId);
     return { emp_id: employeeId, emp_code: code };
@@ -327,6 +338,11 @@ async function createEmployee(conn, employee, actor) {
 async function updateEmployee(conn, employeeId, employee, actor) {
     const existing = await lockEmployee(conn, employeeId);
     await assertEmployeeReferences(conn, employee, existing);
+    // เปลี่ยนบัญชีที่ผูก: ทั้งบัญชีเดิม (หลุดจากพนักงาน) และบัญชีใหม่ (ถูกเขียนทับชื่อ) ต้องไม่สูงกว่าผู้ทำ (A-5)
+    if ((employee.emp_user_id ?? null) !== (existing.emp_user_id ?? null)) {
+        await accountLinkService.assertCanTouchAccount(conn, existing.emp_user_id, actor, "emp_user_id");
+        await accountLinkService.assertCanTouchAccount(conn, employee.emp_user_id, actor, "emp_user_id");
+    }
     const department = await employeeCodeService.findDepartment(
         conn,
         employee.emp_department_id,
@@ -454,14 +470,17 @@ async function deleteEmployee(conn, employeeId) {
  * @param {string} employeeId
  * @param {{ emp_termination_date: string, emp_termination_reason: string }} termination
  */
-async function terminateEmployee(conn, employeeId, termination) {
+async function terminateEmployee(conn, employeeId, termination, actor) {
     const existing = await lockEmployee(conn, employeeId);
     if (termination.emp_termination_date < existing.emp_hire_date) {
         throw validationError({ emp_termination_date: "วันทำงานวันสุดท้ายต้องไม่ก่อนวันเริ่มงาน" });
     }
     // ปิดการเข้าระบบหลังวันสุดท้าย (ค่าเริ่ม = ปิด · K4) — ห้ามปิดผู้ดูแลระบบคนสุดท้าย (R4)
     const closeLogin = termination.emp_close_login_on_termination;
-    if (closeLogin) await accountLinkService.assertNotLastAdmin(conn, existing.emp_user_id);
+    if (closeLogin) {
+        await accountLinkService.assertCanTouchAccount(conn, existing.emp_user_id, actor, "emp_close_login_on_termination");
+        await accountLinkService.assertNotLastAdmin(conn, existing.emp_user_id);
+    }
     await conn.query(
         `UPDATE tb_employees SET emp_termination_date = ?, emp_termination_reason = ?, emp_close_login_on_termination = ?
          WHERE emp_id = ?`,
@@ -503,13 +522,16 @@ async function reinstateEmployee(conn, employeeId) {
  * เปิด/ปิดการเข้าระบบหลังพ้นสภาพ (ติ๊กที่หน้าพนักงาน) — มีผลตามวันทำงานวันสุดท้าย ไม่ได้ปิดทันที
  * @param {{ emp_close_login_on_termination: boolean }} request
  */
-async function setLoginClosure(conn, employeeId, request) {
+async function setLoginClosure(conn, employeeId, request, actor) {
     const existing = await lockEmployee(conn, employeeId);
     if (!existing.emp_termination_date) {
         throw new AppError(409, "EMPLOYEE_NOT_TERMINATED", "ยังไม่ได้ตั้งวันพ้นสภาพ · ตั้งพ้นสภาพก่อน แล้วค่อยเลือกปิดการเข้าระบบ");
     }
     const closeLogin = request.emp_close_login_on_termination;
-    if (closeLogin) await accountLinkService.assertNotLastAdmin(conn, existing.emp_user_id);
+    if (closeLogin) {
+        await accountLinkService.assertCanTouchAccount(conn, existing.emp_user_id, actor, "emp_close_login_on_termination");
+        await accountLinkService.assertNotLastAdmin(conn, existing.emp_user_id);
+    }
     await conn.query("UPDATE tb_employees SET emp_close_login_on_termination = ? WHERE emp_id = ?", [
         closeLogin ? 1 : 0,
         employeeId,
@@ -530,7 +552,17 @@ async function setLoginClosure(conn, employeeId, request) {
 async function addCompensation(conn, employeeId, compensation, actor) {
     const employee = await lockEmployee(conn, employeeId);
     const effectiveFrom = compensation.ecm_effective_from;
-    if (effectiveFrom <= employee.emp_hire_date) {
+    // ยังไม่มีเงินเดือนเลย (สร้างโดยคนที่ไม่มีสิทธิ์ทำเงินเดือน · A-4) → แถวแรกต้องมีผลวันเริ่มงาน
+    const [[{ compensationCount }]] = await conn.query(
+        "SELECT COUNT(*) AS compensationCount FROM tb_employee_compensations WHERE ecm_employee_id = ?",
+        [employeeId],
+    );
+    if (Number(compensationCount) === 0 && effectiveFrom !== employee.emp_hire_date) {
+        throw validationError({
+            ecm_effective_from: `ยังไม่มีเงินเดือนเริ่มงาน · ตั้งแถวแรกให้มีผลวันเริ่มงาน (${employee.emp_hire_date}) ก่อน`,
+        });
+    }
+    if (Number(compensationCount) > 0 && effectiveFrom <= employee.emp_hire_date) {
         throw validationError({
             ecm_effective_from: "ต้องหลังวันเริ่มงาน · ถ้าเงินเดือนเริ่มงานผิด ให้กดแก้ที่แถวเงินเดือนเริ่มงาน",
         });

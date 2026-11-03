@@ -183,10 +183,26 @@ export default function EmployeeViewPage() {
 
             <div role="tabpanel" id={`employee-panel-${tab}`} aria-labelledby={`employee-tab-${tab}`} className="grid gap-5">
                 {tab === "overview" && <EmployeeSummaryCard employee={employee} onChanged={reload} />}
-                {tab === "salary" && (
+                {tab === "salary" && !employee.can_see_pay && (
+                    <StatusBanner tone="info" title="เงินเดือนดูได้เฉพาะผู้มีสิทธิ์เงินเดือน">
+                        บัญชีของคุณจัดการข้อมูลพนักงานได้ แต่ไม่เห็นเงินเดือนและรายรับ/รายหักประจำ · ต้องมีสิทธิ์ดู ทำ หรืออนุมัติเงินเดือน
+                        ขอผู้ดูแลระบบเพิ่มสิทธิ์ที่หน้าจัดการสิทธิ์ถ้าต้องใช้
+                    </StatusBanner>
+                )}
+                {tab === "salary" && employee.can_see_pay && employee.compensations && employee.recurring_items && (
                     <>
-                        <CompensationCard employee={employee} onChanged={reload} />
-                        <RecurringItemsCard employee={employee} onChanged={reload} />
+                        <CompensationCard
+                            employee={employee}
+                            compensations={employee.compensations}
+                            canEdit={employee.can_edit_pay}
+                            onChanged={reload}
+                        />
+                        <RecurringItemsCard
+                            employee={employee}
+                            items={employee.recurring_items}
+                            canEdit={employee.can_edit_pay}
+                            onChanged={reload}
+                        />
                     </>
                 )}
                 {tab === "work" && (

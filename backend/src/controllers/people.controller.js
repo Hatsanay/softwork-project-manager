@@ -4,6 +4,8 @@ const pool = require("../config/db");
 const { validate } = require("../utils/validate");
 const { withTransaction } = require("../utils/with-transaction");
 const { todayBangkok } = require("../utils/bangkok-time");
+const { AppError } = require("../utils/app-error");
+const { hasBit, PAY_VIEW_PERMISSIONS, PAY_EDIT_PERMISSION } = require("../utils/permissions");
 const {
     employeeSchema,
     employeeCreateSchema,
@@ -44,7 +46,10 @@ async function listEmployees(req, res, next) {
 
 async function getEmployee(req, res, next) {
     try {
-        res.json(await employeeService.getEmployee(pool, req.params.id));
+        // เงินเดือน/รายการประจำ เฉพาะผู้มีสิทธิ์เงินเดือน (A-4 · H3)
+        const canSeePay = PAY_VIEW_PERMISSIONS.some((key) => hasBit(req.user.role_permission, key));
+        const canEditPay = hasBit(req.user.role_permission, PAY_EDIT_PERMISSION);
+        res.json(await employeeService.getEmployee(pool, req.params.id, { canSeePay, canEditPay }));
     } catch (err) {
         next(err);
     }
@@ -69,7 +74,19 @@ async function findFormerEmployee(req, res, next) {
 async function createEmployee(req, res, next) {
     try {
         const employee = validate(employeeCreateSchema, req.body);
-        res.status(201).json(await withTransaction((conn) => employeeService.createEmployee(conn, employee, req.user)));
+        // ผู้มีสิทธิ์ทำเงินเดือนต้องกรอกเงินเดือนเริ่มต้น · คนอื่นไม่เห็นช่องนี้ ค่าที่ส่งมาไม่บันทึก (A-4)
+        const canEditPay = hasBit(req.user.role_permission, PAY_EDIT_PERMISSION);
+        if (canEditPay && !employee.ecm_base_salary) {
+            throw new AppError(400, "VALIDATION", "ข้อมูลบางช่องใช้ไม่ได้ กรุณาแก้ตามข้อความใต้ช่อง", {
+                ecm_base_salary: "กรุณากรอกเงินเดือนเริ่มต้น",
+            });
+        }
+        const salary = canEditPay ? employee.ecm_base_salary : null;
+        res.status(201).json(
+            await withTransaction((conn) =>
+                employeeService.createEmployee(conn, { ...employee, ecm_base_salary: salary }, req.user),
+            ),
+        );
     } catch (err) {
         next(err);
     }
@@ -96,7 +113,7 @@ async function deleteEmployee(req, res, next) {
 async function terminateEmployee(req, res, next) {
     try {
         const termination = validate(employeeTerminateSchema, req.body);
-        res.json(await withTransaction((conn) => employeeService.terminateEmployee(conn, req.params.id, termination)));
+        res.json(await withTransaction((conn) => employeeService.terminateEmployee(conn, req.params.id, termination, req.user)));
     } catch (err) {
         next(err);
     }

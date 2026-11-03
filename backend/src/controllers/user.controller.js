@@ -4,6 +4,7 @@ const fs = require("fs/promises");
 const path = require("path");
 const pool = require("../config/db");
 const accountLinkService = require("../services/account-link.service");
+const sessionService = require("../services/session.service");
 const { todayBangkok } = require("../utils/bangkok-time");
 const { generateDailyId } = require("../utils/generateDailyId");
 const { generateTempPassword } = require("../utils/generatePassword");
@@ -510,11 +511,32 @@ async function remove(req, res, next) {
     }
 }
 
+// เปลี่ยนรหัสผ่านเอง (2026-11-02 A-1)
+// - ต้องใส่รหัสผ่านปัจจุบัน: คนที่ได้ token ไป (เครื่องที่ลืม logout) เปลี่ยนรหัสยึดบัญชีไม่ได้
+//   ยกเว้นตั้งรหัสครั้งแรก (user_must_change_password) เพราะเพิ่ง login ด้วยรหัสชั่วคราวมา
+// - เครื่องอื่นทุกเครื่องหลุด · เครื่องนี้ได้ token ใหม่ (หน้าเว็บเก็บแทนของเดิม)
 async function changeOwnPassword(req, res, next) {
     try {
-        const { new_password } = req.body;
+        const { new_password, current_password } = req.body;
         if (!new_password || new_password.length < 8) {
             return res.status(400).json({ message: "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร" });
+        }
+
+        const [[user]] = await pool.query(
+            "SELECT user_password, user_must_change_password FROM tb_users WHERE user_id = ?",
+            [req.user.user_id]
+        );
+        if (!user.user_must_change_password) {
+            const isCurrentCorrect = current_password
+                ? await bcrypt.compare(String(current_password), user.user_password)
+                : false;
+            if (!isCurrentCorrect) {
+                return res.status(400).json({
+                    code: "VALIDATION",
+                    message: "รหัสผ่านปัจจุบันไม่ถูกต้อง",
+                    fields: { current_password: "ใส่รหัสผ่านที่ใช้เข้าระบบอยู่ตอนนี้" },
+                });
+            }
         }
 
         const passwordHash = await bcrypt.hash(new_password, 10);
@@ -522,8 +544,9 @@ async function changeOwnPassword(req, res, next) {
             "UPDATE tb_users SET user_password = ?, user_must_change_password = FALSE WHERE user_id = ?",
             [passwordHash, req.user.user_id]
         );
+        const token = await sessionService.revokeOtherSessions(pool, req.user.user_id);
 
-        res.json({ message: "เปลี่ยนรหัสผ่านสำเร็จ" });
+        res.json({ message: "เปลี่ยนรหัสผ่านสำเร็จ", token });
     } catch (err) {
         next(err);
     }
@@ -539,13 +562,28 @@ async function resetPassword(req, res, next) {
         const temp_password = generateTempPassword();
         const passwordHash = await bcrypt.hash(temp_password, 10);
 
+        // รีเซ็ตแล้วทุกเครื่องของผู้ใช้หลุด (A-1) — รหัสเก่าอาจรั่วจึงต้องรีเซ็ต
         const [result] = await pool.query(
-            "UPDATE tb_users SET user_password = ?, user_must_change_password = TRUE WHERE user_id = ?",
+            `UPDATE tb_users SET user_password = ?, user_must_change_password = TRUE, user_token_version = user_token_version + 1
+             WHERE user_id = ?`,
             [passwordHash, req.params.id]
         );
         if (result.affectedRows === 0) return res.status(404).json({ message: "ไม่พบผู้ใช้งาน" });
 
         res.json({ temp_password });
+    } catch (err) {
+        next(err);
+    }
+}
+
+// ให้ผู้ใช้ออกจากระบบทุกเครื่อง (2026-11-02 A-1) — เช่น มือถือหาย · รหัสผ่านไม่เปลี่ยน · ผู้ใช้ที่สิทธิ์สูงกว่าทำไม่ได้ (R25)
+async function signOutEverywhere(req, res, next) {
+    try {
+        const access = await checkCanManageUser(req, req.params.id);
+        if (access.notFound) return res.status(404).json({ message: "ไม่พบผู้ใช้งาน" });
+        if (access.error) return sendAccessError(res, access.error);
+        await sessionService.revokeAllSessions(pool, req.params.id);
+        res.json({ message: "ผู้ใช้นี้ถูกออกจากระบบทุกเครื่องแล้ว" });
     } catch (err) {
         next(err);
     }
@@ -610,5 +648,5 @@ async function uploadMyImage(req, res, next) {
 
 module.exports = {
     me, forSelect, getAll, getOne, create, update, remove, uploadImage, uploadMyImage,
-    changeOwnPassword, resetPassword, updateMyProfile, requestMyEmailOtp, verifyMyEmailOtp,
+    changeOwnPassword, resetPassword, signOutEverywhere, updateMyProfile, requestMyEmailOtp, verifyMyEmailOtp,
 };

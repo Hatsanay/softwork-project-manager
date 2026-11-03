@@ -23,6 +23,8 @@ import { toFieldErrors, type FieldErrors } from "@/lib/form-errors";
 import { employeeCreateSchema, employeeSchema } from "@/lib/shared/schemas/people.mjs";
 import { employeeCodePrefix } from "@/lib/shared/employee-code.mjs";
 import { formatDateOnly } from "@/app/function";
+import { usePermission, BITS } from "@/app/components/permission-provider";
+import { PAY_EDIT_PERMISSION } from "@/lib/shared/permissions.mjs";
 import { EMPLOYEE_MESSAGES } from "../../_messages";
 import type { Employee, EmployeeFormOptions, FormerEmployee } from "../../_types";
 
@@ -117,6 +119,9 @@ const FIELD_LABELS: Partial<Record<keyof EmployeeFormValues, string>> = {
 export default function EmployeeForm({ employee, initialUserId }: { employee?: Employee; initialUserId?: string | null }) {
     const router = useRouter();
     const isEditing = employee !== undefined;
+    // เงินเดือนเริ่มงานกรอกได้เฉพาะผู้มีสิทธิ์ทำเงินเดือน (A-4 · H3) · คนอื่นเว้นไว้ คนทำเงินเดือนตั้งที่หน้าพนักงานทีหลัง
+    const hasBit = usePermission();
+    const canEditPay = hasBit(BITS[PAY_EDIT_PERMISSION]);
     const [form, setForm] = useState<EmployeeFormValues>(() => (employee ? toForm(employee) : EMPTY_FORM));
     const [options, setOptions] = useState<EmployeeFormOptions | null>(null);
     const [optionsError, setOptionsError] = useState<ApiError | null>(null);
@@ -261,7 +266,8 @@ export default function EmployeeForm({ employee, initialUserId }: { employee?: E
         event.preventDefault();
         setSaveError(null);
         const schema = isEditing ? employeeSchema : employeeCreateSchema;
-        const checked = schema.safeParse(form);
+        const { ecm_base_salary: salary, ...withoutSalary } = form;
+        const checked = schema.safeParse(isEditing || canEditPay ? { ...withoutSalary, ecm_base_salary: salary } : withoutSalary);
         if (!checked.success) {
             setFieldErrors(toFieldErrors(checked.error.issues));
             toast.error("ยังบันทึกไม่ได้ · แก้ช่องที่มีข้อความสีแดงก่อน");
@@ -487,7 +493,15 @@ export default function EmployeeForm({ employee, initialUserId }: { employee?: E
                             className={inputClass(Boolean(fieldErrors.emp_hire_date))}
                         />
                     </FormField>
-                    {!isEditing && (
+                    {!isEditing && !canEditPay && (
+                        <div className="grid gap-1">
+                            <span className="text-sm text-gray-800">เงินเดือนเริ่มงาน</span>
+                            <FieldHint>
+                                ผู้มีสิทธิ์ทำเงินเดือนเป็นคนกรอกที่หน้าพนักงานหลังเพิ่มแล้ว · รอบเงินเดือนส่งไม่ได้จนกว่าจะตั้ง
+                            </FieldHint>
+                        </div>
+                    )}
+                    {!isEditing && canEditPay && (
                         <FormField
                             label="เงินเดือนเริ่มงาน (บาท)"
                             htmlFor="ecm_base_salary"
@@ -706,7 +720,8 @@ function formerValues(options: EmployeeFormOptions, former: Employee): FillValue
         emp_bank_name: old.emp_bank_name,
         emp_bank_account_no: old.emp_bank_account_no,
         emp_bank_account_name: old.emp_bank_account_name,
-        ecm_base_salary: former.compensations[0]?.ecm_base_salary ?? "",
+        // ไม่มีสิทธิ์เงินเดือน = ไม่ได้ข้อมูลเงินเดือนเดิมมา (null) เว้นว่าง
+        ecm_base_salary: former.compensations?.[0]?.ecm_base_salary ?? "",
     });
 }
 

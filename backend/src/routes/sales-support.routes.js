@@ -35,7 +35,7 @@ function registerSalesSupportRoutes(router) {
         signatureController.revokeUserSignature,
     );
 
-    // รูปลายเซ็น — ต้อง login (ไม่อยู่ใน /uploads ที่เปิดสาธารณะ)
+    // รูปลายเซ็น — ต้อง login (ไม่อยู่ใน /uploads ที่เปิดสาธารณะ) · เจ้าของ/ผู้ดูผู้ใช้/ผู้ดูเอกสารที่มีลายเซ็นนี้ (ตรวจใน service · A-3)
     router.get("/V1/signatures/:id", requireAuth, signatureController.getImage);
 }
 

@@ -7,7 +7,7 @@
 //   ไม่มีงานตั้งเวลาบน hosting → ตรวจตอน login และทุกคำขอ (auth middleware) แทนการเปลี่ยน user_status
 const { AppError } = require("../utils/app-error");
 const { todayBangkok } = require("../utils/bangkok-time");
-const { SYSTEM_ROLE_TYPE } = require("../shared/permissions.mjs");
+const { SYSTEM_ROLE_TYPE, effectiveRolePermission, isPermissionWithin } = require("../shared/permissions.mjs");
 
 const CURRENT_EMPLOYEE_SQL = "(e.emp_termination_date IS NULL OR e.emp_termination_date >= ?)";
 
@@ -155,7 +155,36 @@ async function assertNotLastAdmin(conn, userId) {
     }
 }
 
+/**
+ * ผู้จัดการพนักงานแตะบัญชีนี้ได้ไหม (2026-11-02 · docs/plans/2026-11-02-permission-audit.md A-5)
+ * ผูก/เปลี่ยน/เอาบัญชีออกจากพนักงาน และปิดการเข้าระบบ ทำได้เฉพาะบัญชีที่สิทธิ์ไม่เกินผู้ทำ (กติกาเดียวกับหน้าผู้ใช้ · R25)
+ * ไม่งั้นคนที่มีแค่สิทธิ์จัดการพนักงาน ปิดการเข้าระบบของแอดมิน หรือผูกพนักงานเข้ากับบัญชีแอดมินแล้วเขียนทับชื่อได้
+ * @param {string | null} userId บัญชีที่จะถูกแตะ (ว่าง = ไม่มีบัญชี ผ่าน)
+ * @param {{ role_permission: string }} actor
+ * @param {string} field ช่องในฟอร์มที่จะแสดงข้อความ
+ */
+async function assertCanTouchAccount(conn, userId, actor, field) {
+    if (!userId) return;
+    const [[target]] = await conn.query(
+        `SELECT r.role_type, r.role_permission, u.user_role_id
+         FROM tb_users u LEFT JOIN tb_roles r ON r.role_id = u.user_role_id WHERE u.user_id = ?`,
+        [userId],
+    );
+    if (!target) return;
+    const targetPermission = target.user_role_id
+        ? effectiveRolePermission(target.role_type, target.role_permission)
+        : "";
+    if (isPermissionWithin(targetPermission, actor.role_permission)) return;
+    throw new AppError(
+        403,
+        "USER_ABOVE_YOUR_PERMISSION",
+        "บัญชีผู้ใช้นี้มีสิทธิ์บางข้อที่คุณไม่มี จึงผูกบัญชีหรือปิดการเข้าระบบของบัญชีนี้ไม่ได้ · ให้ผู้ที่มีสิทธิ์สูงกว่าเป็นคนทำ",
+        { [field]: "บัญชีนี้สิทธิ์สูงกว่าคุณ ให้ผู้ที่มีสิทธิ์สูงกว่าเป็นคนทำ" },
+    );
+}
+
 module.exports = {
+    assertCanTouchAccount,
     loginClosedSql,
     findCurrentEmployee,
     syncAccountFromEmployee,

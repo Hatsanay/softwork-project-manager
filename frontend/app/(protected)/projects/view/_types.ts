@@ -126,6 +126,8 @@ export type Member = {
     user_id: string;
     user_fullname: string;
     positions: MemberPosition[];
+    // ผู้ดูจัดการสมาชิกคนนี้ได้ไหม (สิทธิ์ของเขาไม่เกินผู้ดู · A-2 · 2026-11-02)
+    can_manage?: boolean;
 };
 
 export type ActivityEntry = {
@@ -140,7 +142,7 @@ export type ActivityEntry = {
     log_created_at: string;
 };
 
-export type PositionOption = { position_id: string; position_name: string };
+export type PositionOption = { position_id: string; position_name: string; position_permission?: string };
 
 export type TaskDetail = Task & { task_description: string | null; checklist?: ChecklistItem[] };
 

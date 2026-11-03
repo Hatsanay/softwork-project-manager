@@ -1696,6 +1696,7 @@
             "user_phone",
             "user_role_id",
             "user_status",
+            "user_token_version",
             "user_updated_at",
             "user_username",
             "user_whatsapp_no"

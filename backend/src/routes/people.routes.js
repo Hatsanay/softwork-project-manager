@@ -6,6 +6,7 @@
 // /V1/employees/form-options ต้องมาก่อน /V1/employees/:id
 const { requireAuth } = require("../middlewares/auth.middleware");
 const { requirePermission } = require("../middlewares/permission.middleware");
+const { PAY_EDIT_PERMISSION } = require("../shared/permissions.mjs");
 const { uploadImage } = require("../middlewares/upload.middleware");
 const peopleController = require("../controllers/people.controller");
 const employeeCardController = require("../controllers/employee-card.controller");
@@ -16,6 +17,8 @@ const overviewController = require("../controllers/people-overview.controller");
  */
 function registerPeopleRoutes(router) {
     const canManageEmployees = requirePermission("manageEmployees");
+    // เงินเดือน/รายการประจำ: ต้องมีสิทธิ์ทำเงินเดือนด้วย (A-4 · ตาม H3)
+    const canEditPay = requirePermission(PAY_EDIT_PERMISSION);
     const canEditSetup = requirePermission("manageHrSettings");
 
     router.get("/V1/employees", requireAuth, canManageEmployees, peopleController.listEmployees);
@@ -55,35 +58,40 @@ function registerPeopleRoutes(router) {
     router.delete("/V1/employees/:id/photo", requireAuth, canManageEmployees, employeeCardController.removePhoto);
     router.get("/V1/employee-cards", requireAuth, canManageEmployees, employeeCardController.cardQueue);
 
-    router.post("/V1/employees/:id/compensations", requireAuth, canManageEmployees, peopleController.addCompensation);
+    router.post("/V1/employees/:id/compensations", requireAuth, canManageEmployees, canEditPay, peopleController.addCompensation);
     router.put(
         "/V1/employees/:id/compensations/:date",
         requireAuth,
         canManageEmployees,
+        canEditPay,
         peopleController.updateCompensation,
     );
     router.delete(
         "/V1/employees/:id/compensations/:date",
         requireAuth,
         canManageEmployees,
+        canEditPay,
         peopleController.deleteCompensation,
     );
     router.post(
         "/V1/employees/:id/recurring-items",
         requireAuth,
         canManageEmployees,
+        canEditPay,
         peopleController.addRecurringItem,
     );
     router.post(
         "/V1/employees/:id/recurring-items/:itemId/end",
         requireAuth,
         canManageEmployees,
+        canEditPay,
         peopleController.endRecurringItem,
     );
     router.delete(
         "/V1/employees/:id/recurring-items/:itemId",
         requireAuth,
         canManageEmployees,
+        canEditPay,
         peopleController.deleteRecurringItem,
     );
 

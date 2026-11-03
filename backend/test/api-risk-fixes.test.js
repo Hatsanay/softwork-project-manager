@@ -77,6 +77,7 @@ test.before(async () => {
     // seed admin ถูกบังคับเปลี่ยนรหัสผ่านตอนเข้าครั้งแรก (R23) — ทำให้ครบก่อน เทสต์อื่นจะได้ใช้ API ได้
     const changePassword = await callApi("PUT", "/users/me/password", { body: { new_password: "NewAdmin@2026" } });
     assert.equal(changePassword.status, 200, JSON.stringify(changePassword.body));
+    adminToken = changePassword.body.token; // token เดิมถูกยกเลิกเมื่อเปลี่ยนรหัสผ่าน (A-1)
 });
 
 async function login(loginName, password) {
@@ -200,7 +201,7 @@ test("ผู้ใช้ที่ยังไม่ได้เปลี่ย�
         body: { user_fname: "พนักงานใหม่", user_lname: "ทดสอบ", user_username: "new.staff", user_role_id: SEED_ADMIN_ROLE_ID },
     });
     assert.equal(created.status, 201, JSON.stringify(created.body));
-    const token = await login("new.staff", created.body.temp_password);
+    let token = await login("new.staff", created.body.temp_password);
 
     const blocked = await callApi("GET", "/projects", { token });
     assert.equal(blocked.status, 403);
@@ -211,6 +212,7 @@ test("ผู้ใช้ที่ยังไม่ได้เปลี่ย�
 
     const changePassword = await callApi("PUT", "/users/me/password", { token, body: { new_password: "Staff@2026new" } });
     assert.equal(changePassword.status, 200);
+    token = changePassword.body.token;
 
     // เปลี่ยนรหัสผ่านแล้วแต่ยังไม่มีอีเมล — ยังต้องยืนยันอีเมลก่อน
     const stillBlocked = await callApi("GET", "/projects", { token });

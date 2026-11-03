@@ -1,7 +1,31 @@
 "use server";
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { api } from "../constans";
+
+/**
+ * ค่าตั้งของ cookie เข้าระบบ · secure เมื่อเปิดเว็บผ่าน https (production) ให้ cookie ไม่ถูกส่งผ่าน http (A-1 · 2026-11-02)
+ * ดูจาก Origin ของคำขอ server action (เบราว์เซอร์ส่งมาเสมอ) · dev บน http://localhost ไม่ใส่ secure ไม่งั้น cookie ไม่ถูกเก็บ
+ */
+async function sessionCookieOptions(httpOnly = true) {
+    const origin = (await headers()).get("origin") ?? "";
+    return { httpOnly, path: "/", sameSite: "lax" as const, secure: origin.startsWith("https://") };
+}
+
+/**
+ * เก็บ token ใหม่ลง cookie (หลังเปลี่ยนรหัสผ่าน/ออกจากระบบเครื่องอื่น backend ออก token ใหม่ให้เครื่องนี้ · A-1)
+ * ตรวจกับ backend ก่อนว่า token ใช้ได้จริง ไม่รับค่าอะไรก็ได้มาตั้งเป็น cookie
+ */
+export async function storeSessionToken(token: string): Promise<boolean> {
+    const response = await fetch(`${api}/users/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+    }).catch(() => null);
+    if (!response?.ok) return false;
+    const cookieStore = await cookies();
+    cookieStore.set("token", token, await sessionCookieOptions());
+    return true;
+}
 
 type State = { error: string } | { token: string } | null;
 
@@ -37,12 +61,13 @@ export async function handleLogin(_prevState: State, formData: FormData): Promis
         const { role_permission } = await permRes.json();
 
         const cookieStore = await cookies();
-        cookieStore.set("token", token, { httpOnly: true, path: "/", sameSite: "lax" });
-        cookieStore.set("permission", role_permission, { httpOnly: true, path: "/", sameSite: "lax" });
-        cookieStore.set("userId", String(user_id), { httpOnly: true, path: "/", sameSite: "lax" });
+        const options = await sessionCookieOptions();
+        cookieStore.set("token", token, options);
+        cookieStore.set("permission", role_permission, options);
+        cookieStore.set("userId", String(user_id), options);
 
         const fullname = await getFullName();
-        cookieStore.set("fullname", String(fullname), { httpOnly: false, path: "/", sameSite: "lax" });
+        cookieStore.set("fullname", String(fullname), await sessionCookieOptions(false));
 
         return { token };
     } catch {
@@ -68,6 +93,8 @@ type UserProfile = {
     needsEmail: boolean;
     // สิทธิ์ล่าสุดจาก backend ("" = ดึงไม่ได้ ให้ใช้ค่าที่จำไว้ตอน login แทน)
     permission: string;
+    // backend ตอบ 401: token หมดอายุหรือถูกยกเลิก (เปลี่ยนรหัสผ่านจากเครื่องอื่น · A-1) → layout ส่งไปหน้า login
+    isSignedOut: boolean;
 };
 
 const EMPTY_PROFILE: UserProfile = {
@@ -78,6 +105,7 @@ const EMPTY_PROFILE: UserProfile = {
     username: "",
     needsEmail: false,
     permission: "",
+    isSignedOut: false,
 };
 
 export async function getUserProfile(): Promise<UserProfile> {
@@ -99,6 +127,7 @@ export async function getUserProfile(): Promise<UserProfile> {
         return EMPTY_PROFILE;
     }
 
+    if (res.status === 401) return { ...EMPTY_PROFILE, isSignedOut: true };
     if (!res.ok) return EMPTY_PROFILE;
 
     const data = await res.json();
@@ -112,5 +141,6 @@ export async function getUserProfile(): Promise<UserProfile> {
         // แอดมินสร้างบัญชีโดยไม่ใส่อีเมล → ต้องยืนยันอีเมลด้วย OTP ก่อนใช้งานระบบ (ขั้นที่ 2 ของ onboarding)
         needsEmail: !data.user_email,
         permission: typeof data.role_permission === "string" ? data.role_permission : "",
+        isSignedOut: false,
     };
 }

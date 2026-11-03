@@ -7,14 +7,22 @@ import { api } from "@/app/constans";
 import Button from "@/components/ui/Button/Button";
 import SearchableSelect from "@/components/ui/SearchableSelect";
 import { buttonClass } from "@/components/ui/button";
+import FieldHint from "@/components/ui/guidance/field-hint";
 import { authHeader, loadUserOptions } from "../_lib/view-helpers";
 import type { Member, MemberFormState, PositionOption } from "../_types";
+
+/** ตำแหน่งนี้ไม่มีสิทธิ์ข้อไหนที่ผู้ให้ไม่มี (กติกาเดียวกับ backend · A-2) */
+function isWithin(positionPermission: string, myPermission: string) {
+    return [...positionPermission].every((bit, index) => bit !== "1" || myPermission[index] === "1");
+}
 
 export default function MemberModal({
     projectId,
     member,
     members,
     positions,
+    myPermission,
+    managesAllPositions,
     onSaved,
     onClose,
 }: {
@@ -22,9 +30,14 @@ export default function MemberModal({
     member: Member | null;
     members: Member[];
     positions: PositionOption[];
+    myPermission: string;
+    managesAllPositions: boolean;
     onSaved: () => Promise<unknown>;
     onClose: () => void;
 }) {
+    const canGive = (position: PositionOption) =>
+        managesAllPositions || isWithin(position.position_permission ?? "", myPermission);
+    const hasLockedPosition = positions.some((position) => !canGive(position));
     const [isPending, startTransition] = useTransition();
     const [memberForm, setMemberForm] = useState<MemberFormState>(
         member
@@ -110,21 +123,38 @@ export default function MemberModal({
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">ตำแหน่งในโปรเจกต์นี้</label>
                         <div className="rounded-lg border border-gray-100 divide-y divide-gray-50 overflow-hidden">
-                            {positions.map((pos) => (
-                                <label
-                                    key={pos.position_id}
-                                    className="flex items-center gap-3 cursor-pointer px-4 py-2.5 hover:bg-blue-50"
-                                >
-                                    <input
-                                        type="checkbox"
-                                        checked={memberForm.position_ids.includes(pos.position_id)}
-                                        onChange={() => toggleMemberPosition(pos.position_id)}
-                                        className="w-4 h-4 accent-blue-500"
-                                    />
-                                    <span className="text-sm text-gray-700">{pos.position_name}</span>
-                                </label>
-                            ))}
+                            {positions.map((pos) => {
+                                const isLocked = !canGive(pos);
+                                return (
+                                    <label
+                                        key={pos.position_id}
+                                        className={`flex items-center gap-3 px-4 py-2.5 ${isLocked ? "cursor-not-allowed bg-gray-50" : "cursor-pointer hover:bg-blue-50"}`}
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={memberForm.position_ids.includes(pos.position_id)}
+                                            onChange={() => toggleMemberPosition(pos.position_id)}
+                                            disabled={isLocked}
+                                            className="w-4 h-4 accent-blue-500"
+                                        />
+                                        <span className={`text-sm ${isLocked ? "text-gray-400" : "text-gray-700"}`}>
+                                            {pos.position_name}
+                                        </span>
+                                        {isLocked && (
+                                            <span className="ml-auto text-xs text-gray-400">สูงกว่าสิทธิ์คุณ</span>
+                                        )}
+                                    </label>
+                                );
+                            })}
                         </div>
+                        {hasLockedPosition && (
+                            <div className="mt-2">
+                                <FieldHint>
+                                    ตำแหน่งสีจางมีสิทธิ์บางข้อที่คุณไม่มีในโปรเจกต์นี้ จึงให้ไม่ได้ ·
+                                    ให้ผู้ดูแลระบบหรือผู้มีสิทธิ์สูงกว่าเป็นคนให้
+                                </FieldHint>
+                            </div>
+                        )}
                     </div>
 
                     {memberFormError && <p className="text-sm text-red-600">{memberFormError}</p>}

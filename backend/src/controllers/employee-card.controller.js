@@ -102,7 +102,7 @@ async function removePhoto(req, res, next) {
 async function setLoginClosure(req, res, next) {
     try {
         const request = validate(employeeLoginClosureSchema, req.body);
-        res.json(await withTransaction((conn) => employeeService.setLoginClosure(conn, req.params.id, request)));
+        res.json(await withTransaction((conn) => employeeService.setLoginClosure(conn, req.params.id, request, req.user)));
     } catch (err) {
         next(err);
     }

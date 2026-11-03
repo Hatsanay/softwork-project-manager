@@ -12,6 +12,10 @@ import { toast } from "sonner";
 import PageHeader from "@/components/ui/page-header";
 import MySignatureCard from "./_components/my-signature-card";
 import StatusBanner from "@/components/ui/guidance/status-banner";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { buttonClass } from "@/components/ui/button";
+import { apiFetch } from "@/lib/api";
+import { saveSessionToken } from "@/lib/session";
 
 // อีเมลไม่อยู่ในฟอร์มนี้แล้ว — เปลี่ยนได้ทางเดียวคือยืนยันด้วย OTP (ส่วน "อีเมล" ด้านล่าง) backend ก็ไม่รับอีเมลจาก PUT /users/me แล้ว
 type FormState = {
@@ -70,14 +74,16 @@ async function uploadMyAvatar(file: File) {
     if (!res.ok) throw new Error("อัปโหลดรูปไม่สำเร็จ");
 }
 
-async function submitChangePassword(newPassword: string) {
+// เปลี่ยนรหัสผ่านแล้วเครื่องอื่นหลุดหมด · เครื่องนี้ได้ token ใหม่ เก็บแทนของเดิม (A-1 · 2026-11-02)
+async function submitChangePassword(newPassword: string, currentPassword: string) {
     const res = await fetch(`${api}/users/me/password`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...authHeader() },
-        body: JSON.stringify({ new_password: newPassword }),
+        body: JSON.stringify({ new_password: newPassword, current_password: currentPassword }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.message ?? "เกิดข้อผิดพลาด");
+    if (data.token) await saveSessionToken(data.token);
 }
 
 const EMPTY_FORM: FormState = {
@@ -104,10 +110,30 @@ export default function ProfilePage() {
     const [errors, setErrors] = useState<FormErrors>({});
     const [submitError, setSubmitError] = useState<string | null>(null);
 
+    const [currentPassword, setCurrentPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
     const [passwordError, setPasswordError] = useState<string | null>(null);
     const [passwordPending, setPasswordPending] = useState(false);
+
+    // ออกจากระบบเครื่องอื่นทั้งหมด (A-1) เช่น ลืม logout ที่เครื่องอื่น หรือมือถือหาย
+    const [isSignOutOthersOpen, setIsSignOutOthersOpen] = useState(false);
+    const [signOutOthersPending, setSignOutOthersPending] = useState(false);
+    const [signOutOthersError, setSignOutOthersError] = useState<string | null>(null);
+
+    async function signOutOtherDevices() {
+        setSignOutOthersPending(true);
+        setSignOutOthersError(null);
+        const { data, error } = await apiFetch<{ token: string }>("/auth/logout-other-devices", { method: "POST" });
+        setSignOutOthersPending(false);
+        if (error) {
+            setSignOutOthersError(error.message);
+            return;
+        }
+        await saveSessionToken(data.token);
+        setIsSignOutOthersOpen(false);
+        toast.success("ออกจากระบบเครื่องอื่นทั้งหมดแล้ว");
+    }
 
     useEffect(() => {
         startTransition(async () => {
@@ -159,13 +185,15 @@ export default function ProfilePage() {
         e.preventDefault();
         setPasswordError(null);
 
+        if (!currentPassword) { setPasswordError("กรุณากรอกรหัสผ่านปัจจุบัน"); return; }
         if (newPassword.length < 8) { setPasswordError("รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร"); return; }
         if (newPassword !== confirmPassword) { setPasswordError("รหัสผ่านไม่ตรงกัน"); return; }
 
         setPasswordPending(true);
-        submitChangePassword(newPassword)
+        submitChangePassword(newPassword, currentPassword)
             .then(() => {
-                toast.success("เปลี่ยนรหัสผ่านสำเร็จ");
+                toast.success("เปลี่ยนรหัสผ่านสำเร็จ · เครื่องอื่นออกจากระบบแล้ว");
+                setCurrentPassword("");
                 setNewPassword("");
                 setConfirmPassword("");
             })
@@ -282,6 +310,18 @@ export default function ProfilePage() {
             <div>
                 <h2 className="mb-3 text-base font-medium text-gray-900">เปลี่ยนรหัสผ่าน</h2>
                 <form onSubmit={handlePasswordSubmit} className="grid grid-cols-1 gap-x-6 gap-y-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-card sm:grid-cols-2 sm:p-6">
+                    <div className="flex flex-col gap-1 sm:col-span-full sm:max-w-[calc(50%-0.75rem)]">
+                        <label className="text-sm font-medium text-gray-700">รหัสผ่านปัจจุบัน</label>
+                        <Input
+                            type="password"
+                            autoComplete="current-password"
+                            value={currentPassword}
+                            onChange={(e) => setCurrentPassword(e.target.value)}
+                            placeholder="รหัสที่ใช้เข้าระบบอยู่ตอนนี้"
+                            error={!!passwordError}
+                        />
+                        <p className="text-xs leading-relaxed text-gray-500">ยืนยันว่าเป็นเจ้าของบัญชีจริง · คนที่เปิดเครื่องที่ลืมออกจากระบบจะเปลี่ยนรหัสแทนคุณไม่ได้</p>
+                    </div>
                     <div className="flex flex-col gap-1">
                         <label className="text-sm font-medium text-gray-700">รหัสผ่านใหม่</label>
                         <Input
@@ -291,7 +331,7 @@ export default function ProfilePage() {
                             placeholder="อย่างน้อย 8 ตัวอักษร"
                             error={!!passwordError}
                         />
-                        <p className="text-xs leading-relaxed text-gray-500">อย่างน้อย 8 ตัวอักษร · ใช้รหัสใหม่ตั้งแต่การเข้าสู่ระบบครั้งถัดไป</p>
+                        <p className="text-xs leading-relaxed text-gray-500">อย่างน้อย 8 ตัวอักษร · เปลี่ยนแล้วเครื่องอื่นทุกเครื่องออกจากระบบ เครื่องนี้ใช้งานต่อได้</p>
                     </div>
                     <div className="flex flex-col gap-1">
                         <label className="text-sm font-medium text-gray-700">ยืนยันรหัสผ่านใหม่</label>
@@ -313,6 +353,43 @@ export default function ProfilePage() {
                     </div>
                 </form>
             </div>
+
+            <div>
+                <h2 className="mb-3 text-base font-medium text-gray-900">เครื่องที่เข้าระบบ</h2>
+                <div className="flex flex-col gap-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-card sm:flex-row sm:items-center sm:justify-between sm:p-6">
+                    <div className="grid gap-1">
+                        <p className="text-sm text-gray-800">ออกจากระบบเครื่องอื่นทั้งหมด</p>
+                        <p className="text-xs leading-relaxed text-gray-500">
+                            ใช้เมื่อลืมออกจากระบบที่เครื่องอื่น หรือมือถือหาย · เครื่องนี้ยังใช้งานต่อได้ · ถ้าสงสัยว่ารหัสผ่านรั่ว ให้เปลี่ยนรหัสผ่านด้านบนแทน
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setIsSignOutOthersOpen(true)}
+                        className={`${buttonClass("secondary", "md")} shrink-0`}
+                    >
+                        ออกจากระบบเครื่องอื่น
+                    </button>
+                </div>
+            </div>
+
+            <ConfirmDialog
+                open={isSignOutOthersOpen}
+                variant="warning"
+                title="ออกจากระบบเครื่องอื่นทั้งหมด?"
+                consequences={[
+                    "ทุกเครื่องที่เข้าระบบด้วยบัญชีนี้ ยกเว้นเครื่องนี้ ต้องเข้าสู่ระบบใหม่",
+                    "รหัสผ่านไม่เปลี่ยน",
+                ]}
+                confirmLabel="ออกจากระบบเครื่องอื่น"
+                loading={signOutOthersPending}
+                errorMessage={signOutOthersError}
+                onConfirm={signOutOtherDevices}
+                onCancel={() => {
+                    setIsSignOutOthersOpen(false);
+                    setSignOutOthersError(null);
+                }}
+            />
         </div>
     );
 }

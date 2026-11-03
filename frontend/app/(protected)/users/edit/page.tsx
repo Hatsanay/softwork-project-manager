@@ -9,12 +9,13 @@ import Form from "@/components/ui/form/Form";
 import AvatarCrop from "@/components/ui/AvatarCrop";
 import SearchableSelect from "@/components/ui/SearchableSelect";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { apiFetch } from "@/lib/api";
 import { toast } from "sonner";
 import PageHeader from "@/components/ui/page-header";
 import { buttonClass } from "@/components/ui/button";
 import BranchSelect from "../_components/branch-select";
 import UserSignaturePanel from "../_components/user-signature-panel";
-import { KeyRound } from "lucide-react";
+import { KeyRound, LogOut } from "lucide-react";
 import { inputClass } from "@/components/ui/form-field";
 import Link from "next/link";
 import StatusBanner from "@/components/ui/guidance/status-banner";
@@ -149,6 +150,24 @@ export default function EditUserPage() {
     const [resetPending, setResetPending] = useState(false);
     const [tempPassword, setTempPassword] = useState<string | null>(null);
 
+    // ให้ผู้ใช้ออกจากระบบทุกเครื่อง เช่น มือถือหาย (A-1 · 2026-11-02) · รหัสผ่านไม่เปลี่ยน
+    const [isSignOutOpen, setIsSignOutOpen] = useState(false);
+    const [signOutPending, setSignOutPending] = useState(false);
+    const [signOutError, setSignOutError] = useState<string | null>(null);
+
+    async function handleSignOutEverywhere() {
+        setSignOutPending(true);
+        setSignOutError(null);
+        const { error } = await apiFetch(`/users/${id}/sign-out-everywhere`, { method: "POST" });
+        setSignOutPending(false);
+        if (error) {
+            setSignOutError(error.message);
+            return;
+        }
+        setIsSignOutOpen(false);
+        toast.success("ผู้ใช้นี้ออกจากระบบทุกเครื่องแล้ว");
+    }
+
     // จัดการได้เฉพาะผู้ใช้ที่สิทธิ์ไม่เกินตัวเอง และเปลี่ยน role/สถานะของตัวเองไม่ได้ (risk-fixes R25) — backend ส่งธงมาให้
     const [canManage, setCanManage] = useState(true);
     const [isSelf, setIsSelf] = useState(false);
@@ -258,10 +277,18 @@ export default function EditUserPage() {
                 description="แก้ข้อมูล สิทธิ์ และสถานะของผู้ใช้ · เปลี่ยนสิทธิ์หรือสถานะของตัวเองไม่ได้ · ปิดใช้งานแล้วผู้ใช้เข้าระบบไม่ได้ทันที แต่ประวัติยังอยู่ครบ"
                 actions={
                     canManage && (
-                        <button type="button" onClick={() => setConfirmResetOpen(true)} className={buttonClass("secondary", "md")}>
-                            <KeyRound size={16} className="text-gray-400" />
-                            ตั้งรหัสผ่านชั่วคราวใหม่
-                        </button>
+                        <>
+                            {!isSelf && (
+                                <button type="button" onClick={() => setIsSignOutOpen(true)} className={buttonClass("secondary", "md")}>
+                                    <LogOut size={16} className="text-gray-400" />
+                                    ให้ออกจากระบบทุกเครื่อง
+                                </button>
+                            )}
+                            <button type="button" onClick={() => setConfirmResetOpen(true)} className={buttonClass("secondary", "md")}>
+                                <KeyRound size={16} className="text-gray-400" />
+                                ตั้งรหัสผ่านชั่วคราวใหม่
+                            </button>
+                        </>
                     )
                 }
             />
@@ -427,11 +454,29 @@ export default function EditUserPage() {
                 open={confirmResetOpen}
                 variant="warning"
                 title="เปลี่ยนรหัสผ่านผู้ใช้นี้?"
-                description="ระบบจะ gen รหัสผ่านชั่วคราวใหม่ให้ และบังคับให้ผู้ใช้ตั้งรหัสผ่านใหม่ตอน login ครั้งถัดไป รหัสผ่านเดิมจะใช้ไม่ได้ทันที"
+                description="ระบบจะ gen รหัสผ่านชั่วคราวใหม่ให้ และบังคับให้ผู้ใช้ตั้งรหัสผ่านใหม่ตอน login ครั้งถัดไป รหัสผ่านเดิมใช้ไม่ได้ทันที และทุกเครื่องที่เข้าระบบอยู่ต้องเข้าสู่ระบบใหม่"
                 confirmLabel="เปลี่ยนรหัสผ่าน"
                 loading={resetPending}
                 onConfirm={handleResetPassword}
                 onCancel={() => setConfirmResetOpen(false)}
+            />
+
+            <ConfirmDialog
+                open={isSignOutOpen}
+                variant="warning"
+                title="ให้ผู้ใช้นี้ออกจากระบบทุกเครื่อง?"
+                consequences={[
+                    "ทุกเครื่องที่เข้าระบบด้วยบัญชีนี้ต้องเข้าสู่ระบบใหม่",
+                    "รหัสผ่านไม่เปลี่ยน · ถ้ารหัสผ่านรั่ว ให้ตั้งรหัสผ่านชั่วคราวใหม่แทน",
+                ]}
+                confirmLabel="ให้ออกจากระบบ"
+                loading={signOutPending}
+                errorMessage={signOutError}
+                onConfirm={handleSignOutEverywhere}
+                onCancel={() => {
+                    setIsSignOutOpen(false);
+                    setSignOutError(null);
+                }}
             />
 
             <ConfirmDialog

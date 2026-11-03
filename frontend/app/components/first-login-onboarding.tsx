@@ -10,6 +10,7 @@ import Input from "@/components/ui/Input/input";
 import Button from "@/components/ui/Button/Button";
 import AvatarCrop from "@/components/ui/AvatarCrop";
 import EmailOtpForm from "@/app/components/email-otp-form";
+import { saveSessionToken } from "@/lib/session";
 
 // ขั้นตอนเข้าระบบครั้งแรกของผู้ใช้ที่แอดมินสร้างให้ (แนวเดียวกับ onboarding ของระบบ fasttiw)
 //   1) ตั้งรหัสผ่านใหม่แทนรหัสชั่วคราว   — เมื่อ user_must_change_password
@@ -69,6 +70,8 @@ export default function FirstLoginOnboarding({ mustChangePassword, needsEmail, f
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.message ?? "เกิดข้อผิดพลาด");
+            // token เดิมถูกยกเลิกเมื่อเปลี่ยนรหัส (A-1) · เก็บ token ใหม่ก่อนทำขั้นต่อไป
+            if (data.token) await saveSessionToken(data.token);
             toast.success("ตั้งรหัสผ่านใหม่สำเร็จ");
             next();
         } catch (err) {

@@ -1,8 +1,9 @@
 const bcrypt = require("bcryptjs");
 const pool = require("../config/db");
 const accountLinkService = require("../services/account-link.service");
-const { signToken } = require("../utils/jwt");
+const { signSessionToken } = require("../utils/jwt");
 const { generateDailyId } = require("../utils/generateDailyId");
+const sessionService = require("../services/session.service");
 
 async function writeLoginLog({ user_id, email, fullname, action, req }) {
     const log_id = await generateDailyId("tb_login_logs", "log_id", "LOG");
@@ -25,7 +26,7 @@ async function login(req, res, next) {
         }
 
         const [rows] = await pool.query(
-            `SELECT user_id, user_password, user_role_id, user_status, user_fname, user_lname
+            `SELECT user_id, user_password, user_role_id, user_status, user_fname, user_lname, user_token_version
              FROM tb_users WHERE ${login.includes("@") ? "user_email" : "user_username"} = ?`,
             [login]
         );
@@ -56,8 +57,7 @@ async function login(req, res, next) {
         ]);
         await writeLoginLog({ user_id: user.user_id, email: login, fullname, action: "login", req });
 
-        const token = signToken({ user_id: user.user_id, user_role_id: user.user_role_id });
-        res.json({ token });
+        res.json({ token: signSessionToken(user) });
     } catch (err) {
         next(err);
     }
@@ -91,4 +91,14 @@ async function verifyPermission(req, res) {
     res.json({ role_permission: req.user.role_permission });
 }
 
-module.exports = { login, logout, verifyPermission };
+// ออกจากระบบเครื่องอื่นทั้งหมด (2026-11-02 A-1) — token ทุกใบเดิมใช้ไม่ได้ · เครื่องที่กดได้ token ใหม่ ใช้งานต่อได้
+async function logoutOtherDevices(req, res, next) {
+    try {
+        const token = await sessionService.revokeOtherSessions(pool, req.user.user_id);
+        res.json({ message: "ออกจากระบบเครื่องอื่นทั้งหมดแล้ว", token });
+    } catch (err) {
+        next(err);
+    }
+}
+
+module.exports = { login, logout, logoutOtherDevices, verifyPermission };

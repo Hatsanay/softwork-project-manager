@@ -64,6 +64,7 @@ router.get("/V1/dashboard/team/:userId/tasks", requireAuth, requirePermission("d
 // ─── auth ───────────────────────────────────────────────────────────────────
 router.post("/V1/auth/login", loginRateLimit, authController.login);
 router.post("/V1/auth/logout", requireAuth, authController.logout);
+router.post("/V1/auth/logout-other-devices", requireAuth, authController.logoutOtherDevices);
 router.get("/V1/auth/verifyPermission", requireAuth, authController.verifyPermission);
 
 // ─── users ──────────────────────────────────────────────────────────────────
@@ -87,6 +88,8 @@ router.get("/V1/users/:id", requireAuth, requirePermission("usersManagement"), u
 router.post("/V1/users", requireAuth, requirePermission("createUsers"), userController.create);
 router.put("/V1/users/:id", requireAuth, requirePermission("editUsers"), userController.update);
 router.put("/V1/users/:id/reset-password", requireAuth, requirePermission("editUsers"), userController.resetPassword);
+// ให้ผู้ใช้ออกจากระบบทุกเครื่อง เช่น มือถือหาย (2026-11-02 A-1)
+router.post("/V1/users/:id/sign-out-everywhere", requireAuth, requirePermission("editUsers"), userController.signOutEverywhere);
 router.delete("/V1/users/:id", requireAuth, requirePermission("deleteUsers"), userController.remove);
 router.put(
     "/V1/users/:id/image",

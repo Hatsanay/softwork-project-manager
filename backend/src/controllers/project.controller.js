@@ -2,6 +2,7 @@ const pool = require("../config/db");
 const { generateDailyId } = require("../utils/generateDailyId");
 const { generateShareToken } = require("../utils/shareToken");
 const { hasBit } = require("../utils/permissions");
+const { combinePositionPermissions, isProjectPermissionWithin } = require("../utils/projectPermissions");
 const { sendProjectMemberAddedEmail, sendClientShareLinkEmail } = require("../utils/mailer");
 const { insertProject, listTaskCatalog } = require("../services/project.service");
 const { insertTasksFromRows } = require("../services/quotation-accept.service");
@@ -384,8 +385,77 @@ async function toggleTaskWeight(req, res, next) {
 
 // รวมสิทธิ์จากทุกตำแหน่งที่ตัวเองถือในโปรเจกต์นี้ เป็น bitmask เดียว (OR แต่ละบิต) — requireProjectMember คำนวณไว้แล้ว
 // ให้ frontend เอาไปเช็คเองว่าจะโชว์ปุ่มอะไรบ้าง — ไม่ส่งรายละเอียดตำแหน่ง/สิทธิ์ของสมาชิกคนอื่นออกไป
+// manages_all_positions = แอดมิน ให้ตำแหน่งได้ทุกตำแหน่ง · คนอื่นให้ได้เฉพาะตำแหน่งที่ไม่เกินสิทธิ์ตัวเอง (A-2 · หน้าเว็บทำช่องจาง)
 function getMyPermissions(req, res) {
-    res.json({ position_permission: req.projectPermission ?? "" });
+    res.json({ position_permission: req.projectPermission ?? "", manages_all_positions: Boolean(req.user.is_system_role) });
+}
+
+// ─── ให้ตำแหน่งได้ไม่เกินตัวเอง (2026-11-02 · docs/plans/2026-11-02-permission-audit.md A-2) ───
+// ผู้จัดการสมาชิก: ให้/ถอดได้เฉพาะตำแหน่งที่สิทธิ์ไม่เกินสิทธิ์รวมของตัวเองในโปรเจกต์นี้
+// แก้/เอาออกสมาชิกที่สิทธิ์รวมเกินตัวเองไม่ได้ · แก้ตำแหน่งของตัวเองไม่ได้ · แอดมิน (role ระบบ) ทำได้ทุกอย่าง
+
+const MEMBER_ACCESS_ERRORS = {
+    positionAboveActor: {
+        code: "POSITION_ABOVE_YOURS",
+        message: "ให้ตำแหน่งนี้ไม่ได้ เพราะตำแหน่งนี้มีสิทธิ์บางข้อที่คุณเองไม่มีในโปรเจกต์นี้ · ให้ผู้ที่มีสิทธิ์สูงกว่าเป็นคนตั้ง",
+    },
+    memberAboveActor: {
+        code: "MEMBER_ABOVE_YOURS",
+        message: "จัดการสมาชิกคนนี้ไม่ได้ เพราะเขามีสิทธิ์ในโปรเจกต์บางข้อที่คุณไม่มี · ให้ผู้ที่มีสิทธิ์สูงกว่าเป็นคนจัดการ",
+    },
+    ownPositions: {
+        code: "CANNOT_CHANGE_OWN_POSITIONS",
+        message: "แก้ตำแหน่งของตัวเองไม่ได้ · ให้ผู้จัดการสมาชิกคนอื่นหรือผู้ดูแลระบบเป็นคนแก้",
+    },
+};
+
+async function combinedPermissionOfPositions(positionIds) {
+    if (positionIds.length === 0) return "";
+    const [rows] = await pool.query("SELECT position_permission FROM tb_project_positions WHERE position_id IN (?)", [
+        positionIds,
+    ]);
+    return combinePositionPermissions(rows.map((row) => row.position_permission));
+}
+
+/** สิทธิ์รวมของสมาชิกแต่ละคนในโปรเจกต์ (Map project_member_id → bitmask) */
+async function memberPermissions(projectId) {
+    const [rows] = await pool.query(
+        `SELECT pm.project_member_id, pp.position_permission
+         FROM tb_project_members pm
+         LEFT JOIN tb_project_member_positions pmp ON pmp.project_member_id = pm.project_member_id
+         LEFT JOIN tb_project_positions pp ON pp.position_id = pmp.position_id
+         WHERE pm.project_id = ?`,
+        [projectId]
+    );
+    const permissionsByMember = new Map();
+    for (const row of rows) {
+        const list = permissionsByMember.get(row.project_member_id) ?? [];
+        list.push(row.position_permission);
+        permissionsByMember.set(row.project_member_id, list);
+    }
+    return new Map([...permissionsByMember].map(([memberId, list]) => [memberId, combinePositionPermissions(list)]));
+}
+
+function sendMemberAccessError(res, error) {
+    return res.status(403).json({ code: error.code, message: error.message });
+}
+
+/**
+ * ตรวจว่าผู้กระทำจัดการสมาชิก/ตำแหน่งนี้ได้ · ผ่าน = null · ไม่ผ่าน = error ของ MEMBER_ACCESS_ERRORS
+ * @param {{ memberId?: string, positionIds?: string[] }} change memberId = สมาชิกเดิมที่จะแก้/เอาออก · positionIds = ตำแหน่งใหม่
+ */
+async function memberChangeError(req, { memberId, positionIds }) {
+    if (req.user.is_system_role) return null;
+    const actorPermission = req.projectPermission ?? "";
+    if (memberId) {
+        if (memberId === req.projectMemberId && positionIds) return MEMBER_ACCESS_ERRORS.ownPositions;
+        const memberPermission = (await memberPermissions(req.params.id)).get(memberId) ?? "";
+        if (!isProjectPermissionWithin(memberPermission, actorPermission)) return MEMBER_ACCESS_ERRORS.memberAboveActor;
+    }
+    if (positionIds && !isProjectPermissionWithin(await combinedPermissionOfPositions(positionIds), actorPermission)) {
+        return MEMBER_ACCESS_ERRORS.positionAboveActor;
+    }
+    return null;
 }
 
 // ─── สมาชิกโปรเจกต์ ─────────────────────────────────────────────────────────────
@@ -411,9 +481,15 @@ async function getMembers(req, res, next) {
             [req.params.id]
         );
 
+        // can_manage = ผู้ดูจัดการสมาชิกคนนี้ได้ไหม (A-2) · ไม่ส่งสิทธิ์ของคนอื่นออกไป ส่งแค่ผลตรวจ
+        const permissionByMember = await memberPermissions(req.params.id);
+        const actorPermission = req.projectPermission ?? "";
         const data = members.map((m) => ({
             ...m,
             positions: positions.filter((p) => p.project_member_id === m.project_member_id),
+            can_manage:
+                Boolean(req.user.is_system_role) ||
+                isProjectPermissionWithin(permissionByMember.get(m.project_member_id) ?? "", actorPermission),
         }));
 
         res.json(data);
@@ -458,6 +534,12 @@ async function notifyMemberAdded({ project_id, recipientUserId, position_ids, ad
 async function addMember(req, res, next) {
     const { user_id, position_ids } = req.body;
     if (!user_id) return res.status(400).json({ message: "กรุณาเลือกผู้ใช้งาน" });
+    try {
+        const accessError = await memberChangeError(req, { positionIds: position_ids ?? [] });
+        if (accessError) return sendMemberAccessError(res, accessError);
+    } catch (err) {
+        return next(err);
+    }
 
     const project_member_id = await generateDailyId("tb_project_members", "project_member_id", "MEM");
     const conn = await pool.getConnection();
@@ -501,6 +583,12 @@ async function addMember(req, res, next) {
 async function updateMemberPositions(req, res, next) {
     const { position_ids } = req.body;
     const memberId = req.params.memberId;
+    try {
+        const accessError = await memberChangeError(req, { memberId, positionIds: position_ids ?? [] });
+        if (accessError) return sendMemberAccessError(res, accessError);
+    } catch (err) {
+        return next(err);
+    }
 
     const conn = await pool.getConnection();
     try {
@@ -529,6 +617,8 @@ async function updateMemberPositions(req, res, next) {
 
 async function removeMember(req, res, next) {
     try {
+        const accessError = await memberChangeError(req, { memberId: req.params.memberId });
+        if (accessError) return sendMemberAccessError(res, accessError);
         await pool.query("DELETE FROM tb_project_members WHERE project_member_id = ? AND project_id = ?", [
             req.params.memberId,
             req.params.id,

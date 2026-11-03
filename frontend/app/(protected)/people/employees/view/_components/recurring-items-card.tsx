@@ -28,9 +28,14 @@ const ITEM_STATUS: Record<RecurringItemStatus, { label: string; tone: PillTone }
 
 export default function RecurringItemsCard({
     employee,
+    items,
+    canEdit,
     onChanged,
 }: {
     employee: Employee;
+    items: RecurringItem[];
+    // สิทธิ์ทำเงินเดือน (A-4) · ไม่มี = ดูอย่างเดียว
+    canEdit: boolean;
     onChanged: () => Promise<void>;
 }) {
     const [isAdding, setIsAdding] = useState(false);
@@ -56,12 +61,18 @@ export default function RecurringItemsCard({
         <SectionCard
             icon={ListPlus}
             title="รายรับ / รายหักประจำ"
-            description={EMPLOYEE_MESSAGES.recurring}
+            description={
+                canEdit
+                    ? EMPLOYEE_MESSAGES.recurring
+                    : `${EMPLOYEE_MESSAGES.recurring} · แก้ได้เฉพาะผู้มีสิทธิ์ทำเงินเดือน`
+            }
             actions={
-                <button type="button" className={buttonClass("secondary", "md")} onClick={() => setIsAdding(true)}>
-                    <Plus size={16} />
-                    เพิ่มรายการ
-                </button>
+                canEdit && (
+                    <button type="button" className={buttonClass("secondary", "md")} onClick={() => setIsAdding(true)}>
+                        <Plus size={16} />
+                        เพิ่มรายการ
+                    </button>
+                )
             }
         >
             {isAdding && (
@@ -73,11 +84,11 @@ export default function RecurringItemsCard({
                     }}
                 />
             )}
-            {employee.recurring_items.length === 0 && !isAdding && (
+            {items.length === 0 && !isAdding && (
                 <p className="text-sm text-gray-500">ยังไม่มีรายการประจำ · เงินเดือนฐานอย่างเดียว</p>
             )}
             <ul className="grid divide-y divide-gray-100 text-sm">
-                {employee.recurring_items.map((item) => (
+                {items.map((item) => (
                     <li key={item.eri_id} className="grid gap-1 py-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                             <span className="flex flex-wrap items-center gap-2">
@@ -100,7 +111,7 @@ export default function RecurringItemsCard({
                                 ` · ${item.eri_is_taxable ? "คิดภาษี" : "ไม่คิดภาษี"} · ${item.eri_is_sso_wage ? "นับค่าจ้างประกันสังคม" : "ไม่นับค่าจ้างประกันสังคม"}`}
                             {item.eri_note ? ` · ${item.eri_note}` : ""}
                         </span>
-                        <span className="flex flex-wrap gap-1">
+                        <span className={`flex flex-wrap gap-1 ${canEdit ? "" : "hidden"}`}>
                             {item.item_status !== "ended" && (
                                 <button
                                     type="button"

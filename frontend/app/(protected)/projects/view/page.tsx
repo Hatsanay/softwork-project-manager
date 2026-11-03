@@ -69,6 +69,8 @@ export default function ViewProjectPage() {
     // ปุ่มกระโดดบนมือถือดูว่าส่วนไหนมีบนหน้า
     const pageRef = useRef<HTMLDivElement>(null);
     const [permission, setPermission] = useState("");
+    // แอดมินให้ตำแหน่งได้ทุกตำแหน่ง · คนอื่นให้ได้เฉพาะตำแหน่งที่ไม่เกินสิทธิ์ตัวเอง (A-2)
+    const [managesAllPositions, setManagesAllPositions] = useState(false);
     const [tasks, setTasks] = useState<Task[]>([]);
     const [members, setMembers] = useState<Member[]>([]);
     const [activity, setActivity] = useState<ActivityEntry[]>([]);
@@ -124,6 +126,7 @@ export default function ViewProjectPage() {
 
         setProject(projectData);
         setPermission(permData.position_permission ?? "");
+        setManagesAllPositions(permData.manages_all_positions === true);
         setMembers(membersData);
         const loadedTasks: Task[] = tasksData.data ?? [];
         setTasks(loadedTasks);
@@ -774,7 +777,11 @@ export default function ViewProjectPage() {
                 id="project-members"
                 icon={Users}
                 title="สมาชิกโปรเจกต์"
-                description="ตำแหน่งในโปรเจกต์กำหนดว่าแต่ละคนทำอะไรได้บ้าง (ตั้งตำแหน่งได้ที่ ตั้งค่าระบบ › ตำแหน่งในโปรเจกต์)"
+                description={
+                    canManageMembers && !managesAllPositions
+                        ? "ตำแหน่งในโปรเจกต์กำหนดว่าแต่ละคนทำอะไรได้บ้าง · คุณให้ตำแหน่งและจัดการสมาชิกได้เฉพาะที่สิทธิ์ไม่เกินคุณ และแก้ตำแหน่งของตัวเองไม่ได้"
+                        : "ตำแหน่งในโปรเจกต์กำหนดว่าแต่ละคนทำอะไรได้บ้าง (ตั้งตำแหน่งได้ที่ ตั้งค่าระบบ › ตำแหน่งในโปรเจกต์)"
+                }
                 actions={
                     canManageMembers && (
                         <button type="button" onClick={openAddMember} className={buttonClass("primary", "md")}>
@@ -791,8 +798,14 @@ export default function ViewProjectPage() {
                     emptyMessage="ยังไม่มีสมาชิกในโปรเจกต์นี้"
                     actions={(row) => (
                         <div className="flex items-center gap-2 justify-end">
-                            {canManageMembers && <EditButton onClick={() => openEditMemberPositions(row)}>ตำแหน่ง</EditButton>}
-                            {canManageMembers && <DeleteButton onClick={() => setRemoveMemberTarget(row)} />}
+                            {canManageMembers &&
+                                row.can_manage !== false &&
+                                (managesAllPositions || row.user_id !== currentUserId) && (
+                                    <EditButton onClick={() => openEditMemberPositions(row)}>ตำแหน่ง</EditButton>
+                                )}
+                            {canManageMembers && row.can_manage !== false && (
+                                <DeleteButton onClick={() => setRemoveMemberTarget(row)} />
+                            )}
                         </div>
                     )}
                 />
@@ -1077,6 +1090,8 @@ export default function ViewProjectPage() {
                     member={editingMember}
                     members={members}
                     positions={positions}
+                    myPermission={permission}
+                    managesAllPositions={managesAllPositions}
                     onSaved={() => loadAll(id)}
                     onClose={() => setMemberModalOpen(false)}
                 />

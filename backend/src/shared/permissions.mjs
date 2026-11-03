@@ -136,6 +136,11 @@ export const CLIENT_READ_PERMISSIONS = [
     "salesReports", "manageFastwork", "manageServiceRequests", "createProject",
 ];
 
+// เงินเดือนและรายรับ/รายหักประจำของพนักงาน (2026-11-02 · docs/plans/2026-11-02-permission-audit.md A-4 · ตาม H3)
+// เห็น = สิทธิ์เงินเดือนข้อใดข้อหนึ่ง · เพิ่ม/แก้/ลบ = runPayroll · สิทธิ์จัดการพนักงานอย่างเดียวไม่เห็นเงินเดือน
+export const PAY_VIEW_PERMISSIONS = ["viewPayroll", "runPayroll", "approvePayroll"];
+export const PAY_EDIT_PERMISSION = "runPayroll";
+
 // อ่านกลุ่มสิทธิ์ (รายการ + รายตัว): คนจัดการสิทธิ์หรือจัดการผู้ใช้ (เลือกสิทธิ์ให้ผู้ใช้)
 export const ROLE_READ_PERMISSIONS = ["roleManagement", "createRole", "editRole", "deleteRole", "usersManagement", "createUsers", "editUsers"];
 

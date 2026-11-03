@@ -13,7 +13,7 @@
 const { AppError } = require("../utils/app-error");
 const { generateDailyId } = require("../utils/generateDailyId");
 const { todayBangkok } = require("../utils/bangkok-time");
-const { hasBit } = require("../utils/permissions");
+const { hasBit, CLIENT_READ_PERMISSIONS } = require("../utils/permissions");
 const { calculateExpense } = require("../shared/expense-totals.mjs");
 const { evaluateApproval } = require("../shared/approval-flow.mjs");
 const { parseHundredths } = require("../shared/money.mjs");
@@ -812,21 +812,36 @@ async function listExpenses(
 
 // ─── ตัวเลือกโปรเจกต์ของบรรทัด ─────────────────────────────────────────────────────────────────
 
+// เห็นทุกโปรเจกต์ในช่องเลือก: ผู้ดูทุกโปรเจกต์ · ผู้บันทึก/ดู/อนุมัติค่าใช้จ่าย · ผู้ทำจ่าย (ต้องผูกบิลกับโปรเจกต์ที่ไม่ได้เป็นสมาชิก)
+const ALL_PROJECT_OPTION_PERMISSIONS = ["viewAllProjects", "createExpense", ...VIEW_ALL_CLAIMS_PERMISSIONS];
+
 /**
- * โปรเจกต์ที่ผูกค่าใช้จ่ายได้ (ช่องค้นหาในฟอร์ม) — ผู้บันทึกค่าใช้จ่ายอาจไม่ได้เป็นสมาชิกโปรเจกต์ จึงคืนแค่ชื่อ/ลูกค้า/สถานะ
+ * โปรเจกต์ที่ผูกค่าใช้จ่าย/ใบเบิกได้ (ช่องค้นหาในฟอร์ม) — คืนแค่ชื่อ/ลูกค้า/สถานะ
  * ไม่รวมโปรเจกต์ที่ยกเลิก (ของเดิมที่ผูกไว้แล้วหน้าเว็บแสดงจากรายละเอียดบรรทัด)
+ * ขอบเขต (2026-11-02 · docs/plans/2026-11-02-permission-audit.md A-6): พนักงานทั่วไปเห็นเฉพาะโปรเจกต์ที่เป็นสมาชิก
+ * ชื่อลูกค้า (แสดงและค้นหา) เฉพาะผู้มีสิทธิ์อ่านลูกค้า · ไม่งั้นช่องนี้เป็นทางลัดอ่านรายชื่อลูกค้า
  * @param {import("mysql2/promise").Pool} conn
  * @param {string} search
+ * @param {{ user_id: string, role_permission: string }} actor
  */
-async function listProjectOptions(conn, search = "") {
+async function listProjectOptions(conn, search, actor) {
     const like = `%${search}%`;
+    const seesAllProjects = ALL_PROJECT_OPTION_PERMISSIONS.some((key) => hasBit(actor.role_permission, key));
+    const seesClients = CLIENT_READ_PERMISSIONS.some((key) => hasBit(actor.role_permission, key));
+    const memberJoin = seesAllProjects
+        ? ""
+        : "JOIN tb_project_members m ON m.project_id = p.project_id AND m.user_id = ?";
+    const searchCondition = seesClients ? "(p.project_name LIKE ? OR c.client_name LIKE ?)" : "p.project_name LIKE ?";
+    const params = [...(seesAllProjects ? [] : [actor.user_id]), like, ...(seesClients ? [like] : [])];
     const [rows] = await conn.query(
-        `SELECT p.project_id, p.project_name, p.project_status, c.client_name
-         FROM tb_projects p LEFT JOIN tb_clients c ON c.client_id = p.client_id
-         WHERE p.project_status <> 'cancelled' AND (p.project_name LIKE ? OR c.client_name LIKE ?)
+        `SELECT p.project_id, p.project_name, p.project_status, ${seesClients ? "c.client_name" : "NULL AS client_name"}
+         FROM tb_projects p
+         ${memberJoin}
+         LEFT JOIN tb_clients c ON c.client_id = p.client_id
+         WHERE p.project_status <> 'cancelled' AND ${searchCondition}
          ORDER BY p.project_status = 'completed', p.project_name
          LIMIT 20`,
-        [like, like],
+        params,
     );
     return rows;
 }

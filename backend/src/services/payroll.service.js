@@ -241,6 +241,20 @@ async function buildReadiness(conn, run, items) {
             `มีคำขอลารออนุมัติ ${pendingLeaves} ใบในเดือนนี้ · อนุมัติหรือไม่อนุมัติก่อน (ลาไม่รับค่าจ้างมีผลกับเงินเดือน)`,
         );
     }
+    // สร้างพนักงานโดยคนที่ไม่มีสิทธิ์ทำเงินเดือน = ยังไม่มีเงินเดือน (A-4) · ส่งรอบไม่ได้จนกว่าจะตั้ง ไม่งั้นได้เงินเดือน 0
+    if (items.length > 0) {
+        const [withSalary] = await conn.query(
+            "SELECT DISTINCT ecm_employee_id FROM tb_employee_compensations WHERE ecm_employee_id IN (?)",
+            [items.map((item) => item.pri_employee_id)],
+        );
+        const salaryIds = new Set(withSalary.map((row) => row.ecm_employee_id));
+        const noSalary = items.filter((item) => !salaryIds.has(item.pri_employee_id));
+        if (noSalary.length > 0) {
+            problems.push(
+                `ยังไม่ได้ตั้งเงินเดือน ${noSalary.length} คน (${noSalary.map((item) => item.pri_emp_code).join(", ")}) · ตั้งเงินเดือนเริ่มงานที่หน้าพนักงาน แล้วกด "คิดใหม่"`,
+            );
+        }
+    }
     await addAttendanceReadiness(conn, run, items, { monthStart, monthEnd, problems, warnings });
     // ลงชั่วโมงต่อโปรเจกต์ปิดอยู่ (2026-10-23) ไม่ต้องเตือนสัปดาห์ที่ค้าง
     const [[{ pendingWeeks }]] = (await isTimesheetEnabled(conn))

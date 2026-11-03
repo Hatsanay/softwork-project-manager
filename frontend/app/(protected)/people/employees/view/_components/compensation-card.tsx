@@ -7,6 +7,7 @@ import { Banknote, Pencil, Plus, Trash2 } from "lucide-react";
 import SectionCard from "@/components/ui/section-card";
 import FormField, { inputClass } from "@/components/ui/form-field";
 import StatusPill from "@/components/ui/status-pill";
+import StatusBanner from "@/components/ui/guidance/status-banner";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { buttonClass } from "@/components/ui/button";
 import { formatDateOnly } from "@/app/function";
@@ -21,11 +22,18 @@ type Editing = { mode: "new" } | { mode: "edit"; compensation: Compensation } | 
 
 export default function CompensationCard({
     employee,
+    compensations,
+    canEdit,
     onChanged,
 }: {
     employee: Employee;
+    compensations: Compensation[];
+    // สิทธิ์ทำเงินเดือน (A-4) · ไม่มี = ดูอย่างเดียว
+    canEdit: boolean;
     onChanged: () => Promise<void>;
 }) {
+    // สร้างพนักงานโดยคนที่ไม่มีสิทธิ์ทำเงินเดือน = ยังไม่มีเงินเดือนเริ่มงาน (A-4) · แถวแรกต้องมีผลวันเริ่มงาน
+    const hasNoSalary = compensations.length === 0;
     const [editing, setEditing] = useState<Editing>(null);
     const [deleteTarget, setDeleteTarget] = useState<Compensation | null>(null);
     const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -51,18 +59,30 @@ export default function CompensationCard({
         <SectionCard
             icon={Banknote}
             title="เงินเดือน"
-            description={EMPLOYEE_MESSAGES.compensation}
+            description={
+                canEdit
+                    ? EMPLOYEE_MESSAGES.compensation
+                    : `${EMPLOYEE_MESSAGES.compensation} · แก้ได้เฉพาะผู้มีสิทธิ์ทำเงินเดือน`
+            }
             actions={
-                <button
-                    type="button"
-                    className={buttonClass("secondary", "md")}
-                    onClick={() => setEditing({ mode: "new" })}
-                >
-                    <Plus size={16} />
-                    เพิ่มอัตราใหม่
-                </button>
+                canEdit && (
+                    <button
+                        type="button"
+                        className={buttonClass("secondary", "md")}
+                        onClick={() => setEditing({ mode: "new" })}
+                    >
+                        <Plus size={16} />
+                        {hasNoSalary ? "ตั้งเงินเดือนเริ่มงาน" : "เพิ่มอัตราใหม่"}
+                    </button>
+                )
             }
         >
+            {hasNoSalary && (
+                <StatusBanner tone="warn" title="ยังไม่ได้ตั้งเงินเดือน">
+                    ผู้เพิ่มพนักงานไม่มีสิทธิ์ทำเงินเดือน จึงเว้นไว้ · ตั้งเงินเดือนเริ่มงาน (มีผลวันเริ่มงาน) ก่อน
+                    รอบเงินเดือนส่งไม่ได้จนกว่าจะตั้ง
+                </StatusBanner>
+            )}
             <div className="flex flex-wrap items-baseline justify-between gap-2 rounded-xl bg-blue-50 p-4">
                 <span className="text-sm text-gray-600">
                     {employee.employment_status === "upcoming" ? "เงินเดือนเริ่มงาน" : "เงินเดือนปัจจุบัน"}
@@ -77,6 +97,7 @@ export default function CompensationCard({
                 <CompensationForm
                     employee={employee}
                     compensation={editing.mode === "edit" ? editing.compensation : null}
+                    isFirstSalary={hasNoSalary}
                     onDone={async (saved) => {
                         setEditing(null);
                         if (saved) await onChanged();
@@ -85,7 +106,7 @@ export default function CompensationCard({
             )}
 
             <ul className="grid divide-y divide-gray-100 text-sm">
-                {employee.compensations.map((compensation) => {
+                {compensations.map((compensation) => {
                     const isFirst = compensation.ecm_effective_from === employee.emp_hire_date;
                     const isCurrent = compensation === current;
                     const isUpcoming = compensation.ecm_effective_from > employee.today;
@@ -99,7 +120,7 @@ export default function CompensationCard({
                                     {isCurrent && <StatusPill tone="success">ใช้อยู่</StatusPill>}
                                     {isUpcoming && !isCurrent && <StatusPill tone="info">มีผลล่วงหน้า</StatusPill>}
                                 </span>
-                                <span className="flex items-center gap-1">
+                                <span className={`flex items-center gap-1 ${canEdit ? "" : "hidden"}`}>
                                     <button
                                         type="button"
                                         className="-my-3 flex items-center gap-1 px-2 py-3 text-xs text-blue-600 hover:underline"
@@ -154,15 +175,18 @@ export default function CompensationCard({
 function CompensationForm({
     employee,
     compensation,
+    isFirstSalary,
     onDone,
 }: {
     employee: Employee;
     compensation: Compensation | null;
+    // ยังไม่มีเงินเดือนเลย → วันที่มีผล = วันเริ่มงาน (ล็อก)
+    isFirstSalary: boolean;
     onDone: (saved: boolean) => Promise<void>;
 }) {
     const isEditing = compensation !== null;
     const [form, setForm] = useState({
-        ecm_effective_from: compensation?.ecm_effective_from ?? "",
+        ecm_effective_from: compensation?.ecm_effective_from ?? (isFirstSalary ? employee.emp_hire_date : ""),
         ecm_base_salary: compensation?.ecm_base_salary ?? "",
         ecm_note: compensation?.ecm_note ?? "",
     });
@@ -198,13 +222,19 @@ function CompensationForm({
                 label="มีผลตั้งแต่"
                 htmlFor="ecm_effective_from"
                 required
-                hint={isEditing ? EMPLOYEE_MESSAGES.compensationEdit : "ต้องหลังวันเริ่มงาน · ย้อนหลังหรือล่วงหน้าได้"}
+                hint={
+                    isEditing
+                        ? EMPLOYEE_MESSAGES.compensationEdit
+                        : isFirstSalary
+                          ? "เงินเดือนเริ่มงาน มีผลวันเริ่มงานเสมอ"
+                          : "ต้องหลังวันเริ่มงาน · ย้อนหลังหรือล่วงหน้าได้"
+                }
                 error={errors.ecm_effective_from}
             >
                 <input
                     id="ecm_effective_from"
                     type="date"
-                    disabled={isEditing}
+                    disabled={isEditing || isFirstSalary}
                     value={form.ecm_effective_from}
                     min={employee.emp_hire_date}
                     max={employee.emp_termination_date ?? undefined}

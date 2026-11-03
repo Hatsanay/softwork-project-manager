@@ -105,7 +105,7 @@ async function revokeUserSignature(req, res, next) {
 // ทุกคนที่ login ดูได้ (ลายเซ็นอยู่บนใบเสนอราคาที่ทั้งทีมเห็น) · ห้าม cache ร่วม และห้ามเบราว์เซอร์เดาชนิดไฟล์
 async function getImage(req, res, next) {
     try {
-        const image = await signatureService.readSignatureFile(pool, String(req.params.id));
+        const image = await signatureService.readSignatureFile(pool, String(req.params.id), req.user);
         res.set({
             "Content-Type": "image/png",
             "X-Content-Type-Options": "nosniff",

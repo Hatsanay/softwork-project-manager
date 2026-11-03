@@ -465,6 +465,7 @@
         "request": "GET /V1/projects/:id/my-permissions",
         "status": 200,
         "body": {
+            "manages_all_positions": "boolean",
             "position_permission": "string"
         }
     },
@@ -529,6 +530,7 @@
         "status": 200,
         "body": [
             {
+                "can_manage": "boolean",
                 "positions": [
                     {
                         "position_id": "string",
